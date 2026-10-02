@@ -48,6 +48,22 @@ class Backend:
     def get_artifact(self, artifact_id):
         return "Artifact", ""
 
+    # sidebar item actions; kind is "CHAT" or "PROJECT"
+    def rename(self, kind, item_id, name):
+        raise NotImplementedError("Renaming isn't supported by the %s backend" % self.name)
+
+    def set_pinned(self, kind, item_id, pinned):
+        raise NotImplementedError("Pinning isn't supported by the %s backend" % self.name)
+
+    def delete(self, kind, item_id):
+        raise NotImplementedError("Deleting isn't supported by the %s backend" % self.name)
+
+    def archive_project(self, project_id):
+        raise NotImplementedError("Archiving isn't supported by the %s backend" % self.name)
+
+    def move_chat(self, chat_id, project_id):
+        raise NotImplementedError("Moving chats isn't supported by the %s backend" % self.name)
+
 
 # ---------------------------------------------------------------------------
 # claude.ai web account (unofficial)
@@ -147,23 +163,57 @@ class ClaudeAiBackend(Backend):
         return self._get("/organizations/%s/chat_conversations" % self.org, limit=limit)
 
     def list_chats(self, limit=100):
-        return [(c["uuid"], c.get("name") or "Untitled") for c in self._conversations(limit)]
+        return [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")))
+                for c in self._conversations(limit)]
 
     def list_projects(self):
         projs = self._get("/organizations/%s/projects" % self.org)
-        projs = [p for p in projs if not p.get("archived_at")]
-        return [(p["uuid"], p.get("name") or "Untitled project") for p in projs]
+        projs = [p for p in projs if not p.get("archived_at") and not p.get("is_archived")]
+        return [(p["uuid"], p.get("name") or "Untitled project", bool(p.get("is_starred")))
+                for p in projs]
+
+    # The claude.ai web app's own (unofficial) endpoints for these actions.
+    def _send(self, method, path, body=None):
+        r = getattr(self.http, method)(self.BASE + path, json=body, timeout=60) if body is not None \
+            else getattr(self.http, method)(self.BASE + path, timeout=60)
+        if r.status_code >= 400:
+            raise RuntimeError("claude.ai refused that (HTTP %d)." % r.status_code)
+        return r
+
+    def _item_path(self, kind, item_id):
+        what = "projects" if kind == "PROJECT" else "chat_conversations"
+        return "/organizations/%s/%s/%s" % (self.org, what, item_id)
+
+    def rename(self, kind, item_id, name):
+        self._send("put", self._item_path(kind, item_id), {"name": name})
+
+    def set_pinned(self, kind, item_id, pinned):
+        self._send("put", self._item_path(kind, item_id), {"is_starred": pinned})
+
+    def delete(self, kind, item_id):
+        self._send("delete", self._item_path(kind, item_id))
+
+    def archive_project(self, project_id):
+        self._send("put", self._item_path("PROJECT", project_id), {"is_archived": True})
+
+    def move_chat(self, chat_id, project_id):
+        try:
+            self._send("put", self._item_path("CHAT", chat_id), {"project_uuid": project_id})
+        except RuntimeError:
+            self._send("post", "/organizations/%s/chat_conversations/move_many" % self.org,
+                       {"conversation_uuids": [chat_id], "project_uuid": project_id})
 
     def project_chats(self, project_id):
         name = "Project"
-        for pid, label in self.list_projects():
+        for pid, label, _ in self.list_projects():
             if pid == project_id:
                 name = label
         try:
             convs = self._get("/organizations/%s/projects/%s/conversations" % (self.org, project_id))
         except Exception:
             convs = [c for c in self._conversations(500) if c.get("project_uuid") == project_id]
-        return name, [(c["uuid"], c.get("name") or "Untitled") for c in convs]
+        return name, [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")))
+                      for c in convs]
 
     def _conversation(self, chat_id):
         return self._get("/organizations/%s/chat_conversations/%s" % (self.org, chat_id),
@@ -378,15 +428,60 @@ class ApiBackend(Backend):
     def whoami(self):
         return "API " + self.model
 
+    def _save_projects(self, projects):
+        with open(os.path.join(self.dir, "projects.json"), "w") as f:
+            json.dump(projects, f, indent=1)
+
     def list_chats(self, limit=100):
-        return [(c["id"], c["title"]) for c in self._all()[:limit]]
+        return [(c["id"], c["title"], bool(c.get("pinned"))) for c in self._all()[:limit]]
 
     def list_projects(self):
-        return [(p["id"], p["name"]) for p in self._projects()]
+        return [(p["id"], p["name"], bool(p.get("pinned")))
+                for p in self._projects() if not p.get("archived")]
 
     def project_chats(self, project_id):
         name = next((p["name"] for p in self._projects() if p["id"] == project_id), "Project")
-        return name, [(c["id"], c["title"]) for c in self._all() if c.get("project") == project_id]
+        return name, [(c["id"], c["title"], bool(c.get("pinned")))
+                      for c in self._all() if c.get("project") == project_id]
+
+    def _edit_project(self, project_id, **changes):
+        projects = self._projects()
+        for p in projects:
+            if p["id"] == project_id:
+                p.update(changes)
+        self._save_projects(projects)
+
+    def rename(self, kind, item_id, name):
+        if kind == "PROJECT":
+            return self._edit_project(item_id, name=name)
+        chat = self._load(item_id)
+        chat["title"] = name
+        self._save(chat)
+
+    def set_pinned(self, kind, item_id, pinned):
+        if kind == "PROJECT":
+            return self._edit_project(item_id, pinned=pinned)
+        chat = self._load(item_id)
+        chat["pinned"] = pinned
+        self._save(chat)
+
+    def delete(self, kind, item_id):
+        if kind == "PROJECT":
+            self._save_projects([p for p in self._projects() if p["id"] != item_id])
+            for c in self._all():  # its chats stay, outside any project
+                if c.get("project") == item_id:
+                    c["project"] = None
+                    self._save(c)
+            return
+        os.remove(self._path(item_id))
+
+    def archive_project(self, project_id):
+        self._edit_project(project_id, archived=True)
+
+    def move_chat(self, chat_id, project_id):
+        chat = self._load(chat_id)
+        chat["project"] = project_id
+        self._save(chat)
 
     def get_chat(self, chat_id):
         c = self._load(chat_id)
@@ -478,17 +573,48 @@ class DemoBackend(Backend):
                 ("A", "1. A rotozoomer with a Claude spark\n2. Raster bars synced to YM music\n"
                       "3. A sync-scroller greeting every ST in the house")]},
         }
-        self.projects = {"p1": "Falcon audio"}
+        self.projects = {"p1": {"name": "Falcon audio"}, "p2": {"name": "Demoscene"}}
 
     def list_chats(self, limit=100):
-        return [(k, v["title"]) for k, v in self.chats.items()][:limit]
+        return [(k, v["title"], v.get("pinned", False)) for k, v in self.chats.items()][:limit]
 
     def list_projects(self):
-        return list(self.projects.items())
+        return [(k, p["name"], p.get("pinned", False))
+                for k, p in self.projects.items() if not p.get("archived")]
 
     def project_chats(self, project_id):
-        return self.projects.get(project_id, "Project"), [
-            (k, v["title"]) for k, v in self.chats.items() if v["project"] == project_id]
+        return self.projects.get(project_id, {}).get("name", "Project"), [
+            (k, v["title"], v.get("pinned", False))
+            for k, v in self.chats.items() if v["project"] == project_id]
+
+    def _item(self, kind, item_id):
+        table = self.projects if kind == "PROJECT" else self.chats
+        if item_id not in table:
+            raise KeyError("no such %s" % kind.lower())
+        return table[item_id]
+
+    def rename(self, kind, item_id, name):
+        self._item(kind, item_id)["name" if kind == "PROJECT" else "title"] = name
+
+    def set_pinned(self, kind, item_id, pinned):
+        self._item(kind, item_id)["pinned"] = pinned
+
+    def delete(self, kind, item_id):
+        self._item(kind, item_id)
+        if kind == "PROJECT":
+            del self.projects[item_id]
+            for c in self.chats.values():
+                if c["project"] == item_id:
+                    c["project"] = None
+        else:
+            del self.chats[item_id]
+
+    def archive_project(self, project_id):
+        self._item("PROJECT", project_id)["archived"] = True
+
+    def move_chat(self, chat_id, project_id):
+        self._item("PROJECT", project_id)
+        self._item("CHAT", chat_id)["project"] = project_id
 
     def get_chat(self, chat_id):
         c = self.chats[chat_id]

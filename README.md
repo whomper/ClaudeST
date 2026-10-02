@@ -192,6 +192,8 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Artifacts | **Artifacts** | `F4` |
 | Search chat titles | **Search** | `F5` / `Ctrl+F` |
 | Open a sidebar item | click it | `Tab` / `Shift+Tab` to pick, then `Return` |
+| Item menu: Open, Pin, Rename, Move to project, Archive, Delete | **right-click** the chat or project | `Tab` to pick it, then `Insert`; arrows + `Return` in the menu, `Esc` closes |
+| Resize the sidebar | drag the divider line (the pointer turns into a hand) | — |
 | Page through the sidebar list | the ↑ ↓ arrows next to the list title | — |
 | Send a message | — | type, then `Return` |
 | Scroll the conversation | scroll bar, or click the upper/lower half | `↑` `↓`, `Shift+↑/↓` by page, `Clr/Home` top, `Shift+Clr/Home` bottom |
@@ -201,6 +203,18 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Use the serial cable instead | Options ▸ Serial port | type `/serial` |
 | About | Desk ▸ About | `Help` |
 | Quit | close box / File ▸ Quit | `Ctrl+Q` |
+
+Right-click a chat for **Open, Pin/Unpin, Rename…, Move to project…,
+Delete…**, or a project for **Open, Pin/Unpin, Rename…, Archive,
+Delete…**. Pinned items move to the top of the list and show a small
+diamond. Rename puts the current name in the reply line: edit it and
+press `Return`, or `Esc` to cancel. Delete always asks first. The
+sidebar width you drag to is remembered in `CLAUDE.INF`.
+
+On claude.ai, these actions use the same private endpoints as the
+website, like the rest of the claude.ai backend. If one stops working,
+the Atari shows claude.ai's error in the chat pane. With `--backend api`
+they act on the chats and projects stored on the Pi.
 
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are

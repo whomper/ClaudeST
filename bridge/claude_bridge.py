@@ -184,6 +184,7 @@ class Session:
         self.chat_id = None
         self.project_id = None
         self.list_kind = "CHATS"
+        self.query = ""
 
     # -- output --------------------------------------------------------
 
@@ -213,13 +214,33 @@ class Session:
         self.out("Z")
 
     def send_list(self, kind, title, items, back=False):
+        """items: (id, label) or (id, label, pinned); pinned ones go first,
+        like claude.ai's Starred section."""
         self.list_kind = kind
+        items = sorted(items, key=lambda it: not (len(it) > 2 and it[2]))
         self.out("L", kind, title)
         if back:
             self.out("I", "..", "< All projects")
-        for iid, label in items[:299]:
-            self.out("I", iid, label or "Untitled")
+        for it in items[:299]:
+            if len(it) > 2 and it[2]:
+                self.out("I", it[0], it[1] or "Untitled", "P")
+            else:
+                self.out("I", it[0], it[1] or "Untitled")
         self.out("E")
+
+    def refresh_list(self):
+        """Re-send whatever the sidebar is showing, after it changed."""
+        if self.list_kind == "PROJECTS":
+            self.send_list("PROJECTS", "Projects", self.be.list_projects())
+        elif self.list_kind == "PROJECT" and self.project_id:
+            name, chats = self.be.project_chats(self.project_id)
+            self.send_list("PROJECT", name, chats, back=True)
+        elif self.list_kind == "SEARCH":
+            self.send_list("SEARCH", "Search: " + self.query, self.be.search(self.query))
+        elif self.list_kind == "ARTIFACTS":
+            pass
+        else:
+            self.send_list("CHATS", "Recents", self.be.list_chats())
 
     def status(self, s):
         self.out("S", s)
@@ -309,9 +330,70 @@ class Session:
         self.status("Online: " + self.be.whoami())
 
     def cmd_find(self, query="", *_):
+        self.query = query
         self.status("Searching...")
         self.send_list("SEARCH", "Search: " + query, self.be.search(query))
         self.status("Online: " + self.be.whoami())
+
+    # -- right-click menu actions --------------------------------------
+
+    def _done(self, msg):
+        self.refresh_list()
+        self.status(msg)
+
+    def cmd_rename(self, kind, item_id, name="", *_):
+        name = name.strip()
+        if not name:
+            return
+        self.status("Renaming...")
+        self.be.rename(kind, item_id, name)
+        if kind == "CHAT" and item_id == self.chat_id:
+            self.out("T", name)
+        self._done("Renamed")
+
+    def cmd_pin(self, kind, item_id, want="", *_):
+        """want: "1" pin, "0" unpin, empty: toggle."""
+        pinned = (want == "0") if want in ("0", "1") else self._is_pinned(kind, item_id)
+        self.status("Unpinning..." if pinned else "Pinning...")
+        self.be.set_pinned(kind, item_id, not pinned)
+        self._done("Unpinned" if pinned else "Pinned")
+
+    def _is_pinned(self, kind, item_id):
+        items = self.be.list_projects() if kind == "PROJECT" else self.be.list_chats(limit=500)
+        return any(it[0] == item_id and len(it) > 2 and it[2] for it in items)
+
+    def cmd_delete(self, kind, item_id, *_):
+        self.status("Deleting...")
+        self.be.delete(kind, item_id)
+        if kind == "CHAT" and item_id == self.chat_id:
+            self.chat_id = None
+            self.out("R")
+            self.out("C", "")
+            self.out("T", "New chat")
+        if kind == "PROJECT" and item_id == self.project_id:
+            self.project_id = None
+            self.list_kind = "PROJECTS"
+        self._done("Deleted")
+
+    def cmd_archive(self, kind, item_id, *_):
+        self.status("Archiving...")
+        self.be.archive_project(item_id)
+        self._done("Archived")
+
+    def cmd_pickproj(self, chat_id, *_):
+        """The Atari wants to choose a project for "Move to project"."""
+        self.status("Loading projects...")
+        projects = self.be.list_projects()
+        self.out("Q")
+        for it in projects[:20]:
+            self.out("J", it[0], it[1] or "Untitled project")
+        self.out("W")
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_move(self, chat_id, project_id, *_):
+        self.status("Moving...")
+        self.be.move_chat(chat_id, project_id)
+        self._done("Moved to project")
 
     def cmd_bye(self, *_):
         log.info("Atari closed Claude ST")

@@ -24,6 +24,7 @@ typedef struct {
 #define MU_KEYBD  0x0001
 #define MU_BUTTON 0x0002
 #define MU_MESAG  0x0010
+#define MU_M1     0x0004
 #define MU_TIMER  0x0020
 
 /* messages */
@@ -67,6 +68,7 @@ typedef struct {
 #define END_UPDATE 0
 
 #define ARROW     0
+#define FLAT_HAND 4
 #define BUSYBEE   2
 #define M_OFF     256
 #define M_ON      257
@@ -83,11 +85,16 @@ short appl_init(void);
 short appl_exit(void);
 short graf_handle(short *wchar, short *hchar, short *wbox, short *hbox);
 short graf_mouse(short num, void *form);
+short graf_mkstate(short *mx, short *my, short *mb, short *ks);
+void evnt_set_m1(short leave, short x, short y, short w, short h);
 short menu_bar(OBJECT *tree, short show);
 short menu_tnormal(OBJECT *tree, short title, short normal);
 short menu_register(short apid, const char *name);
 short rsrc_obfix(OBJECT *tree, short obj);
 short form_alert(short def, const char *str);
+short form_dial(short flag, short x, short y, short w, short h);
+#define FMD_START  0
+#define FMD_FINISH 3
 short wind_create(short kind, short x, short y, short w, short h);
 short wind_open(short h, short x, short y, short w, short ht);
 short wind_close(short h);

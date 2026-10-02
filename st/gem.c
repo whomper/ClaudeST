@@ -47,6 +47,28 @@ short graf_mouse(short num, void *form)
 	return aes(78, 1, 1, 1, 0);
 }
 
+short graf_mkstate(short *mx, short *my, short *mb, short *ks)
+{
+	short r = aes(79, 0, 5, 0, 0);
+	*mx = aintout[1];
+	*my = aintout[2];
+	*mb = aintout[3];
+	*ks = aintout[4];
+	return r;
+}
+
+/* rectangle for MU_M1: leave=0 waits for entering it, 1 for leaving */
+static short m1[5];
+
+void evnt_set_m1(short leave, short x, short y, short w, short h)
+{
+	m1[0] = leave;
+	m1[1] = x;
+	m1[2] = y;
+	m1[3] = w;
+	m1[4] = h;
+}
+
 short menu_bar(OBJECT *tree, short show)
 {
 	aintin[0] = show;
@@ -81,6 +103,19 @@ short form_alert(short def, const char *str)
 	aintin[0] = def;
 	addrin[0] = (void *)str;
 	return aes(52, 1, 1, 1, 0);
+}
+
+short form_dial(short flag, short x, short y, short w, short h)
+{
+	short i;
+	aintin[0] = flag;
+	for (i = 0; i < 2; i++) {
+		aintin[1 + i * 4] = x;
+		aintin[2 + i * 4] = y;
+		aintin[3 + i * 4] = w;
+		aintin[4 + i * 4] = h;
+	}
+	return aes(51, 9, 1, 0, 0);
 }
 
 short wind_create(short kind, short x, short y, short w, short h)
@@ -180,6 +215,8 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 	aintin[3] = state;
 	for (i = 4; i < 14; i++)
 		aintin[i] = 0;
+	for (i = 0; i < 5; i++)
+		aintin[4 + i] = m1[i];
 	aintin[14] = (short)(timer & 0xffff);
 	aintin[15] = (short)(timer >> 16);
 	addrin[0] = msg;

@@ -117,6 +117,98 @@ class Protocol(unittest.TestCase):
             self.assertLess(len(b"\t".join(l)), 200)
 
 
+class ItemActions(unittest.TestCase):
+    """The right-click menu commands, against the demo backend."""
+
+    def setUp(self):
+        self.link = FakeLink()
+        self.s = Session(self.link, DemoBackend())
+        self.s.handle(b"HELLO\t1\t1.0")
+        self.link.sent = b""
+
+    def items(self):
+        return [l for l in self.link.lines() if l[0] == b"I"]
+
+    def test_pin_moves_item_to_top_with_flag(self):
+        self.s.handle(b"PIN\tCHAT\td3\t1")
+        self.assertEqual(self.items()[0], [b"I", b"d3", b"Ideas for a demoscene intro", b"P"])
+        self.link.sent = b""
+        self.s.handle(b"PIN\tCHAT\td3\t0")
+        self.assertNotIn(b"\tP", self.link.sent)
+
+    def test_pin_toggles_without_value(self):
+        self.s.handle(b"PIN\tCHAT\td2")
+        self.assertIn([b"I", b"d2", b"Fix my GFA BASIC loop", b"P"], self.items())
+
+    def test_rename_open_chat_updates_title(self):
+        self.s.handle(b"OPEN\tCHAT\td1")
+        self.link.sent = b""
+        self.s.handle(b"RENAME\tCHAT\td1\tDSP notes")
+        lines = self.link.lines()
+        self.assertIn([b"T", b"DSP notes"], lines)
+        self.assertIn([b"I", b"d1", b"DSP notes"], lines)
+
+    def test_delete_open_chat_clears_pane(self):
+        self.s.handle(b"OPEN\tCHAT\td2")
+        self.link.sent = b""
+        self.s.handle(b"DELETE\tCHAT\td2")
+        lines = self.link.lines()
+        self.assertIn([b"R"], lines)
+        self.assertIn([b"T", b"New chat"], lines)
+        self.assertNotIn(b"d2", b"".join(l[1] for l in self.items()))
+        self.assertIsNone(self.s.chat_id)
+
+    def test_move_to_project_picker(self):
+        self.s.handle(b"PICKPROJ\td2")
+        lines = self.link.lines()
+        self.assertEqual(lines[1], [b"Q"])
+        self.assertIn([b"J", b"p2", b"Demoscene"], lines)
+        self.assertIn([b"W"], lines)
+        self.s.handle(b"MOVE\td2\tp2")
+        self.link.sent = b""
+        self.s.handle(b"OPEN\tPROJECT\tp2")
+        self.assertIn([b"I", b"d2", b"Fix my GFA BASIC loop"], self.items())
+
+    def test_project_rename_archive_delete(self):
+        self.s.handle(b"LIST\tPROJECTS")
+        self.s.handle(b"RENAME\tPROJECT\tp1\tFalcon sound")
+        self.assertIn([b"I", b"p1", b"Falcon sound"], self.items())
+        self.link.sent = b""
+        self.s.handle(b"ARCHIVE\tPROJECT\tp1")
+        self.assertEqual([l[1] for l in self.items()], [b"p2"])
+        self.link.sent = b""
+        self.s.handle(b"DELETE\tPROJECT\tp2")
+        self.assertEqual(self.items(), [])
+
+    def test_errors_reach_the_atari(self):
+        self.s.handle(b"RENAME\tCHAT\tnope\tx")
+        self.assertIn([b"M", b"E"], self.link.lines())
+
+
+class ApiBackendActions(unittest.TestCase):
+    """Local storage side of the API backend (no network needed)."""
+
+    def test_rename_pin_move_delete(self):
+        import tempfile
+        from backends import ApiBackend
+        be = ApiBackend.__new__(ApiBackend)
+        be.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(be.dir, "chats"))
+        be._save_projects([{"id": "retro", "name": "Retro"}])
+        be._save({"id": "a" * 32, "title": "First", "project": None, "messages": []})
+        be.rename("CHAT", "a" * 32, "Renamed")
+        be.set_pinned("CHAT", "a" * 32, True)
+        self.assertEqual(be.list_chats(), [("a" * 32, "Renamed", True)])
+        be.move_chat("a" * 32, "retro")
+        self.assertEqual(be.project_chats("retro")[1], [("a" * 32, "Renamed", True)])
+        be.archive_project("retro")
+        self.assertEqual(be.list_projects(), [])
+        be.delete("PROJECT", "retro")
+        self.assertIsNone(be._load("a" * 32)["project"])
+        be.delete("CHAT", "a" * 32)
+        self.assertEqual(be.list_chats(), [])
+
+
 class Gateway(unittest.TestCase):
     def test_backend_failure_reaches_the_atari_and_retries(self):
         from backends import LazyBackend

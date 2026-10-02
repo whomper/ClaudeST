@@ -20,6 +20,12 @@ flow control). The protocol is the same on both.
 | `NEW` | Start a new chat (created on the first `SEND`; inside the open project, if any). |
 | `SEND` `<text>` | Send a message to the current chat and stream the reply. |
 | `FIND` `<query>` | Search chat titles. |
+| `RENAME` `CHAT`\|`PROJECT` `<id>` `<name>` | Rename a chat or project. |
+| `PIN` `CHAT`\|`PROJECT` `<id>` `1`\|`0` | Pin (star) or unpin. |
+| `DELETE` `CHAT`\|`PROJECT` `<id>` | Delete (the Atari has already asked for confirmation). |
+| `ARCHIVE` `PROJECT` `<id>` | Archive a project. |
+| `PICKPROJ` `<chat id>` | The Atari wants a project list for "Move to project"; the bridge answers with `Q`/`J`/`W`. |
+| `MOVE` `<chat id>` `<project id>` | Move a chat into a project. |
 | `BYE` | Claude ST is quitting. |
 
 ## Bridge → Atari
@@ -30,8 +36,11 @@ All commands are one letter.
 |------|---------|
 | `S` `<text>` | Status line at the bottom of the sidebar. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
-| `I` `<id>` `<label>` | List item. The id `..` means "back to all projects". |
+| `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". |
 | `E` | End of list. |
+| `Q` | Start a picker list (for "Move to project"). |
+| `J` `<id>` `<label>` | Picker entry. |
+| `W` | Show the picker as a popup. |
 | `C` `<id>` | Id of the open chat (highlighted in the sidebar). |
 | `T` `<title>` | Conversation title. |
 | `R` | Clear the conversation pane. |

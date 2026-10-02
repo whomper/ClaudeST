@@ -28,6 +28,8 @@ static short quit;
 
 /* layout */
 static short sb_w;			/* sidebar width */
+static short sb_user;			/* width set by dragging the divider, 0 = auto */
+static short over_divider;		/* mouse is over the divider (MU_M1) */
 static short px, pw;			/* chat pane x / width */
 static short title_h, input_h, row_h;
 static short tx, ty, tw, th;		/* text area */
@@ -64,6 +66,7 @@ static short last_slider_pos = -1, last_slider_size = -1;
 typedef struct {
 	char id[40];
 	char label[44];
+	char pinned;
 } ITEM;
 
 #define MAXITEMS 300
@@ -83,6 +86,16 @@ static short online;
 static char input[INMAX + 1];
 static short inlen;
 static short search_mode;
+static short rename_mode;		/* input line edits a name */
+static char rn_kind[10], rn_id[40];
+
+/* "move to project" picker, filled by the bridge (Q/J/W) */
+#define PICKMAX 20
+static char pick_id[PICKMAX][40];
+static char pick_label[PICKMAX][44];
+static short npick;
+static char pick_chat[40];
+static short pick_x, pick_y;
 
 /* dirty regions */
 #define D_SIDEBAR 1
@@ -120,6 +133,8 @@ static short rxlen;
 static long ticks, last_hello;
 
 static void tx_cmd(const char *a, const char *b, const char *c);
+static void show_picker(void);
+static void save_config(void);
 
 /* ------------------------------------------------------------------ */
 /* menu bar (built in code, so no .RSC file is needed)                 */
@@ -360,6 +375,20 @@ static void tx_cmd(const char *a, const char *b, const char *c)
 		tx_byte('\t');
 		tx_str(c);
 	}
+	tx_byte('\n');
+	link_flush();
+}
+
+/* send "A\tB\tC\tD\n" */
+static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
+{
+	tx_str(a);
+	tx_byte('\t');
+	tx_str(b);
+	tx_byte('\t');
+	tx_str(c);
+	tx_byte('\t');
+	tx_str(d);
 	tx_byte('\n');
 	link_flush();
 }
@@ -621,14 +650,22 @@ static void layout(void)
 {
 	short min_sb = 18 * cw, max_sb = 30 * cw;
 
-	sb_w = ww * 3 / 10;
-	if (sb_w < min_sb)
-		sb_w = min_sb;
-	if (sb_w > max_sb)
-		sb_w = max_sb;
-	if (ww < 56 * cw)
-		sb_w = 16 * cw;
-	sb_w -= sb_w % cw;
+	if (sb_user) {
+		sb_w = sb_user;
+		if (sb_w > ww - 34 * cw)
+			sb_w = ww - 34 * cw;
+		if (sb_w < 14 * cw)
+			sb_w = 14 * cw;
+	} else {
+		sb_w = ww * 3 / 10;
+		if (sb_w < min_sb)
+			sb_w = min_sb;
+		if (sb_w > max_sb)
+			sb_w = max_sb;
+		if (ww < 56 * cw)
+			sb_w = 16 * cw;
+		sb_w -= sb_w % cw;
+	}
 
 	row_h = ch + (ch >= 16 ? 4 : 2);
 	title_h = ch + (ch >= 16 ? 8 : 4);
@@ -720,13 +757,21 @@ static void draw_sidebar(void)
 		y = list_y + (i + 1) * row_h;
 		if (!row_visible(y, y + row_h))
 			continue;
-		if (n > maxc)
-			n = maxc;
-		if (cur_id[0] && !strcmp(it->id, cur_id)) {
-			fill(wx + 4, y - 1, wx + sb_w - 5, y + row_h - 3, 1);
-			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, 0);
-		} else {
-			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, 1);
+		if (n > maxc - (it->pinned ? 1 : 0))
+			n = maxc - (it->pinned ? 1 : 0);
+		{
+			short sel = cur_id[0] && !strcmp(it->id, cur_id);
+			if (sel)
+				fill(wx + 4, y - 1, wx + sb_w - 5, y + row_h - 3, 1);
+			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1);
+			if (it->pinned) {
+				/* a small filled diamond: pinned / starred */
+				short cx = wx + sb_w - cw - 2, cy = y + row_h / 2 - 1, k;
+				for (k = 0; k <= 3; k++) {
+					line(cx - 3 + k, cy - k, cx + 3 - k, cy - k, sel ? 0 : accent());
+					line(cx - 3 + k, cy + k, cx + 3 - k, cy + k, sel ? 0 : accent());
+				}
+			}
 		}
 		if (list_top + i == lcur) {
 			short x1 = wx + 3, x2 = wx + sb_w - 4, y1 = y - 2, y2 = y + row_h - 2;
@@ -851,7 +896,7 @@ static void draw_input(void)
 	short y = wy + wh - input_h;
 	short x1 = px + cw / 2, x2 = px + pw - cw / 2 - 1;
 	short y1 = y + 2, y2 = wy + wh - 3;
-	const char *prompt = search_mode ? "Find: " : "> ";
+	const char *prompt = rename_mode ? "Rename: " : search_mode ? "Find: " : "> ";
 	short pl = strlen(prompt);
 	short avail = (x2 - x1) / cw - pl - 2;
 	short start = inlen > avail ? inlen - avail : 0;
@@ -865,7 +910,7 @@ static void draw_input(void)
 	line(x2, y2, x1, y2, 1);
 	line(x1, y2, x1, y1, 1);
 	text(tx0, tyy, prompt, pl, 1, 1);
-	if (inlen == 0 && !search_mode) {
+	if (inlen == 0 && !search_mode && !rename_mode) {
 		const char *ph = busy ? "Claude is replying..." : "Reply to Claude...";
 		short n = strlen(ph);
 		if (n > avail)
@@ -1049,8 +1094,22 @@ static void handle_line(char *s)
 		if (nitems < MAXITEMS && n > 2) {
 			strlcpy_(items[nitems].id, f[1], sizeof(items[0].id));
 			strlcpy_(items[nitems].label, f[2], sizeof(items[0].label));
+			items[nitems].pinned = n > 3 && f[3][0] == 'P';
 			nitems++;
 		}
+		break;
+	case 'Q':			/* start a picker list */
+		npick = 0;
+		break;
+	case 'J':			/* J <id> <label> : picker entry */
+		if (npick < PICKMAX && n > 2) {
+			strlcpy_(pick_id[npick], f[1], sizeof(pick_id[0]));
+			strlcpy_(pick_label[npick], f[2], sizeof(pick_label[0]));
+			npick++;
+		}
+		break;
+	case 'W':			/* show the picker */
+		show_picker();
 		break;
 	case 'E':			/* end of list */
 		dirty |= D_SIDEBAR;
@@ -1259,9 +1318,23 @@ static short parse_ip(const char *s, u32 *ip, u16 *port)
 	return 1;
 }
 
+static void parse_config_line(const char *l)
+{
+	if (!memcmp(l, "tcp ", 4) && parse_ip(l + 4, &tcp_ip, &tcp_port))
+		link = LINK_TCP;
+	else if (!memcmp(l, "serial", 6))
+		link = LINK_SERIAL;
+	else if (!memcmp(l, "sidebar ", 8)) {
+		short v = 0;
+		for (l += 8; *l >= '0' && *l <= '9'; l++)
+			v = v * 10 + (*l - '0');
+		sb_user = v;
+	}
+}
+
 static void load_config(void)
 {
-	char buf[128];
+	char buf[256], *p, *l;
 	long fd = Fopen("CLAUDE.INF", 0);
 	long n;
 	if (fd < 0)
@@ -1271,39 +1344,58 @@ static void load_config(void)
 	if (n <= 0)
 		return;
 	buf[n] = 0;
-	if (!memcmp(buf, "tcp ", 4) && parse_ip(buf + 4, &tcp_ip, &tcp_port))
-		link = LINK_TCP;
-	else if (!memcmp(buf, "serial", 6))
-		link = LINK_SERIAL;
+	for (l = p = buf; ; p++) {
+		if (*p == '\r' || *p == '\n' || *p == 0) {
+			char end = *p;
+			*p = 0;
+			if (p > l)
+				parse_config_line(l);
+			if (!end)
+				break;
+			l = p + 1;
+		}
+	}
+}
+
+static char *put_num(char *p, u16 v)
+{
+	short d = 10000, started = 0;
+	for (; d; d /= 10) {
+		if (v / d || started || d == 1) {
+			*p++ = '0' + v / d;
+			started = 1;
+		}
+		v %= d;
+	}
+	return p;
 }
 
 static void save_config(void)
 {
-	char line[64];
+	char text[96], *p = text;
 	long fd = Fcreate("CLAUDE.INF", 0);
 	if (fd < 0)
 		return;
 	if (link == LINK_TCP && tcp_ip) {
-		char *p;
-		short d = 10000, port = tcp_port, started = 0;
-		strcpy(line, "tcp ");
-		ip_to_str(tcp_ip, line + 4);
-		p = line + strlen(line);
+		strcpy(p, "tcp ");
+		ip_to_str(tcp_ip, p + 4);
+		p += strlen(p);
 		*p++ = ' ';
-		for (; d; d /= 10) {
-			if (port / d || started || d == 1) {
-				*p++ = '0' + port / d;
-				started = 1;
-			}
-			port %= d;
-		}
+		p = put_num(p, tcp_port);
+	} else {
+		strcpy(p, "serial");
+		p += 6;
+	}
+	*p++ = '\r';
+	*p++ = '\n';
+	if (sb_user) {
+		strcpy(p, "sidebar ");
+		p = put_num(p + 8, sb_user);
 		*p++ = '\r';
 		*p++ = '\n';
-		*p = 0;
-	} else {
-		strcpy(line, "serial\r\n");
 	}
-	Fwrite((short)fd, strlen(line), line);
+	*p = 0;
+	Fwrite((short)fd, strlen(text), text);
 	Fclose((short)fd);
 }
 
@@ -1339,7 +1431,7 @@ static void set_window_name(void)
 
 static void do_new_chat(void)
 {
-	search_mode = 0;
+	search_mode = 0; rename_mode = 0;
 	cur_id[0] = 0;
 	strcpy(chat_title, "New chat");
 	clear_text();
@@ -1351,7 +1443,7 @@ static void do_new_chat(void)
 
 static void do_search(void)
 {
-	search_mode = 1;
+	search_mode = 1; rename_mode = 0;
 	inlen = 0;
 	input[0] = 0;
 	dirty |= D_INPUT;
@@ -1359,7 +1451,7 @@ static void do_search(void)
 
 static void do_list(const char *kind)
 {
-	search_mode = 0;
+	search_mode = 0; rename_mode = 0;
 	tx_cmd("LIST", kind, 0);
 	dirty |= D_INPUT;
 }
@@ -1367,7 +1459,11 @@ static void do_list(const char *kind)
 static void submit(void)
 {
 	input[inlen] = 0;
-	if (!search_mode && !memcmp(input, "/connect ", 9)) {
+	if (rename_mode) {
+		rename_mode = 0;
+		if (inlen > 0)
+			tx_cmd4("RENAME", rn_kind, rn_id, input);
+	} else if (!search_mode && !memcmp(input, "/connect ", 9)) {
 		u32 ip;
 		u16 port = tcp_port;
 		if (parse_ip(input + 9, &ip, &port)) {
@@ -1382,7 +1478,7 @@ static void submit(void)
 		use_link(LINK_SERIAL);
 	} else if (search_mode) {
 		tx_cmd("FIND", input, 0);
-		search_mode = 0;
+		search_mode = 0; rename_mode = 0;
 	} else if (inlen > 0) {
 		tx_cmd("SEND", input, 0);
 	} else {
@@ -1468,11 +1564,370 @@ static void reconnect(void)
 	}
 }
 
+/* ------------------------------------------------------------------ */
+/* popup menus                                                         */
+/* ------------------------------------------------------------------ */
+
+static void wait_release(void)
+{
+	short mx, my, mb, ks, m[8];
+	EVENT e;
+	for (;;) {
+		graf_mkstate(&mx, &my, &mb, &ks);
+		if (!(mb & 3))
+			return;
+		evnt_multi_(MU_TIMER, 0, 0, 0, 10, m, &e);
+	}
+}
+
+static short pop_x, pop_y, pop_w, pop_ih;
+
+static void pop_item(const char *const *lab, short i, short on)
+{
+	short y = pop_y + 2 + i * pop_ih;
+	short x1 = pop_x + 1, x2 = pop_x + pop_w - 2;
+	if (lab[i][0] == '-') {
+		fill(x1, y, x2, y + pop_ih - 1, 0);
+		line(x1 + 2, y + pop_ih / 2, x2 - 2, y + pop_ih / 2, 1);
+		return;
+	}
+	fill(x1, y, x2, y + pop_ih - 1, on ? 1 : 0);
+	text(pop_x + 2 * cw, y + (pop_ih - ch) / 2, lab[i], strlen(lab[i]), 0, on ? 0 : 1);
+}
+
+static short pop_next(const char *const *lab, short n, short from, short d)
+{
+	short i = from;
+	do {
+		i += d;
+		if (i < 0)
+			i = n - 1;
+		if (i >= n)
+			i = 0;
+	} while (lab[i][0] == '-' && i != from);
+	return i;
+}
+
+/* a GEM-style popup at (x, y); returns the chosen item or -1.
+ * Mouse: click an item (or press-drag-release). Keys: arrows, Return, Esc. */
+static short popup(short x, short y, const char *const *lab, short n)
+{
+	short i, w = 0, sel = -1, res = -1, held, moved = 0;
+	short mx, my, mb, ks, ox, oy, m[8], clipr[4];
+	EVENT e;
+
+	for (i = 0; i < n; i++)
+		if ((short)strlen(lab[i]) > w)
+			w = strlen(lab[i]);
+	pop_ih = row_h;
+	pop_w = (w + 4) * cw;
+	{
+		short bh = n * pop_ih + 4;
+		if (x + pop_w + 2 > wx + ww)
+			x = wx + ww - pop_w - 2;
+		if (x < wx)
+			x = wx;
+		if (y + bh + 2 > wy + wh)
+			y = wy + wh - bh - 2;
+		if (y < wy)
+			y = wy;
+		pop_x = x;
+		pop_y = y;
+
+		wind_update(BEG_UPDATE);
+		wind_update(3);		/* BEG_MCTRL: we own the mouse */
+		form_dial(FMD_START, x, y, pop_w + 3, bh + 3);
+		graf_mouse(M_OFF, 0);
+		vswr_mode(vh, 2);
+		vsf_perimeter(vh, 0);
+		vst_alignment(vh, 0, 5);
+		clipr[0] = 0;
+		clipr[1] = 0;
+		clipr[2] = scr_w - 1;
+		clipr[3] = scr_h - 1;
+		vs_clip(vh, 1, clipr);
+		fill(x + 2, y + 2, x + pop_w + 2, y + bh + 2, 1);	/* shadow */
+		fill(x, y, x + pop_w - 1, y + bh - 1, 0);
+		line(x, y, x + pop_w - 1, y, 1);
+		line(x + pop_w - 1, y, x + pop_w - 1, y + bh - 1, 1);
+		line(x + pop_w - 1, y + bh - 1, x, y + bh - 1, 1);
+		line(x, y + bh - 1, x, y, 1);
+		for (i = 0; i < n; i++)
+			pop_item(lab, i, 0);
+		graf_mouse(M_ON, 0);
+	}
+
+	graf_mkstate(&ox, &oy, &held, &ks);
+	held &= 3;
+	for (;;) {
+		short hit = -1, nsel, ev_x, ev_y;
+		/* button events come from the AES queue, so even a very quick
+		 * click is never missed; while the opening button is still held
+		 * we wait for its release instead */
+		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_TIMER,
+			    held ? 1 : 0x101, 3, 0, 20, m, &e);
+		graf_mkstate(&mx, &my, &mb, &ks);
+		if (e.which & MU_BUTTON) {
+			ev_x = e.mx;
+			ev_y = e.my;
+		} else {
+			ev_x = mx;
+			ev_y = my;
+		}
+		if (ev_x - ox > 3 || ox - ev_x > 3 || ev_y - oy > 3 || oy - ev_y > 3)
+			moved = 1;
+		if (ev_x >= pop_x && ev_x < pop_x + pop_w && ev_y >= pop_y + 2 &&
+		    ev_y < pop_y + 2 + n * pop_ih) {
+			hit = (ev_y - pop_y - 2) / pop_ih;
+			if (lab[hit][0] == '-')
+				hit = -1;
+		}
+		nsel = sel;
+		if (e.which & MU_KEYBD) {
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			if (as == 0x1b || sc == 0x61)
+				break;
+			if (sc == 0x48)
+				nsel = pop_next(lab, n, sel < 0 ? 0 : sel, -1);
+			else if (sc == 0x50)
+				nsel = pop_next(lab, n, sel < 0 ? n - 1 : sel, 1);
+			else if ((as == 0x0d || as == ' ') && sel >= 0) {
+				res = sel;
+				break;
+			}
+		} else if (moved) {
+			nsel = hit;
+		}
+		if (nsel != sel) {
+			graf_mouse(M_OFF, 0);
+			if (sel >= 0)
+				pop_item(lab, sel, 0);
+			if (nsel >= 0)
+				pop_item(lab, nsel, 1);
+			graf_mouse(M_ON, 0);
+			sel = nsel;
+		}
+		if (!(e.which & MU_BUTTON))
+			continue;
+		if (held) {				/* the opening button came up */
+			held = 0;
+			if (moved && hit >= 0) {	/* press, drag, release */
+				res = hit;
+				break;
+			}
+		} else {				/* click: an item, or outside to cancel */
+			res = hit;
+			break;
+		}
+	}
+	vs_clip(vh, 0, clipr);
+	wind_update(2);		/* END_MCTRL */
+	wind_update(END_UPDATE);
+	wait_release();
+	/* repaint our part now, and let the AES repaint anything else covered */
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, pop_x, pop_y, pop_w + 3, n * pop_ih + 4 + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, pop_x, pop_y, pop_w + 3, n * pop_ih + 4 + 3);
+	return res;
+}
+
+static void start_rename(const char *kind, ITEM *it)
+{
+	strlcpy_(rn_kind, kind, sizeof(rn_kind));
+	strlcpy_(rn_id, it->id, sizeof(rn_id));
+	strlcpy_(input, it->label, sizeof(input));
+	inlen = strlen(input);
+	rename_mode = 1;
+	search_mode = 0;
+	dirty |= D_INPUT;
+}
+
+static void open_item(short i);
+
+/* right-click menu for a sidebar item, like the one on claude.ai */
+static void context_menu(short i, short x, short y)
+{
+	static const char *chat_menu[6];
+	static const char *proj_menu[6];
+	static const char *art_menu[1] = { "Open" };
+	ITEM *it = &items[i];
+	short r;
+
+	if (!strcmp(it->id, ".."))
+		return;
+	if (!strcmp(list_kind, "ARTIFACTS")) {
+		if (popup(x, y, art_menu, 1) == 0)
+			open_item(i);
+		return;
+	}
+	if (!strcmp(list_kind, "PROJECTS")) {
+		proj_menu[0] = "Open";
+		proj_menu[1] = it->pinned ? "Unpin" : "Pin";
+		proj_menu[2] = "Rename...";
+		proj_menu[3] = "Archive";
+		proj_menu[4] = "-";
+		proj_menu[5] = "Delete...";
+		r = popup(x, y, proj_menu, 6);
+		switch (r) {
+		case 0: open_item(i); break;
+		case 1: tx_cmd4("PIN", "PROJECT", it->id, it->pinned ? "0" : "1"); break;
+		case 2: start_rename("PROJECT", it); break;
+		case 3: tx_cmd("ARCHIVE", "PROJECT", it->id); break;
+		case 5:
+			if (form_alert(1, "[3][Delete this project?|This can't be undone.][Cancel|Delete]") == 2)
+				tx_cmd("DELETE", "PROJECT", it->id);
+			break;
+		}
+		return;
+	}
+	chat_menu[0] = "Open";
+	chat_menu[1] = it->pinned ? "Unpin" : "Pin";
+	chat_menu[2] = "Rename...";
+	chat_menu[3] = "Move to project...";
+	chat_menu[4] = "-";
+	chat_menu[5] = "Delete...";
+	r = popup(x, y, chat_menu, 6);
+	switch (r) {
+	case 0: open_item(i); break;
+	case 1: tx_cmd4("PIN", "CHAT", it->id, it->pinned ? "0" : "1"); break;
+	case 2: start_rename("CHAT", it); break;
+	case 3:
+		strlcpy_(pick_chat, it->id, sizeof(pick_chat));
+		pick_x = x;
+		pick_y = y;
+		tx_cmd("PICKPROJ", it->id, 0);
+		break;
+	case 5:
+		if (form_alert(1, "[3][Delete this chat?|This can't be undone.][Cancel|Delete]") == 2)
+			tx_cmd("DELETE", "CHAT", it->id);
+		break;
+	}
+}
+
+static void show_picker(void)
+{
+	const char *lab[PICKMAX + 1];
+	short i, r;
+	if (!pick_chat[0])
+		return;
+	if (npick == 0) {
+		form_alert(1, "[1][You have no projects yet.][ OK ]");
+		return;
+	}
+	for (i = 0; i < npick; i++)
+		lab[i] = pick_label[i];
+	flush_dirty();
+	r = popup(pick_x, pick_y, lab, npick);
+	if (r >= 0)
+		tx_cmd("MOVE", pick_chat, pick_id[r]);
+	pick_chat[0] = 0;
+}
+
+static short list_hit(short mx, short my)
+{
+	short r;
+	if (mx < wx || mx >= wx + sb_w || my < list_y + row_h || my >= status_y - 2)
+		return -1;
+	r = (my - list_y - row_h) / row_h;
+	if (r >= list_rows || list_top + r >= nitems)
+		return -1;
+	return list_top + r;
+}
+
+static void handle_rclick(short mx, short my)
+{
+	short i = list_hit(mx, my);
+	if (i >= 0)
+		context_menu(i, mx, my);
+}
+
+/* ------------------------------------------------------------------ */
+/* the draggable divider between sidebar and conversation              */
+/* ------------------------------------------------------------------ */
+
+static short divider_x(void)
+{
+	return wx + sb_w;
+}
+
+static void set_divider_watch(void)
+{
+	evnt_set_m1(over_divider, divider_x() - 2, wy, 5, wh);
+}
+
+static void xor_divider(short x)
+{
+	short p[4];
+	p[0] = x;
+	p[1] = wy;
+	p[2] = x;
+	p[3] = wy + wh - 1;
+	v_pline(vh, 2, p);
+	p[0] = p[2] = x + 1;
+	v_pline(vh, 2, p);
+}
+
+static void on_resize(void);
+
+static void drag_divider(void)
+{
+	short mx, my, mb, ks, x, last = -1, m[8], clipr[4];
+	short minx = wx + 14 * cw, maxx = wx + ww - 34 * cw;
+	EVENT e;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);
+	graf_mouse(FLAT_HAND, 0);
+	clipr[0] = wx;
+	clipr[1] = wy;
+	clipr[2] = wx + ww - 1;
+	clipr[3] = wy + wh - 1;
+	vs_clip(vh, 1, clipr);
+	vswr_mode(vh, 3);		/* XOR */
+	vsl_color(vh, 1);
+	do {
+		graf_mkstate(&mx, &my, &mb, &ks);
+		x = mx < minx ? minx : mx > maxx ? maxx : mx;
+		if (x != last) {
+			graf_mouse(M_OFF, 0);
+			if (last >= 0)
+				xor_divider(last);
+			xor_divider(x);
+			graf_mouse(M_ON, 0);
+			last = x;
+		}
+		evnt_multi_(MU_TIMER, 0, 0, 0, 10, m, &e);
+	} while (mb & 1);
+	graf_mouse(M_OFF, 0);
+	xor_divider(last);
+	graf_mouse(M_ON, 0);
+	vswr_mode(vh, 2);
+	vs_clip(vh, 0, clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	if (last - wx != sb_w) {
+		sb_user = last - wx;
+		on_resize();
+		save_config();
+	}
+	over_divider = 0;
+	graf_mouse(ARROW, 0);
+	set_divider_watch();
+}
+
 static void handle_click(short mx, short my)
 {
 	short i;
 	if (mx < wx || my < wy || mx >= wx + ww || my >= wy + wh)
 		return;
+	if (mx >= divider_x() - 2 && mx <= divider_x() + 2) {
+		drag_divider();
+		return;
+	}
 	if (mx < wx + sb_w) {
 		for (i = 0; i < 5; i++) {
 			short y = nav_y + i * row_h;
@@ -1534,7 +1989,17 @@ static void handle_key(short kstate, short kr)
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
 	case 0x62: about(); return;					/* Help */
-	case 0x61: inlen = 0; search_mode = 0; dirty |= D_INPUT; return; /* Undo */
+	case 0x61: inlen = 0; search_mode = 0; rename_mode = 0; dirty |= D_INPUT; return; /* Undo */
+	case 0x52:						/* Insert: item menu */
+		{
+			short i = lcur;
+			if (i < 0)
+				for (i = 0; i < nitems && strcmp(items[i].id, cur_id); i++)
+					;
+			if (i >= 0 && i < nitems && i >= list_top && i < list_top + list_rows)
+				context_menu(i, wx + sb_w / 2, list_y + (i - list_top + 1) * row_h + row_h / 2);
+		}
+		return;
 	case 0x0f: move_cursor(shift ? -1 : 1); return;			/* Tab */
 	case 0x3b: do_new_chat(); return;				/* F1 */
 	case 0x3c: do_list("CHATS"); return;				/* F2 */
@@ -1548,7 +2013,7 @@ static void handle_key(short kstate, short kr)
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
 	case 0x0d:				/* Return / Enter */
-		if (inlen == 0 && !search_mode && lcur >= 0 && lcur < nitems) {
+		if (inlen == 0 && !search_mode && !rename_mode && lcur >= 0 && lcur < nitems) {
 			short i = lcur;
 			lcur = -1;
 			dirty |= D_SIDEBAR;
@@ -1569,7 +2034,7 @@ static void handle_key(short kstate, short kr)
 			dirty |= D_SIDEBAR;
 		}
 		inlen = 0;
-		search_mode = 0;
+		search_mode = 0; rename_mode = 0;
 		dirty |= D_INPUT;
 		return;
 	}
@@ -1597,6 +2062,7 @@ static void on_resize(void)
 	clamp_top();
 	last_slider_pos = last_slider_size = -1;
 	update_slider();
+	set_divider_watch();
 	dirty |= D_ALL;
 }
 
@@ -1744,7 +2210,9 @@ int main(void)
 	set_window_name();
 	wind_open(win, dx, dy, dw, dh);
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
+	load_config();
 	layout();
+	set_divider_watch();
 
 	begin_message('I');
 	{
@@ -1753,7 +2221,6 @@ int main(void)
 		append(hi, sizeof(hi) - 1);
 	}
 
-	load_config();
 	menu_check_baud();
 	if (link == LINK_SERIAL) {
 		serial_open();
@@ -1762,15 +2229,27 @@ int main(void)
 	dirty = D_ALL;
 
 	while (!quit) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_MESAG | MU_TIMER,
-			    1, 1, 1, 40, msg, &ev);
+		/* 0x101/3/0: wake on any button press, left or right */
+		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_MESAG | MU_TIMER | MU_M1,
+			    0x101, 3, 0, 40, msg, &ev);
 		ticks++;
 		if (ev.which & MU_MESAG)
 			handle_msg(msg);
 		if (ev.which & MU_KEYBD)
 			handle_key(ev.kstate, ev.kreturn);
-		if (ev.which & MU_BUTTON)
-			handle_click(ev.mx, ev.my);
+		if (ev.which & MU_M1) {
+			/* hand cursor over the divider */
+			over_divider = !over_divider;
+			graf_mouse(over_divider ? FLAT_HAND : ARROW, 0);
+			set_divider_watch();
+		}
+		if (ev.which & MU_BUTTON) {
+			if (ev.mbutton & 2)
+				handle_rclick(ev.mx, ev.my);
+			else
+				handle_click(ev.mx, ev.my);
+			wait_release();
+		}
 		poll_link();
 		/* keep saying hello until the bridge answers (~every 5s) */
 		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
