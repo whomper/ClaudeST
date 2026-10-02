@@ -26,7 +26,8 @@ find_hatari() {
     command -v hatari; return
   fi
   local app bin
-  for app in /Applications/Hatari*.app "$HOME"/Applications/Hatari*.app \
+  for app in /Applications/Hatari*.app /Applications/*/Hatari*.app \
+             "$HOME"/Applications/Hatari*.app "$HOME"/Applications/*/Hatari*.app \
              "$HOME"/Downloads/Hatari*.app "$HOME"/Downloads/*/Hatari*.app; do
     [ -d "$app/Contents/MacOS" ] || continue
     for bin in "$app"/Contents/MacOS/*; do
