@@ -249,6 +249,33 @@ The program is freestanding, with its own startup code, traps and libgcc
 helpers. `tools/elf2tos.py` turns the ELF into a relocatable TOS program.
 An `m68k-atari-mint` toolchain also works: `make CROSS=m68k-atari-mint-`.
 
+## Trying it in Hatari
+
+To run Claude ST in the [Hatari](https://hatari.tuxfamily.org/) emulator on
+your own Mac or Linux computer:
+
+```sh
+git clone https://github.com/whomper/Atari_claude.git && cd Atari_claude
+tools/hatari-test.sh                 # demo chats, no account needed
+```
+
+The script copies `CLAUDE.PRG` to an emulated hard disk and downloads
+EmuTOS (a free TOS) the first time. It starts the bridge, then boots
+Hatari straight into Claude ST, with the emulated serial port wired to
+the bridge through two named pipes. To use your real claude.ai account:
+
+```sh
+pip install -r bridge/requirements.txt
+export CLAUDE_SESSION_KEY='sk-ant-sid01-...'
+tools/hatari-test.sh claudeai
+```
+
+`MACHINE=ste tools/hatari-test.sh` runs an STE in colour, and
+`TOS=/path/to/tos.img` uses your own TOS image. Quitting Hatari stops the
+bridge too. The script uses the serial link because Hatari can't emulate
+a network card. It also works only on an ST, STE or TT: Hatari doesn't
+connect the Falcon's serial port to the pipes.
+
 ## Testing without hardware
 
 The bridge has offline tests:
@@ -304,6 +331,7 @@ Atari_claude/
 │   ├── install.sh      Raspberry Pi gateway installer
 │   └── claude-st.service
 ├── tools/
+│   ├── hatari-test.sh  run Claude ST in Hatari with a local bridge
 │   ├── elf2tos.py      ELF → TOS .PRG converter
 │   └── fakesting/      STinG stand-in for testing in an emulator
 └── PROTOCOL.md
