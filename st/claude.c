@@ -73,6 +73,7 @@ typedef struct {
 static ITEM items[MAXITEMS];
 static short nitems, list_top;
 static short lcur = -1;			/* keyboard cursor in the list */
+static short menu_target = -1;		/* item the open popup menu acts on */
 static char list_kind[12] = "CHATS";
 static char list_title[48] = "Recents";
 static char cur_id[40];
@@ -95,7 +96,7 @@ static char pick_id[PICKMAX][40];
 static char pick_label[PICKMAX][44];
 static short npick;
 static char pick_chat[40];
-static short pick_x, pick_y;
+static short pick_x;
 
 /* dirty regions */
 #define D_SIDEBAR 1
@@ -760,9 +761,20 @@ static void draw_sidebar(void)
 		if (n > maxc - (it->pinned ? 1 : 0))
 			n = maxc - (it->pinned ? 1 : 0);
 		{
-			short sel = cur_id[0] && !strcmp(it->id, cur_id);
+			short cur = cur_id[0] && !strcmp(it->id, cur_id);
+			short target = list_top + i == menu_target ||
+				(rename_mode && !strcmp(it->id, rn_id));
+			short sel = (menu_target >= 0 || rename_mode) ? target : cur;
 			if (sel)
 				fill(wx + 4, y - 1, wx + sb_w - 5, y + row_h - 3, 1);
+			else if (cur) {
+				/* the open chat, while another item is targeted */
+				short x1 = wx + 4, x2 = wx + sb_w - 5, y1 = y - 1, y2 = y + row_h - 3;
+				line(x1, y1, x2, y1, 1);
+				line(x2, y1, x2, y2, 1);
+				line(x2, y2, x1, y2, 1);
+				line(x1, y2, x1, y1, 1);
+			}
 			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1);
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
@@ -1006,6 +1018,14 @@ static void update_slider(void)
 
 static void flush_dirty(void)
 {
+	{
+		/* the item being renamed is highlighted while the rename lasts */
+		static short drawn_rename = 0;
+		if (rename_mode != drawn_rename) {
+			drawn_rename = rename_mode;
+			dirty |= D_SIDEBAR;
+		}
+	}
 	if (pending_scroll) {
 		if (text_dirty_row > 0 && blit_scroll(pending_scroll)) {
 			short keep = rows - pending_scroll - 1;
@@ -1088,6 +1108,7 @@ static void handle_line(char *s)
 		nitems = 0;
 		list_top = 0;
 		lcur = -1;
+		menu_target = -1;
 		dirty |= D_SIDEBAR;
 		break;
 	case 'I':			/* I <id> <label> */
@@ -1610,7 +1631,7 @@ static short pop_next(const char *const *lab, short n, short from, short d)
 
 /* a GEM-style popup at (x, y); returns the chosen item or -1.
  * Mouse: click an item (or press-drag-release). Keys: arrows, Return, Esc. */
-static short popup(short x, short y, const char *const *lab, short n)
+static short popup(short x, short y, short alt_y, const char *const *lab, short n)
 {
 	short i, w = 0, sel = -1, res = -1, held, moved = 0;
 	short mx, my, mb, ks, ox, oy, m[8], clipr[4];
@@ -1628,7 +1649,7 @@ static short popup(short x, short y, const char *const *lab, short n)
 		if (x < wx)
 			x = wx;
 		if (y + bh + 2 > wy + wh)
-			y = wy + wh - bh - 2;
+			y = alt_y >= 0 ? alt_y - bh - 2 : wy + wh - bh - 2;
 		if (y < wy)
 			y = wy;
 		pop_x = x;
@@ -1748,6 +1769,39 @@ static void start_rename(const char *kind, ITEM *it)
 
 static void open_item(short i);
 
+static short item_row_y(short i)
+{
+	return list_y + (i - list_top + 1) * row_h - 2;
+}
+
+static void redraw_item_row(short i)
+{
+	if (i >= list_top && i < list_top + list_rows && i < nitems)
+		redraw(D_SIDEBAR, wx, item_row_y(i), sb_w, row_h + 1);
+}
+
+static short current_item(void)
+{
+	short i;
+	for (i = 0; i < nitems; i++)
+		if (cur_id[0] && !strcmp(items[i].id, cur_id))
+			return i;
+	return -1;
+}
+
+/* highlight (or un-highlight, i = -1) the item a menu acts on, repainting
+ * only the rows that change so it shows up instantly */
+static void set_menu_target(short i)
+{
+	short old = menu_target, cur = current_item();
+	flush_dirty();
+	menu_target = i;
+	redraw_item_row(old);
+	redraw_item_row(i);
+	if (cur != old && cur != i)
+		redraw_item_row(cur);
+}
+
 /* right-click menu for a sidebar item, like the one on claude.ai */
 static void context_menu(short i, short x, short y)
 {
@@ -1755,12 +1809,23 @@ static void context_menu(short i, short x, short y)
 	static const char *proj_menu[6];
 	static const char *art_menu[1] = { "Open" };
 	ITEM *it = &items[i];
-	short r;
+	short r, y0, y1;
 
+	(void)y;
 	if (!strcmp(it->id, ".."))
 		return;
+	if (i < list_top)
+		list_top = i;
+	if (i >= list_top + list_rows)
+		list_top = i - list_rows + 1;
+	y0 = item_row_y(i);
+	y1 = y0 + row_h;
+	set_menu_target(i);		/* highlight the item before the menu opens */
+
 	if (!strcmp(list_kind, "ARTIFACTS")) {
-		if (popup(x, y, art_menu, 1) == 0)
+		r = popup(x, y1, y0, art_menu, 1);
+		set_menu_target(-1);
+		if (r == 0)
 			open_item(i);
 		return;
 	}
@@ -1771,7 +1836,7 @@ static void context_menu(short i, short x, short y)
 		proj_menu[3] = "Archive";
 		proj_menu[4] = "-";
 		proj_menu[5] = "Delete...";
-		r = popup(x, y, proj_menu, 6);
+		r = popup(x, y1, y0, proj_menu, 6);
 		switch (r) {
 		case 0: open_item(i); break;
 		case 1: tx_cmd4("PIN", "PROJECT", it->id, it->pinned ? "0" : "1"); break;
@@ -1782,6 +1847,7 @@ static void context_menu(short i, short x, short y)
 				tx_cmd("DELETE", "PROJECT", it->id);
 			break;
 		}
+		set_menu_target(-1);
 		return;
 	}
 	chat_menu[0] = "Open";
@@ -1790,7 +1856,7 @@ static void context_menu(short i, short x, short y)
 	chat_menu[3] = "Move to project...";
 	chat_menu[4] = "-";
 	chat_menu[5] = "Delete...";
-	r = popup(x, y, chat_menu, 6);
+	r = popup(x, y1, y0, chat_menu, 6);
 	switch (r) {
 	case 0: open_item(i); break;
 	case 1: tx_cmd4("PIN", "CHAT", it->id, it->pinned ? "0" : "1"); break;
@@ -1798,7 +1864,6 @@ static void context_menu(short i, short x, short y)
 	case 3:
 		strlcpy_(pick_chat, it->id, sizeof(pick_chat));
 		pick_x = x;
-		pick_y = y;
 		tx_cmd("PICKPROJ", it->id, 0);
 		break;
 	case 5:
@@ -1806,12 +1871,13 @@ static void context_menu(short i, short x, short y)
 			tx_cmd("DELETE", "CHAT", it->id);
 		break;
 	}
+	set_menu_target(-1);
 }
 
 static void show_picker(void)
 {
 	const char *lab[PICKMAX + 1];
-	short i, r;
+	short i, r, t, y0;
 	if (!pick_chat[0])
 		return;
 	if (npick == 0) {
@@ -1820,8 +1886,18 @@ static void show_picker(void)
 	}
 	for (i = 0; i < npick; i++)
 		lab[i] = pick_label[i];
-	flush_dirty();
-	r = popup(pick_x, pick_y, lab, npick);
+	/* highlight the chat being moved again while choosing its project */
+	for (t = 0; t < nitems && strcmp(items[t].id, pick_chat); t++)
+		;
+	if (t < nitems && t >= list_top && t < list_top + list_rows) {
+		set_menu_target(t);
+		y0 = item_row_y(t);
+		r = popup(pick_x, y0 + row_h, y0, lab, npick);
+	} else {
+		flush_dirty();
+		r = popup(pick_x, list_y + row_h, -1, lab, npick);
+	}
+	set_menu_target(-1);
 	if (r >= 0)
 		tx_cmd("MOVE", pick_chat, pick_id[r]);
 	pick_chat[0] = 0;

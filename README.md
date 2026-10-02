@@ -206,8 +206,12 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 
 Right-click a chat for **Open, Pin/Unpin, Rename…, Move to project…,
 Delete…**, or a project for **Open, Pin/Unpin, Rename…, Archive,
-Delete…**. Pinned items move to the top of the list and show a small
-diamond. Rename puts the current name in the reply line: edit it and
+Delete…**. The item the menu applies to is highlighted before the menu opens, and
+stays highlighted while the menu, a confirmation or a rename is in
+progress. The open chat is outlined meanwhile, so the two can't be
+confused. The menu opens just below the item, or above it near the
+bottom of the list. Pinned items move to the top of the list and show a
+small diamond. Rename puts the current name in the reply line: edit it and
 press `Return`, or `Esc` to cancel. Delete always asks first. The
 sidebar width you drag to is remembered in `CLAUDE.INF`.
 
