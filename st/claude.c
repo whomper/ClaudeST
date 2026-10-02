@@ -90,6 +90,17 @@ static short online;
 static char input[INMAX + 1];
 static short inlen;
 static short search_mode;
+static short hebrew_kbd;		/* typing in Hebrew (SI-1452 layout) */
+
+/* Israeli SI-1452 layout by key position (scancode 0x10-0x35), giving
+ * Atari character codes; 0 = key not remapped */
+static const u8 hebrew_keys[0x36 - 0x10] = {
+	/* 10 q..p */ '/', '\'', 0xD4, 0xD5, 0xC2, 0xCA, 0xC7, 0xD8, 0xDA, 0xD2,
+	/* 1a [ ] ret ctrl */ 0, 0, 0, 0,
+	/* 1e a..' */ 0xD6, 0xC5, 0xC4, 0xCC, 0xD1, 0xCB, 0xC9, 0xCD, 0xD9, 0xDB, ',',
+	/* 29 ` lshift \ */ 0, 0, 0,
+	/* 2c z../ */ 0xC8, 0xD0, 0xC3, 0xC6, 0xCF, 0xCE, 0xD3, 0xD7, 0xDC, '.'
+};
 static short rename_mode;		/* input line edits a name */
 static char rn_kind[10], rn_id[40];
 
@@ -164,12 +175,14 @@ static char m_b192[]  = "  19200 baud      ";
 static char m_sep3[]  = "------------------";
 static char m_net[]   = "  Network (STinG) ";
 static char m_ser[]   = "  Serial port     ";
+static char m_sep4[]  = "------------------";
+static char m_heb[]   = "  Hebrew keys F10 ";
 
 enum {
 	MN_ROOT, MN_BAR, MN_ACTIVE, MN_TDESK, MN_TFILE, MN_TOPTS, MN_SCREEN,
 	MN_DDESK, MN_ABOUT, MN_SEP1, MN_ACC1, MN_ACC2, MN_ACC3, MN_ACC4, MN_ACC5, MN_ACC6,
 	MN_DFILE, MN_NEW, MN_FIND, MN_REF, MN_SEP2, MN_QUIT,
-	MN_DOPTS, MN_B48, MN_B96, MN_B192, MN_SEP3, MN_NET, MN_SER,
+	MN_DOPTS, MN_B48, MN_B96, MN_B192, MN_SEP3, MN_NET, MN_SER, MN_SEP4, MN_HEB,
 	MN_COUNT
 };
 
@@ -198,13 +211,15 @@ static OBJECT menu[MN_COUNT] = {
 	{ 20, -1, -1, G_STRING, 0, 0, 0,       0, 2, 19, 1 },
 	{ 21, -1, -1, G_STRING, 0, DISABLED, 0, 0, 3, 19, 1 },
 	{ 16, -1, -1, G_STRING, 0, 0, 0,       0, 4, 19, 1 },
-	{ 6, 23, 28, G_BOX,  0, 0, 0xFF1100L,  14, 0, 18, 6 },		/* options drop */
+	{ 6, 23, 30, G_BOX,  0, 0, 0xFF1100L,  14, 0, 18, 8 },		/* options drop */
 	{ 24, -1, -1, G_STRING, 0, 0, 0,       0, 0, 18, 1 },
 	{ 25, -1, -1, G_STRING, 0, 0, 0,       0, 1, 18, 1 },
 	{ 26, -1, -1, G_STRING, 0, 0, 0,       0, 2, 18, 1 },
 	{ 27, -1, -1, G_STRING, 0, DISABLED, 0, 0, 3, 18, 1 },
 	{ 28, -1, -1, G_STRING, 0, 0, 0,       0, 4, 18, 1 },
-	{ 22, -1, -1, G_STRING, LASTOB, 0, 0,  0, 5, 18, 1 },
+	{ 29, -1, -1, G_STRING, 0, 0, 0,       0, 5, 18, 1 },
+	{ 30, -1, -1, G_STRING, 0, DISABLED, 0, 0, 6, 18, 1 },
+	{ 22, -1, -1, G_STRING, LASTOB, 0, 0,  0, 7, 18, 1 },
 };
 
 static void menu_init(void)
@@ -229,6 +244,8 @@ static void menu_init(void)
 	menu[MN_SEP3].ob_spec = S(m_sep3);
 	menu[MN_NET].ob_spec = S(m_net);
 	menu[MN_SER].ob_spec = S(m_ser);
+	menu[MN_SEP4].ob_spec = S(m_sep4);
+	menu[MN_HEB].ob_spec = S(m_heb);
 
 	menu[MN_ROOT].ob_width = cols_;
 	menu[MN_ROOT].ob_height = scr_h / ch;
@@ -245,6 +262,7 @@ static void menu_check_baud(void)
 	menu[MN_B192].ob_state = baud == BAUD_19200 ? CHECKED : 0;
 	menu[MN_NET].ob_state = link == LINK_TCP ? CHECKED : 0;
 	menu[MN_SER].ob_state = link == LINK_SERIAL ? CHECKED : 0;
+	menu[MN_HEB].ob_state = hebrew_kbd ? CHECKED : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -945,12 +963,13 @@ static short blit_scroll(short n)
 
 static void draw_input(void)
 {
+	short badge = hebrew_kbd;
 	short y = wy + wh - input_h;
 	short x1 = px + cw / 2, x2 = px + pw - cw / 2 - 1;
 	short y1 = y + 2, y2 = wy + wh - 3;
 	const char *prompt = rename_mode ? "Rename: " : search_mode ? "Find: " : "> ";
 	short pl = strlen(prompt);
-	short avail = (x2 - x1) / cw - pl - 2;
+	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
 	short start = inlen > avail ? inlen - avail : 0;
 	short tyy = y1 + (y2 - y1 - ch) / 2 + 1;
 	short tx0 = x1 + cw / 2;
@@ -972,10 +991,16 @@ static void draw_input(void)
 	} else {
 		short n = inlen - start;
 		short xs = tx0 + pl * cw;
-		short xt = text_bidi(xs, tyy, input + start, n, 0, 1, x2 - cw);
+		short xt = text_bidi(xs, tyy, input + start, n, 0, 1, x2 - (hebrew_kbd ? 4 : 1) * cw);
 		/* the cursor sits at the end of the text: on the left when typing Hebrew */
 		short xc = (xt != xs || (n > 0 && bidi_is_rtl(input + start, n))) ? xt - 3 : xs + n * cw;
 		fill(xc, tyy, xc + 1, tyy + ch - 1, 1);
+	}
+	if (badge) {
+		/* "HE": the keyboard types Hebrew */
+		short bx = x2 - 3 * cw - cw / 2;
+		fill(bx - 2, y1 + 2, bx + 2 * cw + 1, y2 - 2, 1);
+		text(bx, tyy, "HE", 2, 1, 0);
 	}
 }
 
@@ -1389,6 +1414,8 @@ static void parse_config_line(const char *l)
 		link = LINK_TCP;
 	else if (!memcmp(l, "serial", 6))
 		link = LINK_SERIAL;
+	else if (!memcmp(l, "keyboard hebrew", 15))
+		hebrew_kbd = 1;
 	else if (!memcmp(l, "sidebar ", 8)) {
 		short v = 0;
 		for (l += 8; *l >= '0' && *l <= '9'; l++)
@@ -1458,6 +1485,10 @@ static void save_config(void)
 		p = put_num(p + 8, sb_user);
 		*p++ = '\r';
 		*p++ = '\n';
+	}
+	if (hebrew_kbd) {
+		strcpy(p, "keyboard hebrew\r\n");
+		p += strlen(p);
 	}
 	*p = 0;
 	Fwrite((short)fd, strlen(text), text);
@@ -2082,6 +2113,14 @@ static void handle_click(short mx, short my)
 	}
 }
 
+static void toggle_hebrew(void)
+{
+	hebrew_kbd = !hebrew_kbd;
+	menu_check_baud();
+	save_config();
+	dirty |= D_INPUT;
+}
+
 static void move_cursor(short d)
 {
 	if (nitems == 0)
@@ -2126,6 +2165,7 @@ static void handle_key(short kstate, short kr)
 	case 0x3d: do_list("PROJECTS"); return;				/* F3 */
 	case 0x3e: do_list("ARTIFACTS"); return;			/* F4 */
 	case 0x3f: do_search(); return;					/* F5 */
+	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
 	switch (ascii) {
 	case 0x0e: do_new_chat(); return;	/* ^N */
@@ -2158,6 +2198,11 @@ static void handle_key(short kstate, short kr)
 		dirty |= D_INPUT;
 		return;
 	}
+	/* Hebrew layout: unshifted letter keys type Hebrew, Shift still gives
+	 * English capitals; Control/Alternate combinations are left alone */
+	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | K_CTRL | 0x08)) &&
+	    scan >= 0x10 && scan < 0x36 && hebrew_keys[scan - 0x10])
+		ascii = hebrew_keys[scan - 0x10];
 	if (ascii >= 32 && ascii != 127 && inlen < INMAX) {
 		input[inlen++] = ascii;
 		dirty |= D_INPUT;
@@ -2213,6 +2258,7 @@ static void handle_msg(short *msg)
 				form_alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
 			break;
 		case MN_SER: use_link(LINK_SERIAL); break;
+		case MN_HEB: toggle_hebrew(); break;
 		case MN_QUIT: quit = 1; break;
 		case MN_B48: set_baud(BAUD_4800); break;
 		case MN_B96: set_baud(BAUD_9600); break;

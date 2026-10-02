@@ -197,6 +197,7 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Page through the sidebar list | the ↑ ↓ arrows next to the list title | — |
 | Send a message | — | type, then `Return` |
 | Scroll the conversation | scroll bar, or click the upper/lower half | `↑` `↓`, `Shift+↑/↓` by page, `Clr/Home` top, `Shift+Clr/Home` bottom |
+| Type in Hebrew (on/off) | Options ▸ Hebrew keys | `F10` |
 | Clear the input | — | `Esc` / `Undo` |
 | Reconnect to the bridge | File ▸ Reconnect | `Ctrl+R` |
 | Set the gateway address | Options ▸ Network (STinG) | type `/connect 192.168.1.10` |
@@ -230,6 +231,14 @@ reply line when you type Hebrew. The bridge sends the Atari's Hebrew
 letters, drops vowel points (niqqud) and invisible direction marks, and
 turns maqaf, geresh and gershayim into `-`, `'` and `"`. The Atari font
 only has the plain letters.
+
+**Typing Hebrew.** TOS has no Hebrew keyboard layout, so Claude ST has
+its own: press `F10` (or choose **Options ▸ Hebrew keys**) and the
+letter keys type Hebrew in the Israeli SI-1452 layout. `T` gives א, `A`
+gives ש, `,` gives ת, `.` gives ץ, `/` gives a full stop, and `Q`/`W`
+give `/` and `'`. An **HE** badge shows in the reply box while it's on.
+Shift still types English capitals, and keys are mapped by position, so
+any national Atari keyboard works. The setting is saved in `CLAUDE.INF`.
 
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are
