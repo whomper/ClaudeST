@@ -6,6 +6,7 @@
 #                                             (export CLAUDE_SESSION_KEY first)
 #   TOS=/path/to/tos.img tools/hatari-test.sh use your own TOS/EmuTOS image
 #   MACHINE=ste tools/hatari-test.sh          st (default), ste or tt
+#   HATARI=/path/to/hatari tools/hatari-test.sh   if Hatari isn't found by itself
 #
 # The emulated serial port is wired to the bridge through two named pipes.
 # Hatari only connects the ST/STE/TT serial port this way, not the Falcon's.
@@ -16,11 +17,31 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$HOME/.claude-st-hatari}
 MACHINE=${MACHINE:-st}
 
-command -v hatari >/dev/null || {
-  echo "Hatari isn't installed: https://hatari.tuxfamily.org/download.html" >&2
-  echo "  (Linux: sudo apt install hatari; macOS/Windows: installers on that page)" >&2
-  exit 1
+# Find Hatari: $HATARI, a "hatari" command, or the macOS app bundle
+find_hatari() {
+  if [ -n "${HATARI:-}" ]; then
+    echo "$HATARI"; return
+  fi
+  if command -v hatari >/dev/null; then
+    command -v hatari; return
+  fi
+  local app bin
+  for app in /Applications/Hatari*.app "$HOME"/Applications/Hatari*.app \
+             "$HOME"/Downloads/Hatari*.app "$HOME"/Downloads/*/Hatari*.app; do
+    [ -d "$app/Contents/MacOS" ] || continue
+    for bin in "$app"/Contents/MacOS/*; do
+      [ -x "$bin" ] && { echo "$bin"; return; }
+    done
+  done
 }
+HATARI_BIN=$(find_hatari)
+if [ -z "$HATARI_BIN" ]; then
+  echo "Can't find Hatari. Install it from https://hatari.tuxfamily.org/download.html" >&2
+  echo "  macOS: put Hatari.app in Applications (or run with HATARI=/path/to/Hatari.app/Contents/MacOS/Hatari)" >&2
+  echo "  Linux: sudo apt install hatari" >&2
+  exit 1
+fi
+echo "Using Hatari: $HATARI_BIN"
 
 mkdir -p "$WORK/drive"
 cp "$ROOT/st/CLAUDE.PRG" "$WORK/drive/"
@@ -48,6 +69,6 @@ case "$MACHINE" in
   *)   DISPLAY_OPTS=(--monitor rgb --tos-res med) ;;
 esac
 
-hatari --machine "$MACHINE" "${DISPLAY_OPTS[@]}" --tos "$TOS" \
+"$HATARI_BIN" --machine "$MACHINE" "${DISPLAY_OPTS[@]}" --tos "$TOS" \
   --harddrive "$WORK/drive" --auto 'C:\CLAUDE.PRG' --fast-boot yes \
   --rs232-out "$WORK/st_out" --rs232-in "$WORK/st_in" "${@:2}"
