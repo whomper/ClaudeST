@@ -1,0 +1,4 @@
+pyserial>=3.5          # --serial
+requests>=2.31         # claude.ai backend
+curl_cffi>=0.7         # optional: gets past claude.ai's browser checks more reliably
+anthropic>=0.40        # --backend api

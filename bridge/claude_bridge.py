@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""Claude ST bridge.
+
+Runs on any modern computer and connects an Atari ST/STE/TT/Falcon running
+CLAUDE.PRG to Claude. The Atari can't do modern TLS, so the bridge does
+the HTTPS work and talks a small line protocol (see ../PROTOCOL.md) to
+the Atari over a serial cable, a TCP socket (WiFi modems, emulators) or a
+pair of files/FIFOs (Hatari's --rs232-in/--rs232-out).
+
+Examples:
+  CLAUDE_SESSION_KEY=sk-ant-sid01-... ./claude_bridge.py --serial /dev/ttyUSB0
+  ANTHROPIC_API_KEY=... ./claude_bridge.py --backend api --tcp 0.0.0.0:2323
+  ./claude_bridge.py --backend demo --pipe st_out.fifo st_in.fifo
+"""
+import argparse
+import logging
+import os
+import socket
+import sys
+import traceback
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from atari_text import Formatter, format_text, from_atari, to_atari  # noqa: E402
+import backends  # noqa: E402
+
+log = logging.getLogger("claude-st")
+
+CHUNK = 160              # max text bytes per P line
+HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
+
+
+# ---------------------------------------------------------------------------
+# links
+# ---------------------------------------------------------------------------
+
+class Link:
+    def __init__(self):
+        self.buf = b""
+
+    def _read(self) -> bytes:
+        raise NotImplementedError
+
+    def write(self, data: bytes):
+        raise NotImplementedError
+
+    def readline(self) -> bytes:
+        while b"\n" not in self.buf:
+            chunk = self._read()
+            if chunk is None:
+                raise EOFError
+            self.buf += chunk
+        line, self.buf = self.buf.split(b"\n", 1)
+        return line.rstrip(b"\r")
+
+
+def find_serial_port():
+    """Pick a serial port for --serial auto: a USB adapter first (by its
+    stable /dev/serial/by-id name), then the Raspberry Pi's own UART."""
+    import glob
+    for pattern in ("/dev/serial/by-id/*", "/dev/ttyUSB*", "/dev/ttyACM*",
+                    "/dev/serial0", "/dev/ttyAMA0"):
+        found = sorted(glob.glob(pattern))
+        if found:
+            return found[0]
+    sys.exit("--serial auto: no serial port found. Is the USB serial adapter plugged in?")
+
+
+class SerialLink(Link):
+    def __init__(self, dev, baud, rtscts):
+        super().__init__()
+        import serial
+        self.error = serial.SerialException
+        if dev == "auto":
+            dev = find_serial_port()
+        log.info("serial port %s at %d baud", dev, baud)
+        self.port = serial.Serial(dev, baud, rtscts=rtscts, timeout=1)
+
+    # an unplugged adapter ends the session; systemd restarts the bridge
+    def _read(self):
+        try:
+            return self.port.read(256)
+        except (self.error, OSError):
+            return None
+
+    def write(self, data):
+        try:
+            self.port.write(data)
+            self.port.flush()
+        except (self.error, OSError) as e:
+            raise EOFError from e
+
+
+class TcpLink(Link):
+    """Serves one Atari at a time over TCP: Claude ST through STinG, a WiFi
+    modem in transparent mode, or an emulator. Only addresses in `allow`
+    may connect (when given). A new connection from the Atari replaces the
+    old one, so a rebooted Atari never waits on a stale socket."""
+
+    def __init__(self, hostport, allow=None):
+        super().__init__()
+        host, _, port = hostport.rpartition(":")
+        self.allow = set(allow or [])
+        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.srv.bind((host or "0.0.0.0", int(port)))
+        self.srv.listen(2)
+        self.conn = None
+        log.info("listening on %s:%d%s", *self.srv.getsockname(),
+                 " for " + ", ".join(sorted(self.allow)) if self.allow else "")
+
+    def _accept(self):
+        conn, addr = self.srv.accept()
+        if self.allow and addr[0] not in self.allow:
+            log.warning("refused connection from %s (not in --allow)", addr[0])
+            conn.close()
+            return
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if self.conn is not None:
+            log.info("new connection from the Atari replaces the old one")
+            self.conn.close()
+        self.conn = conn
+        self.buf = b""
+        log.info("Atari connected from %s", addr[0])
+
+    def _read(self):
+        import select
+        while True:
+            socks = [self.srv] + ([self.conn] if self.conn else [])
+            ready, _, _ = select.select(socks, [], [], 60)
+            if self.srv in ready:
+                self._accept()
+                continue
+            if self.conn and self.conn in ready:
+                try:
+                    data = self.conn.recv(4096)
+                except OSError:
+                    data = b""
+                if data:
+                    return data
+                log.info("Atari disconnected")
+                self.conn.close()
+                self.conn = None
+                self.buf = b""
+
+    def write(self, data):
+        if self.conn is None:
+            return  # nobody to talk to; the Atari will say HELLO on reconnect
+        try:
+            self.conn.sendall(data)
+        except OSError:
+            self.conn.close()
+            self.conn = None
+
+
+class PipeLink(Link):
+    """Read what the Atari sends from one file, write to another. With
+    Hatari: hatari --rs232-out <in_path> --rs232-in <out_path>."""
+
+    def __init__(self, in_path, out_path):
+        super().__init__()
+        for p in (in_path, out_path):
+            if not os.path.exists(p):
+                os.mkfifo(p)
+        # open the write side first so Hatari's reader doesn't block us
+        self.out = os.open(out_path, os.O_RDWR)
+        self.inp = os.open(in_path, os.O_RDWR)
+
+    def _read(self):
+        return os.read(self.inp, 1024)
+
+    def write(self, data):
+        os.write(self.out, data)
+
+
+# ---------------------------------------------------------------------------
+# protocol
+# ---------------------------------------------------------------------------
+
+class Session:
+    def __init__(self, link, backend):
+        self.link = link
+        self.be = backend
+        self.chat_id = None
+        self.project_id = None
+        self.list_kind = "CHATS"
+
+    # -- output --------------------------------------------------------
+
+    def out(self, cmd, *fields):
+        parts = [cmd.encode()] + [to_atari(str(f)) for f in fields]
+        log.debug("-> %r", parts)
+        self.link.write(b"\t".join(parts) + b"\n")
+
+    def text(self, s):
+        data = to_atari(s)
+        for i in range(0, len(data), CHUNK):
+            self.link.write(b"P\t" + data[i:i + CHUNK] + b"\n")
+
+    def ops(self, ops):
+        for op in ops:
+            if op[0] == "P":
+                if op[1]:
+                    self.text(op[1])
+            elif op[0] == "B":
+                self.out("B")
+            elif op[0] == "H":
+                self.out("H", op[1])
+
+    def message(self, role, body):
+        self.out("M", role)
+        self.ops(format_text(body))
+        self.out("Z")
+
+    def send_list(self, kind, title, items, back=False):
+        self.list_kind = kind
+        self.out("L", kind, title)
+        if back:
+            self.out("I", "..", "< All projects")
+        for iid, label in items[:299]:
+            self.out("I", iid, label or "Untitled")
+        self.out("E")
+
+    def status(self, s):
+        self.out("S", s)
+
+    # -- commands ------------------------------------------------------
+
+    def cmd_hello(self, *_):
+        self.status("Loading chats...")
+        self.send_list("CHATS", "Recents", self.be.list_chats())
+        self.out("C", self.chat_id or "")
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_list(self, kind="CHATS", *_):
+        self.status("Loading...")
+        if kind == "PROJECTS":
+            self.project_id = None
+            self.send_list("PROJECTS", "Projects", self.be.list_projects())
+        elif kind == "ARTIFACTS":
+            self.send_list("ARTIFACTS", "Artifacts", self.be.list_artifacts())
+        else:
+            self.project_id = None
+            self.send_list("CHATS", "Recents", self.be.list_chats())
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_open(self, kind, oid, *_):
+        if kind == "PROJECT":
+            self.status("Loading project...")
+            name, chats = self.be.project_chats(oid)
+            self.project_id = oid
+            self.send_list("PROJECT", name, chats, back=True)
+            self.status("Project: " + name)
+            return
+        if kind == "ARTIFACT":
+            self.status("Loading artifact...")
+            title, body = self.be.get_artifact(oid)
+            self.out("T", title)
+            self.out("R")
+            self.message("K", body)
+            self.status("Online: " + self.be.whoami())
+            return
+        self.status("Loading chat...")
+        title, msgs = self.be.get_chat(oid)
+        self.chat_id = oid
+        self.out("T", title)
+        self.out("C", oid)
+        self.out("R")
+        if len(msgs) > HISTORY_MESSAGES:
+            self.message("I", "%d earlier messages are not shown." % (len(msgs) - HISTORY_MESSAGES))
+            msgs = msgs[-HISTORY_MESSAGES:]
+        for role, body in msgs:
+            self.message(role, body)
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_new(self, *_):
+        self.chat_id = None
+        self.out("C", "")
+        self.out("T", "New chat")
+
+    def cmd_send(self, text="", *_):
+        text = text.strip()
+        if not text:
+            return
+        new = self.chat_id is None
+        if new:
+            self.out("R")
+        self.message("U", text)
+        self.out("Y", "1")
+        self.status("Claude is thinking...")
+        self.out("M", "A")
+        fmt = Formatter()
+        try:
+            chat_id, title = self.be.send(self.chat_id, self.project_id, text,
+                                          lambda d: self.ops(fmt.feed(d)))
+        finally:
+            self.ops(fmt.finish())
+            self.out("Z")
+            self.out("Y", "0")
+        self.chat_id = chat_id
+        if title:
+            self.out("T", title)
+        self.out("C", chat_id)
+        if new and self.list_kind == "CHATS":
+            self.send_list("CHATS", "Recents", self.be.list_chats())
+        elif new and self.list_kind == "PROJECT" and self.project_id:
+            name, chats = self.be.project_chats(self.project_id)
+            self.send_list("PROJECT", name, chats, back=True)
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_find(self, query="", *_):
+        self.status("Searching...")
+        self.send_list("SEARCH", "Search: " + query, self.be.search(query))
+        self.status("Online: " + self.be.whoami())
+
+    def cmd_bye(self, *_):
+        log.info("Atari closed Claude ST")
+
+    def handle(self, raw: bytes):
+        fields = from_atari(raw).split("\t")
+        cmd, args = fields[0].upper(), fields[1:]
+        fn = getattr(self, "cmd_" + cmd.lower(), None)
+        log.debug("<- %r", fields)
+        if fn is None:
+            return
+        try:
+            fn(*args)
+        except EOFError:
+            raise
+        except Exception as e:  # report on the Atari, keep serving
+            log.error("%s failed: %s", cmd, e)
+            log.debug(traceback.format_exc())
+            self.out("Y", "0")
+            self.message("E", str(e) or e.__class__.__name__)
+            self.status("Error - see chat")
+
+    def run(self):
+        while True:
+            try:
+                line = self.link.readline()
+            except EOFError:
+                return
+            if line:
+                self.handle(line)
+
+
+def make_backend(args):
+    if args.backend == "demo":
+        return backends.DemoBackend()
+    if args.backend == "api":
+        return backends.ApiBackend(args.store, model=args.model)
+    key = os.environ.get("CLAUDE_SESSION_KEY")
+    if not key:
+        # keep running so the Atari can show what's wrong
+        log.error("CLAUDE_SESSION_KEY is not set")
+
+        def no_key():
+            raise RuntimeError("No claude.ai session key is set on the gateway. "
+                               "Set CLAUDE_SESSION_KEY (on a Pi: sudo ./install.sh --set-key).")
+        return backends.LazyBackend(no_key, "claude.ai (no key)")
+    return backends.LazyBackend(lambda: backends.ClaudeAiBackend(key, org_id=args.org),
+                                "claude.ai")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--backend", choices=["claudeai", "api", "demo"], default="claudeai")
+    link = ap.add_mutually_exclusive_group(required=True)
+    link.add_argument("--serial", metavar="DEVICE", help="serial port, e.g. /dev/ttyUSB0 or COM3, or \"auto\"")
+    link.add_argument("--tcp", metavar="HOST:PORT", help="listen for the Atari on a TCP port (STinG, WiFi modem)")
+    link.add_argument("--pipe", nargs=2, metavar=("FROM_ST", "TO_ST"), help="files/FIFOs (Hatari)")
+    ap.add_argument("--allow", action="append", metavar="IP",
+                    help="with --tcp: only accept this Atari address (repeatable)")
+    ap.add_argument("--baud", type=int, default=19200)
+    ap.add_argument("--rtscts", action="store_true", help="hardware flow control")
+    ap.add_argument("--org", help="claude.ai organization uuid (default: first chat org)")
+    ap.add_argument("--model", default="claude-opus-5-5", help="model for --backend api")
+    ap.add_argument("--store", default="~/.claude-st", help="history dir for --backend api")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    backend = make_backend(args)
+    if args.serial:
+        link = SerialLink(args.serial, args.baud, args.rtscts)
+    elif args.tcp:
+        link = TcpLink(args.tcp, args.allow)
+    else:
+        link = PipeLink(*args.pipe)
+    log.info("Claude ST bridge ready (%s backend)", backend.name)
+    try:
+        Session(link, backend).run()
+    except KeyboardInterrupt:
+        return
+    except EOFError:
+        pass
+    sys.exit("link closed")
+
+
+if __name__ == "__main__":
+    main()

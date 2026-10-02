@@ -1,0 +1,22 @@
+[Unit]
+Description=Claude ST gateway (Atari serial <-> Claude bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=claude-st
+Group=claude-st
+SupplementaryGroups=dialout
+EnvironmentFile=/etc/claude-st/claude-st.env
+Environment=HOME=/var/lib/claude-st
+ExecStart=/opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py --store /var/lib/claude-st $CLAUDE_ST_ARGS
+Restart=always
+RestartSec=5
+StateDirectory=claude-st
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
