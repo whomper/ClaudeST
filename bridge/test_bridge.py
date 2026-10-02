@@ -70,7 +70,7 @@ class Protocol(unittest.TestCase):
         self.s.handle(b"HELLO\t1\t1.0")
         lines = self.link.lines()
         self.assertIn([b"L", b"CHATS", b"Recents"], lines)
-        self.assertEqual(sum(1 for l in lines if l[0] == b"I"), 3)
+        self.assertEqual(sum(1 for l in lines if l[0] == b"I"), 4)
         self.assertEqual(lines[-1][0], b"S")
 
     def test_open_chat(self):
@@ -88,8 +88,8 @@ class Protocol(unittest.TestCase):
         self.assertIn([b"Y", b"1"], lines)
         self.assertIn([b"Y", b"0"], lines)
         self.assertGreater(sum(1 for l in lines if l[0] == b"P"), 5)
-        self.assertEqual(self.s.chat_id, "d4")
-        self.assertIn([b"C", b"d4"], lines)
+        self.assertEqual(self.s.chat_id, "d5")
+        self.assertIn([b"C", b"d5"], lines)
 
     def test_project_and_back(self):
         self.s.handle(b"OPEN\tPROJECT\tp1")
@@ -106,6 +106,14 @@ class Protocol(unittest.TestCase):
         self.s.handle(b"OPEN\tCHAT\tnope")
         lines = self.link.lines()
         self.assertIn([b"M", b"E"], lines)
+
+    def test_hebrew_reaches_the_atari_as_st_charset(self):
+        self.s.handle(b"OPEN\tCHAT\td4")
+        sent = self.link.sent
+        # "מה זה" (mem, he, space, zayin, he) in Atari codes, in logical order:
+        # the Atari lays it out right to left itself
+        self.assertIn(b"\xce\xc6 \xc8\xc6", sent)
+        self.assertIn(b"\xc6-Atari Falcon 030", sent)  # "ה-Atari": maqaf-style hyphen kept
 
     def test_atari_charset_input(self):
         self.s.handle(b"FIND\t\x81ber")  # "über" typed on the ST

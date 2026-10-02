@@ -29,12 +29,18 @@ _SUBST = {
     "─": "-", "│": "|", "┌": "+", "┐": "+", "└": "+",
     "┘": "+", "├": "+", "┤": "+", "┬": "+", "┴": "+",
     "┼": "+", "═": "=", "·": "·",
+    # Hebrew punctuation the ST font lacks
+    "\u05be": "-", "\u05f3": "'", "\u05f4": '"', "\u05c0": "|", "\u05c3": ":",
 }
+# invisible direction marks: Claude ST lays out right-to-left text itself
+_DROP = set("\u200e\u200f\u061c\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 
 def to_atari(text: str) -> bytes:
     out = bytearray()
     for ch in text:
+        if ch in _DROP:
+            continue
         ch = _SUBST.get(ch, ch)
         for c in ch:
             o = ord(c)
@@ -46,11 +52,14 @@ def to_atari(text: str) -> bytes:
                 continue
             elif c in _TO_ST:
                 out.append(_TO_ST[c])
+            elif unicodedata.combining(c):
+                continue  # accents, Hebrew vowel points (niqqud)
             else:
-                base = unicodedata.normalize("NFKD", c)
-                base = "".join(b for b in base if not unicodedata.combining(b))
-                if base and all(32 <= ord(b) < 127 for b in base):
-                    out += base.encode("ascii")
+                # decompose: accented letters, Hebrew presentation forms...
+                base = [b for b in unicodedata.normalize("NFKD", c) if not unicodedata.combining(b)]
+                if base and all(32 <= ord(b) < 127 or b in _TO_ST for b in base):
+                    for b in base:
+                        out.append(_TO_ST[b] if b in _TO_ST else ord(b))
                 elif unicodedata.category(c).startswith("S"):
                     continue  # emoji and pictographs: drop
                 else:

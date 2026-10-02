@@ -573,6 +573,12 @@ class DemoBackend(Backend):
                 ("A", "1. A rotozoomer with a Claude spark\n2. Raster bars synced to YM music\n"
                       "3. A sync-scroller greeting every ST in the house")]},
         }
+        self.chats["d4"] = {"title": "שאלה על Atari Falcon", "project": None, "messages": [
+            ("U", "מה זה Atari Falcon?"),
+            ("A", "ה-Atari Falcon 030 הוא מחשב ביתי משנת 1992, עם מעבד Motorola 68030 "
+                  "ומעבד אותות DSP56001 (במהירות 32 מגה-הרץ).\n\n"
+                  "## יתרונות\n\n- סאונד של 16 ביט\n- גרפיקה של עד 65,536 צבעים\n\n"
+                  "It was the last computer Atari made, אחרי ה-TT030.")]}
         self.projects = {"p1": {"name": "Falcon audio"}, "p2": {"name": "Demoscene"}}
 
     def list_chats(self, limit=100):

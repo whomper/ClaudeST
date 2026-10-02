@@ -11,6 +11,7 @@
 #include "tos.h"
 #include "gem.h"
 #include "sting.h"
+#include "bidi.h"
 
 #define VERSION "1.0"
 
@@ -56,6 +57,8 @@ typedef struct {
 #define L_TEXT   0
 #define L_HEADER 1
 #define L_BOLD   2
+#define L_TYPE   0x0f
+#define L_RTL    0x40		/* line of a right-to-left (Hebrew) paragraph */
 
 static LINE *lines;
 static short nlines, maxlines;
@@ -442,6 +445,9 @@ static void wrap_from(long p, u8 role)
 				kind = L_BOLD;
 				s++;
 			}
+			/* the paragraph's direction comes from its first strong letter */
+			if (bidi_is_rtl(tb + s, e - s > 2000 ? 2000 : (short)(e - s)))
+				kind |= L_RTL;
 			w = wrap_width(role);
 			while (s < e) {
 				long b;
@@ -485,7 +491,7 @@ static short wrap_tail(void)
 	}
 	if (nlines) {
 		p = lines[li].off;
-		if (li < nlines && lines[li].kind == L_BOLD && p > 0 && tb[p - 1] == MK_BOLD)
+		if (li < nlines && (lines[li].kind & L_TYPE) == L_BOLD && p > 0 && tb[p - 1] == MK_BOLD)
 			p--;
 		role = li > 0 ? lines[li - 1].role : 0;
 	}
@@ -628,6 +634,26 @@ static void text(short x, short y, const char *s, short n, short fx, short color
 	vst_effects(vh, fx);
 	vst_color(vh, color);
 	v_gtext_n(vh, x, y, s, n);
+}
+
+/* draw a string that may contain Hebrew in visual order; a right-to-left
+ * string is right-aligned to `right` when that's given. Returns the x used. */
+static short text_bidi(short x, short y, const char *s, short n, short fx, short color, short right)
+{
+	static char vis[BIDI_MAX];
+	short rtl;
+	if (n <= 0 || !bidi_has_rtl(s, n)) {
+		text(x, y, s, n, fx, color);
+		return x;
+	}
+	if (n > BIDI_MAX)
+		n = BIDI_MAX;
+	rtl = bidi_is_rtl(s, n);
+	bidi_visual(s, n, rtl, vis);
+	if (rtl && right > 0 && right - n * cw > x)
+		x = right - n * cw;
+	text(x, y, vis, n, fx, color);
+	return x;
 }
 
 static short accent(void)
@@ -775,7 +801,8 @@ static void draw_sidebar(void)
 				line(x2, y2, x1, y2, 1);
 				line(x1, y2, x1, y1, 1);
 			}
-			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1);
+			text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
+				  wx + sb_w - 6 - (it->pinned ? cw + 4 : 0));
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
 				short cx = wx + sb_w - cw - 2, cy = y + row_h / 2 - 1, k;
@@ -807,7 +834,7 @@ static void draw_sidebar(void)
 		fill(x, status_y + row_h / 2 - 2, x + 3, status_y + row_h / 2 + 1, online ? accent() : 1);
 		if (!online)
 			fill(x + 1, status_y + row_h / 2 - 1, x + 2, status_y + row_h / 2, 0);
-		text(x + cw, status_y + (row_h - ch) / 2, status, n, 0, 1);
+		text_bidi(x + cw, status_y + (row_h - ch) / 2, status, n, 0, 1, 0);
 	}
 }
 
@@ -817,7 +844,7 @@ static void draw_title(void)
 	fill(px, wy, px + pw - 1, wy + title_h, 0);
 	if (n > maxc)
 		n = maxc;
-	text(px + cw, wy + (title_h - ch) / 2, chat_title, n, 1, 1);
+	text_bidi(px + cw, wy + (title_h - ch) / 2, chat_title, n, 1, 1, 0);
 	if (busy && maxc > n + 12)
 		text(px + pw - 12 * cw, wy + (title_h - ch) / 2, "thinking...", 11, 2, 1);
 	line(px, wy + title_h, px + pw - 1, wy + title_h, 1);
@@ -843,7 +870,7 @@ static void draw_text(short from_row)
 			continue;
 		l = &lines[li];
 		x = tx;
-		if (l->kind == L_HEADER) {
+		if ((l->kind & L_TYPE) == L_HEADER) {
 			const char *name = "Claude";
 			short n = 6;
 			switch (l->role) {
@@ -866,7 +893,20 @@ static void draw_text(short from_row)
 		} else if (l->role == 'K') {
 			line(x + cw / 2, y, x + cw / 2, y + ch - 1, 1);
 		}
-		text(x, y, tb + l->off, l->len, l->kind == L_BOLD ? 1 : 0, 1);
+		{
+			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : 0;
+			short rtl = (l->kind & L_RTL) != 0;
+			if (rtl || bidi_has_rtl(tb + l->off, l->len)) {
+				static char vis[BIDI_MAX];
+				short n = l->len > BIDI_MAX ? BIDI_MAX : l->len;
+				bidi_visual(tb + l->off, n, rtl, vis);
+				if (rtl)	/* right-aligned, like dir="rtl" */
+					x = tx + cols * cw - n * cw;
+				text(x, y, vis, n, fx, 1);
+			} else {
+				text(x, y, tb + l->off, l->len, fx, 1);
+			}
+		}
 	}
 	y = ty + rows * ch;
 	if (row_visible(y, wy + wh - input_h - 1))
@@ -930,8 +970,12 @@ static void draw_input(void)
 		text(tx0 + pl * cw, tyy, ph, n, 2, 1);
 		fill(tx0 + pl * cw, tyy, tx0 + pl * cw + 1, tyy + ch - 1, 1);
 	} else {
-		text(tx0 + pl * cw, tyy, input + start, inlen - start, 0, 1);
-		fill(tx0 + (pl + inlen - start) * cw, tyy, tx0 + (pl + inlen - start) * cw + 1, tyy + ch - 1, 1);
+		short n = inlen - start;
+		short xs = tx0 + pl * cw;
+		short xt = text_bidi(xs, tyy, input + start, n, 0, 1, x2 - cw);
+		/* the cursor sits at the end of the text: on the left when typing Hebrew */
+		short xc = (xt != xs || (n > 0 && bidi_is_rtl(input + start, n))) ? xt - 3 : xs + n * cw;
+		fill(xc, tyy, xc + 1, tyy + ch - 1, 1);
 	}
 }
 

@@ -220,6 +220,17 @@ website, like the rest of the claude.ai backend. If one stops working,
 the Atari shows claude.ai's error in the chat pane. With `--backend api`
 they act on the chats and projects stored on the Pi.
 
+**Hebrew** and other right-to-left text is laid out by Claude ST itself,
+because TOS has no bidirectional text support. A paragraph whose first
+letter is Hebrew is right-aligned and reads right to left. English words
+and numbers inside it keep their left-to-right order, and Hebrew phrases
+inside English text are reversed in place. Brackets are mirrored. The
+same applies to chat titles in the sidebar and title bar, and to the
+reply line when you type Hebrew. The bridge sends the Atari's Hebrew
+letters, drops vowel points (niqqud) and invisible direction marks, and
+turns maqaf, geresh and gershayim into `-`, `'` and `"`. The Atari font
+only has the plain letters.
+
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are
 stored inside conversations, so **Artifacts** lists the ones in your 15
@@ -278,6 +289,7 @@ Atari_claude/
 │   ├── claude.c        UI, word wrap, protocol
 │   ├── gem.c / gem.h   minimal AES + VDI bindings
 │   ├── sting.c / .S    STinG TCP client (Pure C calling convention shim)
+│   ├── bidi.c          right-to-left (Hebrew) layout; `make test` runs bidi_test.c
 │   ├── CLAUDE.INF      gateway address (tcp 192.168.1.10 2323)
 │   ├── tos.c / tos.h   GEMDOS/BIOS/XBIOS traps, mini libc, 68000 libgcc helpers
 │   ├── crt0.S          TOS startup
