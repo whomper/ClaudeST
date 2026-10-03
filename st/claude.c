@@ -13,6 +13,7 @@
 #include "sting.h"
 #include "bidi.h"
 #include "icon.h"
+#include "icon16.h"
 
 #define VERSION "1.1"
 
@@ -2183,6 +2184,41 @@ static void draw_icon(short x, short y, short sx, short sy)
 	vrt_cpyfm(vh, 2, pxy, &src, &dst, colors);	/* transparent */
 }
 
+/* The 16-colour icon, drawn as runs of VDI fills so that the pen numbers
+ * mean the same thing in every video mode. Pens 8..15 are given the
+ * icon's colours while the About box is open (see about()). */
+static void draw_icon16(short x, short y, short sx, short sy)
+{
+	short r, c, p[4];
+	vsf_interior(vh, 1);
+	for (r = 0; r < ICON_H; r++) {
+		for (c = 0; c < ICON_W; ) {
+			u8 b = icon16_px[r * 16 + c / 2];
+			short pen = (c & 1) ? (b & 15) : (b >> 4), e = c + 1;
+			for (;;) {
+				u8 b2;
+				short pen2;
+				if (e >= ICON_W)
+					break;
+				b2 = icon16_px[r * 16 + e / 2];
+				pen2 = (e & 1) ? (b2 & 15) : (b2 >> 4);
+				if (pen2 != pen)
+					break;
+				e++;
+			}
+			if (pen) {
+				vsf_color(vh, pen);
+				p[0] = x + c * sx;
+				p[1] = y + r * sy;
+				p[2] = x + e * sx - 1;
+				p[3] = y + r * sy + sy - 1;
+				vr_recfl(vh, p);
+			}
+			c = e;
+		}
+	}
+}
+
 static void center_text(short y, const char *s, short fx)
 {
 	short n = strlen(s);
@@ -2194,7 +2230,8 @@ static void about(void)
 	static char conn[64];
 	short sx = 2, sy = ch >= 16 ? 2 : 1;
 	short ih = ICON_H * sy, lh = ch + (ch >= 16 ? 2 : 1);
-	short m[8], clipr[4], y, done = 0;
+	short m[8], clipr[4], y, done = 0, i;
+	short saved_rgb[8][3], colour = ncolors >= 16;
 	EVENT e;
 
 	if (link == LINK_TCP && tcp_ip) {
@@ -2241,7 +2278,16 @@ static void about(void)
 	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
 
 	y = dlg_y + lh;
-	draw_icon(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
+	if (colour) {
+		/* lend pens 8..15 to the icon while the box is open */
+		for (i = 0; i < 8; i++) {
+			vq_color(vh, 8 + i, saved_rgb[i]);
+			vs_color(vh, 8 + i, icon16_rgb[i]);
+		}
+		draw_icon16(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
+	} else {
+		draw_icon(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
+	}
 	y += ih + lh / 2;
 	center_text(y, "Claude ST", 1 | 8);		/* bold, underlined */
 	y += lh;
@@ -2289,6 +2335,9 @@ static void about(void)
 		}
 	}
 	vs_clip(vh, 0, clipr);
+	if (colour)
+		for (i = 0; i < 8; i++)
+			vs_color(vh, 8 + i, saved_rgb[i]);
 	wind_update(2);
 	wind_update(END_UPDATE);
 	{

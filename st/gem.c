@@ -312,6 +312,25 @@ void vst_height(short h, short height, short *cw_, short *ch_)
 	*ch_ = ptsout[3];
 }
 
+void vs_color(short h, short index, const short *rgb)
+{
+	vintin[0] = index;
+	vintin[1] = rgb[0];
+	vintin[2] = rgb[1];
+	vintin[3] = rgb[2];
+	vdi(14, 0, 4, h);
+}
+
+void vq_color(short h, short index, short *rgb)
+{
+	vintin[0] = index;
+	vintin[1] = 0;		/* the value that was set */
+	vdi(26, 0, 2, h);
+	rgb[0] = vintout[1];
+	rgb[1] = vintout[2];
+	rgb[2] = vintout[3];
+}
+
 void vr_recfl(short h, const short *pxy)
 {
 	ptsin[0] = pxy[0];

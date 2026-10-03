@@ -263,11 +263,19 @@ most recent chats. Opening one shows its source.
 
 ![About box](docs/about.png)
 
+On a screen with 16 colours or more (Falcon and TT colour modes), the
+About box shows a colour version of the icon: a putty-beige case like a
+real Atari monitor, a dark CRT screen, the spark in a warm terracotta and
+the prompt in green phosphor. Elsewhere it shows the black-and-white one.
+
+![About box in colour, on a TT](docs/about-colour.png)
+
 The icon is 32×32 one-bit pixel art: the silhouette of the ST's SM124
 monochrome monitor, with a simple eight-ray spark and a GEM-style
 prompt on its dark screen. It's original artwork, not either company's
-logo. `tools/icon/make_icon.py` draws it and writes `st/icon.h` (built
-into the program), `docs/icon.png`, and `st/CLAUDE.ICN`, a standard ICN
+logo. `tools/icon/make_icon.py` draws both versions and writes `st/icon.h`
+and `st/icon16.h` (built into the program), `docs/icon.png`,
+`docs/icon16.png`, and `st/CLAUDE.ICN`, a standard ICN
 file you can load into an icon editor to give `CLAUDE.PRG` its own icon
 on the desktop.
 

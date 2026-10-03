@@ -20,7 +20,7 @@ CLAUDE.PRG: claude.elf ../tools/elf2tos.py
 claude.elf: $(OBJS) link.ld
 	$(CC) $(LDFLAGS) -o $@ $(OBJS)
 
-%.o: %.c tos.h gem.h sting.h bidi.h icon.h
+%.o: %.c tos.h gem.h sting.h bidi.h icon.h icon16.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 crt0.o: crt0.S
