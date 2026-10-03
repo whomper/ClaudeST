@@ -289,6 +289,32 @@ class ArtifactFormats(unittest.TestCase):
         self.assertEqual((name, text), ("REPORT.HTM", "<p>new</p>"))
 
 
+class LongIds(unittest.TestCase):
+    """Artifact ids can be long file paths; the Atari keeps 39 characters."""
+
+    def test_long_artifact_ids_round_trip(self):
+        class LongPaths(DemoBackend):
+            PATH = "abcdef12:/mnt/user-data/outputs/a_rather_long_report_name.html"
+
+            def list_artifacts(self):
+                return [("a1", "short one"), (self.PATH, "report")]
+
+            def get_artifact(self, aid):
+                if aid != self.PATH:
+                    raise RuntimeError("not found: " + aid)
+                return "report", "<p>hi</p>"
+        link = FakeLink()
+        s = Session(link, LongPaths())
+        s.handle(b"LIST\tARTIFACTS")
+        ids = [l[1] for l in link.lines() if l[0] == b"I"]
+        self.assertEqual(ids[0], b"a1")             # short ids are untouched
+        self.assertLessEqual(len(ids[1]), 39)
+        link.sent = b""
+        s.handle(b"OPEN\tARTIFACT\t" + ids[1])
+        self.assertIn([b"T", b"report"], link.lines())
+        self.assertNotIn([b"M", b"E"], link.lines())
+
+
 class SavingArtifacts(unittest.TestCase):
     def test_save_and_fetch(self):
         link = FakeLink()

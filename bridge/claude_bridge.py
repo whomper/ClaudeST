@@ -13,6 +13,7 @@ Examples:
   ./claude_bridge.py --backend demo --pipe st_out.fifo st_in.fifo
 """
 import argparse
+import hashlib
 import logging
 import os
 import socket
@@ -27,6 +28,7 @@ import backends  # noqa: E402
 log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
+MAX_ID = 39              # Claude ST keeps item ids up to this many characters
 HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
 
 
@@ -185,6 +187,7 @@ class Session:
         self.project_id = None
         self.list_kind = "CHATS"
         self.query = ""
+        self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
 
     # -- output --------------------------------------------------------
 
@@ -222,11 +225,22 @@ class Session:
         if back:
             self.out("I", "..", "< All projects")
         for it in items[:299]:
+            iid = self.short_id(it[0])
             if len(it) > 2 and it[2]:
-                self.out("I", it[0], it[1] or "Untitled", "P")
+                self.out("I", iid, it[1] or "Untitled", "P")
             else:
-                self.out("I", it[0], it[1] or "Untitled")
+                self.out("I", iid, it[1] or "Untitled")
         self.out("E")
+
+    def short_id(self, real):
+        """Ids longer than the Atari keeps (artifact file paths, say) are
+        sent as a short, stable stand-in and translated back in handle()."""
+        real = str(real)
+        if len(real) <= MAX_ID:
+            return real
+        short = "~" + hashlib.sha1(real.encode()).hexdigest()[:20]
+        self.long_ids[short] = real
+        return short
 
     def refresh_list(self):
         """Re-send whatever the sidebar is showing, after it changed."""
@@ -428,7 +442,7 @@ class Session:
 
     def handle(self, raw: bytes):
         fields = from_atari(raw).split("\t")
-        cmd, args = fields[0].upper(), fields[1:]
+        cmd, args = fields[0].upper(), [self.long_ids.get(f, f) for f in fields[1:]]
         fn = getattr(self, "cmd_" + cmd.lower(), None)
         log.debug("<- %r", fields)
         if fn is None:

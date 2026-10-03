@@ -38,7 +38,7 @@ All commands are one letter.
 |------|---------|
 | `S` `<text>` | Status line at the bottom of the sidebar. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
-| `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". |
+| `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
 | `E` | End of list. |
 | `Q` | Start a picker list (for "Move to project"). |
 | `J` `<id>` `<label>` | Picker entry. |
