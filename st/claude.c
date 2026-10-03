@@ -12,8 +12,9 @@
 #include "gem.h"
 #include "sting.h"
 #include "bidi.h"
+#include "icon.h"
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -1777,11 +1778,7 @@ static void scroll_list(short delta)
 		dirty |= D_SIDEBAR;
 }
 
-static void about(void)
-{
-	form_alert(1, "[1][Claude ST " VERSION "|Claude.ai for Atari ST/TT/Falcon.|"
-		"Talks to claude_bridge.py|over STinG or serial.][  OK  ]");
-}
+static void about(void);
 
 static void set_baud(short b)
 {
@@ -2020,6 +2017,21 @@ static void dlg_field(const char *buf, short len, short cur, short *start)
 	}
 }
 
+/* a dialog box with a shadow and a double border, like a GEM alert */
+static void dlg_frame(short x, short y, short w, short h)
+{
+	fill(x + 3, y + 3, x + w + 2, y + h + 2, 1);
+	fill(x, y, x + w - 1, y + h - 1, 0);
+	line(x, y, x + w - 1, y, 1);
+	line(x + w - 1, y, x + w - 1, y + h - 1, 1);
+	line(x + w - 1, y + h - 1, x, y + h - 1, 1);
+	line(x, y + h - 1, x, y, 1);
+	line(x + 2, y + 2, x + w - 3, y + 2, 1);
+	line(x + w - 3, y + 2, x + w - 3, y + h - 3, 1);
+	line(x + w - 3, y + h - 3, x + 2, y + h - 3, 1);
+	line(x + 2, y + h - 3, x + 2, y + 2, 1);
+}
+
 /* Asks for a line of text. buf holds the starting text and receives the
  * result (up to max-1 characters). Returns 1 for OK, 0 for Cancel.
  * Keys: typing, Backspace, Clr/Home clears, F10 Hebrew, Return OK, Esc/Undo
@@ -2065,17 +2077,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	clipr[2] = scr_w - 1;
 	clipr[3] = scr_h - 1;
 	vs_clip(vh, 1, clipr);
-	/* box with a shadow, like a GEM alert */
-	fill(dlg_x + 3, dlg_y + 3, dlg_x + dlg_w + 2, dlg_y + dlg_h + 2, 1);
-	fill(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 0);
-	line(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y, 1);
-	line(dlg_x + dlg_w - 1, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 1);
-	line(dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, dlg_x, dlg_y + dlg_h - 1, 1);
-	line(dlg_x, dlg_y + dlg_h - 1, dlg_x, dlg_y, 1);
-	line(dlg_x + 2, dlg_y + 2, dlg_x + dlg_w - 3, dlg_y + 2, 1);
-	line(dlg_x + dlg_w - 3, dlg_y + 2, dlg_x + dlg_w - 3, dlg_y + dlg_h - 3, 1);
-	line(dlg_x + dlg_w - 3, dlg_y + dlg_h - 3, dlg_x + 2, dlg_y + dlg_h - 3, 1);
-	line(dlg_x + 2, dlg_y + dlg_h - 3, dlg_x + 2, dlg_y + 2, 1);
+	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
 	text_bidi(fld_x, dlg_y + ch / 2 + 2, title, tl, 1, 1, 0);
 	/* the field */
 	line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
@@ -2135,6 +2137,167 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	if (res == 1)
 		strlcpy_(buf, edit, max);
 	return res;
+}
+
+/* ---- the About box ---- */
+
+/* the 32x32 icon scaled by sx, sy (2x on square pixels; 2x1 in ST medium,
+ * whose pixels are twice as tall as wide) */
+static unsigned short icon_big[64 * 4];
+
+static void draw_icon(short x, short y, short sx, short sy)
+{
+	MFDB src, dst;
+	short pxy[8], colors[2], r, c, k, wpl = 2 * sx;
+	short w = ICON_W * sx, h = ICON_H * sy;
+
+	memset(icon_big, 0, sizeof(icon_big));
+	for (r = 0; r < ICON_H; r++) {
+		for (c = 0; c < ICON_W; c++) {
+			if (!(icon_bits[r * 2 + c / 16] & (0x8000 >> (c & 15))))
+				continue;
+			for (k = 0; k < sx; k++) {
+				short bx = c * sx + k, yy;
+				for (yy = 0; yy < sy; yy++)
+					icon_big[(r * sy + yy) * wpl + bx / 16] |= 0x8000 >> (bx & 15);
+			}
+		}
+	}
+	memset(&src, 0, sizeof(src));
+	memset(&dst, 0, sizeof(dst));
+	src.fd_addr = icon_big;
+	src.fd_w = w;
+	src.fd_h = h;
+	src.fd_wdwidth = wpl;
+	src.fd_nplanes = 1;
+	pxy[0] = 0;
+	pxy[1] = 0;
+	pxy[2] = w - 1;
+	pxy[3] = h - 1;
+	pxy[4] = x;
+	pxy[5] = y;
+	pxy[6] = x + w - 1;
+	pxy[7] = y + h - 1;
+	colors[0] = 1;		/* set bits black */
+	colors[1] = 0;
+	vrt_cpyfm(vh, 2, pxy, &src, &dst, colors);	/* transparent */
+}
+
+static void center_text(short y, const char *s, short fx)
+{
+	short n = strlen(s);
+	text(dlg_x + (dlg_w - n * cw) / 2, y, s, n, fx, 1);
+}
+
+static void about(void)
+{
+	static char conn[64];
+	short sx = 2, sy = ch >= 16 ? 2 : 1;
+	short ih = ICON_H * sy, lh = ch + (ch >= 16 ? 2 : 1);
+	short m[8], clipr[4], y, done = 0;
+	EVENT e;
+
+	if (link == LINK_TCP && tcp_ip) {
+		char *p;
+		strcpy(conn, "Gateway ");
+		ip_to_str(tcp_ip, conn + 8);
+		p = conn + strlen(conn);
+		*p++ = ':';
+		p = put_num(p, tcp_port);
+		strcpy(p, online ? "  \xF9  online" : "  \xF9  offline");
+	} else {
+		strcpy(conn, baud == BAUD_4800 ? "Serial port, 4800 baud" :
+		       baud == BAUD_9600 ? "Serial port, 9600 baud" : "Serial port, 19200 baud");
+		strcpy(conn + strlen(conn), online ? "  \xF9  online" : "  \xF9  offline");
+	}
+
+	dlg_w = 62 * cw;
+	if (dlg_w > ww - 2 * cw)
+		dlg_w = ww - 2 * cw;
+	/* the content, top to bottom, sets the height (see the drawing below) */
+	btn_h = ch + 6;
+	dlg_h = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh +
+		(lh + lh / 2) + (lh + lh / 2) + 3 * lh + lh / 2 + btn_h + lh;
+	if (dlg_h > wh - 4)
+		dlg_h = wh - 4;
+	dlg_x = wx + (ww - dlg_w) / 2;
+	dlg_y = wy + (wh - dlg_h) / 2;
+	btn_w = 10 * cw;
+	btn_y = dlg_y + dlg_h - btn_h - lh;
+	ok_x = dlg_x + (dlg_w - btn_w) / 2;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);
+	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	graf_mouse(M_OFF, 0);
+	vswr_mode(vh, 2);
+	vsf_perimeter(vh, 0);
+	vst_alignment(vh, 0, 5);
+	clipr[0] = 0;
+	clipr[1] = 0;
+	clipr[2] = scr_w - 1;
+	clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, clipr);
+	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
+
+	y = dlg_y + lh;
+	draw_icon(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
+	y += ih + lh / 2;
+	center_text(y, "Claude ST", 1 | 8);		/* bold, underlined */
+	y += lh;
+	center_text(y, "Version " VERSION, 0);
+	y += lh + lh / 2;
+	center_text(y, "Claude.ai for the Atari ST, TT and Falcon", 0);
+	y += lh + lh / 2;
+	line(dlg_x + 4 * cw, y - lh / 4, dlg_x + dlg_w - 4 * cw, y - lh / 4, 1);
+	y += lh / 4;
+	center_text(y, "Created by Erez Yaary", 1);
+	y += lh;
+	center_text(y, "\xBD 2026 Erez Yaary", 0);
+	y += lh + lh / 2;
+	center_text(y, conn, 0);
+	y += lh + lh / 2;
+	/* the fine print, in the 8x8 system font where the screen has room */
+	{
+		short scw, sch, big = ch >= 16;
+		if (big)
+			vst_height(vh, 6, &scw, &sch);
+		short step = big ? sch + 3 : lh;
+		center_text(y, "Unofficial client, not affiliated with Anthropic or Atari.", 0);
+		y += step;
+		center_text(y, "Claude is a trademark of Anthropic PBC.", 0);
+		y += step;
+		center_text(y, "Atari is a trademark of Atari Interactive.", 0);
+		if (big)
+			vst_height(vh, 13, &scw, &sch);
+	}
+	dlg_button(ok_x, "OK", 1);
+	graf_mouse(M_ON, 0);
+	wait_release();
+
+	/* Return, Esc, Undo, Help, Space or a click closes it */
+	while (!done) {
+		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		if (e.which & MU_KEYBD) {
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			if (as == 0x0d || as == 0x1b || as == ' ' || sc == 0x61 || sc == 0x62)
+				done = 1;
+		}
+		if (e.which & MU_BUTTON) {
+			wait_release();
+			done = 1;
+		}
+	}
+	vs_clip(vh, 0, clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
 }
 
 static void rename_item(const char *kind, ITEM *it)

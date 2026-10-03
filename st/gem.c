@@ -303,6 +303,15 @@ void vst_alignment(short h, short hor, short ver)
 	vdi(39, 0, 2, h);
 }
 
+void vst_height(short h, short height, short *cw_, short *ch_)
+{
+	ptsin[0] = 0;
+	ptsin[1] = height;
+	vdi(12, 1, 0, h);
+	*cw_ = ptsout[2];
+	*ch_ = ptsout[3];
+}
+
 void vr_recfl(short h, const short *pxy)
 {
 	ptsin[0] = pxy[0];
@@ -331,6 +340,21 @@ void vro_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst)
 	contrl[9] = (short)((u32)dst >> 16);
 	contrl[10] = (short)((u32)dst & 0xffff);
 	vdi(109, 4, 1, h);
+}
+
+void vrt_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst, const short *colors)
+{
+	short i;
+	vintin[0] = mode;
+	vintin[1] = colors[0];
+	vintin[2] = colors[1];
+	for (i = 0; i < 8; i++)
+		ptsin[i] = pxy[i];
+	contrl[7] = (short)((u32)src >> 16);
+	contrl[8] = (short)((u32)src & 0xffff);
+	contrl[9] = (short)((u32)dst >> 16);
+	contrl[10] = (short)((u32)dst & 0xffff);
+	vdi(121, 4, 3, h);
 }
 
 void v_gtext_n(short h, short x, short y, const char *s, short n)

@@ -123,6 +123,7 @@ void v_pline(short h, short n, const short *pxy);
 void vst_color(short h, short color);
 void vst_effects(short h, short fx);
 void vst_alignment(short h, short hor, short ver);
+void vst_height(short h, short height, short *cw, short *ch);
 void v_gtext_n(short h, short x, short y, const char *s, short n);
 typedef struct {
 	void *fd_addr;
@@ -130,6 +131,7 @@ typedef struct {
 } MFDB;
 
 void vro_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst);
+void vrt_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst, const short *colors);
 void vq_extnd(short h, short owflag, short *work_out);
 
 #endif
