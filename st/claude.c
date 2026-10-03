@@ -95,6 +95,7 @@ static char input[INMAX + 1];
 static short inlen;
 static short in_cur, in_start;		/* cursor and scroll position in input */
 static short search_mode;
+static short drop_list;		/* a late list that would refill the search pane */
 static short hebrew_kbd;		/* typing in Hebrew (SI-1452 layout) */
 
 /* Israeli SI-1452 layout by key position (scancode 0x10-0x35), giving
@@ -1302,6 +1303,10 @@ static void handle_line(char *s)
 		}
 		break;
 	case 'L':			/* L <kind> <title> : start a list */
+		/* a list asked for before Search was picked: keep the pane empty */
+		drop_list = search_mode && !(n > 1 && !strcmp(f[1], "SEARCH"));
+		if (drop_list)
+			break;
 		if (n > 1)
 			strlcpy_(list_kind, f[1], sizeof(list_kind));
 		strlcpy_(list_title, n > 2 ? f[2] : "", sizeof(list_title));
@@ -1313,7 +1318,7 @@ static void handle_line(char *s)
 		dirty |= D_SIDEBAR;
 		break;
 	case 'I':			/* I <id> <label> */
-		if (nitems < MAXITEMS && n > 2) {
+		if (!drop_list && nitems < MAXITEMS && n > 2) {
 			strlcpy_(items[nitems].id, f[1], sizeof(items[0].id));
 			strlcpy_(items[nitems].label, f[2], sizeof(items[0].label));
 			items[nitems].pinned = n > 3 && f[3][0] == 'P';
@@ -1704,8 +1709,17 @@ static void clear_context(const char *title, const char *hint)
 static void do_search(void)
 {
 	search_mode = 1;
+	nav_pending = -1;
 	inlen = in_cur = in_start = 0;
 	input[0] = 0;
+	/* no results yet: empty the list until a search is run */
+	strlcpy_(list_kind, "SEARCH", sizeof(list_kind));
+	strlcpy_(list_title, "Results", sizeof(list_title));
+	nitems = 0;
+	list_top = 0;
+	lcur = -1;
+	menu_target = -1;
+	dirty |= D_SIDEBAR;
 	clear_context("Search", "Type words from a chat's title in the box below "
 		      "and press Return. Matching chats appear on the left.");
 }
