@@ -205,9 +205,9 @@ class ClaudeAiBackend(Backend):
 
     def project_chats(self, project_id):
         name = "Project"
-        for pid, label, _ in self.list_projects():
-            if pid == project_id:
-                name = label
+        for proj in self.list_projects():
+            if proj[0] == project_id:
+                name = proj[1]
         try:
             convs = self._get("/organizations/%s/projects/%s/conversations" % (self.org, project_id))
         except Exception:
@@ -335,7 +335,8 @@ class ClaudeAiBackend(Backend):
                 self._artifacts[key] = art
 
     def list_artifacts(self):
-        for cid, _ in self.list_chats(limit=self.artifact_scan):
+        for chat in self.list_chats(limit=self.artifact_scan):
+            cid = chat[0]   # (id, title, pinned)
             try:
                 self._harvest_artifacts(self._conversation(cid))
             except Exception:

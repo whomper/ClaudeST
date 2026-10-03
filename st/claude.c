@@ -2934,7 +2934,18 @@ int main(void)
 				handle_rclick(ev.mx, ev.my);
 			else
 				handle_click(ev.mx, ev.my);
-			wait_release();
+			/* act on the press: keep drawing and receiving while the
+			 * button is still down, so one press acts only once */
+			for (;;) {
+				short bx, by, bb, bk, m2[8];
+				EVENT e2;
+				flush_dirty();
+				graf_mkstate(&bx, &by, &bb, &bk);
+				if (!(bb & 3))
+					break;
+				evnt_multi_(MU_TIMER, 0, 0, 0, 20, m2, &e2);
+				poll_link();
+			}
 		}
 		poll_link();
 		/* keep saying hello until the bridge answers (~every 5s) */

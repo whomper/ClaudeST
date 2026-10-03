@@ -207,6 +207,53 @@ class ItemActions(unittest.TestCase):
         self.assertIn([b"M", b"E"], self.link.lines())
 
 
+class ClaudeAiLists(unittest.TestCase):
+    """The claude.ai backend's list handling, with the HTTP calls stubbed."""
+
+    def backend(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "org"
+        be.artifact_scan = 15
+        be._artifacts = {}
+        conv = ClaudeAiParsing.CONV
+        chats = [{"uuid": conv["uuid"], "name": "Snake game", "is_starred": True,
+                  "project_uuid": "p1"}]
+        projects = [{"uuid": "p1", "name": "Games", "is_starred": False}]
+
+        def get(path, **params):
+            if path.endswith("/chat_conversations"):
+                return chats
+            if path.endswith("/projects"):
+                return projects
+            if "/projects/" in path:
+                return chats
+            return conv
+        be._get = get
+        return be
+
+    def test_artifacts_list_from_pinned_chats(self):
+        # list_chats returns (id, title, pinned); this used to crash
+        be = self.backend()
+        self.assertEqual(be.list_chats(), [(ClaudeAiParsing.CONV["uuid"], "Snake game", True)])
+        arts = be.list_artifacts()
+        self.assertEqual([a[1] for a in arts], ["Snake"])
+        title, body = be.get_artifact(arts[0][0])
+        self.assertEqual(title, "Snake")
+        self.assertIn("let x = 1;", body)
+
+    def test_artifacts_over_the_protocol(self):
+        link = FakeLink()
+        Session(link, self.backend()).handle(b"LIST\tARTIFACTS")
+        self.assertNotIn([b"M", b"E"], link.lines())
+        self.assertIn([b"L", b"ARTIFACTS", b"Artifacts"], link.lines())
+
+    def test_project_chats_name(self):
+        name, chats = self.backend().project_chats("p1")
+        self.assertEqual(name, "Games")
+        self.assertEqual(len(chats), 1)
+
+
 class ApiBackendActions(unittest.TestCase):
     """Local storage side of the API backend (no network needed)."""
 
