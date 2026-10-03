@@ -108,6 +108,9 @@ static inline long trap14_w6(short fn, short a, short b, short c, short d, short
 #define Fclose(h)          trap1_ww(0x3e, (h))
 #define Fread(h, n, b)     trap1_wwll(0x3f, (h), (long)(n), (long)(b))
 #define Fwrite(h, n, b)    trap1_wwll(0x40, (h), (long)(n), (long)(b))
+#define Fdelete(n)         trap1_wl(0x41, (long)(n))
+#define Dgetdrv()          trap1_w(0x19)
+#define Dgetpath(b, d)     trap1_wlw(0x47, (long)(b), (d))
 
 /* BIOS - device 1 is AUX: (ST RS-232 / Falcon modem port via Bconmap) */
 #define DEV_AUX 1

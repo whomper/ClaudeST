@@ -93,6 +93,8 @@ short menu_register(short apid, const char *name);
 short rsrc_obfix(OBJECT *tree, short obj);
 short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
+short aes_version(void);
+short fsel_exinput(char *path, char *name, short *button, const char *title);
 OBJECT *rsrc_tree(short index);
 short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h);
 short form_dial(short flag, short x, short y, short w, short h);

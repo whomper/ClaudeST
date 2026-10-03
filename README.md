@@ -254,8 +254,21 @@ created inside it.
 
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are
-stored inside conversations, so **Artifacts** lists the ones in your 15
-most recent chats. Opening one shows its source.
+stored inside conversations, so **Artifacts** lists the ones in your 40
+most recent chats (the bridge remembers chats it has already scanned, so
+opening the list again is quick). It finds all three forms claude.ai has
+used: artifact tool calls, `<antArtifact>` tags in older chats, and files
+Claude created. Opening one shows its source. Right-click it (or `Insert`)
+and choose **Save to disk…** to save it as a file on the Atari. The GEM
+file selector suggests an 8.3 name such as `SNAKE_GA.PY` or `NOTES.MD`,
+and the text is saved in the Atari character set with CR/LF line ends.
+
+If the list stays empty, run this on the Pi. It shows which kinds of
+blocks your recent chats contain, without any of their content:
+
+```sh
+sudo -u claude-st bash -c 'set -a; . /etc/claude-st/claude-st.env; /opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py --probe'
+```
 
 ## About box and icon
 

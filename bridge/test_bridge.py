@@ -216,6 +216,7 @@ class ClaudeAiLists(unittest.TestCase):
         be.org = "org"
         be.artifact_scan = 15
         be._artifacts = {}
+        be._scanned = {}
         conv = ClaudeAiParsing.CONV
         chats = [{"uuid": conv["uuid"], "name": "Snake game", "is_starred": True,
                   "project_uuid": "p1"}]
@@ -252,6 +253,66 @@ class ClaudeAiLists(unittest.TestCase):
         name, chats = self.backend().project_chats("p1")
         self.assertEqual(name, "Games")
         self.assertEqual(len(chats), 1)
+
+
+class ArtifactFormats(unittest.TestCase):
+    """The three ways artifacts appear in claude.ai conversations."""
+
+    def harvest(self, messages):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be._artifacts = {}
+        be._harvest_artifacts({"uuid": "abcdef12-x", "name": "Chat", "chat_messages": messages})
+        return be
+
+    def test_ant_artifact_tags_in_text(self):
+        be = self.harvest([{"sender": "assistant", "content": [{"type": "text", "text":
+            'Here:\n<antArtifact identifier="snake" type="application/vnd.ant.code" '
+            'language="python" title="Snake game">\nprint(1)\n</antArtifact>\nDone.'}]}])
+        (key, art), = be._artifacts.items()
+        self.assertEqual(art["title"], "Snake game")
+        self.assertEqual(art["content"], "print(1)")
+        self.assertEqual(be.artifact_file(key)[0], "SNAKE_GA.PY")
+
+    def test_old_messages_with_only_text(self):
+        be = self.harvest([{"sender": "assistant", "text":
+            '<antArtifact identifier="n" type="text/markdown" title="Notes"># Hi</antArtifact>'}])
+        self.assertEqual(be.artifact_file(next(iter(be._artifacts)))[0], "NOTES.MD")
+
+    def test_file_tools(self):
+        be = self.harvest([{"sender": "assistant", "content": [
+            {"type": "tool_use", "name": "create_file",
+             "input": {"path": "/mnt/user-data/outputs/report.html", "file_text": "<p>old</p>"}},
+            {"type": "tool_use", "name": "str_replace",
+             "input": {"path": "/mnt/user-data/outputs/report.html", "old_str": "old", "new_str": "new"}}]}])
+        name, text = be.artifact_file(next(iter(be._artifacts)))
+        self.assertEqual((name, text), ("REPORT.HTM", "<p>new</p>"))
+
+
+class SavingArtifacts(unittest.TestCase):
+    def test_save_and_fetch(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"SAVE\tARTIFACT\ta1")
+        self.assertEqual(link.lines(), [[b"F", b"FALCON_M.S"]])
+        link.sent = b""
+        s.handle(b"FETCH\tARTIFACT\ta1")
+        lines = link.lines()
+        data = bytes.fromhex("".join(l[1].decode() for l in lines if l[0] == b"D"))
+        self.assertTrue(data.startswith(b"; mix two channels\r\n    move.l"))
+        self.assertIn([b"G", str(len(data)).encode()], lines)
+        for l in lines:
+            self.assertLess(len(b"\t".join(l)), 200)
+
+    def test_empty_artifact_list_says_so(self):
+        class NoArtifacts(DemoBackend):
+            last_scan = 40
+
+            def list_artifacts(self):
+                return []
+        link = FakeLink()
+        Session(link, NoArtifacts()).handle(b"LIST\tARTIFACTS")
+        self.assertIn(b"No artifacts found in your 40 most recent chats.", link.sent)
 
 
 class ApiBackendActions(unittest.TestCase):

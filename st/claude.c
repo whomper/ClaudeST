@@ -113,6 +113,12 @@ static short npick;
 static char pick_chat[40];
 static short pick_x;
 
+/* saving an artifact: SAVE -> F <name> -> file selector -> FETCH -> D.. G */
+static char save_id[40];
+static short save_fd = -1;
+static long save_bytes;
+static char save_path[160];
+
 /* dirty regions */
 #define D_SIDEBAR 1
 #define D_TITLE   2
@@ -150,6 +156,9 @@ static long ticks, last_hello;
 
 static void tx_cmd(const char *a, const char *b, const char *c);
 static void show_picker(void);
+static void choose_save_file(const char *name);
+static void save_chunk(const char *hex);
+static void finish_save(void);
 static void save_config(void);
 
 /* ------------------------------------------------------------------ */
@@ -1304,6 +1313,17 @@ static void handle_line(char *s)
 			nitems++;
 		}
 		break;
+	case 'F':			/* F <name>: where to save the artifact? */
+		if (n > 1 && save_id[0])
+			choose_save_file(f[1]);
+		break;
+	case 'D':			/* D <hex>: a piece of the file being saved */
+		if (save_fd >= 0 && n > 1)
+			save_chunk(f[1]);
+		break;
+	case 'G':			/* G <size>: the file is complete */
+		finish_save();
+		break;
 	case 'Q':			/* start a picker list */
 		npick = 0;
 		break;
@@ -2404,7 +2424,7 @@ static void context_menu(short i, short x, short y)
 {
 	static const char *chat_menu[6];
 	static const char *proj_menu[6];
-	static const char *art_menu[1] = { "Open" };
+	static const char *art_menu[2] = { "Open", "Save to disk..." };
 	ITEM *it = &items[i];
 	short r, y0, y1;
 
@@ -2420,10 +2440,14 @@ static void context_menu(short i, short x, short y)
 	set_menu_target(i);		/* highlight the item before the menu opens */
 
 	if (!strcmp(list_kind, "ARTIFACTS")) {
-		r = popup(x, y1, y0, art_menu, 1);
+		r = popup(x, y1, y0, art_menu, 2);
 		set_menu_target(-1);
 		if (r == 0)
 			open_item(i);
+		else if (r == 1) {
+			strlcpy_(save_id, it->id, sizeof(save_id));
+			tx_cmd("SAVE", "ARTIFACT", it->id);
+		}
 		return;
 	}
 	if (!strcmp(list_kind, "PROJECTS")) {
@@ -2469,6 +2493,99 @@ static void context_menu(short i, short x, short y)
 		break;
 	}
 	set_menu_target(-1);
+}
+
+/* the GEM file selector, starting in the current folder with the name the
+ * bridge suggested; then ask the bridge for the data */
+static void choose_save_file(const char *name)
+{
+	static char path[160], file[16];
+	short drv = (short)Dgetdrv(), button = 0, i;
+	char *p;
+	long fd;
+
+	path[0] = 'A' + drv;
+	path[1] = ':';
+	Dgetpath(path + 2, 0);
+	p = path + strlen(path);
+	if (p[-1] != '\\')
+		*p++ = '\\';
+	strcpy(p, "*.*");
+	strlcpy_(file, name, sizeof(file));
+	flush_dirty();
+	fsel_exinput(path, file, &button, "Save artifact as");
+	dirty |= D_ALL;		/* the selector covered the window */
+	if (!button || !file[0]) {
+		save_id[0] = 0;
+		return;
+	}
+	/* folder from the selector's path (up to the last \) + the name */
+	strcpy(save_path, path);
+	p = save_path;
+	for (i = 0; save_path[i]; i++)
+		if (save_path[i] == '\\')
+			p = save_path + i + 1;
+	strcpy(p, file);
+	fd = Fcreate(save_path, 0);
+	if (fd < 0) {
+		form_alert(1, "[3][Couldn't create that file.|Is the disk write-protected|or full?][ OK ]");
+		save_id[0] = 0;
+		return;
+	}
+	save_fd = (short)fd;
+	save_bytes = 0;
+	set_status("Saving...");
+	tx_cmd("FETCH", "ARTIFACT", save_id);
+}
+
+static short hexval(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	return 0;
+}
+
+static void save_chunk(const char *hex)
+{
+	static u8 buf[128];
+	short n = 0;
+	while (hex[0] && hex[1] && n < (short)sizeof(buf)) {
+		buf[n++] = (u8)(hexval(hex[0]) << 4 | hexval(hex[1]));
+		hex += 2;
+	}
+	if (Fwrite(save_fd, n, buf) != n) {
+		Fclose(save_fd);
+		save_fd = -1;
+		Fdelete(save_path);
+		form_alert(1, "[3][Writing the file failed.|The disk may be full.][ OK ]");
+		return;
+	}
+	save_bytes += n;
+}
+
+static void finish_save(void)
+{
+	static char msg[200];
+	char *p;
+	if (save_fd < 0)
+		return;
+	Fclose(save_fd);
+	save_fd = -1;
+	save_id[0] = 0;
+	strcpy(msg, "[1][Saved ");
+	p = msg + strlen(msg);
+	strlcpy_(p, save_path, 60);
+	p += strlen(p);
+	strcpy(p, "|");
+	p = put_num(p + 1, save_bytes > 65535 ? 65535 : (u16)save_bytes);
+	strcpy(p, save_bytes > 65535 ? "+ bytes][ OK ]" : " bytes][ OK ]");
+	set_status("Saved");
+	flush_dirty();
+	form_alert(1, msg);
 }
 
 static void show_picker(void)

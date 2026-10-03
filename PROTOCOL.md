@@ -26,6 +26,8 @@ flow control). The protocol is the same on both.
 | `ARCHIVE` `PROJECT` `<id>` | Archive a project. |
 | `PICKPROJ` `<chat id>` | The Atari wants a project list for "Move to project"; the bridge answers with `Q`/`J`/`W`. |
 | `MOVE` `<chat id>` `<project id>` | Move a chat into a project. |
+| `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
+| `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
 | `BYE` | Claude ST is quitting. |
 
 ## Bridge → Atari
@@ -51,6 +53,9 @@ All commands are one letter.
 | `Z` | End of message. |
 | `Y` `0`\|`1` | Claude is (not) replying. |
 | `A` `<text>` | Show an alert box. |
+| `F` `<name>` | Suggested 8.3 file name for a `SAVE`; the Atari shows the file selector, then sends `FETCH` (or nothing if cancelled). |
+| `D` `<hex>` | Up to 90 bytes of the file being saved, hex-encoded. Text is already in the Atari character set with CR/LF line ends. |
+| `G` `<size>` | The file is complete. |
 
 Markdown is simplified by the bridge: headings become `H`, `**bold**` and
 `*italic*` markers are dropped, `[text](url)` becomes `text <url>`, and

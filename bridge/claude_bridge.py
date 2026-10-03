@@ -259,7 +259,13 @@ class Session:
             self.project_id = None
             self.send_list("PROJECTS", "Projects", self.be.list_projects())
         elif kind == "ARTIFACTS":
-            self.send_list("ARTIFACTS", "Artifacts", self.be.list_artifacts())
+            self.status("Looking for artifacts...")
+            arts = self.be.list_artifacts()
+            self.send_list("ARTIFACTS", "Artifacts", arts)
+            if not arts:
+                n = getattr(self.be, "last_scan", None)
+                self.message("I", "No artifacts found%s." % (
+                    " in your %d most recent chats" % n if n else ""))
         else:
             self.project_id = None
             self.send_list("CHATS", "Recents", self.be.list_chats())
@@ -398,6 +404,25 @@ class Session:
         self.be.move_chat(chat_id, project_id)
         self._done("Moved to project")
 
+    # -- saving an artifact on the Atari --------------------------------
+
+    def cmd_save(self, kind, item_id, *_):
+        """The Atari wants to save an artifact: suggest a file name; it
+        answers with FETCH once the user has picked where to save it."""
+        name, _ = self.be.artifact_file(item_id)
+        self.out("F", name)
+
+    def cmd_fetch(self, kind, item_id, *_):
+        """Send the artifact as hex-encoded D lines, then G <size>. Text is
+        converted to the Atari character set with CR/LF line ends."""
+        name, text = self.be.artifact_file(item_id)
+        data = b"\r\n".join(to_atari(line) for line in text.split("\n"))
+        self.status("Sending %s..." % name)
+        for i in range(0, len(data), 90):
+            self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + b"\n")
+        self.out("G", len(data))
+        self.status("Online: " + self.be.whoami())
+
     def cmd_bye(self, *_):
         log.info("Atari closed Claude ST")
 
@@ -450,7 +475,7 @@ def make_backend(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backend", choices=["claudeai", "api", "demo"], default="claudeai")
-    link = ap.add_mutually_exclusive_group(required=True)
+    link = ap.add_mutually_exclusive_group()
     link.add_argument("--serial", metavar="DEVICE", help="serial port, e.g. /dev/ttyUSB0 or COM3, or \"auto\"")
     link.add_argument("--tcp", metavar="HOST:PORT", help="listen for the Atari on a TCP port (STinG, WiFi modem)")
     link.add_argument("--pipe", nargs=2, metavar=("FROM_ST", "TO_ST"), help="files/FIFOs (Hatari)")
@@ -461,12 +486,23 @@ def main():
     ap.add_argument("--org", help="claude.ai organization uuid (default: first chat org)")
     ap.add_argument("--model", default="claude-opus-5-5", help="model for --backend api")
     ap.add_argument("--store", default="~/.claude-st", help="history dir for --backend api")
+    ap.add_argument("--probe", action="store_true",
+                    help="claude.ai: list what kinds of blocks your recent chats hold "
+                         "(no content), to diagnose a missing artifact, then exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    if not (args.probe or args.serial or args.tcp or args.pipe):
+        ap.error("one of --serial, --tcp or --pipe is required")
     backend = make_backend(args)
+    if args.probe:
+        if args.backend != "claudeai":
+            ap.error("--probe is for the claude.ai backend")
+        for kind, count in sorted(backend.probe().items()):
+            print("%6d  %s" % (count, kind))
+        return
     if args.serial:
         link = SerialLink(args.serial, args.baud, args.rtscts)
     elif args.tcp:

@@ -7,10 +7,13 @@ api       - the official Anthropic API; chats and projects are stored locally.
 demo      - canned data, no network. For trying the Atari side out.
 """
 import json
+import logging
 import os
 import re
 import time
 import uuid
+
+log = logging.getLogger("claude-st")
 
 Item = tuple  # (id, label)
 
@@ -47,6 +50,11 @@ class Backend:
 
     def get_artifact(self, artifact_id):
         return "Artifact", ""
+
+    def artifact_file(self, artifact_id):
+        """-> (8.3 file name, text) for saving an artifact on the Atari"""
+        title, body = self.get_artifact(artifact_id)
+        return artifact_filename(title), body
 
     # sidebar item actions; kind is "CHAT" or "PROJECT"
     def rename(self, kind, item_id, name):
@@ -109,12 +117,49 @@ def _local_tz():
     return "UTC"
 
 
+# Artifacts appear in claude.ai conversations in several shapes:
+#  - a tool call named "artifacts" (input: id, type, title, command, content)
+#  - <antArtifact identifier=".." type=".." title=".."> ... </antArtifact>
+#    inside an assistant's text (older chats)
+#  - file tools, "create_file" (path, file_text) and "str_replace" (path,
+#    old_str, new_str), used when Claude creates files
+_ANT_ARTIFACT = re.compile(r"<antArtifact\b([^>]*)>(.*?)</antArtifact>", re.S)
+_ATTR = re.compile(r'(\w+)="([^"]*)"')
+
+_EXT_BY_TYPE = {
+    "text/markdown": "MD", "text/html": "HTM", "image/svg+xml": "SVG",
+    "application/vnd.ant.react": "JSX", "application/vnd.ant.mermaid": "MMD",
+    "text/plain": "TXT",
+}
+_EXT_BY_LANG = {
+    "python": "PY", "javascript": "JS", "typescript": "TS", "c": "C", "cpp": "CPP",
+    "c++": "CPP", "java": "JAV", "html": "HTM", "css": "CSS", "json": "JSN",
+    "shell": "SH", "bash": "SH", "sh": "SH", "sql": "SQL", "asm": "S", "assembly": "S",
+    "basic": "BAS", "gfa": "LST", "markdown": "MD", "yaml": "YML", "xml": "XML",
+    "rust": "RS", "go": "GO", "ruby": "RB", "php": "PHP", "pascal": "PAS",
+}
+
+
+def artifact_filename(title, kind="", language="", path=""):
+    """An 8.3 name for saving on the Atari, e.g. "SNAKE_GA.PY"."""
+    stem, ext = "", ""
+    if path:
+        base = os.path.basename(path)
+        stem, _, ext = base.rpartition(".") if "." in base else (base, "", "")
+    if not ext:
+        ext = _EXT_BY_LANG.get((language or "").lower()) or _EXT_BY_TYPE.get(kind, "TXT")
+    stem = stem or title or "ARTIFACT"
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_").upper()[:8] or "ARTIFACT"
+    ext = re.sub(r"[^A-Za-z0-9]", "", ext).upper()[:3] or "TXT"
+    return "%s.%s" % (stem, ext)
+
+
 class ClaudeAiBackend(Backend):
     name = "claude.ai"
     BASE = "https://claude.ai/api"
     ROOT_PARENT = "00000000-0000-4000-8000-000000000000"
 
-    def __init__(self, session_key, org_id=None, artifact_scan=15):
+    def __init__(self, session_key, org_id=None, artifact_scan=40):
         self.http, self.impersonating = _http_session()
         self.http.headers.update({
             "Cookie": "sessionKey=" + session_key,
@@ -130,6 +175,7 @@ class ClaudeAiBackend(Backend):
         self.artifact_scan = artifact_scan
         self.org = org_id or self._pick_org()
         self._artifacts = {}
+        self._scanned = {}      # conversation uuid -> updated_at already scanned
 
     def _get(self, path, **params):
         r = self.http.get(self.BASE + path, params=params or None, timeout=60)
@@ -315,39 +361,96 @@ class ClaudeAiBackend(Backend):
     # is no account-wide listing, so scan the most recent chats.
     def _harvest_artifacts(self, conv):
         cname = conv.get("name") or "Untitled"
+        cid = conv.get("uuid", "")[:8]
         for m in conv.get("chat_messages") or []:
             for block in m.get("content") or []:
-                if block.get("type") != "tool_use" or block.get("name") != "artifacts":
-                    continue
-                inp = block.get("input") or {}
-                aid = inp.get("id")
-                if not aid:
-                    continue
-                cmd = inp.get("command", "create")
-                key = conv["uuid"][:8] + ":" + aid
-                art = self._artifacts.get(key, {"title": aid, "content": "", "chat": cname})
-                if inp.get("title"):
-                    art["title"] = inp["title"]
-                if cmd in ("create", "rewrite") and "content" in inp:
-                    art["content"] = inp["content"]
-                elif cmd == "update" and inp.get("old_str") is not None:
-                    art["content"] = art["content"].replace(inp["old_str"], inp.get("new_str", ""), 1)
-                self._artifacts[key] = art
+                t = block.get("type")
+                if t == "tool_use":
+                    self._artifact_from_tool(cid, cname, block.get("name"), block.get("input") or {})
+                elif t == "text" and "<antArtifact" in (block.get("text") or ""):
+                    self._artifacts_from_text(cid, cname, block["text"])
+            if not m.get("content") and "<antArtifact" in (m.get("text") or ""):
+                self._artifacts_from_text(cid, cname, m["text"])
+
+    def _art(self, key, title, cname):
+        return self._artifacts.setdefault(
+            key, {"title": title, "content": "", "chat": cname, "type": "", "language": "", "path": ""})
+
+    def _artifact_from_tool(self, cid, cname, name, inp):
+        if name == "artifacts":
+            aid = inp.get("id")
+            if not aid:
+                return
+            art = self._art(cid + ":" + aid, inp.get("title") or aid, cname)
+            for f in ("title", "type", "language"):
+                if inp.get(f):
+                    art[f] = inp[f]
+            cmd = inp.get("command", "create")
+            if cmd in ("create", "rewrite") and "content" in inp:
+                art["content"] = inp["content"]
+            elif cmd == "update" and inp.get("old_str") is not None:
+                art["content"] = art["content"].replace(inp["old_str"], inp.get("new_str", ""), 1)
+        elif name in ("create_file", "str_replace") and inp.get("path"):
+            path = inp["path"]
+            art = self._art(cid + ":" + path, os.path.basename(path), cname)
+            art["path"] = path
+            if name == "create_file":
+                art["content"] = inp.get("file_text", inp.get("content", ""))
+            elif inp.get("old_str") is not None:
+                art["content"] = art["content"].replace(inp["old_str"], inp.get("new_str", ""), 1)
+
+    def _artifacts_from_text(self, cid, cname, text):
+        for attrs, body in _ANT_ARTIFACT.findall(text):
+            a = dict(_ATTR.findall(attrs))
+            aid = a.get("identifier") or a.get("title") or "artifact"
+            art = self._art(cid + ":" + aid, a.get("title") or aid, cname)
+            art.update({k: a[k] for k in ("type", "language", "title") if a.get(k)})
+            art["content"] = body.strip("\n")
 
     def list_artifacts(self):
-        for chat in self.list_chats(limit=self.artifact_scan):
-            cid = chat[0]   # (id, title, pinned)
+        convs = self._conversations(self.artifact_scan)
+        for c in convs:
+            stamp = c.get("updated_at") or ""
+            if self._scanned.get(c["uuid"]) == stamp and stamp:
+                continue        # unchanged since the last scan
             try:
-                self._harvest_artifacts(self._conversation(cid))
-            except Exception:
-                continue
-        return [(k, a["title"]) for k, a in self._artifacts.items()]
+                self._harvest_artifacts(self._conversation(c["uuid"]))
+                self._scanned[c["uuid"]] = stamp
+            except Exception as e:
+                log.info("skipping chat %s: %s", c["uuid"], e)
+        self.last_scan = len(convs)
+        order = {c["uuid"][:8]: i for i, c in enumerate(convs)}
+        keys = sorted(self._artifacts, key=lambda k: order.get(k.split(":", 1)[0], 1 << 30))
+        return [(k, self._artifacts[k]["title"]) for k in keys]
 
     def get_artifact(self, artifact_id):
         a = self._artifacts.get(artifact_id)
         if not a:
             return "Artifact", "(artifact not found - reopen the Artifacts list)"
-        return a["title"], "From chat: %s\n\n```\n%s\n```" % (a["chat"], a["content"])
+        return a["title"], "From chat: %s\n\n```%s\n%s\n```" % (a["chat"], a.get("language", ""), a["content"])
+
+    def artifact_file(self, artifact_id):
+        a = self._artifacts.get(artifact_id)
+        if not a:
+            raise RuntimeError("Artifact not found - reopen the Artifacts list.")
+        return artifact_filename(a["title"], a.get("type", ""), a.get("language", ""), a.get("path", "")), a["content"]
+
+    def probe(self, limit=40):
+        """What the recent chats contain, without any content: for the
+        bridge's --probe option, to see where a missing artifact went."""
+        from collections import Counter
+        seen = Counter()
+        for c in self._conversations(limit):
+            conv = self._conversation(c["uuid"])
+            for m in conv.get("chat_messages") or []:
+                for block in m.get("content") or []:
+                    t = block.get("type")
+                    seen[t + (":" + block.get("name") if t == "tool_use" else "")] += 1
+                    if t == "text" and "<antArtifact" in (block.get("text") or ""):
+                        seen["text:<antArtifact>"] += 1
+                if not m.get("content") and "<antArtifact" in (m.get("text") or ""):
+                    seen["text:<antArtifact>"] += 1
+        return seen
 
 
 class LazyBackend:
@@ -547,6 +650,12 @@ class ApiBackend(Backend):
                 return label, "From chat: %s\n\n```%s\n%s```" % (chat, lang, body)
         return "Artifact", "(not found)"
 
+    def artifact_file(self, artifact_id):
+        for aid, label, lang, body, chat in self._artifact_index():
+            if aid == artifact_id:
+                return artifact_filename(chat, language=lang), body
+        raise RuntimeError("Artifact not found.")
+
 
 # ---------------------------------------------------------------------------
 # Demo
@@ -644,6 +753,9 @@ class DemoBackend(Backend):
 
     def list_artifacts(self):
         return [("a1", "falcon_mixer.s")]
+
+    def artifact_file(self, artifact_id):
+        return "FALCON_M.S", "; mix two channels\n    move.l  (a0)+,d0\n    add.l   (a1)+,d0\n    move.l  d0,(a2)+\n"
 
     def get_artifact(self, artifact_id):
         return "falcon_mixer.s", "```asm\n; mix two channels\n    move.l  (a0)+,d0\n    add.l   (a1)+,d0\n    move.l  d0,(a2)+\n```"

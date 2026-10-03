@@ -10,7 +10,7 @@ static short control[5];
 static short global[15];
 static short aintin[16];
 static short aintout[7];
-static void *addrin[2];
+static void *addrin[3];
 static void *addrout[1];
 
 static void *aespb[6] = { control, global, aintin, aintout, addrin, addrout };
@@ -96,6 +96,27 @@ short rsrc_obfix(OBJECT *tree, short obj)
 	aintin[0] = obj;
 	addrin[0] = tree;
 	return aes(114, 1, 1, 1, 0);
+}
+
+short aes_version(void)
+{
+	return global[0];
+}
+
+/* the GEM file selector; the titled version needs AES 1.4 (TOS 1.04) */
+short fsel_exinput(char *path, char *name, short *button, const char *title)
+{
+	short r;
+	addrin[0] = path;
+	addrin[1] = name;
+	if (aes_version() >= 0x0104) {
+		addrin[2] = (void *)title;
+		r = aes(91, 0, 2, 3, 0);
+	} else {
+		r = aes(90, 0, 2, 2, 0);
+	}
+	*button = aintout[1];
+	return r;
 }
 
 short rsrc_load(const char *name)
