@@ -16,4 +16,8 @@ short bidi_has_rtl(const char *s, short n);
 #define BIDI_MAX 256
 void bidi_visual(const char *src, short n, short rtl, char *dst);
 
+/* the same, also giving for each logical index i its visual position
+ * pos[i] and whether that character runs right to left (odd[i]) */
+void bidi_visual_map(const char *src, short n, short rtl, char *dst, short *pos, unsigned char *odd);
+
 #endif

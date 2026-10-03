@@ -89,6 +89,7 @@ static short online;
 #define INMAX 1000
 static char input[INMAX + 1];
 static short inlen;
+static short in_cur, in_start;		/* cursor and scroll position in input */
 static short search_mode;
 static short hebrew_kbd;		/* typing in Hebrew (SI-1452 layout) */
 
@@ -960,6 +961,133 @@ static short blit_scroll(short n)
 	return 1;
 }
 
+/* ---- a one-line text editor, shared by the reply line and dialogs ---- */
+
+static u8 key_char(short kstate, short kr);
+
+static short is_space(char c)
+{
+	return c == ' ';
+}
+
+/* Handles a key for the text in buf (len characters, cursor at *cur).
+ * Returns 1 if the key was used. Arrows move the cursor (with Shift: to
+ * the start/end; with Control: by word), in screen direction when the
+ * text is Hebrew. Backspace/Delete remove, other keys insert. */
+static short edit_key(char *buf, short *len, short *cur, short max, short kstate, short kr)
+{
+	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff, c;
+	short shift = kstate & (K_LSHIFT | K_RSHIFT);
+	short ctrl = (kstate & K_CTRL) || scan == 0x73 || scan == 0x74;
+	short dir = 0;
+
+	if (scan == 0x4b || scan == 0x73)
+		dir = -1;
+	else if (scan == 0x4d || scan == 0x74)
+		dir = 1;
+	if (dir) {
+		if (bidi_is_rtl(buf, *len))	/* Hebrew: left goes forward */
+			dir = -dir;
+		if (shift)
+			*cur = dir < 0 ? 0 : *len;
+		else if (ctrl) {
+			short p = *cur;
+			if (dir < 0) {
+				while (p > 0 && is_space(buf[p - 1]))
+					p--;
+				while (p > 0 && !is_space(buf[p - 1]))
+					p--;
+			} else {
+				while (p < *len && !is_space(buf[p]))
+					p++;
+				while (p < *len && is_space(buf[p]))
+					p++;
+			}
+			*cur = p;
+		} else {
+			*cur += dir;
+			if (*cur < 0)
+				*cur = 0;
+			if (*cur > *len)
+				*cur = *len;
+		}
+		return 1;
+	}
+	if (ascii == 0x08) {			/* Backspace */
+		if (*cur > 0) {
+			memmove(buf + *cur - 1, buf + *cur, *len - *cur);
+			(*len)--;
+			(*cur)--;
+		}
+		return 1;
+	}
+	if (ascii == 0x7f || scan == 0x53) {	/* Delete */
+		if (*cur < *len) {
+			memmove(buf + *cur, buf + *cur + 1, *len - *cur - 1);
+			(*len)--;
+		}
+		return 1;
+	}
+	c = key_char(kstate, kr);
+	if (c) {
+		if (*len < max) {
+			memmove(buf + *cur + 1, buf + *cur, *len - *cur);
+			buf[*cur] = c;
+			(*len)++;
+			(*cur)++;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+/* Draws the editable text in the area from x (cols characters wide) and
+ * the cursor; scrolls *start to keep the cursor visible. Hebrew text is
+ * shown right to left and right-aligned. */
+static void edit_draw(const char *buf, short len, short cur, short *start,
+		      short x, short y, short cols)
+{
+	static char vis[BIDI_MAX];
+	static short pos[BIDI_MAX];
+	static u8 odd[BIDI_MAX];
+	short n, c, rtl, x0, xc;
+
+	if (cols > BIDI_MAX)
+		cols = BIDI_MAX;
+	if (cur < *start)
+		*start = cur;
+	if (cur > *start + cols - 1)
+		*start = cur - (cols - 1);
+	if (*start > 0 && len - *start < cols - 1)
+		*start = len - (cols - 1) > 0 ? len - (cols - 1) : 0;
+	n = len - *start;
+	if (n > cols)
+		n = cols;
+	c = cur - *start;
+
+	if (n == 0) {
+		fill(x, y, x + 1, y + ch - 1, 1);
+		return;
+	}
+	rtl = bidi_is_rtl(buf, len);
+	if (!rtl && !bidi_has_rtl(buf + *start, n)) {
+		text(x, y, buf + *start, n, 0, 1);
+		xc = x + c * cw;
+	} else {
+		bidi_visual_map(buf + *start, n, rtl, vis, pos, odd);
+		x0 = rtl ? x + cols * cw - n * cw : x;
+		text(x0, y, vis, n, 0, 1);
+		/* the cursor sits before character c, on its leading side */
+		if (c < n)
+			xc = x0 + (odd[c] ? pos[c] + 1 : pos[c]) * cw;
+		else
+			xc = x0 + (odd[n - 1] ? pos[n - 1] : pos[n - 1] + 1) * cw;
+	}
+	if (xc > x)
+		xc--;
+	fill(xc, y, xc + 1, y + ch - 1, 1);
+}
+
 static void draw_input(void)
 {
 	short badge = hebrew_kbd;
@@ -969,7 +1097,6 @@ static void draw_input(void)
 	const char *prompt = search_mode ? "Find: " : "> ";
 	short pl = strlen(prompt);
 	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
-	short start = inlen > avail ? inlen - avail : 0;
 	short tyy = y1 + (y2 - y1 - ch) / 2 + 1;
 	short tx0 = x1 + cw / 2;
 
@@ -988,12 +1115,8 @@ static void draw_input(void)
 		text(tx0 + pl * cw, tyy, ph, n, 2, 1);
 		fill(tx0 + pl * cw, tyy, tx0 + pl * cw + 1, tyy + ch - 1, 1);
 	} else {
-		short n = inlen - start;
-		short xs = tx0 + pl * cw;
-		short xt = text_bidi(xs, tyy, input + start, n, 0, 1, x2 - (hebrew_kbd ? 4 : 1) * cw);
-		/* the cursor sits at the end of the text: on the left when typing Hebrew */
-		short xc = (xt != xs || (n > 0 && bidi_is_rtl(input + start, n))) ? xt - 3 : xs + n * cw;
-		fill(xc, tyy, xc + 1, tyy + ch - 1, 1);
+		edit_draw(input, inlen, in_cur, &in_start, tx0 + pl * cw, tyy,
+			  avail + 1);
 	}
 	if (badge) {
 		/* "HE": the keyboard types Hebrew */
@@ -1552,7 +1675,7 @@ static void clear_context(const char *title, const char *hint)
 static void do_search(void)
 {
 	search_mode = 1;
-	inlen = 0;
+	inlen = in_cur = in_start = 0;
 	input[0] = 0;
 	clear_context("Search", "Type words from a chat's title in the box below "
 		      "and press Return. Matching chats appear on the left.");
@@ -1596,7 +1719,7 @@ static void submit(void)
 	} else {
 		return;
 	}
-	inlen = 0;
+	inlen = in_cur = in_start = 0;
 	input[0] = 0;
 	dirty |= D_INPUT;
 }
@@ -1861,7 +1984,6 @@ static short popup(short x, short y, short alt_y, const char *const *lab, short 
 /* ------------------------------------------------------------------ */
 
 static void toggle_hebrew(void);
-static u8 key_char(short kstate, short kr);
 
 static short dlg_x, dlg_y, dlg_w, dlg_h, fld_x, fld_y, fld_w, fld_cols;
 static short btn_y, btn_h, ok_x, cancel_x, btn_w;
@@ -1883,17 +2005,12 @@ static void dlg_button(short x, const char *label, short is_default)
 	text(x + (btn_w - n * cw) / 2, btn_y + (btn_h - ch) / 2, label, n, is_default ? 1 : 0, 1);
 }
 
-static void dlg_field(const char *buf, short len)
+static void dlg_field(const char *buf, short len, short cur, short *start)
 {
-	short start = len > fld_cols - 1 ? len - (fld_cols - 1) : 0;
-	short n = len - start, xs = fld_x + cw / 2, xt, xc;
 	short ty_ = fld_y + 3;
 
 	fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
-	xt = text_bidi(xs, ty_, buf + start, n, 0, 1, fld_x + fld_w - cw / 2);
-	/* cursor at the end of the text: on the left when it's Hebrew */
-	xc = (xt != xs || (n > 0 && bidi_is_rtl(buf + start, n))) ? xt - 3 : xs + n * cw;
-	fill(xc, ty_, xc + 1, ty_ + ch - 1, 1);
+	edit_draw(buf, len, cur, start, fld_x + cw / 2, ty_, fld_cols - 1);
 	if (hebrew_kbd) {
 		short bx = fld_x + fld_w + cw / 2;
 		fill(bx - 2, fld_y + 1, bx + 2 * cw + 1, fld_y + ch + 4, 1);
@@ -1910,13 +2027,14 @@ static void dlg_field(const char *buf, short len)
 static short text_dialog(const char *title, const char *ok_label, char *buf, short max)
 {
 	char edit[128];
-	short len, res = -1, clipr[4], m[8], tl = strlen(title);
+	short len, cur, start = 0, res = -1, clipr[4], m[8], tl = strlen(title);
 	EVENT e;
 
 	if (max > (short)sizeof(edit))
 		max = sizeof(edit);
 	strlcpy_(edit, buf, max);
 	len = strlen(edit);
+	cur = len;
 
 	fld_cols = 44;
 	if (fld_cols > ww / cw - 10)
@@ -1964,7 +2082,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
 	line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
 	line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
-	dlg_field(edit, len);
+	dlg_field(edit, len, cur, &start);
 	dlg_button(cancel_x, "Cancel", 0);
 	dlg_button(ok_x, ok_label, 1);
 	graf_mouse(M_ON, 0);
@@ -1973,26 +2091,21 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	while (res < 0) {
 		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
 		if (e.which & MU_KEYBD) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff, c;
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
 			short changed = 1;
 			if (as == 0x0d)
 				res = 1;
 			else if (as == 0x1b || sc == 0x61)
 				res = 0;
-			else if (as == 0x08) {
-				if (len > 0)
-					len--;
-			} else if (sc == 0x47)
-				len = 0;
+			else if (sc == 0x47)		/* Clr/Home clears */
+				len = cur = start = 0;
 			else if (sc == 0x44)
 				toggle_hebrew();
-			else if ((c = key_char(e.kstate, e.kreturn)) && len < max - 1)
-				edit[len++] = c;
 			else
-				changed = 0;
+				changed = edit_key(edit, &len, &cur, max - 1, e.kstate, e.kreturn);
 			if (changed && res < 0) {
 				graf_mouse(M_OFF, 0);
-				dlg_field(edit, len);
+				dlg_field(edit, len, cur, &start);
 				graf_mouse(M_ON, 0);
 			}
 		}
@@ -2355,7 +2468,7 @@ static void handle_key(short kstate, short kr)
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
 	case 0x62: about(); return;					/* Help */
-	case 0x61: inlen = 0; search_mode = 0; dirty |= D_INPUT | D_SIDEBAR; return; /* Undo */
+	case 0x61: inlen = in_cur = in_start = 0; search_mode = 0; dirty |= D_INPUT | D_SIDEBAR; return; /* Undo */
 	case 0x52:						/* Insert: item menu */
 		{
 			short i = lcur;
@@ -2389,29 +2502,19 @@ static void handle_key(short kstate, short kr)
 			submit();
 		}
 		return;
-	case 0x08:				/* Backspace */
-		if (inlen > 0) {
-			inlen--;
-			dirty |= D_INPUT;
-		}
-		return;
 	case 0x1b:				/* Esc */
 		if (lcur >= 0) {
 			lcur = -1;
 			dirty |= D_SIDEBAR;
 		}
-		inlen = 0;
+		inlen = in_cur = in_start = 0;
 		search_mode = 0;
 		dirty |= D_INPUT | D_SIDEBAR;
 		return;
 	}
-	/* Hebrew layout: unshifted letter keys type Hebrew, Shift still gives
-	 * English capitals; Control/Alternate combinations are left alone */
-	ascii = key_char(kstate, kr);
-	if (ascii && inlen < INMAX) {
-		input[inlen++] = ascii;
+	/* editing keys and typing (key_char handles the Hebrew layout) */
+	if (edit_key(input, &inlen, &in_cur, INMAX, kstate, kr))
 		dirty |= D_INPUT;
-	}
 }
 
 /* ------------------------------------------------------------------ */

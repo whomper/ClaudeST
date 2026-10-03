@@ -51,5 +51,18 @@ int main(void)
 	check("is_rtl", bidi_is_rtl("  " ALEF "abc", 5) ? "y" : "n", 0, "y");
 	check("is_rtl digits are weak", bidi_is_rtl("1 " ALEF, 3) ? "y" : "n", 0, "y");
 	check("is_rtl latin first", bidi_is_rtl("a " ALEF, 3) ? "y" : "n", 0, "n");
+	{
+		/* "AB 12" in RTL: visual "12 BA"; logical 0 (A) is at visual 4 */
+		char out[8];
+		short pos[8];
+		unsigned char odd[8];
+		bidi_visual_map(ALEF BET " 12", 5, 1, out, pos, odd);
+		if (pos[0] != 4 || pos[1] != 3 || pos[3] != 0 || pos[4] != 1 || !odd[0] || odd[3]) {
+			printf("FAIL map %d %d %d %d\n", pos[0], pos[1], pos[3], pos[4]);
+			fails++;
+		} else {
+			printf("ok   logical->visual map\n");
+		}
+	}
 	return fails != 0;
 }

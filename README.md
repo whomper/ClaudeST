@@ -198,6 +198,7 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Send a message | — | type, then `Return` |
 | Scroll the conversation | scroll bar, or click the upper/lower half | `↑` `↓`, `Shift+↑/↓` by page, `Clr/Home` top, `Shift+Clr/Home` bottom |
 | Type in Hebrew (on/off) | Options ▸ Hebrew keys | `F10` |
+| Edit the reply line or a dialog field | — | `←` `→` move, `Shift+←/→` start/end, `Ctrl+←/→` by word, `Backspace`/`Delete` |
 | Clear the input | — | `Esc` / `Undo` |
 | Reconnect to the bridge | File ▸ Reconnect | `Ctrl+R` |
 | Set the gateway address | Options ▸ Network (STinG) | type `/connect 192.168.1.10` |
@@ -213,7 +214,8 @@ progress. The open chat is outlined meanwhile, so the two can't be
 confused. The menu opens just below the item, or above it near the
 bottom of the list. Pinned items move to the top of the list and show a
 small diamond. Rename opens a small dialog with the current name in a text field:
-edit it and press `Return` or click **Rename**, or press `Esc`/`Undo` or
+edit it anywhere (the arrow keys move the cursor) and press `Return` or
+click **Rename**, or press `Esc`/`Undo` or
 click **Cancel**. `Clr/Home` clears the field and `F10` switches it to
 Hebrew typing. Delete always asks first. The
 sidebar width you drag to is remembered in `CLAUDE.INF`.

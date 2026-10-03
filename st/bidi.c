@@ -66,9 +66,12 @@ static u8 mirror(u8 c)
 	return c;
 }
 
-void bidi_visual(const char *src, short n, short rtl, char *dst)
+/* reorder src into dst; if pos/odd are given, also report for each
+ * logical index its visual index and whether it runs right to left */
+void bidi_visual_map(const char *src, short n, short rtl, char *dst, short *pos, u8 *odd)
 {
 	u8 k[BIDI_MAX], lv[BIDI_MAX];
+	short idx[BIDI_MAX];
 	short i, j, top = 0, level;
 	short base = rtl ? C_R : C_L;
 
@@ -101,7 +104,10 @@ void bidi_visual(const char *src, short n, short rtl, char *dst)
 			lv[i] = k[i] == C_R ? 1 : 0;
 		if (lv[i] > top)
 			top = lv[i];
+		if (odd)
+			odd[i] = lv[i] & 1;
 		dst[i] = src[i];
+		idx[i] = i;
 	}
 
 	/* reverse runs, from the highest level down to 1 */
@@ -118,10 +124,13 @@ void bidi_visual(const char *src, short n, short rtl, char *dst)
 				while (a < b) {
 					char t = dst[a];
 					u8 tl = lv[a];
+					short ti = idx[a];
 					dst[a] = dst[b];
 					dst[b] = t;
 					lv[a] = lv[b];
 					lv[b] = tl;
+					idx[a] = idx[b];
+					idx[b] = ti;
 					a++;
 					b--;
 				}
@@ -131,7 +140,15 @@ void bidi_visual(const char *src, short n, short rtl, char *dst)
 	}
 
 	/* mirrored glyphs for right-to-left brackets */
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++) {
 		if (lv[i] & 1)
 			dst[i] = (char)mirror((u8)dst[i]);
+		if (pos)
+			pos[idx[i]] = i;
+	}
+}
+
+void bidi_visual(const char *src, short n, short rtl, char *dst)
+{
+	bidi_visual_map(src, n, rtl, dst, 0, 0);
 }
