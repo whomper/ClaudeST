@@ -79,6 +79,8 @@ static ITEM items[MAXITEMS];
 static short nitems, list_top;
 static short lcur = -1;			/* keyboard cursor in the list */
 static short menu_target = -1;		/* item the open popup menu acts on */
+static short nav_pressed = -1;		/* top menu entry under a held mouse button */
+static short nav_pending = -1;		/* area chosen, its list not arrived yet */
 static char list_kind[12] = "CHATS";
 static char list_title[48] = "Recents";
 static char cur_id[40];
@@ -752,8 +754,12 @@ static const char *nav_labels[5] = { "+ New chat", "  Search", "  Chats", "  Pro
 
 static short nav_active(short i)
 {
+	if (nav_pressed >= 0)	/* pressed: show it at once, on mouse-down */
+		return i == nav_pressed;
 	if (search_mode)	/* typing a search: Search is the active area */
 		return i == 1;
+	if (nav_pending >= 0)	/* chosen, waiting for the bridge's list */
+		return i == nav_pending;
 	if (i == 2)
 		return !strcmp(list_kind, "CHATS");
 	if (i == 3)
@@ -1303,6 +1309,7 @@ static void handle_line(char *s)
 		list_top = 0;
 		lcur = -1;
 		menu_target = -1;
+		nav_pending = -1;
 		dirty |= D_SIDEBAR;
 		break;
 	case 'I':			/* I <id> <label> */
@@ -1706,6 +1713,8 @@ static void do_search(void)
 static void do_list(const char *kind)
 {
 	search_mode = 0;
+	nav_pending = !strcmp(kind, "PROJECTS") ? 3 : !strcmp(kind, "ARTIFACTS") ? 4 : 2;
+	dirty |= D_SIDEBAR;
 	tx_cmd("LIST", kind, 0);
 	if (!strcmp(kind, "PROJECTS"))
 		clear_context("Projects", "Pick a project on the left to see its chats.");
@@ -2722,6 +2731,8 @@ static void handle_click(short mx, short my)
 		for (i = 0; i < 5; i++) {
 			short y = nav_y + i * row_h;
 			if (my >= y && my < y + row_h) {
+				nav_pressed = i;
+				dirty |= D_SIDEBAR;
 				switch (i) {
 				case 0: do_new_chat(); break;
 				case 1: do_search(); break;
@@ -3058,8 +3069,14 @@ int main(void)
 				EVENT e2;
 				flush_dirty();
 				graf_mkstate(&bx, &by, &bb, &bk);
-				if (!(bb & 3))
+				if (!(bb & 3)) {
+					if (nav_pressed >= 0) {
+						nav_pressed = -1;
+						dirty |= D_SIDEBAR;
+						flush_dirty();
+					}
 					break;
+				}
 				evnt_multi_(MU_TIMER, 0, 0, 0, 20, m2, &e2);
 				poll_link();
 			}
