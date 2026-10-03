@@ -91,6 +91,20 @@ class Protocol(unittest.TestCase):
         self.assertEqual(self.s.chat_id, "d5")
         self.assertIn([b"C", b"d5"], lines)
 
+    def test_quiet_new_keeps_the_atari_title_and_starts_fresh(self):
+        self.s.handle(b"OPEN\tCHAT\td1")
+        self.link.sent = b""
+        self.s.handle(b"NEW\tQUIET")
+        self.assertEqual(self.link.lines(), [[b"C", b""]])
+        self.assertIsNone(self.s.chat_id)
+
+    def test_new_chat_inside_an_open_project(self):
+        self.s.handle(b"OPEN\tPROJECT\tp1")
+        self.s.handle(b"NEW\tQUIET")
+        self.s.handle(b"SEND\thello")
+        name, chats = self.s.be.project_chats("p1")
+        self.assertIn("hello", [c[1] for c in chats])
+
     def test_project_and_back(self):
         self.s.handle(b"OPEN\tPROJECT\tp1")
         lines = self.link.lines()

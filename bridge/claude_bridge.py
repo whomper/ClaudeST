@@ -294,10 +294,13 @@ class Session:
             self.message(role, body)
         self.status("Online: " + self.be.whoami())
 
-    def cmd_new(self, *_):
+    def cmd_new(self, quiet="", *_):
+        """Start a new chat. QUIET: the Atari switched to another area and
+        sets its own title; the next message still starts a new chat."""
         self.chat_id = None
         self.out("C", "")
-        self.out("T", "New chat")
+        if quiet != "QUIET":
+            self.out("T", "New chat")
 
     def cmd_send(self, text="", *_):
         text = text.strip()

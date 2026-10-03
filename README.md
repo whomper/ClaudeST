@@ -212,8 +212,10 @@ stays highlighted while the menu, a confirmation or a rename is in
 progress. The open chat is outlined meanwhile, so the two can't be
 confused. The menu opens just below the item, or above it near the
 bottom of the list. Pinned items move to the top of the list and show a
-small diamond. Rename puts the current name in the reply line: edit it and
-press `Return`, or `Esc` to cancel. Delete always asks first. The
+small diamond. Rename opens a small dialog with the current name in a text field:
+edit it and press `Return` or click **Rename**, or press `Esc`/`Undo` or
+click **Cancel**. `Clr/Home` clears the field and `F10` switches it to
+Hebrew typing. Delete always asks first. The
 sidebar width you drag to is remembered in `CLAUDE.INF`.
 
 On claude.ai, these actions use the same private endpoints as the
@@ -239,6 +241,12 @@ gives ש, `,` gives ת, `.` gives ץ, `/` gives a full stop, and `Q`/`W`
 give `/` and `'`. An **HE** badge shows in the reply box while it's on.
 Shift still types English capitals, and keys are mapped by position, so
 any national Atari keyboard works. The setting is saved in `CLAUDE.INF`.
+
+Switching area (**Search**, **Chats**, **Projects**, **Artifacts**, or
+opening a project) clears the conversation pane and shows a hint for that
+area, so nothing on screen belongs to the previous chat. What you type
+next starts a new chat. After you open a project, the new chat is
+created inside it.
 
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are

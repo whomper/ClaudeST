@@ -68,7 +68,7 @@ static short last_slider_pos = -1, last_slider_size = -1;
 /* sidebar list */
 typedef struct {
 	char id[40];
-	char label[44];
+	char label[72];
 	char pinned;
 } ITEM;
 
@@ -101,8 +101,6 @@ static const u8 hebrew_keys[0x36 - 0x10] = {
 	/* 29 ` lshift \ */ 0, 0, 0,
 	/* 2c z../ */ 0xC8, 0xD0, 0xC3, 0xC6, 0xCF, 0xCE, 0xD3, 0xD7, 0xDC, '.'
 };
-static short rename_mode;		/* input line edits a name */
-static char rn_kind[10], rn_id[40];
 
 /* "move to project" picker, filled by the bridge (Q/J/W) */
 #define PICKMAX 20
@@ -742,6 +740,8 @@ static const char *nav_labels[5] = { "+ New chat", "  Search", "  Chats", "  Pro
 
 static short nav_active(short i)
 {
+	if (search_mode)	/* typing a search: Search is the active area */
+		return i == 1;
 	if (i == 2)
 		return !strcmp(list_kind, "CHATS");
 	if (i == 3)
@@ -806,9 +806,8 @@ static void draw_sidebar(void)
 			n = maxc - (it->pinned ? 1 : 0);
 		{
 			short cur = cur_id[0] && !strcmp(it->id, cur_id);
-			short target = list_top + i == menu_target ||
-				(rename_mode && !strcmp(it->id, rn_id));
-			short sel = (menu_target >= 0 || rename_mode) ? target : cur;
+			short target = list_top + i == menu_target;
+			short sel = menu_target >= 0 ? target : cur;
 			if (sel)
 				fill(wx + 4, y - 1, wx + sb_w - 5, y + row_h - 3, 1);
 			else if (cur) {
@@ -967,7 +966,7 @@ static void draw_input(void)
 	short y = wy + wh - input_h;
 	short x1 = px + cw / 2, x2 = px + pw - cw / 2 - 1;
 	short y1 = y + 2, y2 = wy + wh - 3;
-	const char *prompt = rename_mode ? "Rename: " : search_mode ? "Find: " : "> ";
+	const char *prompt = search_mode ? "Find: " : "> ";
 	short pl = strlen(prompt);
 	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
 	short start = inlen > avail ? inlen - avail : 0;
@@ -981,7 +980,7 @@ static void draw_input(void)
 	line(x2, y2, x1, y2, 1);
 	line(x1, y2, x1, y1, 1);
 	text(tx0, tyy, prompt, pl, 1, 1);
-	if (inlen == 0 && !search_mode && !rename_mode) {
+	if (inlen == 0 && !search_mode) {
 		const char *ph = busy ? "Claude is replying..." : "Reply to Claude...";
 		short n = strlen(ph);
 		if (n > avail)
@@ -1087,14 +1086,6 @@ static void update_slider(void)
 
 static void flush_dirty(void)
 {
-	{
-		/* the item being renamed is highlighted while the rename lasts */
-		static short drawn_rename = 0;
-		if (rename_mode != drawn_rename) {
-			drawn_rename = rename_mode;
-			dirty |= D_SIDEBAR;
-		}
-	}
 	if (pending_scroll) {
 		if (text_dirty_row > 0 && blit_scroll(pending_scroll)) {
 			short keep = rows - pending_scroll - 1;
@@ -1535,7 +1526,7 @@ static void set_window_name(void)
 
 static void do_new_chat(void)
 {
-	search_mode = 0; rename_mode = 0;
+	search_mode = 0;
 	cur_id[0] = 0;
 	strcpy(chat_title, "New chat");
 	clear_text();
@@ -1545,29 +1536,45 @@ static void do_new_chat(void)
 	dirty |= D_ALL;
 }
 
+/* switching to another area of the sidebar: empty the conversation pane
+ * and start afresh, so nothing typed next lands in the previous chat */
+static void clear_context(const char *title, const char *hint)
+{
+	cur_id[0] = 0;
+	strlcpy_(chat_title, title, sizeof(chat_title));
+	clear_text();
+	begin_message('I');
+	append(hint, strlen(hint));
+	tx_cmd("NEW", "QUIET", 0);
+	dirty |= D_ALL;
+}
+
 static void do_search(void)
 {
-	search_mode = 1; rename_mode = 0;
+	search_mode = 1;
 	inlen = 0;
 	input[0] = 0;
-	dirty |= D_INPUT;
+	clear_context("Search", "Type words from a chat's title in the box below "
+		      "and press Return. Matching chats appear on the left.");
 }
 
 static void do_list(const char *kind)
 {
-	search_mode = 0; rename_mode = 0;
+	search_mode = 0;
 	tx_cmd("LIST", kind, 0);
-	dirty |= D_INPUT;
+	if (!strcmp(kind, "PROJECTS"))
+		clear_context("Projects", "Pick a project on the left to see its chats.");
+	else if (!strcmp(kind, "ARTIFACTS"))
+		clear_context("Artifacts", "Pick an artifact on the left to view it.");
+	else
+		clear_context("New chat", "Pick a chat on the left, or type below "
+			      "to start a new one.");
 }
 
 static void submit(void)
 {
 	input[inlen] = 0;
-	if (rename_mode) {
-		rename_mode = 0;
-		if (inlen > 0)
-			tx_cmd4("RENAME", rn_kind, rn_id, input);
-	} else if (!search_mode && !memcmp(input, "/connect ", 9)) {
+	if (!search_mode && !memcmp(input, "/connect ", 9)) {
 		u32 ip;
 		u16 port = tcp_port;
 		if (parse_ip(input + 9, &ip, &port)) {
@@ -1582,7 +1589,8 @@ static void submit(void)
 		use_link(LINK_SERIAL);
 	} else if (search_mode) {
 		tx_cmd("FIND", input, 0);
-		search_mode = 0; rename_mode = 0;
+		search_mode = 0;
+		dirty |= D_SIDEBAR;
 	} else if (inlen > 0) {
 		tx_cmd("SEND", input, 0);
 	} else {
@@ -1606,6 +1614,13 @@ static void open_item(short i)
 		return;
 	}
 	tx_cmd("OPEN", kind, it->id);
+	if (!strcmp(kind, "PROJECT")) {
+		static char hint[120];
+		strcpy(hint, "Pick a chat of this project on the left, or type below to "
+		       "start a new chat in it.");
+		clear_context(it->label, hint);
+		/* the bridge stays in the project, so a new chat is created there */
+	}
 	if (!strcmp(kind, "CHAT")) {
 		strlcpy_(cur_id, it->id, sizeof(cur_id));
 		strlcpy_(chat_title, it->label, sizeof(chat_title));
@@ -1840,15 +1855,188 @@ static short popup(short x, short y, short alt_y, const char *const *lab, short 
 	return res;
 }
 
-static void start_rename(const char *kind, ITEM *it)
+
+/* ------------------------------------------------------------------ */
+/* a small GEM-style dialog with one text field                        */
+/* ------------------------------------------------------------------ */
+
+static void toggle_hebrew(void);
+static u8 key_char(short kstate, short kr);
+
+static short dlg_x, dlg_y, dlg_w, dlg_h, fld_x, fld_y, fld_w, fld_cols;
+static short btn_y, btn_h, ok_x, cancel_x, btn_w;
+
+static void dlg_button(short x, const char *label, short is_default)
 {
-	strlcpy_(rn_kind, kind, sizeof(rn_kind));
-	strlcpy_(rn_id, it->id, sizeof(rn_id));
-	strlcpy_(input, it->label, sizeof(input));
-	inlen = strlen(input);
-	rename_mode = 1;
-	search_mode = 0;
-	dirty |= D_INPUT;
+	short n = strlen(label);
+	fill(x, btn_y, x + btn_w - 1, btn_y + btn_h - 1, 0);
+	line(x, btn_y, x + btn_w - 1, btn_y, 1);
+	line(x + btn_w - 1, btn_y, x + btn_w - 1, btn_y + btn_h - 1, 1);
+	line(x + btn_w - 1, btn_y + btn_h - 1, x, btn_y + btn_h - 1, 1);
+	line(x, btn_y + btn_h - 1, x, btn_y, 1);
+	if (is_default) {	/* the default button gets the thick GEM border */
+		line(x - 1, btn_y - 1, x + btn_w, btn_y - 1, 1);
+		line(x + btn_w, btn_y - 1, x + btn_w, btn_y + btn_h, 1);
+		line(x + btn_w, btn_y + btn_h, x - 1, btn_y + btn_h, 1);
+		line(x - 1, btn_y + btn_h, x - 1, btn_y - 1, 1);
+	}
+	text(x + (btn_w - n * cw) / 2, btn_y + (btn_h - ch) / 2, label, n, is_default ? 1 : 0, 1);
+}
+
+static void dlg_field(const char *buf, short len)
+{
+	short start = len > fld_cols - 1 ? len - (fld_cols - 1) : 0;
+	short n = len - start, xs = fld_x + cw / 2, xt, xc;
+	short ty_ = fld_y + 3;
+
+	fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
+	xt = text_bidi(xs, ty_, buf + start, n, 0, 1, fld_x + fld_w - cw / 2);
+	/* cursor at the end of the text: on the left when it's Hebrew */
+	xc = (xt != xs || (n > 0 && bidi_is_rtl(buf + start, n))) ? xt - 3 : xs + n * cw;
+	fill(xc, ty_, xc + 1, ty_ + ch - 1, 1);
+	if (hebrew_kbd) {
+		short bx = fld_x + fld_w + cw / 2;
+		fill(bx - 2, fld_y + 1, bx + 2 * cw + 1, fld_y + ch + 4, 1);
+		text(bx, ty_, "HE", 2, 1, 0);
+	} else {
+		fill(fld_x + fld_w + cw / 2 - 2, fld_y + 1, fld_x + fld_w + 3 * cw, fld_y + ch + 4, 0);
+	}
+}
+
+/* Asks for a line of text. buf holds the starting text and receives the
+ * result (up to max-1 characters). Returns 1 for OK, 0 for Cancel.
+ * Keys: typing, Backspace, Clr/Home clears, F10 Hebrew, Return OK, Esc/Undo
+ * cancel. Mouse: the buttons. */
+static short text_dialog(const char *title, const char *ok_label, char *buf, short max)
+{
+	char edit[128];
+	short len, res = -1, clipr[4], m[8], tl = strlen(title);
+	EVENT e;
+
+	if (max > (short)sizeof(edit))
+		max = sizeof(edit);
+	strlcpy_(edit, buf, max);
+	len = strlen(edit);
+
+	fld_cols = 44;
+	if (fld_cols > ww / cw - 10)
+		fld_cols = ww / cw - 10;
+	fld_w = fld_cols * cw;
+	btn_w = 10 * cw;
+	btn_h = ch + 6;
+	dlg_w = fld_w + 8 * cw;
+	dlg_h = 3 * ch + btn_h + ch * 3;
+	/* over the conversation pane, so the sidebar item stays in view */
+	dlg_x = dlg_w + 8 <= pw ? px + (pw - dlg_w) / 2 : wx + (ww - dlg_w) / 2;
+	dlg_y = wy + (wh - dlg_h) / 3;
+	fld_x = dlg_x + 2 * cw;
+	fld_y = dlg_y + 2 * ch + 2;
+	btn_y = dlg_y + dlg_h - btn_h - ch;
+	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
+	cancel_x = ok_x - btn_w - 2 * cw;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);		/* BEG_MCTRL */
+	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	graf_mouse(M_OFF, 0);
+	vswr_mode(vh, 2);
+	vsf_perimeter(vh, 0);
+	vst_alignment(vh, 0, 5);
+	clipr[0] = 0;
+	clipr[1] = 0;
+	clipr[2] = scr_w - 1;
+	clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, clipr);
+	/* box with a shadow, like a GEM alert */
+	fill(dlg_x + 3, dlg_y + 3, dlg_x + dlg_w + 2, dlg_y + dlg_h + 2, 1);
+	fill(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 0);
+	line(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y, 1);
+	line(dlg_x + dlg_w - 1, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 1);
+	line(dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, dlg_x, dlg_y + dlg_h - 1, 1);
+	line(dlg_x, dlg_y + dlg_h - 1, dlg_x, dlg_y, 1);
+	line(dlg_x + 2, dlg_y + 2, dlg_x + dlg_w - 3, dlg_y + 2, 1);
+	line(dlg_x + dlg_w - 3, dlg_y + 2, dlg_x + dlg_w - 3, dlg_y + dlg_h - 3, 1);
+	line(dlg_x + dlg_w - 3, dlg_y + dlg_h - 3, dlg_x + 2, dlg_y + dlg_h - 3, 1);
+	line(dlg_x + 2, dlg_y + dlg_h - 3, dlg_x + 2, dlg_y + 2, 1);
+	text_bidi(fld_x, dlg_y + ch / 2 + 2, title, tl, 1, 1, 0);
+	/* the field */
+	line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
+	line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
+	line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
+	line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
+	dlg_field(edit, len);
+	dlg_button(cancel_x, "Cancel", 0);
+	dlg_button(ok_x, ok_label, 1);
+	graf_mouse(M_ON, 0);
+	wait_release();
+
+	while (res < 0) {
+		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		if (e.which & MU_KEYBD) {
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff, c;
+			short changed = 1;
+			if (as == 0x0d)
+				res = 1;
+			else if (as == 0x1b || sc == 0x61)
+				res = 0;
+			else if (as == 0x08) {
+				if (len > 0)
+					len--;
+			} else if (sc == 0x47)
+				len = 0;
+			else if (sc == 0x44)
+				toggle_hebrew();
+			else if ((c = key_char(e.kstate, e.kreturn)) && len < max - 1)
+				edit[len++] = c;
+			else
+				changed = 0;
+			if (changed && res < 0) {
+				graf_mouse(M_OFF, 0);
+				dlg_field(edit, len);
+				graf_mouse(M_ON, 0);
+			}
+		}
+		if (e.which & MU_BUTTON) {
+			short mx = e.mx, my = e.my;
+			if (my >= btn_y && my < btn_y + btn_h) {
+				if (mx >= ok_x && mx < ok_x + btn_w)
+					res = 1;
+				else if (mx >= cancel_x && mx < cancel_x + btn_w)
+					res = 0;
+			}
+			wait_release();
+		}
+	}
+	vs_clip(vh, 0, clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	dirty |= D_INPUT;	/* the HE badge may have changed */
+	edit[len] = 0;
+	if (res == 1)
+		strlcpy_(buf, edit, max);
+	return res;
+}
+
+static void rename_item(const char *kind, ITEM *it)
+{
+	char name[72];
+	short n;
+	strlcpy_(name, it->label, sizeof(name));
+	if (!text_dialog(strcmp(kind, "PROJECT") ? "Rename chat" : "Rename project",
+			 "Rename", name, sizeof(name)))
+		return;
+	/* trim spaces; an empty or unchanged name changes nothing */
+	for (n = strlen(name); n > 0 && name[n - 1] == ' '; n--)
+		name[n - 1] = 0;
+	if (name[0] && strcmp(name, it->label))
+		tx_cmd4("RENAME", kind, it->id, name);
 }
 
 static void open_item(short i);
@@ -1924,7 +2112,7 @@ static void context_menu(short i, short x, short y)
 		switch (r) {
 		case 0: open_item(i); break;
 		case 1: tx_cmd4("PIN", "PROJECT", it->id, it->pinned ? "0" : "1"); break;
-		case 2: start_rename("PROJECT", it); break;
+		case 2: rename_item("PROJECT", it); break;
 		case 3: tx_cmd("ARCHIVE", "PROJECT", it->id); break;
 		case 5:
 			if (form_alert(1, "[3][Delete this project?|This can't be undone.][Cancel|Delete]") == 2)
@@ -1944,7 +2132,7 @@ static void context_menu(short i, short x, short y)
 	switch (r) {
 	case 0: open_item(i); break;
 	case 1: tx_cmd4("PIN", "CHAT", it->id, it->pinned ? "0" : "1"); break;
-	case 2: start_rename("CHAT", it); break;
+	case 2: rename_item("CHAT", it); break;
 	case 3:
 		strlcpy_(pick_chat, it->id, sizeof(pick_chat));
 		pick_x = x;
@@ -2122,6 +2310,16 @@ static void handle_click(short mx, short my)
 	}
 }
 
+/* the character a key types, honouring the Hebrew layout; 0 = none */
+static u8 key_char(short kstate, short kr)
+{
+	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff;
+	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | K_CTRL | 0x08)) &&
+	    scan >= 0x10 && scan < 0x36 && hebrew_keys[scan - 0x10])
+		ascii = hebrew_keys[scan - 0x10];
+	return ascii >= 32 && ascii != 127 ? ascii : 0;
+}
+
 static void toggle_hebrew(void)
 {
 	hebrew_kbd = !hebrew_kbd;
@@ -2157,7 +2355,7 @@ static void handle_key(short kstate, short kr)
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
 	case 0x62: about(); return;					/* Help */
-	case 0x61: inlen = 0; search_mode = 0; rename_mode = 0; dirty |= D_INPUT; return; /* Undo */
+	case 0x61: inlen = 0; search_mode = 0; dirty |= D_INPUT | D_SIDEBAR; return; /* Undo */
 	case 0x52:						/* Insert: item menu */
 		{
 			short i = lcur;
@@ -2182,7 +2380,7 @@ static void handle_key(short kstate, short kr)
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
 	case 0x0d:				/* Return / Enter */
-		if (inlen == 0 && !search_mode && !rename_mode && lcur >= 0 && lcur < nitems) {
+		if (inlen == 0 && !search_mode && lcur >= 0 && lcur < nitems) {
 			short i = lcur;
 			lcur = -1;
 			dirty |= D_SIDEBAR;
@@ -2203,16 +2401,14 @@ static void handle_key(short kstate, short kr)
 			dirty |= D_SIDEBAR;
 		}
 		inlen = 0;
-		search_mode = 0; rename_mode = 0;
-		dirty |= D_INPUT;
+		search_mode = 0;
+		dirty |= D_INPUT | D_SIDEBAR;
 		return;
 	}
 	/* Hebrew layout: unshifted letter keys type Hebrew, Shift still gives
 	 * English capitals; Control/Alternate combinations are left alone */
-	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | K_CTRL | 0x08)) &&
-	    scan >= 0x10 && scan < 0x36 && hebrew_keys[scan - 0x10])
-		ascii = hebrew_keys[scan - 0x10];
-	if (ascii >= 32 && ascii != 127 && inlen < INMAX) {
+	ascii = key_char(kstate, kr);
+	if (ascii && inlen < INMAX) {
 		input[inlen++] = ascii;
 		dirty |= D_INPUT;
 	}

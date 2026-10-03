@@ -17,7 +17,7 @@ flow control). The protocol is the same on both.
 | `HELLO` `1` `<version>` | Atari is up (sent at start, on ^R, and every ~5 s until the bridge answers). Bridge replies with the chat list and a status. |
 | `LIST` `CHATS`\|`PROJECTS`\|`ARTIFACTS` | Fill the sidebar with that list. |
 | `OPEN` `CHAT`\|`PROJECT`\|`ARTIFACT` `<id>` | Show a conversation, list a project's chats, or show an artifact. |
-| `NEW` | Start a new chat (created on the first `SEND`; inside the open project, if any). |
+| `NEW` [`QUIET`] | Start a new chat (created on the first `SEND`; inside the open project, if any). `QUIET`: the Atari switched area and keeps its own title. |
 | `SEND` `<text>` | Send a message to the current chat and stream the reply. |
 | `FIND` `<query>` | Search chat titles. |
 | `RENAME` `CHAT`\|`PROJECT` `<id>` `<name>` | Rename a chat or project. |
