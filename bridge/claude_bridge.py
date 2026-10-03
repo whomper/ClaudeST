@@ -274,7 +274,8 @@ class Session:
             self.send_list("PROJECTS", "Projects", self.be.list_projects())
         elif kind == "ARTIFACTS":
             self.status("Looking for artifacts...")
-            arts = self.be.list_artifacts()
+            arts = self.be.list_artifacts(
+                progress=lambda i, n: self.status("Looking in chat %d of %d..." % (i, n)))
             self.send_list("ARTIFACTS", "Artifacts", arts)
             if not arts:
                 n = getattr(self.be, "last_scan", None)
@@ -430,7 +431,10 @@ class Session:
         """Send the artifact as hex-encoded D lines, then G <size>. Text is
         converted to the Atari character set with CR/LF line ends."""
         name, text = self.be.artifact_file(item_id)
-        data = b"\r\n".join(to_atari(line) for line in text.split("\n"))
+        if isinstance(text, bytes):     # a binary file (.docx, .pdf...) as is
+            data = text
+        else:
+            data = b"\r\n".join(to_atari(line) for line in text.split("\n"))
         self.status("Sending %s..." % name)
         for i in range(0, len(data), 90):
             self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + b"\n")
@@ -482,7 +486,8 @@ def make_backend(args):
             raise RuntimeError("No claude.ai session key is set on the gateway. "
                                "Set CLAUDE_SESSION_KEY (on a Pi: sudo ./install.sh --set-key).")
         return backends.LazyBackend(no_key, "claude.ai (no key)")
-    return backends.LazyBackend(lambda: backends.ClaudeAiBackend(key, org_id=args.org),
+    return backends.LazyBackend(lambda: backends.ClaudeAiBackend(
+        key, org_id=args.org, artifact_scan=args.artifact_scan),
                                 "claude.ai")
 
 
@@ -500,21 +505,24 @@ def main():
     ap.add_argument("--org", help="claude.ai organization uuid (default: first chat org)")
     ap.add_argument("--model", default="claude-opus-5-5", help="model for --backend api")
     ap.add_argument("--store", default="~/.claude-st", help="history dir for --backend api")
-    ap.add_argument("--probe", action="store_true",
+    ap.add_argument("--probe", nargs="?", const="", metavar="WORD",
                     help="claude.ai: list what kinds of blocks your recent chats hold "
-                         "(no content), to diagnose a missing artifact, then exit")
+                         "(no content), to diagnose a missing artifact, then exit. With "
+                         "WORD, also detail the chats with WORD in their title")
+    ap.add_argument("--artifact-scan", type=int, default=100, metavar="N",
+                    help="claude.ai: how many recent chats to search for artifacts")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-    if not (args.probe or args.serial or args.tcp or args.pipe):
+    if not (args.probe is not None or args.serial or args.tcp or args.pipe):
         ap.error("one of --serial, --tcp or --pipe is required")
     backend = make_backend(args)
-    if args.probe:
+    if args.probe is not None:
         if args.backend != "claudeai":
             ap.error("--probe is for the claude.ai backend")
-        for kind, count in sorted(backend.probe().items()):
+        for kind, count in sorted(backend.probe(args.artifact_scan, args.probe).items()):
             print("%6d  %s" % (count, kind))
         return
     if args.serial:

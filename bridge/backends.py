@@ -12,6 +12,7 @@ import os
 import re
 import time
 import uuid
+from urllib.parse import unquote
 
 log = logging.getLogger("claude-st")
 
@@ -45,7 +46,7 @@ class Backend:
         """Stream a reply. Returns (chat_id, title)."""
         raise NotImplementedError
 
-    def list_artifacts(self):
+    def list_artifacts(self, progress=None):
         return []
 
     def get_artifact(self, artifact_id):
@@ -123,8 +124,12 @@ def _local_tz():
 #    inside an assistant's text (older chats)
 #  - file tools, "create_file" (path, file_text) and "str_replace" (path,
 #    old_str, new_str), used when Claude creates files
+#  - "present_files" (filepaths): files Claude made some other way, e.g. a
+#    .docx cover letter written by a script. Their bytes are fetched from
+#    the conversation's file store when opened or saved.
 _ANT_ARTIFACT = re.compile(r"<antArtifact\b([^>]*)>(.*?)</antArtifact>", re.S)
 _ATTR = re.compile(r'(\w+)="([^"]*)"')
+_FILE_LINK = re.compile(r"computer://(/mnt/user-data/outputs/[^)\s\"'>]+)")
 
 _EXT_BY_TYPE = {
     "text/markdown": "MD", "text/html": "HTM", "image/svg+xml": "SVG",
@@ -138,6 +143,30 @@ _EXT_BY_LANG = {
     "basic": "BAS", "gfa": "LST", "markdown": "MD", "yaml": "YML", "xml": "XML",
     "rust": "RS", "go": "GO", "ruby": "RB", "php": "PHP", "pascal": "PAS",
 }
+
+
+_DOCX_PARA = re.compile(r"<w:p[ >].*?</w:p>", re.S)
+_DOCX_TEXT = re.compile(r"<w:t(?: [^>]*)?>([^<]*)</w:t>|<w:(?:tab|br)/>")
+
+
+def docx_text(data):
+    """The plain text of a .docx file, one line per paragraph."""
+    import html
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        xml = z.read("word/document.xml").decode("utf-8", "replace")
+    lines = []
+    for para in _DOCX_PARA.findall(xml):
+        lines.append("".join(m.group(1) if m.group(1) is not None else
+                             ("\t" if "tab" in m.group(0) else "\n")
+                             for m in _DOCX_TEXT.finditer(para)))
+    return html.unescape("\n".join(lines))
+
+
+_TEXT_EXT = {"txt", "md", "markdown", "html", "htm", "css", "js", "jsx", "ts", "tsx", "py", "c",
+             "h", "cpp", "s", "asm", "json", "csv", "xml", "svg", "yaml", "yml", "sh", "sql",
+             "bas", "lst", "rs", "go", "rb", "php", "pas", "java", "mmd", "tex", "ini", "inf"}
 
 
 def artifact_filename(title, kind="", language="", path=""):
@@ -159,7 +188,7 @@ class ClaudeAiBackend(Backend):
     BASE = "https://claude.ai/api"
     ROOT_PARENT = "00000000-0000-4000-8000-000000000000"
 
-    def __init__(self, session_key, org_id=None, artifact_scan=40):
+    def __init__(self, session_key, org_id=None, artifact_scan=100):
         self.http, self.impersonating = _http_session()
         self.http.headers.update({
             "Cookie": "sessionKey=" + session_key,
@@ -205,8 +234,22 @@ class ClaudeAiBackend(Backend):
     def whoami(self):
         return "claude.ai"
 
-    def _conversations(self, limit):
-        return self._get("/organizations/%s/chat_conversations" % self.org, limit=limit)
+    def _conversations(self, limit, offset=0):
+        return self._get("/organizations/%s/chat_conversations" % self.org,
+                         limit=limit, offset=offset)
+
+    def _recent_conversations(self, n, page=50):
+        """The n most recently updated chats, fetched a page at a time."""
+        out, seen = [], set()
+        while len(out) < n:
+            want = min(page, n - len(out))
+            batch = self._conversations(want, offset=len(out))
+            fresh = [c for c in batch or [] if c.get("uuid") not in seen]
+            seen.update(c.get("uuid") for c in fresh)
+            out += fresh
+            if len(fresh) < want:
+                break           # the last page (or offset is not supported)
+        return out
 
     def list_chats(self, limit=100):
         return [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")))
@@ -361,20 +404,27 @@ class ClaudeAiBackend(Backend):
     # is no account-wide listing, so scan the most recent chats.
     def _harvest_artifacts(self, conv):
         cname = conv.get("name") or "Untitled"
-        cid = conv.get("uuid", "")[:8]
-        for m in conv.get("chat_messages") or []:
+        self._conv_uuid = conv.get("uuid", "")
+        cid = self._conv_uuid[:8]
+        msgs = sorted(conv.get("chat_messages") or [], key=lambda m: m.get("index", 0))
+        for m in msgs:
+            self._when = m.get("created_at") or conv.get("updated_at") or ""
             for block in m.get("content") or []:
                 t = block.get("type")
                 if t == "tool_use":
                     self._artifact_from_tool(cid, cname, block.get("name"), block.get("input") or {})
-                elif t == "text" and "<antArtifact" in (block.get("text") or ""):
+                elif t == "text" and block.get("text"):
                     self._artifacts_from_text(cid, cname, block["text"])
-            if not m.get("content") and "<antArtifact" in (m.get("text") or ""):
+            if not m.get("content") and m.get("text"):
                 self._artifacts_from_text(cid, cname, m["text"])
 
     def _art(self, key, title, cname):
-        return self._artifacts.setdefault(
-            key, {"title": title, "content": "", "chat": cname, "type": "", "language": "", "path": ""})
+        art = self._artifacts.setdefault(
+            key, {"title": title, "content": "", "chat": cname, "type": "", "language": "",
+                  "path": "", "when": "", "conv": "", "remote": False})
+        art["when"] = max(art["when"], getattr(self, "_when", "") or "")
+        art["conv"] = getattr(self, "_conv_uuid", "")
+        return art
 
     def _artifact_from_tool(self, cid, cname, name, inp):
         if name == "artifacts":
@@ -398,8 +448,24 @@ class ClaudeAiBackend(Backend):
                 art["content"] = inp.get("file_text", inp.get("content", ""))
             elif inp.get("old_str") is not None:
                 art["content"] = art["content"].replace(inp["old_str"], inp.get("new_str", ""), 1)
+        elif name == "present_files":
+            paths = inp.get("filepaths") or inp.get("paths") or inp.get("files") or []
+            for path in [paths] if isinstance(paths, str) else paths:
+                if not isinstance(path, str):
+                    continue
+                art = self._art(cid + ":" + path, os.path.basename(path), cname)
+                art["path"] = path
+                if not art["content"]:
+                    art["remote"] = True    # made by a script: fetch it when needed
 
     def _artifacts_from_text(self, cid, cname, text):
+        # links to files Claude made: [View it](computer:///mnt/user-data/outputs/x.docx)
+        for path in _FILE_LINK.findall(text):
+            path = unquote(path)
+            art = self._art(cid + ":" + path, os.path.basename(path), cname)
+            art["path"] = path
+            if not art["content"]:
+                art["remote"] = True
         for attrs, body in _ANT_ARTIFACT.findall(text):
             a = dict(_ATTR.findall(attrs))
             aid = a.get("identifier") or a.get("title") or "artifact"
@@ -407,41 +473,86 @@ class ClaudeAiBackend(Backend):
             art.update({k: a[k] for k in ("type", "language", "title") if a.get(k)})
             art["content"] = body.strip("\n")
 
-    def list_artifacts(self):
-        convs = self._conversations(self.artifact_scan)
-        for c in convs:
-            stamp = c.get("updated_at") or ""
-            if self._scanned.get(c["uuid"]) == stamp and stamp:
-                continue        # unchanged since the last scan
+    def list_artifacts(self, progress=None):
+        convs = self._recent_conversations(self.artifact_scan)
+        todo = [c for c in convs
+                if not (c.get("updated_at") and self._scanned.get(c["uuid"]) == c["updated_at"])]
+        for i, c in enumerate(todo):
+            if progress and len(todo) > 3:
+                progress(i + 1, len(todo))
             try:
                 self._harvest_artifacts(self._conversation(c["uuid"]))
-                self._scanned[c["uuid"]] = stamp
+                self._scanned[c["uuid"]] = c.get("updated_at") or ""
             except Exception as e:
                 log.info("skipping chat %s: %s", c["uuid"], e)
         self.last_scan = len(convs)
-        order = {c["uuid"][:8]: i for i, c in enumerate(convs)}
-        keys = sorted(self._artifacts, key=lambda k: order.get(k.split(":", 1)[0], 1 << 30))
+        # newest first, by when Claude last wrote each artifact
+        keys = sorted(self._artifacts, key=lambda k: self._artifacts[k]["when"], reverse=True)
         return [(k, self._artifacts[k]["title"]) for k in keys]
+
+    def _download(self, a):
+        """The bytes of a file Claude made in a conversation's file store."""
+        from urllib.parse import quote
+        last = None
+        for path in ("/organizations/%s/conversations/%s/wiggle/download-file?path=%s",
+                     "/organizations/%s/chat_conversations/%s/wiggle/download-file?path=%s"):
+            r = self.http.get(self.BASE + path % (self.org, a["conv"], quote(a["path"], safe="")),
+                              timeout=60)
+            if r.status_code == 200:
+                return r.content
+            last = r.status_code
+        raise RuntimeError("claude.ai would not hand over %s (HTTP %s)."
+                           % (os.path.basename(a["path"]), last))
+
+    def _artifact_bytes(self, a):
+        if a["remote"] and "data" not in a:
+            a["data"] = self._download(a)
+        return a.get("data")
 
     def get_artifact(self, artifact_id):
         a = self._artifacts.get(artifact_id)
         if not a:
             return "Artifact", "(artifact not found - reopen the Artifacts list)"
+        if a["remote"]:
+            data = self._artifact_bytes(a)
+            ext = a["path"].rsplit(".", 1)[-1].lower() if "." in a["path"] else ""
+            if ext == "docx":
+                return a["title"], "From chat: %s\n\n%s" % (a["chat"], docx_text(data))
+            if ext in _TEXT_EXT:
+                return a["title"], "From chat: %s\n\n```%s\n%s\n```" % (
+                    a["chat"], ext, data.decode("utf-8", "replace"))
+            return a["title"], ("From chat: %s\n\nThis is a %s file (%d bytes), which can't "
+                                "be shown here. Right-click it and choose Save to disk."
+                                % (a["chat"], ext.upper() or "binary", len(data)))
         return a["title"], "From chat: %s\n\n```%s\n%s\n```" % (a["chat"], a.get("language", ""), a["content"])
 
     def artifact_file(self, artifact_id):
         a = self._artifacts.get(artifact_id)
         if not a:
             raise RuntimeError("Artifact not found - reopen the Artifacts list.")
-        return artifact_filename(a["title"], a.get("type", ""), a.get("language", ""), a.get("path", "")), a["content"]
+        name = artifact_filename(a["title"], a.get("type", ""), a.get("language", ""), a.get("path", ""))
+        if a["remote"]:
+            return name, self._artifact_bytes(a)    # bytes: saved as they are
+        return name, a["content"]
 
-    def probe(self, limit=40):
+    def probe(self, limit=100, word=None):
         """What the recent chats contain, without any content: for the
-        bridge's --probe option, to see where a missing artifact went."""
+        bridge's --probe option, to see where a missing artifact went.
+        With a word, also say which chats have it in their title, how
+        recent they are and which tools and files they use."""
         from collections import Counter
         seen = Counter()
-        for c in self._conversations(limit):
+        convs = self._recent_conversations(limit)
+        for pos, c in enumerate(convs, 1):
             conv = self._conversation(c["uuid"])
+            if word and word.lower() in (c.get("name") or "").lower():
+                print("chat #%d: %s (updated %s)" % (pos, c.get("name"), c.get("updated_at")))
+                for m in conv.get("chat_messages") or []:
+                    for block in m.get("content") or []:
+                        if block.get("type") == "tool_use":
+                            inp = block.get("input") or {}
+                            print("    tool %s: %s %s" % (block.get("name"), sorted(inp),
+                                  inp.get("path") or inp.get("filepaths") or inp.get("title") or ""))
             for m in conv.get("chat_messages") or []:
                 for block in m.get("content") or []:
                     t = block.get("type")
@@ -641,7 +752,7 @@ class ApiBackend(Backend):
                                 lang, body, c["title"]))
         return out
 
-    def list_artifacts(self):
+    def list_artifacts(self, progress=None):
         return [(a[0], a[1]) for a in self._artifact_index()]
 
     def get_artifact(self, artifact_id):
@@ -751,7 +862,7 @@ class DemoBackend(Backend):
         c["messages"] += [("U", text), ("A", reply)]
         return chat_id, c["title"]
 
-    def list_artifacts(self):
+    def list_artifacts(self, progress=None):
         return [("a1", "falcon_mixer.s")]
 
     def artifact_file(self, artifact_id):

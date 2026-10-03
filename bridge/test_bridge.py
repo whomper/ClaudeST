@@ -289,6 +289,86 @@ class ArtifactFormats(unittest.TestCase):
         self.assertEqual((name, text), ("REPORT.HTM", "<p>new</p>"))
 
 
+class ScriptMadeFiles(unittest.TestCase):
+    """Files Claude made with a script (a .docx cover letter): found through
+    present_files or a computer:// link, fetched from the chat's file store."""
+
+    @staticmethod
+    def docx(*paras):
+        import io
+        import zipfile
+        body = "".join('<w:p><w:r><w:t xml:space="preserve">%s</w:t></w:r></w:p>' % p for p in paras)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", "<w:document><w:body>%s</w:body></w:document>" % body)
+        return buf.getvalue()
+
+    def backend(self, convs):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org, be.artifact_scan, be._artifacts, be._scanned = "org", 100, {}, {}
+        listing = [{"uuid": c["uuid"], "name": c["name"], "updated_at": c["updated_at"]}
+                   for c in convs]
+        by_id = {c["uuid"]: c for c in convs}
+        be.offsets = []
+
+        def get(path, **params):
+            if path.endswith("/chat_conversations"):
+                be.offsets.append(params.get("offset", 0))
+                o = params.get("offset", 0)
+                return listing[o:o + params["limit"]]
+            return by_id[path.rsplit("/", 1)[1]]
+        be._get = get
+        letter = self.docx("Dear hiring manager,", "Erez &amp; co")
+
+        class Resp:
+            status_code, content = 200, letter
+        be.http = type("H", (), {"get": lambda self, url, timeout=0: Resp()})()
+        return be
+
+    def conv(self, uid, name, when, content):
+        return {"uuid": uid, "name": name, "updated_at": when, "chat_messages": [
+            {"index": 0, "sender": "assistant", "created_at": when, "content": content}]}
+
+    def test_cover_letters_found_newest_first(self):
+        convs = [
+            self.conv("aaaaaaaa-1", "Old snake", "2026-01-01", [
+                {"type": "tool_use", "name": "artifacts",
+                 "input": {"id": "s", "title": "Snake", "content": "x"}}]),
+            self.conv("bbbbbbbb-2", "Job hunt", "2026-09-01", [
+                {"type": "tool_use", "name": "present_files",
+                 "input": {"filepaths": ["/mnt/user-data/outputs/Cover_Letter_Acme.docx"]}}]),
+            self.conv("cccccccc-3", "Job hunt 2", "2026-09-20", [
+                {"type": "text", "text": "[View your letter](computer:///mnt/user-data/outputs/"
+                                         "Cover%20Letter%20Globex.docx)"}]),
+        ]
+        be = self.backend(convs)
+        arts = be.list_artifacts()
+        self.assertEqual([a[1] for a in arts],
+                         ["Cover Letter Globex.docx", "Cover_Letter_Acme.docx", "Snake"])
+        title, body = be.get_artifact(arts[0][0])
+        self.assertIn("Dear hiring manager,\nErez & co", body)
+        name, data = be.artifact_file(arts[1][0])
+        self.assertEqual(name, "COVER_LE.DOC")
+        self.assertTrue(data.startswith(b"PK"))     # saved as the real .docx
+
+    def test_scan_goes_past_the_first_page(self):
+        convs = [self.conv("%08d-x" % i, "c%d" % i, "2026-01-01", []) for i in range(120)]
+        be = self.backend(convs)
+        be.list_artifacts()
+        self.assertEqual(be.offsets, [0, 50])       # 50 + 50 = the 100 newest chats
+        self.assertEqual(be.last_scan, 100)
+
+    def test_binary_files_reach_the_atari_unchanged(self):
+        class Binary(DemoBackend):
+            def artifact_file(self, aid):
+                return "LETTER.DOC", b"PK\x03\x04\n\xff"
+        link = FakeLink()
+        Session(link, Binary()).handle(b"FETCH\tARTIFACT\ta1")
+        data = bytes.fromhex("".join(l[1].decode() for l in link.lines() if l[0] == b"D"))
+        self.assertEqual(data, b"PK\x03\x04\n\xff")
+
+
 class LongIds(unittest.TestCase):
     """Artifact ids can be long file paths; the Atari keeps 39 characters."""
 
@@ -296,7 +376,7 @@ class LongIds(unittest.TestCase):
         class LongPaths(DemoBackend):
             PATH = "abcdef12:/mnt/user-data/outputs/a_rather_long_report_name.html"
 
-            def list_artifacts(self):
+            def list_artifacts(self, progress=None):
                 return [("a1", "short one"), (self.PATH, "report")]
 
             def get_artifact(self, aid):
@@ -334,7 +414,7 @@ class SavingArtifacts(unittest.TestCase):
         class NoArtifacts(DemoBackend):
             last_scan = 40
 
-            def list_artifacts(self):
+            def list_artifacts(self, progress=None):
                 return []
         link = FakeLink()
         Session(link, NoArtifacts()).handle(b"LIST\tARTIFACTS")
