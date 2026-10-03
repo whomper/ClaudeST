@@ -1414,6 +1414,12 @@ static void parse_config_line(const char *l)
 		link = LINK_TCP;
 	else if (!memcmp(l, "serial", 6))
 		link = LINK_SERIAL;
+	else if (!memcmp(l, "baud 4800", 9))
+		baud = BAUD_4800;
+	else if (!memcmp(l, "baud 9600", 9))
+		baud = BAUD_9600;
+	else if (!memcmp(l, "baud 19200", 10))
+		baud = BAUD_19200;
 	else if (!memcmp(l, "keyboard hebrew", 15))
 		hebrew_kbd = 1;
 	else if (!memcmp(l, "sidebar ", 8)) {
@@ -1464,7 +1470,7 @@ static char *put_num(char *p, u16 v)
 
 static void save_config(void)
 {
-	char text[96], *p = text;
+	char text[160], *p = text;
 	long fd = Fcreate("CLAUDE.INF", 0);
 	if (fd < 0)
 		return;
@@ -1486,6 +1492,8 @@ static void save_config(void)
 		*p++ = '\r';
 		*p++ = '\n';
 	}
+	strcpy(p, baud == BAUD_4800 ? "baud 4800\r\n" : baud == BAUD_9600 ? "baud 9600\r\n" : "baud 19200\r\n");
+	p += strlen(p);
 	if (hebrew_kbd) {
 		strcpy(p, "keyboard hebrew\r\n");
 		p += strlen(p);
@@ -1645,6 +1653,7 @@ static void set_baud(short b)
 		send_hello();
 	}
 	menu_check_baud();
+	save_config();
 }
 
 static void reconnect(void)

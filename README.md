@@ -245,6 +245,21 @@ project is open is created in that project. On claude.ai, artifacts are
 stored inside conversations, so **Artifacts** lists the ones in your 15
 most recent chats. Opening one shows its source.
 
+## Settings (CLAUDE.INF)
+
+Claude ST saves its settings to `CLAUDE.INF`, next to `CLAUDE.PRG`, as
+soon as you change them. You can also edit the file in any text editor:
+
+| Line | Set by |
+|------|--------|
+| `tcp 192.168.1.10 2323` or `serial` | `/connect`, `/serial`, Options ▸ Network / Serial port |
+| `baud 19200` (or 9600, 4800) | Options ▸ baud rate |
+| `sidebar 240` | dragging the divider (width in pixels) |
+| `keyboard hebrew` | F10 / Options ▸ Hebrew keys |
+
+The window's size and position, and the chat that was open, aren't
+saved: Claude ST always opens full-screen with a new chat.
+
 ## Building
 
 You need any m68k GCC. A stock Debian/Ubuntu cross compiler works:
