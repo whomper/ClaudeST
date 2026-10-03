@@ -1,0 +1,4 @@
+*.o
+*.elf
+RSCTEST.PRG
+__pycache__/

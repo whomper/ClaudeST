@@ -274,10 +274,31 @@ The icon is 32×32 one-bit pixel art: the silhouette of the ST's SM124
 monochrome monitor, with a simple eight-ray spark and a GEM-style
 prompt on its dark screen. It's original artwork, not either company's
 logo. `tools/icon/make_icon.py` draws both versions and writes `st/icon.h`
-and `st/icon16.h` (built into the program), `docs/icon.png`,
-`docs/icon16.png`, and `st/CLAUDE.ICN`, a standard ICN
-file you can load into an icon editor to give `CLAUDE.PRG` its own icon
-on the desktop.
+and `st/icon16.h` (built into the program), `docs/icon.png` and
+`docs/icon16.png`.
+
+### Desktop icon files
+
+The `icons/` folder has the icon in the formats Atari icon and resource
+editors use, to give `CLAUDE.PRG` its own icon on the desktop:
+
+| File | What it is |
+|------|-----------|
+| `CLAUDE.RSC` | GEM resource with both icons, each with a mask and the label "Claude ST": a black-and-white `G_ICON` and a 16-colour `G_CICON` |
+| `CLAUDE.ICN` | the black-and-white image, ICN format |
+| `CLAUDEMK.ICN` | its mask, ICN format |
+
+Open `CLAUDE.RSC` in a resource editor (Interface, ORCS, RSM...) and copy
+the icon into the desktop's icon file: `DESKICON.RSC` for black-and-white
+icons, or `DESKCICN.RSC` for colour icons on TOS 4 (the Falcon). Then
+install it for `CLAUDE.PRG` from the desktop. The colour icon uses the
+standard 16 system colours, since desktop icons can't bring their own
+palette. Where the screen has fewer colours, the AES shows the
+black-and-white image instead.
+
+`tools/icon/make_rsc.py` writes these files. `tools/icon/RSCTEST.PRG`
+(`make` in that folder) loads `CLAUDE.RSC` with the AES and draws it, as
+a check.
 
 ## Settings (CLAUDE.INF)
 

@@ -7,7 +7,7 @@ command prompt. Writes:
   st/icon16.h      the 16-colour version and its palette
   docs/icon16.png  an enlarged preview of that
   docs/icon.png    an enlarged preview
-  st/CLAUDE.ICN    the icon in the classic ICN text format, for icon editors
+(tools/icon/make_rsc.py builds the desktop icon files in icons/ from it)
 """
 import os
 
@@ -189,13 +189,6 @@ with open(os.path.join(ROOT, "st", "icon.h"), "w") as f:
         f.write("\t0x%04x, 0x%04x,\n" % (words[2 * y], words[2 * y + 1]))
     f.write("};\n")
 
-with open(os.path.join(ROOT, "st", "CLAUDE.ICN"), "w", newline="\r\n") as f:
-    f.write("/* GEM Icon Definition: */\n#define ICON_W 0x0020\n#define ICON_H 0x0020\n")
-    f.write("#define DATASIZE 0x0040\nUWORD image[DATASIZE] =\n{ ")
-    f.write(",\n  ".join(", ".join("0x%04X" % w for w in words[i:i + 8])
-                         for i in range(0, len(words), 8)))
-    f.write("\n};\n")
-
 try:
     from PIL import Image
     img = Image.new("RGB", (W, H), "white")
@@ -213,5 +206,6 @@ try:
 except ImportError:
     pass
 
-for y in range(H):
-    print("".join("#" if v else "." for v in px[y]))
+if __name__ == "__main__":
+    for y in range(H):
+        print("".join("#" if v else "." for v in px[y]))

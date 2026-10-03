@@ -98,6 +98,32 @@ short rsrc_obfix(OBJECT *tree, short obj)
 	return aes(114, 1, 1, 1, 0);
 }
 
+short rsrc_load(const char *name)
+{
+	addrin[0] = (void *)name;
+	return aes(110, 0, 1, 1, 0);
+}
+
+OBJECT *rsrc_tree(short index)
+{
+	aintin[0] = 0;		/* R_TREE */
+	aintin[1] = index;
+	aes(112, 2, 1, 0, 1);
+	return (OBJECT *)addrout[0];
+}
+
+short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h)
+{
+	aintin[0] = start;
+	aintin[1] = depth;
+	aintin[2] = x;
+	aintin[3] = y;
+	aintin[4] = w;
+	aintin[5] = h;
+	addrin[0] = tree;
+	return aes(42, 6, 1, 1, 0);
+}
+
 short form_alert(short def, const char *str)
 {
 	aintin[0] = def;
