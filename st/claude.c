@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.2"
+#define VERSION "1.3"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -201,12 +201,14 @@ static char m_net[]   = "  Network (STinG) ";
 static char m_ser[]   = "  Serial port     ";
 static char m_sep4[]  = "------------------";
 static char m_heb[]   = "  Hebrew keys F10 ";
+static char m_acct[]  = "  Account...   F8 ";
 
 enum {
 	MN_ROOT, MN_BAR, MN_ACTIVE, MN_TDESK, MN_TFILE, MN_TOPTS, MN_SCREEN,
 	MN_DDESK, MN_ABOUT, MN_SEP1, MN_ACC1, MN_ACC2, MN_ACC3, MN_ACC4, MN_ACC5, MN_ACC6,
 	MN_DFILE, MN_NEW, MN_FIND, MN_REF, MN_SEP2, MN_QUIT,
 	MN_DOPTS, MN_B48, MN_B96, MN_B192, MN_SEP3, MN_NET, MN_SER, MN_SEP4, MN_HEB,
+	MN_ACCT,
 	MN_COUNT
 };
 
@@ -235,7 +237,7 @@ static OBJECT menu[MN_COUNT] = {
 	{ 20, -1, -1, G_STRING, 0, 0, 0,       0, 2, 19, 1 },
 	{ 21, -1, -1, G_STRING, 0, DISABLED, 0, 0, 3, 19, 1 },
 	{ 16, -1, -1, G_STRING, 0, 0, 0,       0, 4, 19, 1 },
-	{ 6, 23, 30, G_BOX,  0, 0, 0xFF1100L,  14, 0, 18, 8 },		/* options drop */
+	{ 6, 23, 31, G_BOX,  0, 0, 0xFF1100L,  14, 0, 18, 9 },		/* options drop */
 	{ 24, -1, -1, G_STRING, 0, 0, 0,       0, 0, 18, 1 },
 	{ 25, -1, -1, G_STRING, 0, 0, 0,       0, 1, 18, 1 },
 	{ 26, -1, -1, G_STRING, 0, 0, 0,       0, 2, 18, 1 },
@@ -243,7 +245,8 @@ static OBJECT menu[MN_COUNT] = {
 	{ 28, -1, -1, G_STRING, 0, 0, 0,       0, 4, 18, 1 },
 	{ 29, -1, -1, G_STRING, 0, 0, 0,       0, 5, 18, 1 },
 	{ 30, -1, -1, G_STRING, 0, DISABLED, 0, 0, 6, 18, 1 },
-	{ 22, -1, -1, G_STRING, LASTOB, 0, 0,  0, 7, 18, 1 },
+	{ 31, -1, -1, G_STRING, 0, 0, 0,       0, 7, 18, 1 },
+	{ 22, -1, -1, G_STRING, LASTOB, 0, 0,  0, 8, 18, 1 },
 };
 
 static void menu_init(void)
@@ -270,6 +273,7 @@ static void menu_init(void)
 	menu[MN_SER].ob_spec = S(m_ser);
 	menu[MN_SEP4].ob_spec = S(m_sep4);
 	menu[MN_HEB].ob_spec = S(m_heb);
+	menu[MN_ACCT].ob_spec = S(m_acct);
 
 	menu[MN_ROOT].ob_width = cols_;
 	menu[MN_ROOT].ob_height = scr_h / ch;
@@ -1818,6 +1822,14 @@ static void clear_context(const char *title, const char *hint)
 	dirty |= D_ALL;
 }
 
+/* the Account page: plan, usage and when it resets, account details */
+static void do_account(void)
+{
+	search_mode = 0;
+	clear_context("Account", "Asking claude.ai about your account...");
+	tx_cmd("ACCOUNT", 0, 0);
+}
+
 static void do_search(void)
 {
 	search_mode = 1;
@@ -2899,6 +2911,10 @@ static void handle_click(short mx, short my)
 		model_menu();
 		return;
 	}
+	if (mx < wx + sb_w && my >= status_y) {	/* the status line: Account */
+		do_account();
+		return;
+	}
 	if (mx < wx + sb_w) {
 		for (i = 0; i < 5; i++) {
 			short y = nav_y + i * row_h;
@@ -2997,6 +3013,7 @@ static void handle_key(short kstate, short kr)
 	case 0x3d: do_list("PROJECTS"); return;				/* F3 */
 	case 0x3e: do_list("ARTIFACTS"); return;			/* F4 */
 	case 0x3f: do_search(); return;					/* F5 */
+	case 0x42: do_account(); return;				/* F8 */
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
@@ -3080,6 +3097,7 @@ static void handle_msg(short *msg)
 			break;
 		case MN_SER: use_link(LINK_SERIAL); break;
 		case MN_HEB: toggle_hebrew(); break;
+		case MN_ACCT: do_account(); break;
 		case MN_QUIT: quit = 1; break;
 		case MN_B48: set_baud(BAUD_4800); break;
 		case MN_B96: set_baud(BAUD_9600); break;

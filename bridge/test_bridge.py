@@ -445,6 +445,65 @@ class ModelChoice(unittest.TestCase):
         self.assertEqual(be.choose("claude-opus-5-5", "high"), ("claude-opus-5-5", "high"))
 
 
+class AccountPage(unittest.TestCase):
+    def test_usage_bar_and_reset_time(self):
+        from datetime import datetime, timezone
+        from backends import reset_text, usage_bar
+        self.assertEqual(usage_bar(25, 8), "[##------] 25%")
+        self.assertEqual(usage_bar(140, 4), "[####] 100%")
+        now = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(reset_text("2026-10-04T14:14:00Z", now).startswith("resets in 2 h 14 min ("))
+        self.assertTrue(reset_text("2026-10-07T15:00:00+00:00", now).startswith("resets in 3 d 3 h ("))
+
+    def test_claude_ai_plan_usage_and_account(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "o1"
+
+        def get(path, **params):
+            if path == "/account":
+                return {"full_name": "Erez Yaary", "email_address": "erez@example.com",
+                        "created_at": "2023-03-14T10:00:00Z", "memberships": [
+                            {"organization": {"uuid": "o0", "name": "Other"}},
+                            {"organization": {"uuid": "o1", "name": "Erez's org",
+                                              "capabilities": ["chat", "claude_max"],
+                                              "rate_limit_tier": "default_claude_max_20x"}}]}
+            if path == "/organizations/o1/usage":
+                return {"five_hour": {"utilization": 42.0, "resets_at": "2099-01-01T00:00:00Z"},
+                        "seven_day": {"utilization": 10, "resets_at": None},
+                        "seven_day_opus": None,
+                        "extra_usage": {"is_enabled": False, "utilization": None}}
+            raise AssertionError(path)
+        be._get = get
+        page = be.account_report()
+        self.assertIn("## Plan\nMax (20x usage)", page)
+        self.assertIn("Current session (5 hours)\n  [########------------] 42%\n  resets in ", page)
+        self.assertIn("  resets in ", page)
+        self.assertIn("This week, all models\n  [##------------------] 10%", page)
+        self.assertNotIn("Opus", page)
+        self.assertIn("Name: Erez Yaary", page)
+        self.assertIn("Email: erez@example.com", page)
+        self.assertIn("Organization: Erez's org", page)
+        self.assertIn("Member since: 2023-03-14", page)
+
+    def test_plan_names(self):
+        from backends import plan_name
+        self.assertEqual(plan_name(["chat", "claude_pro"]), "Pro")
+        self.assertEqual(plan_name(["chat"]), "Free")
+        self.assertEqual(plan_name(["chat", "claude_max"], "default_claude_max_5x"), "Max (5x usage)")
+        self.assertEqual(plan_name(["chat", "raven"]), "Team")
+
+    def test_account_over_the_protocol(self):
+        link = FakeLink()
+        Session(link, DemoBackend()).handle(b"ACCOUNT")
+        lines = link.lines()
+        self.assertIn([b"T", b"Account"], lines)
+        self.assertIn([b"H", b"Plan"], lines)
+        self.assertIn([b"H", b"Usage"], lines)
+        self.assertIn([b"H", b"Account"], lines)
+        self.assertNotIn([b"M", b"E"], lines)
+
+
 class LongIds(unittest.TestCase):
     """Artifact ids can be long file paths; the Atari keeps 39 characters."""
 

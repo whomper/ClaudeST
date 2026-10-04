@@ -49,6 +49,70 @@ def default_effort(model):
     return "medium" if model == "claude-opus-5-5" else "high"
 
 
+def usage_bar(pct, width=20):
+    """[#####---------------] 25% -- a usage meter in plain text"""
+    pct = max(0.0, min(100.0, float(pct or 0)))
+    n = int(round(pct * width / 100))
+    return "[%s%s] %d%%" % ("#" * n, "-" * (width - n), round(pct))
+
+
+def reset_text(iso, now=None):
+    """'resets in 2 h 14 min (Sat 4 Oct, 17:00)', in the gateway's local time."""
+    from datetime import datetime, timezone
+    if not iso:
+        return ""
+    try:
+        when = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return "resets " + str(iso)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    mins = max(0, int((when - now).total_seconds() // 60))
+    days, rest = divmod(mins, 24 * 60)
+    span = ("%d d %d h" % (days, rest // 60) if days else
+            "%d h %d min" % (rest // 60, rest % 60) if rest >= 60 else "%d min" % rest)
+    local = when.astimezone()
+    return "resets in %s (%s %d %s, %s)" % (span, local.strftime("%a"), local.day,
+                                            local.strftime("%b"), local.strftime("%H:%M"))
+
+
+def usage_lines(label, pct, resets_at=None):
+    """A usage limit for the Account page: its name, a meter, the reset."""
+    out = [label, "  " + usage_bar(pct)]
+    if resets_at:
+        out.append("  " + reset_text(resets_at))
+    return out
+
+
+# claude.ai's usage limits, as its settings page names them
+USAGE_NAMES = [
+    ("five_hour", "Current session (5 hours)"),
+    ("seven_day", "This week, all models"),
+    ("seven_day_opus", "This week, Opus"),
+    ("seven_day_sonnet", "This week, Sonnet"),
+    ("seven_day_oauth_apps", "This week, Claude Code and apps"),
+]
+
+
+def plan_name(capabilities, tier="", billing=""):
+    caps = set(capabilities or [])
+    tier = (tier or "").lower()
+    if "max_20x" in tier:
+        return "Max (20x usage)"
+    if "max_5x" in tier:
+        return "Max (5x usage)"
+    if "claude_max" in caps or "max" in tier:
+        return "Max"
+    if "raven" in caps or "team" in tier or "team" in (billing or "").lower():
+        return "Team" if "enterprise" not in tier + (billing or "").lower() else "Enterprise"
+    if "enterprise" in tier:
+        return "Enterprise"
+    if "claude_pro" in caps or "pro" in tier:
+        return "Pro"
+    return "Free"
+
+
 class Backend:
     name = "?"
     model = "claude-opus-5-5"
@@ -57,6 +121,10 @@ class Backend:
     def models(self):
         """-> [(id, label)] the Atari's model menu offers"""
         return MODELS
+
+    def account_report(self):
+        """Markdown for the Account page: plan, usage and account details."""
+        return "## Plan\n%s backend\n\nNo plan or usage information is available." % self.name
 
     def choose(self, model, effort=""):
         """Pick the model and effort for the next replies. An unknown model
@@ -285,6 +353,50 @@ class ClaudeAiBackend(Backend):
 
     def models(self):
         return [("default", "Default model")] + MODELS
+
+    def account_report(self):
+        acct = self._get("/account")
+        org = {}
+        for m in acct.get("memberships") or []:
+            if (m.get("organization") or {}).get("uuid") == self.org:
+                org = m["organization"]
+        out = ["## Plan",
+               plan_name(org.get("capabilities"), org.get("rate_limit_tier"), org.get("billing_type"))]
+        out += ["", "## Usage"]
+        try:
+            usage = self._get("/organizations/%s/usage" % self.org) or {}
+        except Exception as e:
+            log.info("usage: %s", e)
+            usage = None
+        if not usage:
+            out.append("claude.ai did not report your usage.")
+        else:
+            names = dict(USAGE_NAMES)
+            keys = [k for k, _ in USAGE_NAMES if k in usage] + \
+                   sorted(k for k in usage if k not in names)
+            shown = 0
+            for k in keys:
+                u = usage.get(k)
+                if not isinstance(u, dict) or u.get("utilization") is None:
+                    continue
+                if k == "extra_usage" and not u.get("is_enabled"):
+                    continue
+                label = names.get(k) or k.replace("_", " ").capitalize()
+                out += usage_lines(label, u["utilization"], u.get("resets_at"))
+                shown += 1
+            if not shown:
+                out.append("No usage limits are in effect right now.")
+        out += ["", "## Account"]
+        name = acct.get("full_name") or acct.get("display_name")
+        if name:
+            out.append("Name: " + name)
+        if acct.get("email_address"):
+            out.append("Email: " + acct["email_address"])
+        if org.get("name"):
+            out.append("Organization: " + org["name"])
+        if acct.get("created_at"):
+            out.append("Member since: " + str(acct["created_at"])[:10])
+        return "\n".join(out)
 
     def _conversations(self, limit, offset=0):
         return self._get("/organizations/%s/chat_conversations" % self.org,
@@ -709,6 +821,21 @@ class ApiBackend(Backend):
     def whoami(self):
         return "API " + dict(self.models()).get(self.model, self.model)
 
+    def account_report(self):
+        key = os.environ.get("ANTHROPIC_API_KEY", "")
+        return "\n".join([
+            "## Plan",
+            "Anthropic API, billed per token (see the Claude Console for your bill)",
+            "",
+            "## Usage",
+            "Since the gateway started: %d tokens in, %d tokens out"
+            % (getattr(self, "used_in", 0), getattr(self, "used_out", 0)),
+            "",
+            "## Account",
+            "API key: ...%s" % key[-6:] if key else "API key: from the gateway's credentials",
+            "Model: %s" % dict(self.models()).get(self.model, self.model),
+        ])
+
     def models(self):
         known = dict(MODELS)
         return MODELS if self.model in known else [(self.model, self.model[7:19])] + MODELS
@@ -801,6 +928,10 @@ class ApiBackend(Backend):
                 reply.append(delta)
                 on_delta(delta)
             final = stream.get_final_message()
+        u = getattr(final, "usage", None)
+        if u is not None:
+            self.used_in = getattr(self, "used_in", 0) + (getattr(u, "input_tokens", 0) or 0)
+            self.used_out = getattr(self, "used_out", 0) + (getattr(u, "output_tokens", 0) or 0)
         if final.stop_reason == "refusal":
             note = "\n\n(Claude declined to answer this request.)"
             reply.append(note)
@@ -937,6 +1068,16 @@ class DemoBackend(Backend):
         c = self.chats[chat_id]
         c["messages"] += [("U", text), ("A", reply)]
         return chat_id, c["title"]
+
+    def account_report(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        return "\n".join([
+            "## Plan", "Max (5x usage) -- demo data", "", "## Usage",
+            *usage_lines("Current session (5 hours)", 37, (now + timedelta(hours=2, minutes=14)).isoformat()),
+            *usage_lines("This week, all models", 62, (now + timedelta(days=3, hours=5)).isoformat()),
+            "", "## Account", "Name: Demo User", "Email: demo@example.com",
+        ])
 
     def list_artifacts(self, progress=None):
         return [("a1", "falcon_mixer.s")]

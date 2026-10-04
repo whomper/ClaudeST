@@ -364,6 +364,15 @@ class Session:
             self.send_list("PROJECT", name, chats, back=True)
         self.status("Online: " + self.be.whoami())
 
+    def cmd_account(self, *_):
+        """The Account page: plan, usage and when it resets, account details."""
+        self.status("Loading account...")
+        report = self.be.account_report()
+        self.out("T", "Account")
+        self.out("R")
+        self.message("I", report)
+        self.status("Online: " + self.be.whoami())
+
     def cmd_choose(self, model="", effort="", *_):
         model, effort = self.be.choose(model, effort)
         log.info("model %s, effort %s", model, effort or "-")

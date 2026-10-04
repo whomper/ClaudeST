@@ -198,6 +198,7 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Resize the sidebar | drag the divider line (the pointer turns into a hand) | — |
 | Page through the sidebar list | the ↑ ↓ arrows next to the list title | — |
 | Send a message | — | type, then `Return` |
+| Your plan, usage and account | click the status line at the bottom left, or Options ▸ Account | `F8` |
 | Choose the Claude model and its effort | click the model chip at the right of the reply line | `F9` |
 | Scroll the conversation | scroll bar, or click the upper/lower half | `↑` `↓`, `Shift+↑/↓` by page, `Clr/Home` top, `Shift+Clr/Home` bottom |
 | Type in Hebrew (on/off) | Options ▸ Hebrew keys | `F10` |
@@ -208,6 +209,26 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Use the serial cable instead | Options ▸ Serial port | type `/serial` |
 | About | Desk ▸ About | `Help` |
 | Quit | close box / File ▸ Quit | `Ctrl+Q` |
+
+### Account, plan and usage
+
+Click the status line at the bottom of the sidebar, choose **Options ▸
+Account…**, or press `F8`. The conversation pane then shows:
+
+- **Plan:** Free, Pro, Max (5x or 20x usage), Team or Enterprise.
+- **Usage:** each of your limits as a meter, for example the current
+  5-hour session and this week's usage, with how long until it resets
+  and the day and time it resets, in the Pi's time zone.
+- **Account:** your name, email, organization, and since when you've had
+  the account.
+
+![The Account page (demo data)](docs/account.png)
+
+This comes from the same private claude.ai endpoints as the rest of the
+claude.ai backend (`/api/account` and the organization's usage), so it
+can stop working if claude.ai changes them. With the API backend, the
+page shows the tokens used since the gateway started; your bill is in
+the Claude Console.
 
 ### Model and effort
 
