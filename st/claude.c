@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.5"
+#define VERSION "1.6"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -641,6 +641,8 @@ static void begin_message(char role)
 			append("\n", 1);
 		append("\n", 1);
 	}
+	if (role == 'X')	/* a page (Account): its own headings, no label */
+		return;
 	hdr[0] = MK_HEADER;
 	hdr[1] = role;
 	hdr[2] = '\n';

@@ -576,6 +576,7 @@ class AccountPage(unittest.TestCase):
         Session(link, DemoBackend()).handle(b"ACCOUNT")
         lines = link.lines()
         self.assertIn([b"T", b"Account"], lines)
+        self.assertIn([b"M", b"X"], lines)        # no "Info" label
         self.assertIn([b"H", b"Plan"], lines)
         self.assertIn([b"H", b"Usage"], lines)
         self.assertIn([b"H", b"Account"], lines)

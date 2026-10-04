@@ -392,7 +392,7 @@ class Session:
         report = self.be.account_report()
         self.out("T", "Account")
         self.out("R")
-        self.message("I", report)
+        self.message("X", report)     # a page: no "Info" label above it
         self.online()
 
     def cmd_choose(self, model="", effort="", *_):

@@ -29,7 +29,7 @@ flow control). The protocol is the same on both.
 | `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
 | `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
 | `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDE.INF` holds a choice. |
-| `ACCOUNT` | Show the Account page: the bridge answers `T Account`, `R` and an info message with Plan, Usage and Account sections. |
+| `ACCOUNT` | Show the Account page: the bridge answers `T Account`, `R` and an `X` message with Plan, Usage and Account sections. |
 | `BYE` | Claude ST is quitting. |
 
 ## Bridge → Atari
@@ -49,7 +49,7 @@ All commands are one letter.
 | `C` `<id>` | Id of the open chat (highlighted in the sidebar). |
 | `T` `<title>` | Conversation title. |
 | `R` | Clear the conversation pane. |
-| `M` `<role>` | Begin a message: `U` you, `A` Claude, `K` artifact, `I` info, `E` error. |
+| `M` `<role>` | Begin a message: `U` you, `A` Claude, `K` artifact, `I` info, `E` error, `X` a page with no label (the Account page). |
 | `P` `<text>` | Append text to the current paragraph (streamed replies arrive as many `P`s). |
 | `B` | Line break / new paragraph. |
 | `H` `<text>` | A bold heading line. |
