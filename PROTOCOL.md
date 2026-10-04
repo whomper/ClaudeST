@@ -15,15 +15,15 @@ flow control). The protocol is the same on both.
 | Line | Meaning |
 |------|---------|
 | `HELLO` `1` `<version>` | Atari is up (sent at start, on ^R, and every ~5 s until the bridge answers). Bridge replies with the chat list and a status. |
-| `LIST` `CHATS`\|`PROJECTS`\|`ARTIFACTS` | Fill the sidebar with that list. |
-| `OPEN` `CHAT`\|`PROJECT`\|`ARTIFACT` `<id>` | Show a conversation, list a project's chats, or show an artifact. |
+| `LIST` `CHATS`\|`CODE`\|`PROJECTS`\|`ARTIFACTS` | Fill the sidebar with that list (`CODE`: Claude Code sessions). |
+| `OPEN` `CHAT`\|`CODE`\|`PROJECT`\|`ARTIFACT` `<id>` | Show a conversation or Claude Code session, list a project's chats, or show an artifact. After `OPEN CODE`, `SEND` goes to that session until `NEW` or another `OPEN`. |
 | `NEW` [`QUIET`] | Start a new chat (created on the first `SEND`; inside the open project, if any). `QUIET`: the Atari switched area and keeps its own title. |
 | `SEND` `<text>` | Send a message to the current chat and stream the reply. |
 | `FIND` `<query>` | Search chat titles. |
-| `RENAME` `CHAT`\|`PROJECT` `<id>` `<name>` | Rename a chat or project. |
+| `RENAME` `CHAT`\|`CODE`\|`PROJECT` `<id>` `<name>` | Rename a chat, Claude Code session or project. |
 | `PIN` `CHAT`\|`PROJECT` `<id>` `1`\|`0` | Pin (star) or unpin. |
 | `DELETE` `CHAT`\|`PROJECT` `<id>` | Delete (the Atari has already asked for confirmation). |
-| `ARCHIVE` `PROJECT` `<id>` | Archive a project. |
+| `ARCHIVE` `PROJECT`\|`CODE` `<id>` | Archive a project or a Claude Code session. |
 | `PICKPROJ` `<chat id>` | The Atari wants a project list for "Move to project"; the bridge answers with `Q`/`J`/`W`. |
 | `MOVE` `<chat id>` `<project id>` | Move a chat into a project. |
 | `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
@@ -40,7 +40,7 @@ All commands are one letter.
 |------|---------|
 | `S` `<text>` | Status line at the bottom of the sidebar: only the connection, e.g. `Online: claude.ai`. |
 | `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
-| `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
+| `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `CODE`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
 | `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
 | `E` | End of list. |
 | `Q` | Start a picker list (for "Move to project"). |

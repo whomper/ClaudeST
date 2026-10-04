@@ -190,6 +190,7 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 |--------|-------|----------|
 | New chat | **+ New chat** | `F1` / `Ctrl+N` |
 | Recent chats | **Chats** | `F2` |
+| Claude Code sessions | **Code** | `F6` |
 | Projects | **Projects** | `F3` |
 | Artifacts | **Artifacts** | `F4` |
 | Search chat titles | **Search** | `F5` / `Ctrl+F` |
@@ -209,6 +210,33 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Use the serial cable instead | Options ▸ Serial port | type `/serial` |
 | About | Desk ▸ About | `Help` |
 | Quit | close box / File ▸ Quit | `Ctrl+Q` |
+
+### Code (Claude Code sessions)
+
+**Code**, below Chats (or `F6`), lists your Claude Code sessions from
+claude.ai/code, newest first.
+
+- **Open a session** to read it: your messages and Claude's replies,
+  with each tool call as a one-line note such as `[Bash: make -C st]`.
+  Tool output is left out.
+- **Reply** by typing below. The message goes to that session, and
+  Claude Code's replies appear as it works. If it is still working after
+  15 minutes, open the session again later to see the rest.
+- **Right-click** a session for **Open**, **Rename…** and **Archive**.
+- The model chip is hidden while a session is open, because a session
+  keeps its own model.
+
+![A Claude Code session](docs/code.png)
+
+claude.ai/code keeps sessions in its own sessions store, separate from
+chats. The bridge uses the same unofficial interface the web page does,
+so it can stop working if claude.ai changes it. If **Code** shows an
+error, run this on the Pi and send the output. It shows only session
+titles and counts:
+
+```sh
+sudo -u claude-st bash -c 'set -a; . /etc/claude-st/claude-st.env; /opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py --probe-code'
+```
 
 ### Tooltips, status line and notices
 

@@ -520,6 +520,98 @@ class StatusLine(unittest.TestCase):
         self.assertEqual(lines[-2:], [[b"N", b""], [b"S", b"Online: demo"]])
 
 
+class CodeSessions(unittest.TestCase):
+    EVENTS = [
+        {"id": "e1", "data": {"type": "system", "subtype": "init"}},
+        {"id": "e2", "data": {"type": "user", "message": {"role": "user", "content": "fix the build"}}},
+        {"id": "e3", "data": {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "Looking."},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "make  -C st"}}]}}},
+        {"id": "e4", "data": {"type": "user", "message": {"content": [
+            {"type": "tool_result", "content": "ok"}]}}},
+        {"id": "e5", "data": {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "It builds now."}]}}},
+        {"id": "e6", "data": {"type": "result", "subtype": "success"}},
+    ]
+
+    def test_events_become_messages(self):
+        from backends import code_messages
+        self.assertEqual(code_messages(self.EVENTS), [
+            ("U", "fix the build"),
+            ("A", "Looking.\n\n[Bash: make -C st]\n\nIt builds now.")])
+
+    def backend(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "o1"
+        calls = []
+        sessions = [{"id": "session_a", "title": "Old", "updated_at": "2026-09-01"},
+                    {"id": "session_b", "title": "New", "updated_at": "2026-10-01"},
+                    {"id": "session_c", "title": "Gone", "session_status": "archived"}]
+        events = list(self.EVENTS[:2])
+
+        class R:
+            def __init__(self, code, data):
+                self.status_code, self._d, self.content, self.text = code, data, b"x", ""
+
+            def json(self):
+                return self._d
+
+        def call(method):
+            def f(url, **kw):
+                calls.append((method, url, kw))
+                if not url.startswith("https://claude.ai/v1"):
+                    return R(404, {})
+                path = url[len("https://claude.ai/v1"):]
+                if path == "/sessions":
+                    return R(200, {"data": sessions})
+                if path.endswith("/events") and method == "post":
+                    events.extend(self.EVENTS[2:])      # Claude answers
+                    return R(200, {})
+                if path.endswith("/events"):
+                    after = (kw.get("params") or {}).get("after_id")
+                    ids = [e["id"] for e in events]
+                    rest = events[ids.index(after) + 1:] if after else events
+                    return R(200, {"data": rest, "has_more": False})
+                return R(200, {"id": path.split("/")[-1], "title": "New"})
+            return f
+        be.http = type("H", (), {m: staticmethod(call(m)) for m in ("get", "post", "patch")})()
+        return be, calls
+
+    def test_list_open_and_send(self):
+        be, calls = self.backend()
+        self.assertEqual(be.list_code_sessions(), [("session_b", "New"), ("session_a", "Old")])
+        self.assertEqual(calls[0][2]["headers"]["anthropic-beta"], "ccr-byoc-2025-07-29")
+        title, msgs = be.get_code_session("session_b")
+        self.assertEqual((title, msgs), ("New", [("U", "fix the build")]))
+        got = []
+        be.send_code("session_b", "and the tests?", got.append, poll=0)
+        self.assertEqual(got, ["Looking.\n\n[Bash: make -C st]\n\nIt builds now."])
+        sent = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]
+        self.assertEqual(sent["message"], {"role": "user", "content": "and the tests?"})
+
+    def test_code_over_the_protocol(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"LIST\tCODE")
+        lines = link.lines()
+        self.assertIn([b"L", b"CODE", b"Code"], lines)
+        self.assertIn([b"I", b"session_d1", b"Port the bridge to MicroPython"], lines)
+        link.sent = b""
+        s.handle(b"OPEN\tCODE\tsession_d2")
+        self.assertIn([b"T", b"Fix the 68000 store-merging crash"], link.lines())
+        link.sent = b""
+        s.handle(b"SEND\tthanks")
+        self.assertIn(b"no session ran", link.sent)
+        self.assertNotIn(b"L\tCHATS", link.sent)     # not a new chat
+        s.handle(b"RENAME\tCODE\tsession_d2\tStore merging")
+        self.assertIn([b"T", b"Store merging"], link.lines())
+        link.sent = b""
+        s.handle(b"NEW")
+        s.handle(b"SEND\thello")                      # back to a normal new chat
+        self.assertIn([b"C", b"d5"], link.lines())
+
+
 class AccountPage(unittest.TestCase):
     def test_usage_bar_and_reset_time(self):
         from datetime import datetime, timezone

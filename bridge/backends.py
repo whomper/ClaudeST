@@ -140,6 +140,63 @@ def plan_name(capabilities, tier="", billing=""):
     return "Free"
 
 
+def _event_payload(ev):
+    """A Claude Code session event -> (type, payload). Events carry the
+    stream-json message either directly or under "data"."""
+    p = ev.get("data") if isinstance(ev.get("data"), dict) else ev
+    t = p.get("type")
+    if t not in ("user", "assistant", "result", "system"):
+        for k in ("user", "assistant", "result", "system"):
+            if isinstance(p.get(k), dict):
+                return k, p[k]
+    return t, p
+
+
+def _tool_line(block):
+    """[Bash: ls -la] -- a short note for a tool call in a Code session."""
+    inp = block.get("input") or {}
+    arg = (inp.get("command") or inp.get("file_path") or inp.get("path") or
+           inp.get("pattern") or inp.get("url") or inp.get("description") or "")
+    arg = " ".join(str(arg).split())
+    if len(arg) > 60:
+        arg = arg[:57] + "..."
+    return "[%s%s]" % (block.get("name") or "tool", ": " + arg if arg else "")
+
+
+def code_messages(events):
+    """Session events -> [(role, text)]: your messages, Claude's text and a
+    one-line note per tool call; tool results and system events are left
+    out, and Claude's consecutive events are joined into one message."""
+    out = []
+    for ev in events:
+        t, p = _event_payload(ev)
+        msg = p.get("message") if isinstance(p.get("message"), dict) else p
+        content = msg.get("content")
+        if t == "user":
+            if isinstance(content, str):
+                text = content
+            else:
+                text = "\n".join(b.get("text", "") for b in content or []
+                                 if isinstance(b, dict) and b.get("type") == "text")
+            if text.strip():
+                out.append(("U", text.strip()))
+        elif t == "assistant":
+            parts = []
+            for b in content if isinstance(content, list) else [{"type": "text", "text": content or ""}]:
+                if b.get("type") == "text" and b.get("text", "").strip():
+                    parts.append(b["text"].strip())
+                elif b.get("type") == "tool_use":
+                    parts.append(_tool_line(b))
+            if not parts:
+                continue
+            text = "\n\n".join(parts)
+            if out and out[-1][0] == "A":
+                out[-1] = ("A", out[-1][1] + "\n\n" + text)
+            else:
+                out.append(("A", text))
+    return out
+
+
 class Backend:
     name = "?"
     model = "claude-opus-5-5"
@@ -160,6 +217,25 @@ class Backend:
 
     def set_chat_model(self, chat_id, model, effort):
         """Remember a chat's model, so it's still there when reopened."""
+
+    # Claude Code sessions (claude.ai/code)
+    def list_code_sessions(self):
+        """-> [(id, title)] newest first"""
+        raise NotImplementedError("Claude Code sessions need the claude.ai backend")
+
+    def get_code_session(self, session_id):
+        """-> (title, [(role, text)])"""
+        raise NotImplementedError("Claude Code sessions need the claude.ai backend")
+
+    def send_code(self, session_id, text, on_delta):
+        """Send a message to a session and pass on its replies; -> title"""
+        raise NotImplementedError("Claude Code sessions need the claude.ai backend")
+
+    def rename_code(self, session_id, title):
+        raise NotImplementedError("Renaming sessions isn't supported by the %s backend" % self.name)
+
+    def archive_code(self, session_id):
+        raise NotImplementedError("Archiving sessions isn't supported by the %s backend" % self.name)
 
     def account_report(self):
         """Markdown for the Account page: plan, usage and account details."""
@@ -392,6 +468,99 @@ class ClaudeAiBackend(Backend):
 
     def models(self):
         return [("default", "Default model")] + MODELS + list(self.extra_models)
+
+    # -- Claude Code sessions -------------------------------------------
+    # claude.ai/code keeps sessions apart from chats, behind a sessions API
+    # (/v1/sessions, beta "ccr-byoc"); unofficial like the rest.
+    CODE_BASES = ("https://claude.ai/v1", "https://claude.ai/api/v1")
+
+    def _code(self, method, path, body=None, **params):
+        headers = {"anthropic-version": "2023-06-01",
+                   "anthropic-beta": "ccr-byoc-2025-07-29",
+                   "x-organization-uuid": self.org}
+        bases = [self._code_base] if getattr(self, "_code_base", None) else self.CODE_BASES
+        last = None
+        for base in bases:
+            kw = {"headers": headers, "timeout": 60}
+            if params:
+                kw["params"] = params
+            if body is not None:
+                kw["json"] = body
+            r = getattr(self.http, method)(base + path, **kw)
+            if r.status_code == 404 and len(bases) > 1:
+                last = r
+                continue
+            if r.status_code in (401, 403):
+                raise RuntimeError("claude.ai refused the Code sessions (HTTP %d)." % r.status_code)
+            if r.status_code >= 400:
+                raise RuntimeError("claude.ai Code sessions: HTTP %d %s" % (r.status_code, r.text[:120]))
+            self._code_base = base
+            return r.json() if r.content else {}
+        raise RuntimeError("claude.ai's Code sessions were not found (HTTP %s)."
+                           % (last.status_code if last is not None else "?"))
+
+    @staticmethod
+    def _data(page):
+        return page.get("data", []) if isinstance(page, dict) else (page or [])
+
+    def list_code_sessions(self):
+        sessions = self._data(self._code("get", "/sessions", limit=50))
+        sessions = [s for s in sessions if not s.get("archived_at")
+                    and s.get("session_status") != "archived"]
+        sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at") or "", reverse=True)
+        return [(s["id"], s.get("title") or "Untitled session") for s in sessions]
+
+    def _code_events(self, session_id, after=None, cap=2000):
+        events, params = [], {"limit": 200}
+        if after:
+            params["after_id"] = after
+        while len(events) < cap:
+            page = self._code("get", "/sessions/%s/events" % session_id, **params)
+            batch = self._data(page)
+            events += batch
+            if not (isinstance(page, dict) and page.get("has_more")) or not batch:
+                break
+            params["after_id"] = page.get("last_id") or batch[-1].get("id")
+        return events
+
+    def get_code_session(self, session_id):
+        info = self._code("get", "/sessions/%s" % session_id)
+        events = self._code_events(session_id)
+        self._code_last = {session_id: events[-1].get("id") if events else None}
+        return info.get("title") or "Untitled session", code_messages(events)
+
+    def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0):
+        last = (getattr(self, "_code_last", None) or {}).get(session_id)
+        if last is None:
+            events = self._code_events(session_id)
+            last = events[-1].get("id") if events else None
+        self._code("post", "/sessions/%s/events" % session_id, {"events": [{
+            "type": "user", "uuid": str(uuid.uuid4()), "session_id": session_id,
+            "parent_tool_use_id": None,
+            "message": {"role": "user", "content": text}}]})
+        start, said = time.time(), 0
+        while time.time() - start < timeout:
+            time.sleep(poll)
+            new = self._code_events(session_id, after=last)
+            if not new:
+                continue
+            last = new[-1].get("id") or last
+            for role, body in code_messages(new):
+                if role == "A":
+                    on_delta(("\n\n" if said else "") + body)
+                    said += 1
+            if any(_event_payload(e)[0] == "result" for e in new):
+                break
+        else:
+            on_delta("\n\n(Still working; open the session again later to see the rest.)")
+        self._code_last = {session_id: last}
+        return self._code("get", "/sessions/%s" % session_id).get("title")
+
+    def rename_code(self, session_id, title):
+        self._code("patch", "/sessions/%s" % session_id, {"title": title})
+
+    def archive_code(self, session_id):
+        self._code("post", "/sessions/%s/archive" % session_id, {})
 
     def set_chat_model(self, chat_id, model, effort):
         # the web app keeps the model on the conversation; replies sent
@@ -1078,6 +1247,17 @@ class DemoBackend(Backend):
                   "## יתרונות\n\n- סאונד של 16 ביט\n- גרפיקה של עד 65,536 צבעים\n\n"
                   "It was the last computer Atari made, אחרי ה-TT030.")]}
         self.projects = {"p1": {"name": "Falcon audio"}, "p2": {"name": "Demoscene"}}
+        self.code = {
+            "session_d1": {"title": "Port the bridge to MicroPython", "messages": [
+                ("U", "Can claude_bridge.py run on a Pico W?"),
+                ("A", "Mostly. I'll check what it imports.\n\n[Bash: grep -n ^import bridge/*.py]"
+                      "\n\nIt needs sockets and hashlib, both in MicroPython; serial would "
+                      "use machine.UART instead of pyserial.")]},
+            "session_d2": {"title": "Fix the 68000 store-merging crash", "messages": [
+                ("U", "CLAUDE.PRG crashes on /connect"),
+                ("A", "[Read: st/claude.c]\n\nGCC merged two byte stores into one word write "
+                      "at an odd address. Building with -fno-store-merging fixes it.")]},
+        }
 
     def list_chats(self, limit=100):
         return [(k, v["title"], v.get("pinned", False)) for k, v in self.chats.items()][:limit]
@@ -1156,6 +1336,25 @@ class DemoBackend(Backend):
             *usage_lines("This week, all models", 62, (now + timedelta(days=3, hours=5)).isoformat()),
             "", "## Account", "Name: Demo User", "Email: demo@example.com",
         ])
+
+    def list_code_sessions(self):
+        return [(k, v["title"]) for k, v in self.code.items()]
+
+    def get_code_session(self, session_id):
+        s = self.code[session_id]
+        return s["title"], list(s["messages"])
+
+    def send_code(self, session_id, text, on_delta):
+        reply = "[Bash: echo working]\n\nDone. (This is the demo backend: no session ran.)"
+        on_delta(reply)
+        self.code[session_id]["messages"] += [("U", text), ("A", reply)]
+        return self.code[session_id]["title"]
+
+    def rename_code(self, session_id, title):
+        self.code[session_id]["title"] = title
+
+    def archive_code(self, session_id):
+        del self.code[session_id]
 
     def list_artifacts(self, progress=None):
         return [("a1", "falcon_mixer.s")]

@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.6"
+#define VERSION "1.7"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -38,6 +38,7 @@ static short title_h, input_h, row_h;
 static short tx, ty, tw, th;		/* text area */
 static short rows, cols;
 static short nav_y;			/* first nav row */
+#define NNAV 6				/* New chat, Search, Chats, Code, Projects, Artifacts */
 static short list_y, list_rows;		/* sidebar list */
 static short status_y;
 
@@ -84,6 +85,7 @@ static short list_loading;		/* a list was asked for and hasn't arrived */
 static char notice[64];			/* a passing message from the bridge (N) */
 static long notice_until;
 static short title_cut;			/* the chat title didn't fit */
+static short code_open;			/* a Claude Code session is open */
 static short title_xr;			/* where the title area ends */
 static short nav_pending = -1;		/* area chosen, its list not arrived yet */
 static char list_kind[12] = "CHATS";
@@ -767,14 +769,15 @@ static void layout(void)
 		rows = 1;
 
 	nav_y = wy + title_h + 2;
-	list_y = nav_y + 6 * row_h + 4;
+	list_y = nav_y + (NNAV + 1) * row_h + 4;
 	status_y = wy + wh - row_h;
 	list_rows = (status_y - 2 - (list_y + row_h)) / row_h;
 	if (list_rows < 1)
 		list_rows = 1;
 }
 
-static const char *nav_labels[5] = { "+ New chat", "  Search", "  Chats", "  Projects", "  Artifacts" };
+static const char *nav_labels[NNAV] = { "+ New chat", "  Search", "  Chats", "  Code",
+					 "  Projects", "  Artifacts" };
 
 static short nav_active(short i)
 {
@@ -787,8 +790,10 @@ static short nav_active(short i)
 	if (i == 2)
 		return !strcmp(list_kind, "CHATS");
 	if (i == 3)
-		return !strcmp(list_kind, "PROJECTS") || !strcmp(list_kind, "PROJECT");
+		return !strcmp(list_kind, "CODE");
 	if (i == 4)
+		return !strcmp(list_kind, "PROJECTS") || !strcmp(list_kind, "PROJECT");
+	if (i == 5)
 		return !strcmp(list_kind, "ARTIFACTS");
 	if (i == 1)
 		return !strcmp(list_kind, "SEARCH");
@@ -812,7 +817,7 @@ static void draw_sidebar(void)
 	}
 
 	/* navigation */
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < NNAV; i++) {
 		y = nav_y + i * row_h;
 		if (!row_visible(y, y + row_h))
 			continue;
@@ -923,7 +928,7 @@ static const char *effort_label(void)
 /* the text of the model chip, e.g. "Opus 5.5 \xfa Medium \x02"; its length */
 static short model_chip(char *out)
 {
-	if (!nmodel || !cur_model[0])
+	if (!nmodel || !cur_model[0] || code_open)	/* a session has its own */
 		return 0;
 	strlcpy_(out, model_label(), 20);
 	if (!strcmp(out, "Default model"))
@@ -1838,6 +1843,7 @@ static void do_new_chat(void)
 {
 	search_mode = 0;
 	cur_id[0] = 0;
+	code_open = 0;
 	strcpy(chat_title, "New chat");
 	clear_text();
 	begin_message('I');
@@ -1851,6 +1857,7 @@ static void do_new_chat(void)
 static void clear_context(const char *title, const char *hint)
 {
 	cur_id[0] = 0;
+	code_open = 0;
 	strlcpy_(chat_title, title, sizeof(chat_title));
 	clear_text();
 	begin_message('I');
@@ -1888,10 +1895,11 @@ static void do_search(void)
 static void do_list(const char *kind)
 {
 	search_mode = 0;
-	nav_pending = !strcmp(kind, "PROJECTS") ? 3 : !strcmp(kind, "ARTIFACTS") ? 4 : 2;
+	nav_pending = !strcmp(kind, "CODE") ? 3 : !strcmp(kind, "PROJECTS") ? 4 :
+		      !strcmp(kind, "ARTIFACTS") ? 5 : 2;
 	/* empty the list until the new one arrives */
-	strlcpy_(list_title, nav_pending == 3 ? "Projects" : nav_pending == 4 ? "Artifacts" : "Recents",
-		 sizeof(list_title));
+	strlcpy_(list_title, nav_pending == 3 ? "Code" : nav_pending == 4 ? "Projects" :
+		 nav_pending == 5 ? "Artifacts" : "Recents", sizeof(list_title));
 	nitems = 0;
 	list_top = 0;
 	lcur = -1;
@@ -1903,6 +1911,9 @@ static void do_list(const char *kind)
 		clear_context("Projects", "Pick a project on the left to see its chats.");
 	else if (!strcmp(kind, "ARTIFACTS"))
 		clear_context("Artifacts", "Pick an artifact on the left to view it.");
+	else if (!strcmp(kind, "CODE"))
+		clear_context("Code", "Pick a Claude Code session on the left to read it. "
+			      "What you type then goes to that session.");
 	else
 		clear_context("New chat", "Pick a chat on the left, or type below "
 			      "to start a new one.");
@@ -1946,6 +1957,8 @@ static void open_item(short i)
 		kind = "PROJECT";
 	else if (!strcmp(list_kind, "ARTIFACTS"))
 		kind = "ARTIFACT";
+	else if (!strcmp(list_kind, "CODE"))
+		kind = "CODE";
 	if (!strcmp(it->id, "..")) {
 		do_list("PROJECTS");
 		return;
@@ -1958,7 +1971,8 @@ static void open_item(short i)
 		clear_context(it->label, hint);
 		/* the bridge stays in the project, so a new chat is created there */
 	}
-	if (!strcmp(kind, "CHAT")) {
+	if (!strcmp(kind, "CHAT") || !strcmp(kind, "CODE")) {
+		code_open = !strcmp(kind, "CODE");
 		strlcpy_(cur_id, it->id, sizeof(cur_id));
 		strlcpy_(chat_title, it->label, sizeof(chat_title));
 		clear_text();
@@ -2566,7 +2580,8 @@ static void rename_item(const char *kind, ITEM *it)
 	char name[72];
 	short n;
 	strlcpy_(name, it->label, sizeof(name));
-	if (!text_dialog(strcmp(kind, "PROJECT") ? "Rename chat" : "Rename project",
+	if (!text_dialog(!strcmp(kind, "PROJECT") ? "Rename project" :
+			 !strcmp(kind, "CODE") ? "Rename session" : "Rename chat",
 			 "Rename", name, sizeof(name)))
 		return;
 	/* trim spaces; an empty or unchanged name changes nothing */
@@ -2640,6 +2655,17 @@ static void context_menu(short i, short x, short y)
 			strlcpy_(save_id, it->id, sizeof(save_id));
 			tx_cmd("SAVE", "ARTIFACT", it->id);
 		}
+		return;
+	}
+	if (!strcmp(list_kind, "CODE")) {
+		static const char *code_menu[4] = { "Open", "Rename...", "-", "Archive" };
+		r = popup(x, y1, y0, code_menu, 4);
+		switch (r) {
+		case 0: open_item(i); break;
+		case 1: rename_item("CODE", it); break;
+		case 3: tx_cmd("ARCHIVE", "CODE", it->id); break;
+		}
+		set_menu_target(-1);
 		return;
 	}
 	if (!strcmp(list_kind, "PROJECTS")) {
@@ -3075,7 +3101,7 @@ static void handle_click(short mx, short my)
 		return;
 	}
 	if (mx < wx + sb_w) {
-		for (i = 0; i < 5; i++) {
+		for (i = 0; i < NNAV; i++) {
 			short y = nav_y + i * row_h;
 			if (my >= y && my < y + row_h) {
 				nav_pressed = i;
@@ -3084,8 +3110,9 @@ static void handle_click(short mx, short my)
 				case 0: do_new_chat(); break;
 				case 1: do_search(); break;
 				case 2: do_list("CHATS"); break;
-				case 3: do_list("PROJECTS"); break;
-				case 4: do_list("ARTIFACTS"); break;
+				case 3: do_list("CODE"); break;
+				case 4: do_list("PROJECTS"); break;
+				case 5: do_list("ARTIFACTS"); break;
 				}
 				return;
 			}
@@ -3172,6 +3199,7 @@ static void handle_key(short kstate, short kr)
 	case 0x3d: do_list("PROJECTS"); return;				/* F3 */
 	case 0x3e: do_list("ARTIFACTS"); return;			/* F4 */
 	case 0x3f: do_search(); return;					/* F5 */
+	case 0x40: do_list("CODE"); return;				/* F6 */
 	case 0x42: do_account(); return;				/* F8 */
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */

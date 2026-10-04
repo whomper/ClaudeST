@@ -186,6 +186,7 @@ class Session:
         self.chat_id = None
         self.project_id = None
         self.new_choice = None      # the model and effort for new chats (CHOOSE)
+        self.chat_kind = "CHAT"     # or "CODE": chat_id is a Claude Code session
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
@@ -254,6 +255,8 @@ class Session:
             self.send_list("SEARCH", "Search: " + self.query, self.be.search(self.query))
         elif self.list_kind == "ARTIFACTS":
             pass
+        elif self.list_kind == "CODE":
+            self.send_list("CODE", "Code", self.be.list_code_sessions())
         else:
             self.send_list("CHATS", "Recents", self.be.list_chats())
 
@@ -303,6 +306,12 @@ class Session:
                 n = getattr(self.be, "last_scan", None)
                 self.message("I", "No artifacts found%s." % (
                     " in your %d most recent chats" % n if n else ""))
+        elif kind == "CODE":
+            self.notice("Loading sessions...")
+            sessions = self.be.list_code_sessions()
+            self.send_list("CODE", "Code", sessions)
+            if not sessions:
+                self.message("I", "No Claude Code sessions found.")
         else:
             self.project_id = None
             self.send_list("CHATS", "Recents", self.be.list_chats())
@@ -324,9 +333,23 @@ class Session:
             self.message("K", body)
             self.online()
             return
+        if kind == "CODE":
+            self.notice("Loading session...")
+            title, msgs = self.be.get_code_session(oid)
+            self.chat_id, self.chat_kind = oid, "CODE"
+            self.out("T", title)
+            self.out("C", oid)
+            self.out("R")
+            if len(msgs) > HISTORY_MESSAGES:
+                self.message("I", "%d earlier messages are not shown." % (len(msgs) - HISTORY_MESSAGES))
+                msgs = msgs[-HISTORY_MESSAGES:]
+            for role, body in msgs:
+                self.message(role, body)
+            self.online()
+            return
         self.notice("Loading chat...")
         title, msgs = self.be.get_chat(oid)
-        self.chat_id = oid
+        self.chat_id, self.chat_kind = oid, "CHAT"
         # each chat keeps its own model; chats without one get the choice
         # for new chats
         choice = getattr(self.be, "chat_choice", None)
@@ -349,6 +372,7 @@ class Session:
         """Start a new chat. QUIET: the Atari switched to another area and
         sets its own title; the next message still starts a new chat."""
         self.chat_id = None
+        self.chat_kind = "CHAT"
         self.out("C", "")
         if self.new_choice and self.new_choice != (self.be.model, self.be.effort):
             self.be.choose(*self.new_choice)
@@ -368,6 +392,18 @@ class Session:
         self.notice("Claude is thinking...")
         self.out("M", "A")
         fmt = Formatter()
+        if self.chat_kind == "CODE":
+            self.notice("Claude Code is working...")
+            try:
+                title = self.be.send_code(self.chat_id, text, lambda d: self.ops(fmt.feed(d)))
+            finally:
+                self.ops(fmt.finish())
+                self.out("Z")
+                self.out("Y", "0")
+            if title:
+                self.out("T", title)
+            self.online()
+            return
         try:
             chat_id, title = self.be.send(self.chat_id, self.project_id, text,
                                           lambda d: self.ops(fmt.feed(d)))
@@ -423,8 +459,11 @@ class Session:
         if not name:
             return
         self.notice("Renaming...")
-        self.be.rename(kind, item_id, name)
-        if kind == "CHAT" and item_id == self.chat_id:
+        if kind == "CODE":
+            self.be.rename_code(item_id, name)
+        else:
+            self.be.rename(kind, item_id, name)
+        if kind in ("CHAT", "CODE") and item_id == self.chat_id:
             self.out("T", name)
         self._done("Renamed")
 
@@ -454,7 +493,13 @@ class Session:
 
     def cmd_archive(self, kind, item_id, *_):
         self.notice("Archiving...")
-        self.be.archive_project(item_id)
+        if kind == "CODE":
+            self.be.archive_code(item_id)
+            if item_id == self.chat_id:
+                self.cmd_new()
+                self.out("R")
+        else:
+            self.be.archive_project(item_id)
         self._done("Archived")
 
     def cmd_pickproj(self, chat_id, *_):
@@ -567,6 +612,9 @@ def main():
                     help="claude.ai: list what kinds of blocks your recent chats hold "
                          "(no content), to diagnose a missing artifact, then exit. With "
                          "WORD, also detail the chats with WORD in their title")
+    ap.add_argument("--probe-code", action="store_true",
+                    help="claude.ai: check that your Claude Code sessions can be listed "
+                         "(titles and counts only), then exit")
     ap.add_argument("--artifact-scan", type=int, default=100, metavar="N",
                     help="claude.ai: how many recent chats to search for artifacts")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -574,6 +622,20 @@ def main():
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    if args.probe_code:
+        backend = make_backend(args)
+        sessions = backend.list_code_sessions()
+        print("%d Claude Code sessions (via %s)" % (len(sessions), getattr(backend, "_code_base", "?")))
+        for sid, title in sessions[:10]:
+            print("  %s  %s" % (sid, title))
+        if sessions:
+            sid = sessions[0][0]
+            events = backend._code_events(sid, cap=400)
+            from collections import Counter
+            print("newest session: %d events, kinds %s" % (len(events), dict(Counter(
+                backends._event_payload(e)[0] for e in events))))
+            print("first event keys: %s" % sorted(events[0]) if events else "no events")
+        return
     if not (args.probe is not None or args.serial or args.tcp or args.pipe):
         ap.error("one of --serial, --tcp or --pipe is required")
     backend = make_backend(args)
