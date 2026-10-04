@@ -34,22 +34,62 @@ EFFORTS = [("low", "Low"), ("medium", "Medium"), ("high", "High"),
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 
 
+def base_model(model):
+    """The model's family id: "claude-opus-5-5[1m]" and dated ids such as
+    "claude-sonnet-4-20250514" -> "claude-opus-5-5", "claude-sonnet-4"."""
+    m = (model or "").split("[")[0]
+    return re.sub(r"-\d{8}$", "", m)
+
+
 def efforts_for(model):
     """The effort levels a model accepts (none for Haiku or older models)."""
-    if not model or model == "default" or model.startswith("claude-haiku"):
+    m = base_model(model)
+    if not m or m == "default" or m.startswith("claude-haiku"):
         return []
-    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+    if m.startswith(("claude-fable", "claude-mythos", "claude-opus-5", "claude-sonnet-5",
+                     "claude-opus-4-7", "claude-opus-4-8")):
+        return EFFORTS                      # low, medium, high, xhigh, max
+    if m in ("claude-opus-4-6", "claude-sonnet-4-6"):
         return [e for e in EFFORTS if e[0] != "xhigh"]
-    if model.startswith("claude-opus-4-5"):
+    if m == "claude-opus-4-5":
         return EFFORTS[:3]
-    if model in dict(MODELS) or model.startswith(("claude-fable", "claude-mythos")):
-        return EFFORTS
     return []
+
+
+def find_effort(obj, depth=0):
+    """claude.ai's own record of an effort level, wherever a chat's or a
+    session's details keep it: any key with "effort" in its name."""
+    levels = {e[0] for e in EFFORTS}
+    if depth > 4:
+        return ""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "chat_messages":
+                continue
+            if "effort" in str(k).lower():
+                if isinstance(v, str) and v.lower() in levels:
+                    return v.lower()
+                if isinstance(v, dict):
+                    for kk in ("level", "value", "effort"):
+                        if isinstance(v.get(kk), str) and v[kk].lower() in levels:
+                            return v[kk].lower()
+        for v in obj.values():
+            if isinstance(v, (dict, list)) and v is not obj.get("chat_messages"):
+                found = find_effort(v, depth + 1)
+                if found:
+                    return found
+    elif isinstance(obj, list):
+        for v in obj[:20]:
+            found = find_effort(v, depth + 1)
+            if found:
+                return found
+    return ""
 
 
 def model_label(model):
     """A short name for a model id: claude-sonnet-4-20250514 -> Sonnet 4,
     claude-3-5-sonnet-20241022 -> 3.5 Sonnet."""
+    model = (model or "").split("[")[0]
     if model in dict(MODELS):
         return dict(MODELS)[model]
     parts = [p for p in model.replace("claude-", "", 1).split("-")
@@ -248,7 +288,9 @@ class Backend:
         menu (e.g. an older chat's Sonnet 4)."""
         if model and model.startswith("claude-") and model not in dict(self.models()):
             self.extra_models = list(self.extra_models) + [(model, model_label(model))]
-        return self.choose(model, effort or self.effort)
+        # no effort recorded anywhere: the model's own default, which is
+        # what claude.ai uses then
+        return self.choose(model, effort)
 
     def set_chat_model(self, chat_id, model, effort):
         """Remember a chat's model, so it's still there when reopened."""
@@ -584,8 +626,11 @@ class ClaudeAiBackend(Backend):
     def get_code_session(self, session_id):
         info = self._code("get", "/sessions/%s" % session_id)
         model = self._session_model(info)
-        self.chat_choice = (model, self._memory().get(session_id)) if model else None
         events = self._code_events(session_id)
+        effort = (find_effort(info) or
+                  find_effort([_event_payload(e)[1] for e in events if _event_payload(e)[0] == "system"]) or
+                  self._memory().get(session_id))
+        self.chat_choice = (model, effort) if model else None
         self._code_last = {session_id: events[-1].get("id") if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
 
@@ -787,8 +832,7 @@ class ClaudeAiBackend(Backend):
 
     def get_chat(self, chat_id):
         conv = self._conversation(chat_id)
-        settings = conv.get("settings") or {}
-        effort = settings.get("effort") or self._memory().get(chat_id)
+        effort = find_effort(conv) or self._memory().get(chat_id)
         self.chat_choice = (conv.get("model"), effort) if conv.get("model") else None
         out = []
         for m in self._current_branch(conv):
@@ -1049,8 +1093,9 @@ class ClaudeAiBackend(Backend):
             conv = self._conversation(c["uuid"])
             if word and word.lower() in (c.get("name") or "").lower():
                 print("chat #%d: %s (updated %s)" % (pos, c.get("name"), c.get("updated_at")))
-                print("    model: %r  settings: %s" % (
-                    conv.get("model"), sorted((conv.get("settings") or {}).items())))
+                print("    model: %r  effort found: %r  settings: %s" % (
+                    conv.get("model"), find_effort(conv),
+                    sorted((conv.get("settings") or {}).items())))
                 print("    model fields in the chat list: %s" % {
                     k: v for k, v in c.items() if "model" in k.lower()})
                 for m in conv.get("chat_messages") or []:

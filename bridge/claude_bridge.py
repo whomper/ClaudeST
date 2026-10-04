@@ -652,6 +652,13 @@ def main():
             print("newest session: %d events, kinds %s" % (len(events), dict(Counter(
                 backends._event_payload(e)[0] for e in events))))
             print("first event keys: %s" % sorted(events[0]) if events else "no events")
+            info = backend._code("get", "/sessions/%s" % sid)
+            print("newest session: model %r, effort found %r" % (
+                backend._session_model(info), backends.find_effort(info) or backends.find_effort(
+                    [backends._event_payload(e)[1] for e in events
+                     if backends._event_payload(e)[0] == "system"])))
+            print("session fields: %s; session_context fields: %s" % (
+                sorted(info), sorted(info.get("session_context") or {})))
         return
     if not (args.probe is not None or args.serial or args.tcp or args.pipe):
         ap.error("one of --serial, --tcp or --pipe is required")

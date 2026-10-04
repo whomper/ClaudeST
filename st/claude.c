@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.9"
+#define VERSION "1.10"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -2521,7 +2521,7 @@ static void about(void)
 	y += lh / 4;
 	center_text(y, "Created by Erez Yaary", 1);
 	y += lh;
-	center_text(y, "\xBD 2026 Whomper", 0);
+	center_text(y, "\xBD 2026 Erez Yaary", 0);
 	y += lh + lh / 2;
 	center_text(y, conn, 0);
 	y += lh + lh / 2;

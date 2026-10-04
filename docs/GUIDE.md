@@ -89,18 +89,21 @@ menu: the models, then the effort levels that model supports.
   model to the menu.
 - **Effort:** Low, Medium, High, Extra high and Max. Higher effort means
   more thinking: slower and more thorough. The default is Medium for
-  Opus 5.5 and High for the others. Haiku 4.5 and older models have no
-  effort setting.
-- **Each chat keeps its own model.** Opening a chat shows its model.
-  Changing it changes that chat, and it also becomes the model for new
-  chats. That choice is saved in `CLAUDE.INF`.
+  Opus 5.5 and High for the others. Haiku and models older than the 4.5
+  family have no effort setting; Opus 4.5 has only Low, Medium and High.
+- **Each chat keeps its own model and effort.** Opening a chat, a
+  project's chat or a Code session shows the model and effort claude.ai
+  has for it. If claude.ai has no effort for it, the chip shows the one
+  you last chose for that chat, or else the model's default. Changing
+  them changes that chat, and also becomes the choice for new chats,
+  which is saved in `CLAUDE.INF`.
 - **claude.ai:** new chats start on **Default model**, your account's
-  own choice, until you pick one. claude.ai keeps each chat's model, but
-  not its effort, so the Pi remembers the effort you chose for each chat
-  and Code session in `/var/lib/claude-st/chat-effort.json` (the 500 most
-  recent). A chat with nothing remembered uses the effort you chose last.
-  claude.ai has no documented effort setting: the bridge asks for it,
-  and if claude.ai refuses, it says so at the top of the reply.
+  own choice, until you pick one. The Pi also remembers the effort you
+  choose for each chat and Code session, in
+  `/var/lib/claude-st/chat-effort.json` (the 500 most recent), for chats
+  where claude.ai doesn't report one. The bridge asks claude.ai for the
+  chosen effort with each message; if claude.ai refuses, it says so at
+  the top of the reply.
 - **API backend:** the model and effort go with every request and are
   stored with each chat.
 
@@ -254,7 +257,7 @@ content:
 run() { sudo -u claude-st bash -c "set -a; . /etc/claude-st/claude-st.env; /opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py $*"; }
 
 run --probe cover        # chats with "cover" in the title: where they are, their tools, files and model
-run --probe-code         # whether Claude Code sessions can be listed
+run --probe-code         # whether Claude Code sessions can be listed, and the newest one's model and effort
 ```
 
 ### Extra bridge options

@@ -520,6 +520,69 @@ class StatusLine(unittest.TestCase):
         self.assertEqual(lines[-2:], [[b"N", b""], [b"S", b"Online: demo"]])
 
 
+class EffortFromClaudeAi(unittest.TestCase):
+    """Each chat and Code session shows the effort claude.ai has for it."""
+
+    def test_models_that_take_effort(self):
+        from backends import efforts_for, model_label
+        for m in ("claude-sonnet-5", "claude-opus-4-7", "claude-opus-5-5[1m]",
+                  "claude-sonnet-5-20260101", "claude-opus-5"):
+            self.assertEqual(len(efforts_for(m)), 5, m)
+        self.assertEqual(efforts_for("claude-haiku-4-5"), [])
+        self.assertEqual(model_label("claude-opus-5-5[1m]"), "Opus 5.5")
+        self.assertEqual(model_label("claude-sonnet-5"), "Sonnet 5")
+
+    def test_code_session_effort_is_read(self):
+        be, _ = CodeSessions().backend()
+        orig = be.http.get
+
+        def get(url, **kw):
+            r = orig(url, **kw)
+            if url.endswith("/sessions/session_b"):
+                r._d = {"title": "New", "session_context": {"model": "claude-opus-5-5[1m]",
+                                                            "effort": "high"}}
+            return r
+        be.http.get = get
+        link = FakeLink()
+        s = Session(link, be)
+        s.handle(b"OPEN\tCODE\tsession_b")
+        self.assertIn([b"K", b"claude-opus-5-5", b"high"], link.lines())    # not Med
+
+    def test_sonnet_5_session_offers_effort(self):
+        be, _ = CodeSessions().backend()
+        orig = be.http.get
+
+        def get(url, **kw):
+            r = orig(url, **kw)
+            if url.endswith("/sessions/session_b"):
+                r._d = {"title": "New", "session_context": {"model": "claude-sonnet-5"}}
+            return r
+        be.http.get = get
+        link = FakeLink()
+        Session(link, be).handle(b"OPEN\tCODE\tsession_b")
+        lines = link.lines()
+        self.assertIn([b"V", b"claude-sonnet-5", b"Sonnet 5"], lines)
+        self.assertIn([b"U", b"max", b"Max"], lines)
+        self.assertIn([b"K", b"claude-sonnet-5", b"high"], lines)
+
+    def test_chat_effort_is_read_and_not_carried_over(self):
+        from backends import ChoiceMemory, ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be._artifacts, be.memory = {}, ChoiceMemory()
+        convs = {"c1": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5",
+                            settings={"effort": "high"}),
+                 "c2": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5")}
+        be._conversation = lambda cid: convs[cid]
+        be.list_chats = lambda limit=100: []
+        link = FakeLink()
+        s = Session(link, be)
+        s.handle(b"OPEN\tCHAT\tc1")
+        self.assertIn([b"K", b"claude-opus-5-5", b"high"], link.lines())
+        link.sent = b""
+        s.handle(b"OPEN\tCHAT\tc2")                # nothing recorded: Opus 5.5's default
+        self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
+
+
 class LongRunningBridge(unittest.TestCase):
     """A bridge that runs for months: nothing stale, nothing piling up."""
 
@@ -669,7 +732,7 @@ class CodeSessions(unittest.TestCase):
         link.sent = b""
         s.handle(b"HELLO\t1\t1.8")                     # new chats: Opus 5.5, medium
         s.handle(b"OPEN\tCODE\tsession_d1")             # runs on Sonnet 5.5
-        self.assertIn([b"K", b"claude-sonnet-5-5", b"medium"], link.lines())
+        self.assertIn([b"K", b"claude-sonnet-5-5", b"high"], link.lines())   # its default
         s.handle(b"CHOOSE\tclaude-opus-5-5\tmax")         # switch the session
         self.assertEqual(s.be.code["session_d1"]["model"], "claude-opus-5-5")
         link.sent = b""
