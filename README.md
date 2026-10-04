@@ -233,7 +233,7 @@ the Claude Console.
 ### Model and effort
 
 The right end of the chat's title bar shows the model and effort of the
-open chat, for example **Opus 5.5 · Medium**. Click it (or press `F9`)
+open chat in small type, for example **Opus 5.5 · Med**. Click it (or press `F9`)
 for a menu: the models first, then the effort levels the chosen model
 supports (**Low**, **Medium**, **High**, **Extra high**, **Max**). The
 current ones are ticked.

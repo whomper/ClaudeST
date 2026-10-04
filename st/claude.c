@@ -914,9 +914,14 @@ static short model_chip(char *out)
 	if (!nmodel || !cur_model[0])
 		return 0;
 	strlcpy_(out, model_label(), 20);
+	if (!strcmp(out, "Default model"))
+		out[7] = 0;			/* "Default" */
 	if (cur_effort[0] && neffort) {
+		/* short names on the chip; the menu spells them out */
+		const char *e = !strcmp(cur_effort, "medium") ? "Med" :
+				!strcmp(cur_effort, "xhigh") ? "XHigh" : effort_label();
 		strcat(out, " \xfa ");
-		strcat(out, effort_label());
+		strcat(out, e);
 	}
 	strcat(out, " \x02");
 	return strlen(out);
@@ -927,26 +932,29 @@ static void draw_title(void)
 	short n = strlen(chat_title), maxc = pw / cw - 2, xr = px + pw;
 	short ty0 = wy + (title_h - ch) / 2;
 	char chip[40];
-	short cl = model_chip(chip);
+	short cl = model_chip(chip), scw, sch, big = ch >= 16;
 
 	fill(px, wy, px + pw - 1, wy + title_h, 0);
-	/* the model chip ("Opus 5.5 · Medium") at the right; the title keeps
-	 * at least 16 characters, or the chip goes */
-	if (cl && maxc - cl - 2 < 16)
-		cl = 0;
+	/* the model chip ("Opus 5.5 · Med") at the right, in the small system
+	 * font (8x8 in ST high, 6x6 in ST medium); the title keeps at least 16
+	 * characters, or the chip goes */
+	vst_height(vh, big ? 6 : 4, &scw, &sch);
 	chip_x0 = chip_x1 = 0;
+	if (cl && maxc - ((cl + 1) * scw + cw) / cw < 16)
+		cl = 0;
 	if (cl) {
-		short y1 = wy + 2, y2 = wy + title_h - 2;
+		short y1 = wy + (title_h - sch) / 2 - 2, y2 = y1 + sch + 3;
 		chip_x1 = px + pw - cw / 2 - 1;
-		chip_x0 = chip_x1 - (cl + 1) * cw;
+		chip_x0 = chip_x1 - (cl + 1) * scw;
 		line(chip_x0, y1, chip_x1, y1, 1);
 		line(chip_x1, y1, chip_x1, y2, 1);
 		line(chip_x1, y2, chip_x0, y2, 1);
 		line(chip_x0, y2, chip_x0, y1, 1);
-		text(chip_x0 + cw / 2, ty0, chip, cl, 0, 1);
+		text(chip_x0 + scw / 2, y1 + 2, chip, cl, 0, 1);
 		xr = chip_x0 - cw;
-		maxc -= cl + 2;
+		maxc -= ((cl + 1) * scw + cw + cw - 1) / cw;
 	}
+	vst_height(vh, big ? 13 : 6, &scw, &sch);
 	if (n > maxc)
 		n = maxc;
 	text_bidi(px + cw, ty0, chat_title, n, 1, 1, 0);
