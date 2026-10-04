@@ -1927,7 +1927,7 @@ static void submit(void)
 			tcp_port = port;
 			use_link(LINK_TCP);
 		} else {
-			form_alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323][ OK ]");
+			form_alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(your gateway's address)][ OK ]");
 			return;
 		}
 	} else if (!search_mode && !strcmp(input, "/serial")) {

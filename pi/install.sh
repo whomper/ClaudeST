@@ -5,6 +5,8 @@
 #   sudo ./install.sh                     install or update, asks what it needs
 #   sudo ./install.sh --network --atari 192.168.1.20
 #                                         wireless: Claude ST connects over STinG
+#                                         (several Ataris: --atari IP1,IP2;
+#                                          any address: --atari any)
 #   sudo ./install.sh --backend api       use the Anthropic API instead of claude.ai
 #   sudo ./install.sh --port /dev/ttyUSB0 --baud 9600   serial cable instead
 #   sudo ./install.sh --set-key           paste a new claude.ai session key
@@ -124,7 +126,8 @@ cur_backend=$(sed -n 's/.*--backend \([a-z]*\).*/\1/p' <<<"$args")
 cur_port=$(sed -n 's/.*--serial \([^ ]*\).*/\1/p' <<<"$args")
 cur_baud=$(sed -n 's/.*--baud \([0-9]*\).*/\1/p' <<<"$args")
 cur_tcp=$(sed -n 's/.*--tcp [^ ]*:\([0-9]*\).*/\1/p' <<<"$args")
-cur_atari=$(sed -n 's/.*--allow \([^ ]*\).*/\1/p' <<<"$args")
+cur_atari=$(grep -o -- '--allow [^ ]*' <<<"$args" | awk '{print $2}' | paste -sd, -)
+[ -z "$cur_atari" ] && [ -n "$cur_tcp" ] && cur_atari=any
 cur_mode=serial; [ -n "$cur_tcp" ] && cur_mode=tcp
 backend=${backend:-${cur_backend:-claudeai}}
 mode=${mode:-$cur_mode}
@@ -134,14 +137,27 @@ tcp_port=${tcp_port:-${cur_tcp:-2323}}
 atari=${atari:-$cur_atari}
 case "$backend" in claudeai|api|demo) ;; *) echo "backend must be claudeai, api or demo" >&2; exit 2 ;; esac
 if [ "$mode" = tcp ]; then
+  if [ -z "$atari" ] && [ -t 0 ]; then
+    read -rp "The Atari's IP address (several: IP1,IP2; or 'any'): " atari
+  fi
   if [ -z "$atari" ]; then
-    echo "Network mode needs the Atari's IP address, e.g. --atari 192.168.1.20" >&2
+    echo "Network mode needs the Atari's IP address, e.g. --atari 192.168.1.20 (or --atari any)" >&2
     exit 2
   fi
-  [[ "$atari" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "--atari wants an IP address" >&2; exit 2; }
-  set_var CLAUDE_ST_ARGS "--backend $backend --tcp 0.0.0.0:$tcp_port --allow $atari"
+  allow=""
+  if [ "$atari" != any ]; then
+    for ip in ${atari//,/ }; do
+      [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "--atari wants IP addresses or 'any', not $ip" >&2; exit 2; }
+      allow="$allow --allow $ip"
+    done
+  fi
+  set_var CLAUDE_ST_ARGS "--backend $backend --tcp 0.0.0.0:$tcp_port$allow"
   if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
-    ufw allow from "$atari" to any port "$tcp_port" proto tcp >/dev/null
+    if [ "$atari" = any ]; then
+      ufw allow "$tcp_port"/tcp >/dev/null
+    else
+      for ip in ${atari//,/ }; do ufw allow from "$ip" to any port "$tcp_port" proto tcp >/dev/null; done
+    fi
     echo "Firewall (ufw): allowed $atari to port $tcp_port"
   fi
 else
