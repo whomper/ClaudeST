@@ -772,6 +772,10 @@ class ClaudeAiBackend(Backend):
             conv = self._conversation(c["uuid"])
             if word and word.lower() in (c.get("name") or "").lower():
                 print("chat #%d: %s (updated %s)" % (pos, c.get("name"), c.get("updated_at")))
+                print("    model: %r  settings: %s" % (
+                    conv.get("model"), sorted((conv.get("settings") or {}).items())))
+                print("    model fields in the chat list: %s" % {
+                    k: v for k, v in c.items() if "model" in k.lower()})
                 for m in conv.get("chat_messages") or []:
                     for block in m.get("content") or []:
                         if block.get("type") == "tool_use":
