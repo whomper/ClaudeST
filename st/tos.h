@@ -146,6 +146,7 @@ void *memset(void *d, int c, unsigned long n);
 int memcmp(const void *a, const void *b, unsigned long n);
 unsigned long strlen(const char *s);
 char *strcpy(char *d, const char *s);
+char *strcat(char *d, const char *s);
 void strlcpy_(char *d, const char *s, int n);
 int strcmp(const char *a, const char *b);
 

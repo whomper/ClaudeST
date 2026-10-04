@@ -57,6 +57,12 @@ unsigned long strlen(const char *s)
 	return p - s;
 }
 
+char *strcat(char *d, const char *s)
+{
+	strcpy(d + strlen(d), s);
+	return d;
+}
+
 char *strcpy(char *d, const char *s)
 {
 	char *r = d;

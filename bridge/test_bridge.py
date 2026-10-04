@@ -369,6 +369,82 @@ class ScriptMadeFiles(unittest.TestCase):
         self.assertEqual(data, b"PK\x03\x04\n\xff")
 
 
+class ModelChoice(unittest.TestCase):
+    def test_hello_offers_models_and_effort(self):
+        link = FakeLink()
+        Session(link, DemoBackend()).handle(b"HELLO\t1\t1.1")
+        lines = link.lines()
+        self.assertIn([b"V", b"claude-opus-5-5", b"Opus 5.5"], lines)
+        self.assertIn([b"U", b"xhigh", b"Extra high"], lines)
+        self.assertIn([b"K", b"claude-opus-5-5", b"medium"], lines)
+        self.assertLess(lines.index([b"O"]), lines.index([b"K", b"claude-opus-5-5", b"medium"]))
+
+    def test_choose_model_and_effort(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"CHOOSE\tclaude-sonnet-5-5\tmax")
+        self.assertIn([b"K", b"claude-sonnet-5-5", b"max"], link.lines())
+        link.sent = b""
+        s.handle(b"CHOOSE\tclaude-haiku-4-5\tmax")      # Haiku takes no effort
+        lines = link.lines()
+        self.assertIn([b"K", b"claude-haiku-4-5", b""], lines)
+        self.assertFalse([l for l in lines if l[0] == b"U"])
+        link.sent = b""
+        s.handle(b"CHOOSE\tno-such-model\tlow")          # unknown: keeps Haiku
+        self.assertIn([b"K", b"claude-haiku-4-5", b""], link.lines())
+        link.sent = b""
+        s.handle(b"CHOOSE\tclaude-opus-5-5\tbogus")      # bad effort: the default
+        self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
+        link.sent = b""
+        s.handle(b"SEND\thi")
+        reply = b"".join(l[1] for l in link.lines() if l[0] == b"P")
+        self.assertIn(b"picked Opus 5.5, effort medium", reply)
+
+    def test_api_request_carries_model_and_effort(self):
+        from backends import ApiBackend
+        be = ApiBackend.__new__(ApiBackend)
+        seen = {}
+
+        class Stream:
+            text_stream = ["ok"]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get_final_message(self):
+                return type("M", (), {"stop_reason": "end_turn"})()
+
+        def stream(**kw):
+            seen.update(kw)
+            return Stream()
+        be.client = type("C", (), {})()
+        be.client.beta = type("B", (), {})()
+        be.client.beta.messages = type("Ms", (), {"stream": staticmethod(stream)})()
+        be._projects = lambda: []
+        be._save = lambda chat: None
+        be.model, be.effort = "claude-opus-5-5", "medium"
+        be.choose("claude-fable-5-1", "xhigh")
+        be.send(None, None, "hi", lambda d: None)
+        self.assertEqual(seen["model"], "claude-fable-5-1")
+        self.assertEqual(seen["output_config"], {"effort": "xhigh"})
+        self.assertEqual(seen["fallbacks"], "default")
+        be.choose("claude-haiku-4-5")
+        seen.clear()
+        be.send(None, None, "hi", lambda d: None)
+        self.assertNotIn("output_config", seen)
+        self.assertNotIn("fallbacks", seen)
+
+    def test_claude_ai_defaults_to_the_account_model(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        self.assertEqual(be.models()[0], ("default", "Default model"))
+        self.assertEqual(be.choose("default", "high"), ("default", ""))
+        self.assertEqual(be.choose("claude-opus-5-5", "high"), ("claude-opus-5-5", "high"))
+
+
 class LongIds(unittest.TestCase):
     """Artifact ids can be long file paths; the Atari keeps 39 characters."""
 

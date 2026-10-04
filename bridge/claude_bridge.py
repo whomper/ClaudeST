@@ -261,10 +261,21 @@ class Session:
 
     # -- commands ------------------------------------------------------
 
+    def send_models(self):
+        """The model menu: O, then V <id> <label> per model, U <id> <label>
+        per effort level of the current model, then K <model> <effort>."""
+        self.out("O")
+        for mid, label in self.be.models():
+            self.out("V", mid, label)
+        for eid, label in backends.efforts_for(self.be.model):
+            self.out("U", eid, label)
+        self.out("K", self.be.model, self.be.effort or "")
+
     def cmd_hello(self, *_):
         self.status("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
         self.out("C", self.chat_id or "")
+        self.send_models()
         self.status("Online: " + self.be.whoami())
 
     def cmd_list(self, kind="CHATS", *_):
@@ -352,6 +363,13 @@ class Session:
             name, chats = self.be.project_chats(self.project_id)
             self.send_list("PROJECT", name, chats, back=True)
         self.status("Online: " + self.be.whoami())
+
+    def cmd_choose(self, model="", effort="", *_):
+        model, effort = self.be.choose(model, effort)
+        log.info("model %s, effort %s", model, effort or "-")
+        self.send_models()
+        label = dict(self.be.models()).get(model, model)
+        self.status("Model: %s%s" % (label, ", effort " + effort if effort else ""))
 
     def cmd_find(self, query="", *_):
         self.query = query

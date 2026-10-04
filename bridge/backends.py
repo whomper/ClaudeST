@@ -19,8 +19,53 @@ log = logging.getLogger("claude-st")
 Item = tuple  # (id, label)
 
 
+# The models offered on the Atari, newest first: (model id, short label)
+MODELS = [
+    ("claude-opus-5-5", "Opus 5.5"),
+    ("claude-fable-5-1", "Fable 5.1"),
+    ("claude-sonnet-5-5", "Sonnet 5.5"),
+    ("claude-haiku-4-5", "Haiku 4.5"),
+    ("claude-opus-5", "Opus 5"),
+    ("claude-opus-4-8", "Opus 4.8"),
+]
+EFFORTS = [("low", "Low"), ("medium", "Medium"), ("high", "High"),
+           ("xhigh", "Extra high"), ("max", "Max")]
+# these take the server-side refusal fallback ("fallbacks": "default")
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
+
+def efforts_for(model):
+    """The effort levels a model accepts (none for Haiku 4.5)."""
+    if not model or model == "default" or model.startswith("claude-haiku"):
+        return []
+    if model in ("claude-opus-4-6", "claude-sonnet-4-6"):
+        return [e for e in EFFORTS if e[0] != "xhigh"]
+    return EFFORTS
+
+
+def default_effort(model):
+    if not efforts_for(model):
+        return ""
+    return "medium" if model == "claude-opus-5-5" else "high"
+
+
 class Backend:
     name = "?"
+    model = "claude-opus-5-5"
+    effort = "medium"
+
+    def models(self):
+        """-> [(id, label)] the Atari's model menu offers"""
+        return MODELS
+
+    def choose(self, model, effort=""):
+        """Pick the model and effort for the next replies. An unknown model
+        is ignored; an effort the model doesn't take becomes its default."""
+        if model in dict(self.models()):
+            self.model = model
+        levels = [e[0] for e in efforts_for(self.model)]
+        self.effort = effort if effort in levels else default_effort(self.model)
+        return self.model, self.effort
 
     def whoami(self) -> str:
         return self.name
@@ -234,6 +279,13 @@ class ClaudeAiBackend(Backend):
     def whoami(self):
         return "claude.ai"
 
+    # claude.ai picks the account's default model unless the request names one
+    model = "default"
+    effort = ""
+
+    def models(self):
+        return [("default", "Default model")] + MODELS
+
     def _conversations(self, limit, offset=0):
         return self._get("/organizations/%s/chat_conversations" % self.org,
                          limit=limit, offset=offset)
@@ -355,9 +407,22 @@ class ClaudeAiBackend(Backend):
             "files": [],
             "rendering_mode": "messages",
         }
-        r = self._post("/organizations/%s/chat_conversations/%s/completion" % (self.org, chat_id),
-                       body, stream=True, timeout=600,
-                       headers={"Accept": "text/event-stream"})
+        if self.model and self.model != "default":
+            body["model"] = self.model
+        if self.effort:
+            body["effort"] = self.effort      # unofficial: dropped if refused
+
+        def post(body):
+            return self._post("/organizations/%s/chat_conversations/%s/completion" % (self.org, chat_id),
+                              body, stream=True, timeout=600,
+                              headers={"Accept": "text/event-stream"})
+        r = post(body)
+        if r.status_code in (400, 422) and "effort" in body:
+            del body["effort"]
+            r = post(body)
+            if r.status_code < 400:
+                on_delta("(claude.ai did not take the effort setting, so this reply "
+                         "uses the model's own.)\n\n")
         if r.status_code >= 400:
             raise RuntimeError("claude.ai completion failed: HTTP %d %s" % (r.status_code, r.text[:200]))
         for raw in r.iter_lines():
@@ -604,6 +669,7 @@ class ApiBackend(Backend):
         import anthropic
         self.client = anthropic.Anthropic()
         self.model = model
+        self.effort = default_effort(model)
         self.dir = os.path.expanduser(store_dir)
         os.makedirs(os.path.join(self.dir, "chats"), exist_ok=True)
 
@@ -641,7 +707,11 @@ class ApiBackend(Backend):
             return json.load(f)
 
     def whoami(self):
-        return "API " + self.model
+        return "API " + dict(self.models()).get(self.model, self.model)
+
+    def models(self):
+        known = dict(MODELS)
+        return MODELS if self.model in known else [(self.model, self.model[7:19])] + MODELS
 
     def _save_projects(self, projects):
         with open(os.path.join(self.dir, "projects.json"), "w") as f:
@@ -715,13 +785,17 @@ class ApiBackend(Backend):
         chat["messages"].append({"role": "user", "content": text})
 
         reply = []
+        extra = {}
+        if self.effort:
+            extra["output_config"] = {"effort": self.effort}
+        if self.model in FALLBACK_MODELS:
+            extra.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
         with self.client.beta.messages.stream(
             model=self.model,
             max_tokens=16000,
             system=system,
             messages=chat["messages"],
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **extra,
         ) as stream:
             for delta in stream.text_stream:
                 reply.append(delta)
@@ -853,8 +927,10 @@ class DemoBackend(Backend):
             self.chats = {chat_id: {"title": text[:40], "project": project_id, "messages": []},
                           **self.chats}
         reply = ("You said: \"%s\".\n\nThis is the **demo** backend, so no real model "
-                 "is answering. Run the bridge with `--backend claudeai` to talk to your "
-                 "account.\n\n- Streaming works\n- Word wrap works\n" % text)
+                 "is answering (you picked %s%s). Run the bridge with `--backend claudeai` "
+                 "to talk to your account.\n\n- Streaming works\n- Word wrap works\n"
+                 % (text, dict(self.models()).get(self.model, self.model),
+                    ", effort " + self.effort if self.effort else ""))
         for i in range(0, len(reply), 7):
             on_delta(reply[i:i + 7])
             time.sleep(0.03)

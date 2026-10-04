@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.1"
+#define VERSION "1.2"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -156,6 +156,17 @@ static short txlen;
 static char rxline[1200];
 static short rxlen;
 static long ticks, last_hello;
+
+/* Claude model and effort, offered by the bridge (O/V/U/K lines) */
+#define NMODEL 12
+#define NEFFORT 6
+static char mod_id[NMODEL][28], mod_lab[NMODEL][20];
+static char eff_id[NEFFORT][8], eff_lab[NEFFORT][14];
+static short nmodel, neffort;
+static char cur_model[28], cur_effort[8];
+static char pref_model[28], pref_effort[8];	/* the user's choice, kept in CLAUDE.INF */
+static short pref_sent;				/* sent to the bridge since HELLO */
+static short chip_x0, chip_x1;			/* the model chip in the reply line */
 
 static void tx_cmd(const char *a, const char *b, const char *c);
 static void show_picker(void);
@@ -430,6 +441,7 @@ static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
 
 static void send_hello(void)
 {
+	pref_sent = 0;
 	tx_cmd("HELLO", "1", VERSION);
 	last_hello = ticks;
 }
@@ -1106,6 +1118,38 @@ static void edit_draw(const char *buf, short len, short cur, short *start,
 	fill(xc, y, xc + 1, y + ch - 1, 1);
 }
 
+static const char *model_label(void)
+{
+	short i;
+	for (i = 0; i < nmodel; i++)
+		if (!strcmp(mod_id[i], cur_model))
+			return mod_lab[i];
+	return cur_model;
+}
+
+static const char *effort_label(void)
+{
+	short i;
+	for (i = 0; i < neffort; i++)
+		if (!strcmp(eff_id[i], cur_effort))
+			return eff_lab[i];
+	return cur_effort;
+}
+
+/* the text of the model chip, e.g. "Opus 5.5 \xfa Medium \x02"; its length */
+static short model_chip(char *out)
+{
+	if (!nmodel || !cur_model[0])
+		return 0;
+	strlcpy_(out, model_label(), 20);
+	if (cur_effort[0] && neffort) {
+		strcat(out, " \xfa ");
+		strcat(out, effort_label());
+	}
+	strcat(out, " \x02");
+	return strlen(out);
+}
+
 static void draw_input(void)
 {
 	short badge = hebrew_kbd;
@@ -1117,6 +1161,18 @@ static void draw_input(void)
 	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
 	short tyy = y1 + (y2 - y1 - ch) / 2 + 1;
 	short tx0 = x1 + cw / 2;
+	char chip[40];
+	short cl = model_chip(chip);
+
+	/* the model chip ("Opus 5.5 · Medium") at the right end of the box */
+	if (cl && avail - cl - 1 < 12)
+		cl = 0;			/* too narrow: the text comes first */
+	if (cl) {
+		avail -= cl + 1;
+		x2 -= (cl + 1) * cw;
+	}
+	chip_x0 = cl ? x2 : 0;
+	chip_x1 = cl ? px + pw - cw / 2 - 1 : 0;
 
 	fill(px, y, px + pw - 1, wy + wh - 1, 0);
 	line(px, y, px + pw - 1, y, 1);
@@ -1141,6 +1197,12 @@ static void draw_input(void)
 		short bx = x2 - 3 * cw - cw / 2;
 		fill(bx - 2, y1 + 2, bx + 2 * cw + 1, y2 - 2, 1);
 		text(bx, tyy, "HE", 2, 1, 0);
+	}
+	if (cl) {
+		line(chip_x0, y1, chip_x1, y1, 1);
+		line(chip_x1, y1, chip_x1, y2, 1);
+		line(chip_x1, y2, chip_x0, y2, 1);
+		text(chip_x0 + cw / 2, tyy, chip, cl, 0, 1);
 	}
 }
 
@@ -1391,6 +1453,35 @@ static void handle_line(char *s)
 		if (tlen > 0 && tb[tlen - 1] != '\n')
 			append("\n", 1);
 		break;
+	case 'O':			/* start of the model and effort lists */
+		nmodel = neffort = 0;
+		break;
+	case 'V':			/* V <id> <label> : a model */
+		if (nmodel < NMODEL && n > 2) {
+			strlcpy_(mod_id[nmodel], f[1], sizeof(mod_id[0]));
+			strlcpy_(mod_lab[nmodel], f[2], sizeof(mod_lab[0]));
+			nmodel++;
+		}
+		break;
+	case 'U':			/* U <id> <label> : an effort level */
+		if (neffort < NEFFORT && n > 2) {
+			strlcpy_(eff_id[neffort], f[1], sizeof(eff_id[0]));
+			strlcpy_(eff_lab[neffort], f[2], sizeof(eff_lab[0]));
+			neffort++;
+		}
+		break;
+	case 'K':			/* K <model> <effort> : the current choice */
+		strlcpy_(cur_model, n > 1 ? f[1] : "", sizeof(cur_model));
+		strlcpy_(cur_effort, n > 2 ? f[2] : "", sizeof(cur_effort));
+		dirty |= D_INPUT;
+		/* after (re)connecting, ask for the model saved in CLAUDE.INF */
+		if (!pref_sent) {
+			pref_sent = 1;
+			if (pref_model[0] && (strcmp(pref_model, cur_model) ||
+					      strcmp(pref_effort, cur_effort)))
+				tx_cmd("CHOOSE", pref_model, pref_effort);
+		}
+		break;
 	case 'Y':			/* Y 0|1 : busy */
 		busy = n > 1 && f[1][0] == '1';
 		dirty |= D_TITLE | D_INPUT;
@@ -1570,6 +1661,17 @@ static void parse_config_line(const char *l)
 		baud = BAUD_19200;
 	else if (!memcmp(l, "keyboard hebrew", 15))
 		hebrew_kbd = 1;
+	else if (!memcmp(l, "model ", 6)) {
+		/* model <id> [<effort>] */
+		const char *e = l + 6;
+		short k = 0;
+		while (*e && *e != ' ' && k < (short)sizeof(pref_model) - 1)
+			pref_model[k++] = *e++;
+		pref_model[k] = 0;
+		while (*e == ' ')
+			e++;
+		strlcpy_(pref_effort, e, sizeof(pref_effort));
+	}
 	else if (!memcmp(l, "sidebar ", 8)) {
 		short v = 0;
 		for (l += 8; *l >= '0' && *l <= '9'; l++)
@@ -1644,6 +1746,16 @@ static void save_config(void)
 	p += strlen(p);
 	if (hebrew_kbd) {
 		strcpy(p, "keyboard hebrew\r\n");
+		p += strlen(p);
+	}
+	if (pref_model[0]) {
+		strcpy(p, "model ");
+		strcat(p, pref_model);
+		if (pref_effort[0]) {
+			strcat(p, " ");
+			strcat(p, pref_effort);
+		}
+		strcat(p, "\r\n");
 		p += strlen(p);
 	}
 	*p = 0;
@@ -2611,6 +2723,48 @@ static void finish_save(void)
 	form_alert(1, msg);
 }
 
+/* The model menu: the models, then the effort levels for this model.
+ * The current ones are ticked. Opened from the chip, F9 or Options. */
+static void model_menu(void)
+{
+	static char lab[NMODEL + NEFFORT + 1][24];
+	const char *lp[NMODEL + NEFFORT + 1];
+	short i, n = 0, r, y = wy + wh - input_h;
+	if (!nmodel) {
+		form_alert(1, "[1][The gateway hasn't sent|the list of models yet.][ OK ]");
+		return;
+	}
+	for (i = 0; i < nmodel; i++, n++) {
+		strcpy(lab[n], strcmp(mod_id[i], cur_model) ? "  " : "\x08 ");
+		strlcpy_(lab[n] + 2, mod_lab[i], 20);
+	}
+	if (neffort) {
+		strcpy(lab[n++], "----------------");
+		for (i = 0; i < neffort; i++, n++) {
+			strcpy(lab[n], strcmp(eff_id[i], cur_effort) ? "  " : "\x08 ");
+			strcat(lab[n], "Effort: ");
+			strlcpy_(lab[n] + strlen(lab[n]), eff_lab[i], 13);
+		}
+	}
+	for (i = 0; i < n; i++)
+		lp[i] = lab[i];
+	flush_dirty();
+	r = popup(chip_x0 ? chip_x0 : px + pw / 2, y + input_h, y, lp, n);
+	if (r < 0)
+		return;
+	if (r < nmodel)
+		strlcpy_(pref_model, mod_id[r], sizeof(pref_model));
+	else {
+		strlcpy_(pref_model, cur_model, sizeof(pref_model));
+		strlcpy_(pref_effort, eff_id[r - nmodel - 1], sizeof(pref_effort));
+	}
+	if (r < nmodel)
+		strlcpy_(pref_effort, cur_effort, sizeof(pref_effort));
+	pref_sent = 1;
+	tx_cmd("CHOOSE", pref_model, pref_effort);
+	save_config();
+}
+
 static void show_picker(void)
 {
 	const char *lab[PICKMAX + 1];
@@ -2741,6 +2895,10 @@ static void handle_click(short mx, short my)
 		drag_divider();
 		return;
 	}
+	if (chip_x0 && mx >= chip_x0 && mx <= chip_x1 && my >= wy + wh - input_h) {
+		model_menu();
+		return;
+	}
 	if (mx < wx + sb_w) {
 		for (i = 0; i < 5; i++) {
 			short y = nav_y + i * row_h;
@@ -2839,6 +2997,7 @@ static void handle_key(short kstate, short kr)
 	case 0x3d: do_list("PROJECTS"); return;				/* F3 */
 	case 0x3e: do_list("ARTIFACTS"); return;			/* F4 */
 	case 0x3f: do_search(); return;					/* F5 */
+	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
 	switch (ascii) {
