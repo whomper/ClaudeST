@@ -547,6 +547,7 @@ class AccountPage(unittest.TestCase):
                 return {"five_hour": {"utilization": 42.0, "resets_at": "2099-01-01T00:00:00Z"},
                         "seven_day": {"utilization": 10, "resets_at": None},
                         "seven_day_opus": None,
+                        "iguana_necktie": {"utilization": 3, "resets_at": "2099-01-01T00:00:00Z"},
                         "extra_usage": {"is_enabled": False, "utilization": None}}
             raise AssertionError(path)
         be._get = get
@@ -556,6 +557,7 @@ class AccountPage(unittest.TestCase):
         self.assertIn("  resets in ", page)
         self.assertIn("This week, all models\n  [##------------------] 10%", page)
         self.assertNotIn("Opus", page)
+        self.assertNotIn("guana", page)          # internal entries stay hidden
         self.assertIn("Name: Erez Yaary", page)
         self.assertIn("Email: erez@example.com", page)
         self.assertIn("Organization: Erez's org", page)

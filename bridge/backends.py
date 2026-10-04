@@ -417,16 +417,19 @@ class ClaudeAiBackend(Backend):
             out.append("claude.ai did not report your usage.")
         else:
             names = dict(USAGE_NAMES)
-            keys = [k for k, _ in USAGE_NAMES if k in usage] + \
-                   sorted(k for k in usage if k not in names)
+            # only the limits claude.ai's own Usage page shows; other entries
+            # are internal (code names such as "iguana_necktie")
+            hidden = sorted(k for k in usage if k not in names and k != "extra_usage")
+            if hidden:
+                log.info("usage: not shown: %s", ", ".join(hidden))
             shown = 0
-            for k in keys:
+            for k in [k for k, _ in USAGE_NAMES] + ["extra_usage"]:
                 u = usage.get(k)
                 if not isinstance(u, dict) or u.get("utilization") is None:
                     continue
                 if k == "extra_usage" and not u.get("is_enabled"):
                     continue
-                label = names.get(k) or k.replace("_", " ").capitalize()
+                label = names.get(k, "Extra usage this month")
                 out += usage_lines(label, u["utilization"], u.get("resets_at"))
                 shown += 1
             if not shown:
