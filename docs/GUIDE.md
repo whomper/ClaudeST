@@ -14,6 +14,7 @@ screenshots use the bridge's demo backend, so they show sample chats.
 - [Hebrew](#hebrew)
 - [All keys](#all-keys)
 - [Settings (CLAUDE.INF)](#settings-claudeinf)
+- [What is stored where](#what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [The bridge on another computer](#the-bridge-on-another-computer)
 - [Serial cables and ports](#serial-cables-and-ports)
@@ -94,9 +95,12 @@ menu: the models, then the effort levels that model supports.
   Changing it changes that chat, and it also becomes the model for new
   chats. That choice is saved in `CLAUDE.INF`.
 - **claude.ai:** new chats start on **Default model**, your account's
-  own choice, until you pick one. claude.ai has no documented effort
-  setting: the bridge asks for it, and if claude.ai refuses, it says so
-  at the top of the reply.
+  own choice, until you pick one. claude.ai keeps each chat's model, but
+  not its effort, so the Pi remembers the effort you chose for each chat
+  and Code session in `/var/lib/claude-st/chat-effort.json` (the 500 most
+  recent). A chat with nothing remembered uses the effort you chose last.
+  claude.ai has no documented effort setting: the bridge asks for it,
+  and if claude.ai refuses, it says so at the top of the reply.
 - **API backend:** the model and effort go with every request and are
   stored with each chat.
 
@@ -122,15 +126,20 @@ newest first.
 
 **Artifacts** (`F4`) lists the artifacts in your 100 most recent chats,
 newest first. claude.ai keeps artifacts inside chats, so the bridge looks
-through them; the list shows *Scanning chat 12/100* meanwhile. Chats it
-has already looked through are remembered, so the next time is quick.
+through them; the list shows *Scanning chat 12/100* meanwhile. The
+bridge keeps what it found in memory, so the next time only new or
+changed chats are scanned. Artifacts from chats you delete, or that are
+no longer among the 100 most recent, leave the list the next time it
+loads.
 
 It finds artifacts in every form claude.ai has used, including files
 Claude made with a script, such as a Word cover letter.
 
 - **Open** shows the source. A Word document shows its text.
 - **Save to disk…** opens the GEM file selector with an 8.3 name such as
-  `SNAKE_GA.PY` or `COVER_LE.DOC`. Text is saved in the Atari character
+  `SNAKE_GA.PY` or `COVER_LE.DOC`. A file Claude made with a script, such
+  as a Word document, is downloaded from claude.ai when you open or save
+  it, and not kept on the Pi afterwards. Text is saved in the Atari character
   set with CR/LF line ends. Word, PDF and other binary files are saved
   unchanged.
 
@@ -211,6 +220,21 @@ soon as you change them. You can also edit it in any text editor.
 
 Lines starting with `;` are comments. The window always opens full
 screen with a new chat.
+
+## What is stored where
+
+| Where | What |
+|-------|------|
+| claude.ai | Your chats, projects, artifacts and Code sessions. The bridge fetches them each time you open them; with claude.ai, no chat is stored on the Pi. |
+| Pi: `/etc/claude-st/claude-st.env` | The session key (or API key) and the bridge's options, readable only by root and the bridge |
+| Pi: `/var/lib/claude-st/chat-effort.json` | The effort you chose for each chat and Code session |
+| Pi: `/var/lib/claude-st/chats/` | Only with the API backend: your chats, one file each |
+| Pi: the bridge's memory | The artifacts found in your recent chats, to load the list quickly; gone when the bridge restarts |
+| Pi: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
+| Atari: `CLAUDE.INF` | Claude ST's settings |
+
+The open conversation lives only in the Atari's memory while Claude ST
+runs.
 
 ## Troubleshooting
 

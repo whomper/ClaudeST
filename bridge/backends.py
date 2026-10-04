@@ -197,6 +197,41 @@ def code_messages(events):
     return out
 
 
+class ChoiceMemory:
+    """The effort chosen for each chat or Code session, which claude.ai
+    doesn't store. Kept in a small JSON file so it survives restarts;
+    only the most recent entries are kept."""
+    LIMIT = 500
+
+    def __init__(self, path=None):
+        self.path = path
+        self.efforts = {}
+        if path:
+            try:
+                with open(path) as f:
+                    self.efforts = dict(json.load(f))
+            except (OSError, ValueError, TypeError):
+                pass
+
+    def get(self, chat_id):
+        return self.efforts.get(chat_id, "")
+
+    def set(self, chat_id, effort):
+        self.efforts.pop(chat_id, None)
+        if effort:
+            self.efforts[chat_id] = effort          # newest last
+        while len(self.efforts) > self.LIMIT:
+            del self.efforts[next(iter(self.efforts))]
+        if self.path:
+            try:
+                tmp = self.path + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(self.efforts, f)
+                os.replace(tmp, self.path)
+            except OSError as e:
+                log.info("could not save chat efforts: %s", e)
+
+
 class Backend:
     name = "?"
     model = "claude-opus-5-5"
@@ -287,6 +322,16 @@ class Backend:
         """-> (8.3 file name, text) for saving an artifact on the Atari"""
         title, body = self.get_artifact(artifact_id)
         return artifact_filename(title), body
+
+    def artifact_name(self, artifact_id):
+        """The 8.3 file name alone, to suggest before saving."""
+        return self.artifact_file(artifact_id)[0]
+
+    def forget_artifact_data(self, artifact_id):
+        """The Atari has the file now: let go of any copy held for it."""
+
+    def remember_effort(self, chat_id, effort):
+        """A new chat was created with this effort."""
 
     # sidebar item actions; kind is "CHAT" or "PROJECT"
     def rename(self, kind, item_id, name):
@@ -419,7 +464,7 @@ class ClaudeAiBackend(Backend):
     BASE = "https://claude.ai/api"
     ROOT_PARENT = "00000000-0000-4000-8000-000000000000"
 
-    def __init__(self, session_key, org_id=None, artifact_scan=100):
+    def __init__(self, session_key, org_id=None, artifact_scan=100, state_dir=None):
         self.http, self.impersonating = _http_session()
         self.http.headers.update({
             "Cookie": "sessionKey=" + session_key,
@@ -436,6 +481,10 @@ class ClaudeAiBackend(Backend):
         self.org = org_id or self._pick_org()
         self._artifacts = {}
         self._scanned = {}      # conversation uuid -> updated_at already scanned
+        state = os.path.expanduser(state_dir) if state_dir else None
+        if state:
+            os.makedirs(state, exist_ok=True)
+        self.memory = ChoiceMemory(os.path.join(state, "chat-effort.json") if state else None)
 
     def _get(self, path, **params):
         r = self.http.get(self.BASE + path, params=params or None, timeout=60)
@@ -535,7 +584,7 @@ class ClaudeAiBackend(Backend):
     def get_code_session(self, session_id):
         info = self._code("get", "/sessions/%s" % session_id)
         model = self._session_model(info)
-        self.chat_choice = (model, "") if model else None
+        self.chat_choice = (model, self._memory().get(session_id)) if model else None
         events = self._code_events(session_id)
         self._code_last = {session_id: events[-1].get("id") if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
@@ -568,6 +617,7 @@ class ClaudeAiBackend(Backend):
         return self._code("get", "/sessions/%s" % session_id).get("title")
 
     def set_code_model(self, session_id, model, effort):
+        self._memory().set(session_id, effort)
         if model and model != "default":
             self._code("patch", "/sessions/%s" % session_id, {"session_context": {"model": model}})
 
@@ -577,7 +627,16 @@ class ClaudeAiBackend(Backend):
     def archive_code(self, session_id):
         self._code("post", "/sessions/%s/archive" % session_id, {})
 
+    def _memory(self):
+        if not hasattr(self, "memory"):
+            self.memory = ChoiceMemory()
+        return self.memory
+
+    def remember_effort(self, chat_id, effort):
+        self._memory().set(chat_id, effort)
+
     def set_chat_model(self, chat_id, model, effort):
+        self._memory().set(chat_id, effort)     # claude.ai doesn't keep effort
         # the web app keeps the model on the conversation; replies sent
         # with "model" update it too, so this is only a head start
         if model and model != "default":
@@ -729,8 +788,8 @@ class ClaudeAiBackend(Backend):
     def get_chat(self, chat_id):
         conv = self._conversation(chat_id)
         settings = conv.get("settings") or {}
-        self.chat_choice = (conv.get("model"), settings.get("effort") or "") \
-            if conv.get("model") else None
+        effort = settings.get("effort") or self._memory().get(chat_id)
+        self.chat_choice = (conv.get("model"), effort) if conv.get("model") else None
         out = []
         for m in self._current_branch(conv):
             role = "U" if m.get("sender") == "human" else "A"
@@ -907,6 +966,14 @@ class ClaudeAiBackend(Backend):
             except Exception as e:
                 log.info("skipping chat %s: %s", c["uuid"], e)
         self.last_scan = len(convs)
+        # forget chats that were deleted or fell out of the scan, and their
+        # artifacts, so the list stays accurate and memory stays bounded
+        recent = {c["uuid"] for c in convs}
+        for uid in [u for u in self._scanned if u not in recent]:
+            del self._scanned[uid]
+        short = {u[:8] for u in recent}
+        for key in [k for k in self._artifacts if k.split(":", 1)[0] not in short]:
+            del self._artifacts[key]
         # newest first, by when Claude last wrote each artifact
         keys = sorted(self._artifacts, key=lambda k: self._artifacts[k]["when"], reverse=True)
         return [(k, self._artifacts[k]["title"]) for k in keys]
@@ -926,9 +993,22 @@ class ClaudeAiBackend(Backend):
                            % (os.path.basename(a["path"]), last))
 
     def _artifact_bytes(self, a):
+        """A file made by a script is downloaded when needed and held only
+        until the Atari has it (see forget_artifact_data)."""
         if a["remote"] and "data" not in a:
             a["data"] = self._download(a)
         return a.get("data")
+
+    def forget_artifact_data(self, artifact_id):
+        a = self._artifacts.get(artifact_id)
+        if a:
+            a.pop("data", None)
+
+    def artifact_name(self, artifact_id):
+        a = self._artifacts.get(artifact_id)
+        if not a:
+            raise RuntimeError("Artifact not found - reopen the Artifacts list.")
+        return artifact_filename(a["title"], a.get("type", ""), a.get("language", ""), a.get("path", ""))
 
     def get_artifact(self, artifact_id):
         a = self._artifacts.get(artifact_id)
@@ -936,6 +1016,7 @@ class ClaudeAiBackend(Backend):
             return "Artifact", "(artifact not found - reopen the Artifacts list)"
         if a["remote"]:
             data = self._artifact_bytes(a)
+            a.pop("data", None)         # shown now; downloaded again to save
             ext = a["path"].rsplit(".", 1)[-1].lower() if "." in a["path"] else ""
             if ext == "docx":
                 return a["title"], "From chat: %s\n\n%s" % (a["chat"], docx_text(data))

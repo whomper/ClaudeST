@@ -107,8 +107,8 @@ On the Atari, choose **Options ▸ Serial port**, or leave out
 sudo ./install.sh --backend api
 ```
 
-The installer asks for an API key. Chats are then stored on the Pi
-instead of in your claude.ai account. `--backend demo` gives sample chats
+The installer asks for an API key. Chats are then stored on the Pi, in
+`/var/lib/claude-st/chats/`, instead of in your claude.ai account. `--backend demo` gives sample chats
 without any account, to test the setup.
 
 ## Looking after the Pi
@@ -150,6 +150,11 @@ uses the same private interface as the claude.ai website. If claude.ai
 changes it, parts can stop working until the bridge is updated. The
 [troubleshooting section](docs/GUIDE.md#troubleshooting) has commands
 that check each part from the Pi.
+
+With claude.ai, your chats stay on claude.ai: the bridge fetches them
+each time and doesn't store them. The Pi keeps only your session key,
+the bridge's settings and the effort you chose for each chat. The guide
+lists [what is stored where](docs/GUIDE.md#what-is-stored-where).
 
 Claude ST was written with Claude, in Claude Code on claude.ai: a
 claude.ai client for the Atari, built by talking to claude.ai.

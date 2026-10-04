@@ -520,6 +520,73 @@ class StatusLine(unittest.TestCase):
         self.assertEqual(lines[-2:], [[b"N", b""], [b"S", b"Online: demo"]])
 
 
+class LongRunningBridge(unittest.TestCase):
+    """A bridge that runs for months: nothing stale, nothing piling up."""
+
+    def test_artifacts_of_deleted_chats_are_dropped(self):
+        t = ScriptMadeFiles()
+        convs = [t.conv("aaaaaaaa-1", "Old snake", "2026-01-01", [
+                     {"type": "tool_use", "name": "artifacts",
+                      "input": {"id": "s", "title": "Snake", "content": "x"}}]),
+                 t.conv("bbbbbbbb-2", "Job hunt", "2026-09-01", [
+                     {"type": "tool_use", "name": "present_files",
+                      "input": {"filepaths": ["/mnt/user-data/outputs/Letter.docx"]}}])]
+        be = t.backend(convs)
+        self.assertEqual(len(be.list_artifacts()), 2)
+        be2 = t.backend(convs[1:])              # "Old snake" deleted on claude.ai
+        be2._artifacts, be2._scanned = be._artifacts, be._scanned
+        self.assertEqual([a[1] for a in be2.list_artifacts()], ["Letter.docx"])
+        self.assertEqual(list(be2._scanned), ["bbbbbbbb-2"])
+
+    def test_downloaded_files_are_not_kept(self):
+        t = ScriptMadeFiles()
+        be = t.backend([t.conv("bbbbbbbb-2", "Job hunt", "2026-09-01", [
+            {"type": "tool_use", "name": "present_files",
+             "input": {"filepaths": ["/mnt/user-data/outputs/Letter.docx"]}}])])
+        downloads = []
+        get = be.http.get
+        be.http = type("H", (), {"get": lambda self, url, timeout=0: downloads.append(url) or get(url)})()
+        (aid, _), = be.list_artifacts()
+        be.get_artifact(aid)                    # open: shown, then let go
+        self.assertNotIn("data", be._artifacts[aid])
+        link = FakeLink()
+        s = Session(link, be)
+        s.handle(b"SAVE\tARTIFACT\t" + s.short_id(aid).encode())
+        self.assertEqual(len(downloads), 1)     # the name needs no download
+        s.handle(b"FETCH\tARTIFACT\t" + s.short_id(aid).encode())
+        self.assertEqual(len(downloads), 2)
+        self.assertNotIn("data", be._artifacts[aid])
+        self.assertIn([b"G", str(len(t.docx("Dear hiring manager,", "Erez &amp; co"))).encode()],
+                      link.lines())
+
+    def test_effort_per_chat_survives_a_restart(self):
+        import tempfile
+        from backends import ChoiceMemory, ClaudeAiBackend
+        path = os.path.join(tempfile.mkdtemp(), "chat-effort.json")
+
+        def backend():
+            be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+            be._artifacts, be.memory = {}, ChoiceMemory(path)
+            be._send = lambda *a, **k: None
+            be._conversation = lambda cid: dict(ClaudeAiParsing.CONV, model="claude-opus-5-5")
+            return be
+        be = backend()
+        be.set_chat_model("c1", "claude-opus-5-5", "max")
+        be = backend()                          # the bridge restarted
+        be.get_chat("c1")
+        self.assertEqual(be.chat_choice, ("claude-opus-5-5", "max"))
+        be.get_chat("c2")                       # nothing remembered: current effort
+        self.assertEqual(be.chat_choice, ("claude-opus-5-5", ""))
+
+    def test_effort_memory_is_bounded(self):
+        from backends import ChoiceMemory
+        m = ChoiceMemory()
+        m.LIMIT = 3
+        for i in range(5):
+            m.set("c%d" % i, "high")
+        self.assertEqual(list(m.efforts), ["c2", "c3", "c4"])
+
+
 class CodeSessions(unittest.TestCase):
     EVENTS = [
         {"id": "e1", "data": {"type": "system", "subtype": "init"}},

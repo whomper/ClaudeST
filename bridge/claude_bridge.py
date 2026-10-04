@@ -418,6 +418,8 @@ class Session:
             self.out("Z")
             self.out("Y", "0")
         self.chat_id = chat_id
+        if new:
+            self.be.remember_effort(chat_id, self.be.effort)
         if title:
             self.out("T", title)
         self.out("C", chat_id)
@@ -537,8 +539,7 @@ class Session:
     def cmd_save(self, kind, item_id, *_):
         """The Atari wants to save an artifact: suggest a file name; it
         answers with FETCH once the user has picked where to save it."""
-        name, _ = self.be.artifact_file(item_id)
-        self.out("F", name)
+        self.out("F", self.be.artifact_name(item_id))
 
     def cmd_fetch(self, kind, item_id, *_):
         """Send the artifact as hex-encoded D lines, then G <size>. Text is
@@ -552,6 +553,7 @@ class Session:
         for i in range(0, len(data), 90):
             self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + b"\n")
         self.out("G", len(data))
+        self.be.forget_artifact_data(item_id)
         self.online()
 
     def cmd_bye(self, *_):
@@ -605,7 +607,7 @@ def make_backend(args):
                                "Set CLAUDE_SESSION_KEY (on a Pi: sudo ./install.sh --set-key).")
         return backends.LazyBackend(no_key, "claude.ai (no key)")
     return backends.LazyBackend(lambda: backends.ClaudeAiBackend(
-        key, org_id=args.org, artifact_scan=args.artifact_scan),
+        key, org_id=args.org, artifact_scan=args.artifact_scan, state_dir=args.store),
                                 "claude.ai")
 
 
