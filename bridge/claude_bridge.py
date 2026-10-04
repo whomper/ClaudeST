@@ -257,8 +257,16 @@ class Session:
         else:
             self.send_list("CHATS", "Recents", self.be.list_chats())
 
-    def status(self, s):
-        self.out("S", s)
+    def online(self):
+        """The command is done: clear its notice (an empty N), and S, the
+        status line, which shows only the connection to claude.ai."""
+        self.out("N", "")
+        self.out("S", "Online: " + self.be.whoami())
+
+    def notice(self, s):
+        """N: a passing notice ("Loading...", "Model: Opus 5.5"). The Atari
+        shows it in the title bar, or in the list while one loads."""
+        self.out("N", s)
 
     # -- commands ------------------------------------------------------
 
@@ -273,23 +281,23 @@ class Session:
         self.out("K", self.be.model, self.be.effort or "")
 
     def cmd_hello(self, *_):
-        self.status("Loading chats...")
+        self.notice("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
         self.out("C", self.chat_id or "")
         if self.new_choice is None:
             self.new_choice = (self.be.model, self.be.effort)
         self.send_models()
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_list(self, kind="CHATS", *_):
-        self.status("Loading...")
+        self.notice("Loading...")
         if kind == "PROJECTS":
             self.project_id = None
             self.send_list("PROJECTS", "Projects", self.be.list_projects())
         elif kind == "ARTIFACTS":
-            self.status("Looking for artifacts...")
+            self.notice("Looking for artifacts...")
             arts = self.be.list_artifacts(
-                progress=lambda i, n: self.status("Looking in chat %d of %d..." % (i, n)))
+                progress=lambda i, n: self.notice("Scanning chat %d/%d" % (i, n)))
             self.send_list("ARTIFACTS", "Artifacts", arts)
             if not arts:
                 n = getattr(self.be, "last_scan", None)
@@ -298,25 +306,25 @@ class Session:
         else:
             self.project_id = None
             self.send_list("CHATS", "Recents", self.be.list_chats())
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_open(self, kind, oid, *_):
         if kind == "PROJECT":
-            self.status("Loading project...")
+            self.notice("Loading project...")
             name, chats = self.be.project_chats(oid)
             self.project_id = oid
             self.send_list("PROJECT", name, chats, back=True)
-            self.status("Project: " + name)
+            self.online()
             return
         if kind == "ARTIFACT":
-            self.status("Loading artifact...")
+            self.notice("Loading artifact...")
             title, body = self.be.get_artifact(oid)
             self.out("T", title)
             self.out("R")
             self.message("K", body)
-            self.status("Online: " + self.be.whoami())
+            self.online()
             return
-        self.status("Loading chat...")
+        self.notice("Loading chat...")
         title, msgs = self.be.get_chat(oid)
         self.chat_id = oid
         # each chat keeps its own model; chats without one get the choice
@@ -335,7 +343,7 @@ class Session:
             msgs = msgs[-HISTORY_MESSAGES:]
         for role, body in msgs:
             self.message(role, body)
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_new(self, quiet="", *_):
         """Start a new chat. QUIET: the Atari switched to another area and
@@ -357,7 +365,7 @@ class Session:
             self.out("R")
         self.message("U", text)
         self.out("Y", "1")
-        self.status("Claude is thinking...")
+        self.notice("Claude is thinking...")
         self.out("M", "A")
         fmt = Formatter()
         try:
@@ -376,16 +384,16 @@ class Session:
         elif new and self.list_kind == "PROJECT" and self.project_id:
             name, chats = self.be.project_chats(self.project_id)
             self.send_list("PROJECT", name, chats, back=True)
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_account(self, *_):
         """The Account page: plan, usage and when it resets, account details."""
-        self.status("Loading account...")
+        self.notice("Loading account...")
         report = self.be.account_report()
         self.out("T", "Account")
         self.out("R")
         self.message("I", report)
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_choose(self, model="", effort="", *_):
         model, effort = self.be.choose(model, effort)
@@ -395,25 +403,26 @@ class Session:
             self.be.set_chat_model(self.chat_id, model, effort)
         self.send_models()
         label = dict(self.be.models()).get(model, model)
-        self.status("Model: %s%s" % (label, ", effort " + effort if effort else ""))
+        log.info("model for chat %s: %s", self.chat_id or "(new)", label)
 
     def cmd_find(self, query="", *_):
         self.query = query
-        self.status("Searching...")
+        self.notice("Searching...")
         self.send_list("SEARCH", "Search: " + query, self.be.search(query))
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     # -- right-click menu actions --------------------------------------
 
     def _done(self, msg):
         self.refresh_list()
-        self.status(msg)
+        self.online()
+        self.notice(msg)        # "Renamed" etc., shown for a few seconds
 
     def cmd_rename(self, kind, item_id, name="", *_):
         name = name.strip()
         if not name:
             return
-        self.status("Renaming...")
+        self.notice("Renaming...")
         self.be.rename(kind, item_id, name)
         if kind == "CHAT" and item_id == self.chat_id:
             self.out("T", name)
@@ -422,7 +431,7 @@ class Session:
     def cmd_pin(self, kind, item_id, want="", *_):
         """want: "1" pin, "0" unpin, empty: toggle."""
         pinned = (want == "0") if want in ("0", "1") else self._is_pinned(kind, item_id)
-        self.status("Unpinning..." if pinned else "Pinning...")
+        self.notice("Unpinning..." if pinned else "Pinning...")
         self.be.set_pinned(kind, item_id, not pinned)
         self._done("Unpinned" if pinned else "Pinned")
 
@@ -431,7 +440,7 @@ class Session:
         return any(it[0] == item_id and len(it) > 2 and it[2] for it in items)
 
     def cmd_delete(self, kind, item_id, *_):
-        self.status("Deleting...")
+        self.notice("Deleting...")
         self.be.delete(kind, item_id)
         if kind == "CHAT" and item_id == self.chat_id:
             self.chat_id = None
@@ -444,22 +453,22 @@ class Session:
         self._done("Deleted")
 
     def cmd_archive(self, kind, item_id, *_):
-        self.status("Archiving...")
+        self.notice("Archiving...")
         self.be.archive_project(item_id)
         self._done("Archived")
 
     def cmd_pickproj(self, chat_id, *_):
         """The Atari wants to choose a project for "Move to project"."""
-        self.status("Loading projects...")
+        self.notice("Loading projects...")
         projects = self.be.list_projects()
         self.out("Q")
         for it in projects[:20]:
             self.out("J", it[0], it[1] or "Untitled project")
         self.out("W")
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_move(self, chat_id, project_id, *_):
-        self.status("Moving...")
+        self.notice("Moving...")
         self.be.move_chat(chat_id, project_id)
         self._done("Moved to project")
 
@@ -479,11 +488,11 @@ class Session:
             data = text
         else:
             data = b"\r\n".join(to_atari(line) for line in text.split("\n"))
-        self.status("Sending %s..." % name)
+        self.notice("Sending %s..." % name)
         for i in range(0, len(data), 90):
             self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + b"\n")
         self.out("G", len(data))
-        self.status("Online: " + self.be.whoami())
+        self.online()
 
     def cmd_bye(self, *_):
         log.info("Atari closed Claude ST")
@@ -504,7 +513,12 @@ class Session:
             log.debug(traceback.format_exc())
             self.out("Y", "0")
             self.message("E", str(e) or e.__class__.__name__)
-            self.status("Error - see chat")
+            self.out("N", "")
+            # the status line says whether claude.ai can be reached at all
+            if getattr(self.be, "real", True) is None:
+                self.out("S", "Not signed in to claude.ai")
+            else:
+                self.out("S", "Online: " + self.be.whoami())
 
     def run(self):
         while True:

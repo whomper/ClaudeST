@@ -210,6 +210,24 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | About | Desk ▸ About | `Help` |
 | Quit | close box / File ▸ Quit | `Ctrl+Q` |
 
+### Tooltips, status line and notices
+
+- **Tooltips:** rest the mouse for a moment on a chat, project or
+  artifact whose name is cut off in the sidebar, on a cut-off list
+  heading, or on the chat's title when it doesn't fit. A tooltip shows
+  the whole text and goes away when the mouse moves.
+
+  ![A tooltip](docs/tooltip.png)
+
+- **Switching lists:** clicking **Chats**, **Projects** or **Artifacts**
+  empties the list at once. It shows *Loading...*, or the bridge's
+  progress, until the new list arrives.
+- **Status line:** the line at the bottom of the sidebar shows only the
+  connection: *Connecting…*, *Online: claude.ai*, *Offline: …*.
+- **Notices:** passing messages, such as *Loading chat...* or a finished
+  *Renamed*, appear in grey at the right of the title bar for a few
+  seconds.
+
 ### Account, plan and usage
 
 Click the status line at the bottom of the sidebar, choose **Options ▸
@@ -314,9 +332,9 @@ created inside it.
 Projects open as a list of their chats. A new chat started while a
 project is open is created in that project. On claude.ai, artifacts are
 stored inside conversations, so **Artifacts** lists the ones in your 100
-most recent chats, newest first (the status line counts the chats as it
-looks through them; the bridge remembers chats it has already scanned, so
-opening the list again is quick). It finds every form claude.ai has used:
+most recent chats, newest first (while it looks, the list is empty and
+counts the chats, "Scanning chat 12/100"; the bridge remembers chats it
+has already scanned, so opening the list again is quick). It finds every form claude.ai has used:
 artifact tool calls, `<antArtifact>` tags in older chats, files Claude
 created, and files Claude made with a script, such as a `.docx` cover
 letter. Opening one shows its source; a Word document shows its text.

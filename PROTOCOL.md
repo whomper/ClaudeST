@@ -38,7 +38,8 @@ All commands are one letter.
 
 | Line | Meaning |
 |------|---------|
-| `S` `<text>` | Status line at the bottom of the sidebar. |
+| `S` `<text>` | Status line at the bottom of the sidebar: only the connection, e.g. `Online: claude.ai`. |
+| `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
 | `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
 | `E` | End of list. |

@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.4"
+#define VERSION "1.5"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -80,6 +80,11 @@ static short nitems, list_top;
 static short lcur = -1;			/* keyboard cursor in the list */
 static short menu_target = -1;		/* item the open popup menu acts on */
 static short nav_pressed = -1;		/* top menu entry under a held mouse button */
+static short list_loading;		/* a list was asked for and hasn't arrived */
+static char notice[64];			/* a passing message from the bridge (N) */
+static long notice_until;
+static short title_cut;			/* the chat title didn't fit */
+static short title_xr;			/* where the title area ends */
 static short nav_pending = -1;		/* area chosen, its list not arrived yet */
 static char list_kind[12] = "CHATS";
 static char list_title[48] = "Recents";
@@ -873,8 +878,13 @@ static void draw_sidebar(void)
 		}
 	}
 	if (nitems == 0) {
+		/* while loading, the bridge's progress ("Looking in chat 3 of 40") */
+		const char *e = !list_loading ? "(empty)" : notice[0] ? notice : "Loading...";
+		short n = strlen(e);
+		if (n > maxc)
+			n = maxc;
 		y = list_y + row_h;
-		text(x, y, "(empty)", 7, 2, 1);
+		text(x, y + (row_h - ch) / 2 - 1, e, n, 2, 1);
 	}
 
 	/* status line */
@@ -955,11 +965,18 @@ static void draw_title(void)
 		maxc -= ((cl + 1) * scw + cw + cw - 1) / cw;
 	}
 	vst_height(vh, big ? 13 : 6, &scw, &sch);
+	title_cut = n > maxc;
+	title_xr = xr;
 	if (n > maxc)
 		n = maxc;
 	text_bidi(px + cw, ty0, chat_title, n, 1, 1, 0);
-	if (busy && maxc > n + 12)
-		text(xr - 12 * cw, ty0, "thinking...", 11, 2, 1);
+	{
+		/* a notice from the bridge, or "thinking...", right-aligned */
+		const char *t = notice[0] && !list_loading ? notice : busy ? "thinking..." : 0;
+		short tl = t ? strlen(t) : 0;
+		if (t && tl <= maxc - n - 1)	/* whole, or not at all */
+			text(xr - (tl + 1) * cw, ty0, t, tl, 2, 1);
+	}
 	line(px, wy + title_h, px + pw - 1, wy + title_h, 1);
 }
 
@@ -1373,11 +1390,17 @@ static void handle_line(char *s)
 		return;		/* all bridge commands are one letter */
 
 	switch (c) {
-	case 'S':			/* S <status> */
+	case 'S':			/* S <status> : the connection to claude.ai */
 		if (n > 1 && strcmp(status, f[1])) {
 			strlcpy_(status, f[1], sizeof(status));
 			dirty |= D_STATUS;
 		}
+		list_loading = 0;
+		break;
+	case 'N':			/* N <text> : a passing notice */
+		strlcpy_(notice, n > 1 ? f[1] : "", sizeof(notice));
+		notice_until = ticks + 125;	/* ~5 s at most; "" clears it */
+		dirty |= D_TITLE | (list_loading ? D_SIDEBAR : 0);
 		break;
 	case 'L':			/* L <kind> <title> : start a list */
 		/* a list asked for before Search was picked: keep the pane empty */
@@ -1392,6 +1415,7 @@ static void handle_line(char *s)
 		lcur = -1;
 		menu_target = -1;
 		nav_pending = -1;
+		list_loading = 0;
 		dirty |= D_SIDEBAR;
 		break;
 	case 'I':			/* I <id> <label> */
@@ -1863,6 +1887,14 @@ static void do_list(const char *kind)
 {
 	search_mode = 0;
 	nav_pending = !strcmp(kind, "PROJECTS") ? 3 : !strcmp(kind, "ARTIFACTS") ? 4 : 2;
+	/* empty the list until the new one arrives */
+	strlcpy_(list_title, nav_pending == 3 ? "Projects" : nav_pending == 4 ? "Artifacts" : "Recents",
+		 sizeof(list_title));
+	nitems = 0;
+	list_top = 0;
+	lcur = -1;
+	menu_target = -1;
+	list_loading = 1;
 	dirty |= D_SIDEBAR;
 	tx_cmd("LIST", kind, 0);
 	if (!strcmp(kind, "PROJECTS"))
@@ -2692,7 +2724,9 @@ static void choose_save_file(const char *name)
 	}
 	save_fd = (short)fd;
 	save_bytes = 0;
-	set_status("Saving...");
+	strcpy(notice, "Saving...");
+	notice_until = ticks + 250;
+	dirty |= D_TITLE;
 	tx_cmd("FETCH", "ARTIFACT", save_id);
 }
 
@@ -2741,7 +2775,8 @@ static void finish_save(void)
 	strcpy(p, "|");
 	p = put_num(p + 1, save_bytes > 65535 ? 65535 : (u16)save_bytes);
 	strcpy(p, save_bytes > 65535 ? "+ bytes][ OK ]" : " bytes][ OK ]");
-	set_status("Saved");
+	notice[0] = 0;
+	dirty |= D_TITLE;
 	flush_dirty();
 	form_alert(1, msg);
 }
@@ -2826,6 +2861,117 @@ static short list_hit(short mx, short my)
 	if (r >= list_rows || list_top + r >= nitems)
 		return -1;
 	return list_top + r;
+}
+
+/* ------------------------------------------------------------------ */
+/* tooltips: the full text of a cut-off list item or title, shown when  */
+/* the mouse rests on it                                               */
+/* ------------------------------------------------------------------ */
+
+static short tip_on, tip_x, tip_y, tip_w, tip_h;
+static short tip_mx = -1, tip_my = -1, tip_done;
+static long tip_still;
+
+/* the cut-off text under (mx, my), or 0 */
+static const char *tip_text(short mx, short my, short *ty)
+{
+	short maxc = sb_w / cw - 2, i;
+	if (mx < wx + sb_w) {
+		i = list_hit(mx, my);
+		if (i >= 0) {
+			*ty = list_y + (i - list_top + 1) * row_h;
+			return (short)strlen(items[i].label) > maxc - (items[i].pinned ? 1 : 0)
+				? items[i].label : 0;
+		}
+		if (my >= list_y && my < list_y + row_h && mx < wx + sb_w - 4 * cw) {
+			*ty = list_y;
+			return (short)strlen(list_title) > maxc - 4 ? list_title : 0;
+		}
+		return 0;
+	}
+	if (my >= wy && my < wy + title_h && mx >= px && mx < title_xr && title_cut) {
+		*ty = wy;
+		return chat_title;
+	}
+	return 0;
+}
+
+static void hide_tip(void)
+{
+	short saved;
+	if (!tip_on)
+		return;
+	tip_on = 0;
+	saved = text_dirty_row;
+	text_dirty_row = 0;
+	redraw(D_ALL, tip_x, tip_y, tip_w + 3, tip_h + 3);
+	text_dirty_row = saved;
+	form_dial(FMD_FINISH, tip_x, tip_y, tip_w + 3, tip_h + 3);
+}
+
+static void show_tip(short mx, const char *t, short ty)
+{
+	short n = strlen(t), maxn = scr_w / cw - 4, clipr[4], top, wtop, d;
+	wind_get(0, WF_TOP, &wtop, &d, &d, &d);
+	if (wtop != win)
+		return;		/* a desk accessory is in front */
+	if (n > maxn)
+		n = maxn;
+	tip_w = (n + 1) * cw;
+	tip_h = ch + 4;
+	tip_x = mx - cw;
+	if (tip_x + tip_w + 3 > scr_w)
+		tip_x = scr_w - tip_w - 3;
+	if (tip_x < 0)
+		tip_x = 0;
+	tip_y = ty + row_h;		/* just below the text, or above it */
+	if (ty == wy)
+		tip_y = wy + title_h + 2;
+	if (tip_y + tip_h + 3 > scr_h)
+		tip_y = ty - tip_h - 3;
+	top = tip_y;
+	wind_update(BEG_UPDATE);
+	form_dial(FMD_START, tip_x, top, tip_w + 3, tip_h + 3);
+	graf_mouse(M_OFF, 0);
+	clipr[0] = 0;
+	clipr[1] = 0;
+	clipr[2] = scr_w - 1;
+	clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, clipr);
+	vswr_mode(vh, 1);
+	fill(tip_x + 2, top + 2, tip_x + tip_w + 1, top + tip_h + 1, 1);	/* shadow */
+	fill(tip_x, top, tip_x + tip_w - 1, top + tip_h - 1, 0);
+	line(tip_x, top, tip_x + tip_w - 1, top, 1);
+	line(tip_x + tip_w - 1, top, tip_x + tip_w - 1, top + tip_h - 1, 1);
+	line(tip_x + tip_w - 1, top + tip_h - 1, tip_x, top + tip_h - 1, 1);
+	line(tip_x, top + tip_h - 1, tip_x, top, 1);
+	text_bidi(tip_x + cw / 2, top + 2, t, n, 0, 1, 0);
+	vs_clip(vh, 0, clipr);
+	graf_mouse(M_ON, 0);
+	wind_update(END_UPDATE);
+	tip_on = 1;
+}
+
+/* called every turn of the main loop: show a tip after ~0.6 s at rest */
+static void tip_poll(short events)
+{
+	short mx, my, mb, ks, ty;
+	const char *t;
+	graf_mkstate(&mx, &my, &mb, &ks);
+	if (mx != tip_mx || my != tip_my || (events & (MU_KEYBD | MU_BUTTON)) || mb) {
+		hide_tip();
+		tip_mx = mx;
+		tip_my = my;
+		tip_still = ticks;
+		tip_done = 0;
+		return;
+	}
+	if (tip_on || tip_done || ticks - tip_still < 15)
+		return;
+	tip_done = 1;			/* once per resting place */
+	t = tip_text(mx, my, &ty);
+	if (t)
+		show_tip(mx, t, ty);
 }
 
 static void handle_rclick(short mx, short my)
@@ -3249,6 +3395,7 @@ int main(void)
 		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_MESAG | MU_TIMER | MU_M1,
 			    0x101, 3, 0, 40, msg, &ev);
 		ticks++;
+		tip_poll(ev.which);
 		if (ev.which & MU_MESAG)
 			handle_msg(msg);
 		if (ev.which & MU_KEYBD)
@@ -3284,6 +3431,12 @@ int main(void)
 			}
 		}
 		poll_link();
+		if (notice[0] && ticks > notice_until) {
+			notice[0] = 0;
+			dirty |= D_TITLE | D_SIDEBAR;
+		}
+		if (dirty && tip_on)
+			hide_tip();	/* keep the tip from being drawn over */
 		/* keep saying hello until the bridge answers (~every 5s) */
 		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
 			send_hello();

@@ -503,6 +503,23 @@ class PerChatModel(unittest.TestCase):
         self.assertEqual(be.chat_choice, ("claude-opus-4-8", ""))
 
 
+class StatusLine(unittest.TestCase):
+    def test_status_line_only_shows_the_connection(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        for cmd in (b"HELLO\t1\t1.5", b"LIST\tARTIFACTS", b"LIST\tPROJECTS",
+                    b"OPEN\tCHAT\td1", b"CHOOSE\tclaude-sonnet-5-5\thigh", b"ACCOUNT",
+                    b"SEND\thi", b"RENAME\tCHAT\td1\tNew name", b"FIND\tgfa"):
+            s.handle(cmd)
+        lines = link.lines()
+        self.assertTrue(all(l[1].startswith(b"Online") for l in lines if l[0] == b"S"))
+        notices = [l[1] for l in lines if l[0] == b"N"]
+        self.assertIn(b"Loading chat...", notices)
+        self.assertFalse([n for n in notices if b"Sonnet" in n])   # not for a model change
+        # each command ends with its notice cleared, except a result like "Renamed"
+        self.assertEqual(lines[-2:], [[b"N", b""], [b"S", b"Online: demo"]])
+
+
 class AccountPage(unittest.TestCase):
     def test_usage_bar_and_reset_time(self):
         from datetime import datetime, timezone
