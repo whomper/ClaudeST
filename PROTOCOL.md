@@ -28,7 +28,7 @@ flow control). The protocol is the same on both.
 | `MOVE` `<chat id>` `<project id>` | Move a chat into a project. |
 | `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
 | `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
-| `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the next replies. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDE.INF` holds a choice. |
+| `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDE.INF` holds a choice. |
 | `ACCOUNT` | Show the Account page: the bridge answers `T Account`, `R` and an info message with Plan, Usage and Account sections. |
 | `BYE` | Claude ST is quitting. |
 
@@ -58,7 +58,7 @@ All commands are one letter.
 | `F` `<name>` | Suggested 8.3 file name for a `SAVE`; the Atari shows the file selector, then sends `FETCH` (or nothing if cancelled). |
 | `D` `<hex>` | Up to 90 bytes of the file being saved, hex-encoded. Text is already in the Atari character set with CR/LF line ends. |
 | `G` `<size>` | The file is complete. |
-| `O` | Start the model lists (sent after `HELLO` and after `CHOOSE`). |
+| `O` | Start the model lists (sent after `HELLO`, `CHOOSE`, opening a chat, and `NEW` when the model changes: each chat keeps its own model). |
 | `V` `<id>` `<label>` | A model for the model menu. |
 | `U` `<id>` `<label>` | An effort level the current model supports (none for Haiku 4.5). |
 | `K` `<model id>` `<effort>` | The model and effort in use; shown on the chip in the reply line. |

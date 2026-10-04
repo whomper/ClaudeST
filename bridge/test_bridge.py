@@ -445,6 +445,64 @@ class ModelChoice(unittest.TestCase):
         self.assertEqual(be.choose("claude-opus-5-5", "high"), ("claude-opus-5-5", "high"))
 
 
+class PerChatModel(unittest.TestCase):
+    def test_model_labels(self):
+        from backends import model_label
+        self.assertEqual(model_label("claude-opus-5-5"), "Opus 5.5")
+        self.assertEqual(model_label("claude-sonnet-4-20250514"), "Sonnet 4")
+        self.assertEqual(model_label("claude-3-5-sonnet-20241022"), "3.5 Sonnet")
+        self.assertEqual(model_label("claude-opus-4-1-20250805"), "Opus 4.1")
+
+    def test_each_chat_shows_its_own_model(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"HELLO\t1\t1.3")
+        s.handle(b"CHOOSE\tclaude-fable-5-1\thigh")     # the choice for new chats
+        link.sent = b""
+        s.handle(b"OPEN\tCHAT\td2")                     # an older Sonnet 4 chat
+        lines = link.lines()
+        self.assertIn([b"V", b"claude-sonnet-4-20250514", b"Sonnet 4"], lines)
+        self.assertIn([b"K", b"claude-sonnet-4-20250514", b""], lines)
+        self.assertFalse([l for l in lines if l[0] == b"U"])      # no effort for it
+        self.assertLess(lines.index([b"K", b"claude-sonnet-4-20250514", b""]),
+                        lines.index([b"R"]))
+        link.sent = b""
+        s.handle(b"OPEN\tCHAT\td1")                     # no model recorded
+        self.assertIn([b"K", b"claude-fable-5-1", b"high"], link.lines())
+        s.handle(b"CHOOSE\tclaude-sonnet-5-5\tlow")     # changes this chat...
+        s.handle(b"OPEN\tCHAT\td2")
+        link.sent = b""
+        s.handle(b"NEW")                                 # ...and new chats
+        self.assertIn([b"K", b"claude-sonnet-5-5", b"low"], link.lines())
+        s.handle(b"CHOOSE\tclaude-opus-5-5\tmax")
+        link.sent = b""
+        s.handle(b"OPEN\tCHAT\td1")                     # d1 kept its own choice
+        self.assertIn([b"K", b"claude-sonnet-5-5", b"low"], link.lines())
+
+    def test_api_chats_keep_their_model(self):
+        import tempfile
+        from backends import ApiBackend
+        be = ApiBackend.__new__(ApiBackend)
+        be.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(be.dir, "chats"))
+        be.model, be.effort = "claude-opus-5-5", "medium"
+        chat = {"id": "a" * 32, "title": "t", "messages": []}
+        be._save(chat)
+        be.get_chat(chat["id"])
+        self.assertIsNone(be.chat_choice)
+        be.set_chat_model(chat["id"], "claude-haiku-4-5", "")
+        be.get_chat(chat["id"])
+        self.assertEqual(be.chat_choice, ("claude-haiku-4-5", ""))
+
+    def test_claude_ai_reads_the_chat_model(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be._artifacts = {}
+        be._conversation = lambda cid: dict(ClaudeAiParsing.CONV, model="claude-opus-4-8")
+        be.get_chat("x")
+        self.assertEqual(be.chat_choice, ("claude-opus-4-8", ""))
+
+
 class AccountPage(unittest.TestCase):
     def test_usage_bar_and_reset_time(self):
         from datetime import datetime, timezone

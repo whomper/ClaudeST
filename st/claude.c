@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.3"
+#define VERSION "1.4"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -890,15 +890,68 @@ static void draw_sidebar(void)
 	}
 }
 
+static const char *model_label(void)
+{
+	short i;
+	for (i = 0; i < nmodel; i++)
+		if (!strcmp(mod_id[i], cur_model))
+			return mod_lab[i];
+	return cur_model;
+}
+
+static const char *effort_label(void)
+{
+	short i;
+	for (i = 0; i < neffort; i++)
+		if (!strcmp(eff_id[i], cur_effort))
+			return eff_lab[i];
+	return cur_effort;
+}
+
+/* the text of the model chip, e.g. "Opus 5.5 \xfa Medium \x02"; its length */
+static short model_chip(char *out)
+{
+	if (!nmodel || !cur_model[0])
+		return 0;
+	strlcpy_(out, model_label(), 20);
+	if (cur_effort[0] && neffort) {
+		strcat(out, " \xfa ");
+		strcat(out, effort_label());
+	}
+	strcat(out, " \x02");
+	return strlen(out);
+}
+
 static void draw_title(void)
 {
-	short n = strlen(chat_title), maxc = pw / cw - 2;
+	short n = strlen(chat_title), maxc = pw / cw - 2, xr = px + pw;
+	short ty0 = wy + (title_h - ch) / 2;
+	char chip[40];
+	short cl = model_chip(chip);
+
 	fill(px, wy, px + pw - 1, wy + title_h, 0);
+	/* the model chip ("Opus 5.5 · Medium") at the right; the title keeps
+	 * at least 16 characters, or the chip goes */
+	if (cl && maxc - cl - 2 < 16)
+		cl = 0;
+	chip_x0 = chip_x1 = 0;
+	if (cl) {
+		short y1 = wy + 2, y2 = wy + title_h - 2;
+		chip_x1 = px + pw - cw / 2 - 1;
+		chip_x0 = chip_x1 - (cl + 1) * cw;
+		line(chip_x0, y1, chip_x1, y1, 1);
+		line(chip_x1, y1, chip_x1, y2, 1);
+		line(chip_x1, y2, chip_x0, y2, 1);
+		line(chip_x0, y2, chip_x0, y1, 1);
+		text(chip_x0 + cw / 2, ty0, chip, cl, 0, 1);
+		xr = chip_x0 - cw;
+		maxc -= cl + 2;
+	}
 	if (n > maxc)
 		n = maxc;
-	text_bidi(px + cw, wy + (title_h - ch) / 2, chat_title, n, 1, 1, 0);
+	text_bidi(px + cw, ty0, chat_title, n, 1, 1, 0);
 	if (busy && maxc > n + 12)
-		text(px + pw - 12 * cw, wy + (title_h - ch) / 2, "thinking...", 11, 2, 1);
+		text(xr - 12 * cw, ty0, "thinking...", 11, 2, 1);
 	line(px, wy + title_h, px + pw - 1, wy + title_h, 1);
 }
 
@@ -1122,38 +1175,6 @@ static void edit_draw(const char *buf, short len, short cur, short *start,
 	fill(xc, y, xc + 1, y + ch - 1, 1);
 }
 
-static const char *model_label(void)
-{
-	short i;
-	for (i = 0; i < nmodel; i++)
-		if (!strcmp(mod_id[i], cur_model))
-			return mod_lab[i];
-	return cur_model;
-}
-
-static const char *effort_label(void)
-{
-	short i;
-	for (i = 0; i < neffort; i++)
-		if (!strcmp(eff_id[i], cur_effort))
-			return eff_lab[i];
-	return cur_effort;
-}
-
-/* the text of the model chip, e.g. "Opus 5.5 \xfa Medium \x02"; its length */
-static short model_chip(char *out)
-{
-	if (!nmodel || !cur_model[0])
-		return 0;
-	strlcpy_(out, model_label(), 20);
-	if (cur_effort[0] && neffort) {
-		strcat(out, " \xfa ");
-		strcat(out, effort_label());
-	}
-	strcat(out, " \x02");
-	return strlen(out);
-}
-
 static void draw_input(void)
 {
 	short badge = hebrew_kbd;
@@ -1165,18 +1186,6 @@ static void draw_input(void)
 	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
 	short tyy = y1 + (y2 - y1 - ch) / 2 + 1;
 	short tx0 = x1 + cw / 2;
-	char chip[40];
-	short cl = model_chip(chip);
-
-	/* the model chip ("Opus 5.5 · Medium") at the right end of the box */
-	if (cl && avail - cl - 1 < 12)
-		cl = 0;			/* too narrow: the text comes first */
-	if (cl) {
-		avail -= cl + 1;
-		x2 -= (cl + 1) * cw;
-	}
-	chip_x0 = cl ? x2 : 0;
-	chip_x1 = cl ? px + pw - cw / 2 - 1 : 0;
 
 	fill(px, y, px + pw - 1, wy + wh - 1, 0);
 	line(px, y, px + pw - 1, y, 1);
@@ -1201,12 +1210,6 @@ static void draw_input(void)
 		short bx = x2 - 3 * cw - cw / 2;
 		fill(bx - 2, y1 + 2, bx + 2 * cw + 1, y2 - 2, 1);
 		text(bx, tyy, "HE", 2, 1, 0);
-	}
-	if (cl) {
-		line(chip_x0, y1, chip_x1, y1, 1);
-		line(chip_x1, y1, chip_x1, y2, 1);
-		line(chip_x1, y2, chip_x0, y2, 1);
-		text(chip_x0 + cw / 2, tyy, chip, cl, 0, 1);
 	}
 }
 
@@ -1477,7 +1480,7 @@ static void handle_line(char *s)
 	case 'K':			/* K <model> <effort> : the current choice */
 		strlcpy_(cur_model, n > 1 ? f[1] : "", sizeof(cur_model));
 		strlcpy_(cur_effort, n > 2 ? f[2] : "", sizeof(cur_effort));
-		dirty |= D_INPUT;
+		dirty |= D_TITLE;
 		/* after (re)connecting, ask for the model saved in CLAUDE.INF */
 		if (!pref_sent) {
 			pref_sent = 1;
@@ -2741,7 +2744,7 @@ static void model_menu(void)
 {
 	static char lab[NMODEL + NEFFORT + 1][24];
 	const char *lp[NMODEL + NEFFORT + 1];
-	short i, n = 0, r, y = wy + wh - input_h;
+	short i, n = 0, r;
 	if (!nmodel) {
 		form_alert(1, "[1][The gateway hasn't sent|the list of models yet.][ OK ]");
 		return;
@@ -2761,7 +2764,7 @@ static void model_menu(void)
 	for (i = 0; i < n; i++)
 		lp[i] = lab[i];
 	flush_dirty();
-	r = popup(chip_x0 ? chip_x0 : px + pw / 2, y + input_h, y, lp, n);
+	r = popup(chip_x0 ? chip_x0 : px + pw / 2, wy + title_h + 1, -1, lp, n);
 	if (r < 0)
 		return;
 	if (r < nmodel)
@@ -2907,7 +2910,7 @@ static void handle_click(short mx, short my)
 		drag_divider();
 		return;
 	}
-	if (chip_x0 && mx >= chip_x0 && mx <= chip_x1 && my >= wy + wh - input_h) {
+	if (chip_x0 && mx >= chip_x0 && mx <= chip_x1 && my < wy + title_h) {
 		model_menu();
 		return;
 	}

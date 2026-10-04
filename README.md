@@ -199,7 +199,7 @@ python3 claude_bridge.py --backend demo --serial /dev/ttyUSB0
 | Page through the sidebar list | the ↑ ↓ arrows next to the list title | — |
 | Send a message | — | type, then `Return` |
 | Your plan, usage and account | click the status line at the bottom left, or Options ▸ Account | `F8` |
-| Choose the Claude model and its effort | click the model chip at the right of the reply line | `F9` |
+| Choose the Claude model and its effort | click the model chip at the right of the chat's title bar | `F9` |
 | Scroll the conversation | scroll bar, or click the upper/lower half | `↑` `↓`, `Shift+↑/↓` by page, `Clr/Home` top, `Shift+Clr/Home` bottom |
 | Type in Hebrew (on/off) | Options ▸ Hebrew keys | `F10` |
 | Edit the reply line or a dialog field | — | `←` `→` move, `Shift+←/→` start/end, `Ctrl+←/→` by word, `Backspace`/`Delete` |
@@ -232,14 +232,24 @@ the Claude Console.
 
 ### Model and effort
 
-The right end of the reply line shows the model and effort the next
-reply will use, for example **Opus 5.5 · Medium**. Click it (or press
-`F9`) for a menu: the models first, then the effort levels the chosen
-model supports (**Low**, **Medium**, **High**, **Extra high**, **Max**).
-The current ones are ticked. Your choice is saved in `CLAUDE.INF` and
-applied again whenever Claude ST connects to the gateway.
+The right end of the chat's title bar shows the model and effort of the
+open chat, for example **Opus 5.5 · Medium**. Click it (or press `F9`)
+for a menu: the models first, then the effort levels the chosen model
+supports (**Low**, **Medium**, **High**, **Extra high**, **Max**). The
+current ones are ticked.
 
-![The model chip](docs/model-chip.png)
+![The model menu](docs/model-menu.png)
+
+**Each chat keeps its own model**, as on claude.ai:
+
+- Opening a chat switches the chip to the model that chat uses, even an
+  older one that is no longer offered (such as Sonnet 4; it is added to
+  the menu while you need it). Older models have no effort setting.
+- Changing the model while a chat is open changes it for that chat, and
+  it also becomes the model for your next new chats.
+- A new chat, and an old chat with no model recorded, use the model
+  you chose last. That choice is saved in `CLAUDE.INF` and applied again
+  whenever Claude ST connects to the gateway.
 
 The models offered are Opus 5.5, Fable 5.1, Sonnet 5.5, Haiku 4.5,
 Opus 5 and Opus 4.8. Haiku 4.5 has no effort setting, so its effort
@@ -247,12 +257,15 @@ items disappear. Effort controls how much Claude thinks before it
 answers: higher is slower and more thorough. Each model's default is
 **Medium** for Opus 5.5 and **High** for the others.
 
-- **API backend:** the model and effort are sent with every request.
-- **claude.ai backend:** the menu starts on **Default model**, your
-  account's own choice. Picking a model makes the bridge ask claude.ai for
-  it, if your plan includes that model. claude.ai has no documented
-  effort setting; the bridge asks for it anyway, and if claude.ai refuses,
-  it sends the message without it and says so at the top of the reply.
+- **API backend:** the model and effort are sent with every request and
+  stored with each chat.
+- **claude.ai backend:** a chat's model is read from claude.ai when you
+  open it. New chats start on **Default model**, your account's own
+  choice, until you pick one. Picking a model makes the bridge ask
+  claude.ai for it, if your plan includes that model. claude.ai has no
+  documented effort setting; the bridge asks for it anyway, and if
+  claude.ai refuses, it sends the message without it and says so at the
+  top of the reply.
 
 Right-click a chat for **Open, Pin/Unpin, Rename…, Move to project…,
 Delete…**, or a project for **Open, Pin/Unpin, Rename…, Archive,

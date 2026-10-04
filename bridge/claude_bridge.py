@@ -185,6 +185,7 @@ class Session:
         self.be = backend
         self.chat_id = None
         self.project_id = None
+        self.new_choice = None      # the model and effort for new chats (CHOOSE)
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
@@ -275,6 +276,8 @@ class Session:
         self.status("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
         self.out("C", self.chat_id or "")
+        if self.new_choice is None:
+            self.new_choice = (self.be.model, self.be.effort)
         self.send_models()
         self.status("Online: " + self.be.whoami())
 
@@ -316,6 +319,14 @@ class Session:
         self.status("Loading chat...")
         title, msgs = self.be.get_chat(oid)
         self.chat_id = oid
+        # each chat keeps its own model; chats without one get the choice
+        # for new chats
+        choice = getattr(self.be, "chat_choice", None)
+        if choice and choice[0]:
+            self.be.use_chat_model(*choice)
+        elif self.new_choice:
+            self.be.choose(*self.new_choice)
+        self.send_models()
         self.out("T", title)
         self.out("C", oid)
         self.out("R")
@@ -331,6 +342,9 @@ class Session:
         sets its own title; the next message still starts a new chat."""
         self.chat_id = None
         self.out("C", "")
+        if self.new_choice and self.new_choice != (self.be.model, self.be.effort):
+            self.be.choose(*self.new_choice)
+            self.send_models()
         if quiet != "QUIET":
             self.out("T", "New chat")
 
@@ -376,6 +390,9 @@ class Session:
     def cmd_choose(self, model="", effort="", *_):
         model, effort = self.be.choose(model, effort)
         log.info("model %s, effort %s", model, effort or "-")
+        self.new_choice = (model, effort)     # also for the next new chats
+        if self.chat_id:
+            self.be.set_chat_model(self.chat_id, model, effort)
         self.send_models()
         label = dict(self.be.models()).get(model, model)
         self.status("Model: %s%s" % (label, ", effort " + effort if effort else ""))

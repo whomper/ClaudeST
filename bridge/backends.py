@@ -35,12 +35,36 @@ FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "clau
 
 
 def efforts_for(model):
-    """The effort levels a model accepts (none for Haiku 4.5)."""
+    """The effort levels a model accepts (none for Haiku or older models)."""
     if not model or model == "default" or model.startswith("claude-haiku"):
         return []
-    if model in ("claude-opus-4-6", "claude-sonnet-4-6"):
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
         return [e for e in EFFORTS if e[0] != "xhigh"]
-    return EFFORTS
+    if model.startswith("claude-opus-4-5"):
+        return EFFORTS[:3]
+    if model in dict(MODELS) or model.startswith(("claude-fable", "claude-mythos")):
+        return EFFORTS
+    return []
+
+
+def model_label(model):
+    """A short name for a model id: claude-sonnet-4-20250514 -> Sonnet 4,
+    claude-3-5-sonnet-20241022 -> 3.5 Sonnet."""
+    if model in dict(MODELS):
+        return dict(MODELS)[model]
+    parts = [p for p in model.replace("claude-", "", 1).split("-")
+             if not (p.isdigit() and len(p) >= 6)]
+    out, nums = [], []
+    for p in parts + [""]:
+        if p.isdigit():
+            nums.append(p)
+            continue
+        if nums:
+            out.append(".".join(nums))
+            nums = []
+        if p:
+            out.append(p.capitalize())
+    return " ".join(out)[:19] or model[:19]
 
 
 def default_effort(model):
@@ -117,10 +141,22 @@ class Backend:
     name = "?"
     model = "claude-opus-5-5"
     effort = "medium"
+    chat_choice = None      # (model, effort) of the chat get_chat() last read
+    extra_models = ()       # models met in older chats, added to the menu
 
     def models(self):
         """-> [(id, label)] the Atari's model menu offers"""
-        return MODELS
+        return MODELS + list(self.extra_models)
+
+    def use_chat_model(self, model, effort=""):
+        """Switch to the model a chat was using, even one no longer in the
+        menu (e.g. an older chat's Sonnet 4)."""
+        if model and model.startswith("claude-") and model not in dict(self.models()):
+            self.extra_models = list(self.extra_models) + [(model, model_label(model))]
+        return self.choose(model, effort or self.effort)
+
+    def set_chat_model(self, chat_id, model, effort):
+        """Remember a chat's model, so it's still there when reopened."""
 
     def account_report(self):
         """Markdown for the Account page: plan, usage and account details."""
@@ -352,7 +388,16 @@ class ClaudeAiBackend(Backend):
     effort = ""
 
     def models(self):
-        return [("default", "Default model")] + MODELS
+        return [("default", "Default model")] + MODELS + list(self.extra_models)
+
+    def set_chat_model(self, chat_id, model, effort):
+        # the web app keeps the model on the conversation; replies sent
+        # with "model" update it too, so this is only a head start
+        if model and model != "default":
+            try:
+                self._send("put", self._item_path("CHAT", chat_id), {"model": model})
+            except Exception as e:
+                log.info("could not set the chat's model: %s", e)
 
     def account_report(self):
         acct = self._get("/account")
@@ -487,6 +532,9 @@ class ClaudeAiBackend(Backend):
 
     def get_chat(self, chat_id):
         conv = self._conversation(chat_id)
+        settings = conv.get("settings") or {}
+        self.chat_choice = (conv.get("model"), settings.get("effort") or "") \
+            if conv.get("model") else None
         out = []
         for m in self._current_branch(conv):
             role = "U" if m.get("sender") == "human" else "A"
@@ -895,8 +943,14 @@ class ApiBackend(Backend):
         chat["project"] = project_id
         self._save(chat)
 
+    def set_chat_model(self, chat_id, model, effort):
+        chat = self._load(chat_id)
+        chat["model"], chat["effort"] = model, effort
+        self._save(chat)
+
     def get_chat(self, chat_id):
         c = self._load(chat_id)
+        self.chat_choice = (c["model"], c.get("effort", "")) if c.get("model") else None
         return c["title"], [("U" if m["role"] == "user" else "A", m["content"]) for m in c["messages"]]
 
     def send(self, chat_id, project_id, text, on_delta):
@@ -937,6 +991,7 @@ class ApiBackend(Backend):
             reply.append(note)
             on_delta(note)
         chat["messages"].append({"role": "assistant", "content": "".join(reply)})
+        chat["model"], chat["effort"] = self.model, self.effort
         self._save(chat)
         return chat["id"], chat["title"]
 
@@ -999,6 +1054,7 @@ class DemoBackend(Backend):
                 ("A", "1. A rotozoomer with a Claude spark\n2. Raster bars synced to YM music\n"
                       "3. A sync-scroller greeting every ST in the house")]},
         }
+        self.chats["d2"]["model"] = ("claude-sonnet-4-20250514", "")    # an older chat
         self.chats["d4"] = {"title": "שאלה על Atari Falcon", "project": None, "messages": [
             ("U", "מה זה Atari Falcon?"),
             ("A", "ה-Atari Falcon 030 הוא מחשב ביתי משנת 1992, עם מעבד Motorola 68030 "
@@ -1048,8 +1104,12 @@ class DemoBackend(Backend):
         self._item("PROJECT", project_id)
         self._item("CHAT", chat_id)["project"] = project_id
 
+    def set_chat_model(self, chat_id, model, effort):
+        self.chats[chat_id]["model"] = (model, effort)
+
     def get_chat(self, chat_id):
         c = self.chats[chat_id]
+        self.chat_choice = c.get("model")
         return c["title"], list(c["messages"])
 
     def send(self, chat_id, project_id, text, on_delta):
@@ -1067,6 +1127,7 @@ class DemoBackend(Backend):
             time.sleep(0.03)
         c = self.chats[chat_id]
         c["messages"] += [("U", text), ("A", reply)]
+        c["model"] = (self.model, self.effort)
         return chat_id, c["title"]
 
     def account_report(self):
