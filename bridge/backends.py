@@ -80,7 +80,7 @@ def usage_bar(pct, width=20):
     return "[%s%s] %d%%" % ("#" * n, "-" * (width - n), round(pct))
 
 
-def reset_text(iso, now=None):
+def reset_text(iso, now=None, verb="resets"):
     """'resets in 2 h 14 min (Sat 4 Oct, 17:00)', in the gateway's local time."""
     from datetime import datetime, timezone
     if not iso:
@@ -88,7 +88,7 @@ def reset_text(iso, now=None):
     try:
         when = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
     except ValueError:
-        return "resets " + str(iso)
+        return verb + " " + str(iso)
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
@@ -97,15 +97,15 @@ def reset_text(iso, now=None):
     span = ("%d d %d h" % (days, rest // 60) if days else
             "%d h %d min" % (rest // 60, rest % 60) if rest >= 60 else "%d min" % rest)
     local = when.astimezone()
-    return "resets in %s (%s %d %s, %s)" % (span, local.strftime("%a"), local.day,
+    return "%s in %s (%s %d %s, %s)" % (verb, span, local.strftime("%a"), local.day,
                                             local.strftime("%b"), local.strftime("%H:%M"))
 
 
-def usage_lines(label, pct, resets_at=None):
+def usage_lines(label, pct, resets_at=None, verb="resets"):
     """A usage limit for the Account page: its name, a meter, the reset."""
-    out = [label, "  " + usage_bar(pct)]
+    out = [label, "  " + usage_bar(pct) + " used"]
     if resets_at:
-        out.append("  " + reset_text(resets_at))
+        out.append("  " + reset_text(resets_at, verb=verb))
     return out
 
 
@@ -116,7 +116,10 @@ USAGE_NAMES = [
     ("seven_day_opus", "This week, Opus"),
     ("seven_day_sonnet", "This week, Sonnet"),
     ("seven_day_oauth_apps", "This week, Claude Code and apps"),
+    # claude.ai's code name for the included cloud session credit
+    ("iguana_necktie", "Cloud session credits"),
 ]
+USAGE_EXPIRES = {"iguana_necktie"}     # a credit that expires rather than resets
 
 
 def plan_name(capabilities, tier="", billing=""):
@@ -422,6 +425,9 @@ class ClaudeAiBackend(Backend):
             hidden = sorted(k for k in usage if k not in names and k != "extra_usage")
             if hidden:
                 log.info("usage: not shown: %s", ", ".join(hidden))
+            for k in USAGE_EXPIRES:
+                if usage.get(k):
+                    log.info("usage: %s = %s", k, json.dumps(usage[k]))
             shown = 0
             for k in [k for k, _ in USAGE_NAMES] + ["extra_usage"]:
                 u = usage.get(k)
@@ -430,7 +436,8 @@ class ClaudeAiBackend(Backend):
                 if k == "extra_usage" and not u.get("is_enabled"):
                     continue
                 label = names.get(k, "Extra usage this month")
-                out += usage_lines(label, u["utilization"], u.get("resets_at"))
+                out += usage_lines(label, u["utilization"], u.get("resets_at"),
+                                   "expires" if k in USAGE_EXPIRES else "resets")
                 shown += 1
             if not shown:
                 out.append("No usage limits are in effect right now.")

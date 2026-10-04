@@ -553,11 +553,12 @@ class AccountPage(unittest.TestCase):
         be._get = get
         page = be.account_report()
         self.assertIn("## Plan\nMax (20x usage)", page)
-        self.assertIn("Current session (5 hours)\n  [########------------] 42%\n  resets in ", page)
+        self.assertIn("Current session (5 hours)\n  [########------------] 42% used\n  resets in ", page)
         self.assertIn("  resets in ", page)
-        self.assertIn("This week, all models\n  [##------------------] 10%", page)
+        self.assertIn("This week, all models\n  [##------------------] 10% used", page)
         self.assertNotIn("Opus", page)
-        self.assertNotIn("guana", page)          # internal entries stay hidden
+        self.assertNotIn("guana", page)          # shown under its real name
+        self.assertIn("Cloud session credits\n  [#-------------------] 3% used\n  expires in ", page)
         self.assertIn("Name: Erez Yaary", page)
         self.assertIn("Email: erez@example.com", page)
         self.assertIn("Organization: Erez's org", page)

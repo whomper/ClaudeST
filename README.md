@@ -235,7 +235,8 @@ Account…**, or press `F8`. The conversation pane then shows:
 
 - **Plan:** Free, Pro, Max (5x or 20x usage), Team or Enterprise.
 - **Usage:** each of your limits as a meter, for example the current
-  5-hour session and this week's usage, with how long until it resets
+  5-hour session and this week's usage, and any included cloud session
+  credit, with how long until it resets (or expires)
   and the day and time it resets, in the Pi's time zone.
 - **Account:** your name, email, organization, and since when you've had
   the account.
