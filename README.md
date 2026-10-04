@@ -161,4 +161,4 @@ claude.ai client for the Atari, built by talking to claude.ai.
 - [PROTOCOL.md](PROTOCOL.md): the line protocol between the Atari and the
   bridge
 
-© 2026 Erez Yaary
+© 2026 Whomper
