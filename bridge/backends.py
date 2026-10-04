@@ -436,6 +436,8 @@ class ClaudeAiBackend(Backend):
                 if k == "extra_usage" and not u.get("is_enabled"):
                     continue
                 label = names.get(k, "Extra usage this month")
+                if shown:
+                    out.append("")      # a blank line between the limits
                 out += usage_lines(label, u["utilization"], u.get("resets_at"),
                                    "expires" if k in USAGE_EXPIRES else "resets")
                 shown += 1
@@ -1150,6 +1152,7 @@ class DemoBackend(Backend):
         return "\n".join([
             "## Plan", "Max (5x usage) -- demo data", "", "## Usage",
             *usage_lines("Current session (5 hours)", 37, (now + timedelta(hours=2, minutes=14)).isoformat()),
+            "",
             *usage_lines("This week, all models", 62, (now + timedelta(days=3, hours=5)).isoformat()),
             "", "## Account", "Name: Demo User", "Email: demo@example.com",
         ])

@@ -555,7 +555,8 @@ class AccountPage(unittest.TestCase):
         self.assertIn("## Plan\nMax (20x usage)", page)
         self.assertIn("Current session (5 hours)\n  [########------------] 42% used\n  resets in ", page)
         self.assertIn("  resets in ", page)
-        self.assertIn("This week, all models\n  [##------------------] 10% used", page)
+        self.assertIn("used\n\nCloud session credits", page)
+        self.assertIn("\n\nThis week, all models\n  [##------------------] 10% used", page)
         self.assertNotIn("Opus", page)
         self.assertNotIn("guana", page)          # shown under its real name
         self.assertIn("Cloud session credits\n  [#-------------------] 3% used\n  expires in ", page)
