@@ -337,6 +337,12 @@ class Session:
             self.notice("Loading session...")
             title, msgs = self.be.get_code_session(oid)
             self.chat_id, self.chat_kind = oid, "CODE"
+            choice = getattr(self.be, "chat_choice", None)    # the session's model
+            if choice and choice[0]:
+                self.be.use_chat_model(*choice)
+            elif self.new_choice:
+                self.be.choose(*self.new_choice)
+            self.send_models()
             self.out("T", title)
             self.out("C", oid)
             self.out("R")
@@ -434,9 +440,18 @@ class Session:
     def cmd_choose(self, model="", effort="", *_):
         model, effort = self.be.choose(model, effort)
         log.info("model %s, effort %s", model, effort or "-")
-        self.new_choice = (model, effort)     # also for the next new chats
-        if self.chat_id:
-            self.be.set_chat_model(self.chat_id, model, effort)
+        if self.chat_kind == "CODE" and self.chat_id:
+            # a Claude Code session: switch its model, if claude.ai lets us
+            try:
+                self.be.set_code_model(self.chat_id, model, effort)
+            except Exception as e:
+                log.info("session model: %s", e)
+                self.message("I", "claude.ai didn't accept a model change for this "
+                                  "session (%s)." % e)
+        else:
+            self.new_choice = (model, effort)     # also for the next new chats
+            if self.chat_id:
+                self.be.set_chat_model(self.chat_id, model, effort)
         self.send_models()
         label = dict(self.be.models()).get(model, model)
         log.info("model for chat %s: %s", self.chat_id or "(new)", label)

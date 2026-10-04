@@ -573,7 +573,8 @@ class CodeSessions(unittest.TestCase):
                     ids = [e["id"] for e in events]
                     rest = events[ids.index(after) + 1:] if after else events
                     return R(200, {"data": rest, "has_more": False})
-                return R(200, {"id": path.split("/")[-1], "title": "New"})
+                return R(200, {"id": path.split("/")[-1], "title": "New",
+                               "session_context": {"model": "claude-opus-5-5[1m]"}})
             return f
         be.http = type("H", (), {m: staticmethod(call(m)) for m in ("get", "post", "patch")})()
         return be, calls
@@ -584,6 +585,7 @@ class CodeSessions(unittest.TestCase):
         self.assertEqual(calls[0][2]["headers"]["anthropic-beta"], "ccr-byoc-2025-07-29")
         title, msgs = be.get_code_session("session_b")
         self.assertEqual((title, msgs), ("New", [("U", "fix the build")]))
+        self.assertEqual(be.chat_choice, ("claude-opus-5-5", ""))
         got = []
         be.send_code("session_b", "and the tests?", got.append, poll=0)
         self.assertEqual(got, ["Looking.\n\n[Bash: make -C st]\n\nIt builds now."])
@@ -598,7 +600,14 @@ class CodeSessions(unittest.TestCase):
         self.assertIn([b"L", b"CODE", b"Code"], lines)
         self.assertIn([b"I", b"session_d1", b"Port the bridge to MicroPython"], lines)
         link.sent = b""
-        s.handle(b"OPEN\tCODE\tsession_d2")
+        s.handle(b"HELLO\t1\t1.8")                     # new chats: Opus 5.5, medium
+        s.handle(b"OPEN\tCODE\tsession_d1")             # runs on Sonnet 5.5
+        self.assertIn([b"K", b"claude-sonnet-5-5", b"medium"], link.lines())
+        s.handle(b"CHOOSE\tclaude-opus-5-5\tmax")         # switch the session
+        self.assertEqual(s.be.code["session_d1"]["model"], "claude-opus-5-5")
+        link.sent = b""
+        s.handle(b"OPEN\tCODE\tsession_d2")              # no model: the new-chat choice
+        self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
         self.assertIn([b"T", b"Fix the 68000 store-merging crash"], link.lines())
         link.sent = b""
         s.handle(b"SEND\tthanks")

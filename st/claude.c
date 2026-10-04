@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.7"
+#define VERSION "1.8"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -85,7 +85,6 @@ static short list_loading;		/* a list was asked for and hasn't arrived */
 static char notice[64];			/* a passing message from the bridge (N) */
 static long notice_until;
 static short title_cut;			/* the chat title didn't fit */
-static short code_open;			/* a Claude Code session is open */
 static short title_xr;			/* where the title area ends */
 static short nav_pending = -1;		/* area chosen, its list not arrived yet */
 static char list_kind[12] = "CHATS";
@@ -928,7 +927,7 @@ static const char *effort_label(void)
 /* the text of the model chip, e.g. "Opus 5.5 \xfa Medium \x02"; its length */
 static short model_chip(char *out)
 {
-	if (!nmodel || !cur_model[0] || code_open)	/* a session has its own */
+	if (!nmodel || !cur_model[0])
 		return 0;
 	strlcpy_(out, model_label(), 20);
 	if (!strcmp(out, "Default model"))
@@ -1843,7 +1842,6 @@ static void do_new_chat(void)
 {
 	search_mode = 0;
 	cur_id[0] = 0;
-	code_open = 0;
 	strcpy(chat_title, "New chat");
 	clear_text();
 	begin_message('I');
@@ -1857,7 +1855,6 @@ static void do_new_chat(void)
 static void clear_context(const char *title, const char *hint)
 {
 	cur_id[0] = 0;
-	code_open = 0;
 	strlcpy_(chat_title, title, sizeof(chat_title));
 	clear_text();
 	begin_message('I');
@@ -1972,7 +1969,6 @@ static void open_item(short i)
 		/* the bridge stays in the project, so a new chat is created there */
 	}
 	if (!strcmp(kind, "CHAT") || !strcmp(kind, "CODE")) {
-		code_open = !strcmp(kind, "CODE");
 		strlcpy_(cur_id, it->id, sizeof(cur_id));
 		strlcpy_(chat_title, it->label, sizeof(chat_title));
 		clear_text();

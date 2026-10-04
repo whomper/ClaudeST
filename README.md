@@ -223,8 +223,9 @@ claude.ai/code, newest first.
   Claude Code's replies appear as it works. If it is still working after
   15 minutes, open the session again later to see the rest.
 - **Right-click** a session for **Open**, **Rename…** and **Archive**.
-- The model chip is hidden while a session is open, because a session
-  keeps its own model.
+- The model chip shows the session's own model. Choosing another one
+  asks claude.ai to switch that session's model; it doesn't change the
+  model for your new chats.
 
 ![A Claude Code session](docs/code.png)
 

@@ -231,6 +231,9 @@ class Backend:
         """Send a message to a session and pass on its replies; -> title"""
         raise NotImplementedError("Claude Code sessions need the claude.ai backend")
 
+    def set_code_model(self, session_id, model, effort):
+        raise NotImplementedError("Changing a session's model isn't supported by the %s backend" % self.name)
+
     def rename_code(self, session_id, title):
         raise NotImplementedError("Renaming sessions isn't supported by the %s backend" % self.name)
 
@@ -523,8 +526,16 @@ class ClaudeAiBackend(Backend):
             params["after_id"] = page.get("last_id") or batch[-1].get("id")
         return events
 
+    @staticmethod
+    def _session_model(info):
+        ctx = info.get("session_context") or {}
+        model = ctx.get("model") or info.get("model") or ""
+        return model.split("[")[0]      # "claude-opus-5-5[1m]" -> the model id
+
     def get_code_session(self, session_id):
         info = self._code("get", "/sessions/%s" % session_id)
+        model = self._session_model(info)
+        self.chat_choice = (model, "") if model else None
         events = self._code_events(session_id)
         self._code_last = {session_id: events[-1].get("id") if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
@@ -555,6 +566,10 @@ class ClaudeAiBackend(Backend):
             on_delta("\n\n(Still working; open the session again later to see the rest.)")
         self._code_last = {session_id: last}
         return self._code("get", "/sessions/%s" % session_id).get("title")
+
+    def set_code_model(self, session_id, model, effort):
+        if model and model != "default":
+            self._code("patch", "/sessions/%s" % session_id, {"session_context": {"model": model}})
 
     def rename_code(self, session_id, title):
         self._code("patch", "/sessions/%s" % session_id, {"title": title})
@@ -1248,7 +1263,8 @@ class DemoBackend(Backend):
                   "It was the last computer Atari made, אחרי ה-TT030.")]}
         self.projects = {"p1": {"name": "Falcon audio"}, "p2": {"name": "Demoscene"}}
         self.code = {
-            "session_d1": {"title": "Port the bridge to MicroPython", "messages": [
+            "session_d1": {"title": "Port the bridge to MicroPython", "model": "claude-sonnet-5-5",
+                           "messages": [
                 ("U", "Can claude_bridge.py run on a Pico W?"),
                 ("A", "Mostly. I'll check what it imports.\n\n[Bash: grep -n ^import bridge/*.py]"
                       "\n\nIt needs sockets and hashlib, both in MicroPython; serial would "
@@ -1342,7 +1358,11 @@ class DemoBackend(Backend):
 
     def get_code_session(self, session_id):
         s = self.code[session_id]
+        self.chat_choice = (s["model"], "") if s.get("model") else None
         return s["title"], list(s["messages"])
+
+    def set_code_model(self, session_id, model, effort):
+        self.code[session_id]["model"] = model
 
     def send_code(self, session_id, text, on_delta):
         reply = "[Bash: echo working]\n\nDone. (This is the demo backend: no session ran.)"
