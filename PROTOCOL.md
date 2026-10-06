@@ -26,6 +26,7 @@ flow control). The protocol is the same on both.
 | `ARCHIVE` `PROJECT`\|`CODE` `<id>` | Archive a project or a Claude Code session. |
 | `PICKPROJ` `<chat id>` | The Atari wants a project list for "Move to project"; the bridge answers with `Q`/`J`/`W`. |
 | `MOVE` `<chat id>` `<project id>` | Move a chat into a project. |
+| `NEWPROJ` `<chat id>` `<name>` | Create a project with this name and move the chat into it ("New project…" in the Move menu). |
 | `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
 | `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
 | `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDE.INF` holds a choice. |

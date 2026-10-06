@@ -583,6 +583,44 @@ class EffortFromClaudeAi(unittest.TestCase):
         self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
 
 
+class NewProject(unittest.TestCase):
+    def test_new_project_from_the_move_menu(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"NEWPROJ\td2\tGFA tips")
+        pid = [k for k, v in s.be.projects.items() if v["name"] == "GFA tips"]
+        self.assertEqual(len(pid), 1)
+        self.assertEqual(s.be.chats["d2"]["project"], pid[0])
+        self.assertNotIn([b"M", b"E"], link.lines())
+        self.assertIn(b"Moved to GFA tips", link.sent)
+
+    def test_claude_ai_creates_the_project(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "o1"
+        sent = []
+
+        class R:
+            status_code = 200
+
+            def json(self):
+                return {"uuid": "proj-123", "name": "GFA tips"}
+
+        be._send = lambda method, path, body=None: sent.append((method, path, body)) or R()
+        self.assertEqual(be.create_project("GFA tips"), "proj-123")
+        self.assertEqual(sent[0][:2], ("post", "/organizations/o1/projects"))
+        self.assertEqual(sent[0][2]["name"], "GFA tips")
+
+    def test_api_backend_creates_the_project(self):
+        import tempfile
+        from backends import ApiBackend
+        be = ApiBackend.__new__(ApiBackend)
+        be.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(be.dir, "chats"))
+        pid = be.create_project("Retro")
+        self.assertEqual(be.list_projects(), [(pid, "Retro", False)])
+
+
 class LongRunningBridge(unittest.TestCase):
     """A bridge that runs for months: nothing stale, nothing piling up."""
 

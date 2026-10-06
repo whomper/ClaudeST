@@ -391,6 +391,10 @@ class Backend:
     def move_chat(self, chat_id, project_id):
         raise NotImplementedError("Moving chats isn't supported by the %s backend" % self.name)
 
+    def create_project(self, name):
+        """Create an empty project; -> its id"""
+        raise NotImplementedError("Creating projects isn't supported by the %s backend" % self.name)
+
 
 # ---------------------------------------------------------------------------
 # claude.ai web account (unofficial)
@@ -769,6 +773,14 @@ class ClaudeAiBackend(Backend):
         projs = [p for p in projs if not p.get("archived_at") and not p.get("is_archived")]
         return [(p["uuid"], p.get("name") or "Untitled project", bool(p.get("is_starred")))
                 for p in projs]
+
+    def create_project(self, name):
+        r = self._send("post", "/organizations/%s/projects" % self.org,
+                       {"name": name, "description": "", "is_private": True})
+        try:
+            return r.json()["uuid"]
+        except (ValueError, KeyError, TypeError):
+            raise RuntimeError("claude.ai created no project (unexpected answer).")
 
     # The claude.ai web app's own (unofficial) endpoints for these actions.
     def _send(self, method, path, body=None):
@@ -1230,6 +1242,13 @@ class ApiBackend(Backend):
         return name, [(c["id"], c["title"], bool(c.get("pinned")))
                       for c in self._all() if c.get("project") == project_id]
 
+    def create_project(self, name):
+        projects = self._projects()
+        pid = uuid.uuid4().hex[:12]
+        projects.append({"id": pid, "name": name})
+        self._save_projects(projects)
+        return pid
+
     def _edit_project(self, project_id, **changes):
         projects = self._projects()
         for p in projects:
@@ -1407,6 +1426,13 @@ class DemoBackend(Backend):
     def list_projects(self):
         return [(k, p["name"], p.get("pinned", False))
                 for k, p in self.projects.items() if not p.get("archived")]
+
+    def create_project(self, name):
+        pid = "p%d" % (len(self.projects) + 1)
+        while pid in self.projects:
+            pid += "x"
+        self.projects[pid] = {"name": name}
+        return pid
 
     def project_chats(self, project_id):
         return self.projects.get(project_id, {}).get("name", "Project"), [

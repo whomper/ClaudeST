@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.10"
+#define VERSION "1.11"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -2847,33 +2847,54 @@ static void model_menu(void)
 	save_config();
 }
 
+/* "New project...": name it in a dialog; the bridge creates the project
+ * and moves the chat into it */
+static void new_project_for(const char *chat_id)
+{
+	char name[72];
+	short n;
+	name[0] = 0;
+	if (!text_dialog("New project", "Create", name, sizeof(name)))
+		return;
+	for (n = strlen(name); n > 0 && name[n - 1] == ' '; n--)
+		name[n - 1] = 0;
+	if (name[0])
+		tx_cmd("NEWPROJ", chat_id, name);
+}
+
 static void show_picker(void)
 {
-	const char *lab[PICKMAX + 1];
-	short i, r, t, y0;
+	/* "New project..." first, a line, then the existing projects */
+	const char *lab[PICKMAX + 3];
+	short i, r, t, y0, n = 0;
+	char chat[40];
 	if (!pick_chat[0])
 		return;
-	if (npick == 0) {
-		form_alert(1, "[1][You have no projects yet.][ OK ]");
-		return;
-	}
+	lab[n++] = "New project...";
+	if (npick)
+		lab[n++] = "-";
 	for (i = 0; i < npick; i++)
-		lab[i] = pick_label[i];
+		lab[n++] = pick_label[i];
 	/* highlight the chat being moved again while choosing its project */
 	for (t = 0; t < nitems && strcmp(items[t].id, pick_chat); t++)
 		;
 	if (t < nitems && t >= list_top && t < list_top + list_rows) {
 		set_menu_target(t);
 		y0 = item_row_y(t);
-		r = popup(pick_x, y0 + row_h, y0, lab, npick);
+		r = popup(pick_x, y0 + row_h, y0, lab, n);
 	} else {
 		flush_dirty();
-		r = popup(pick_x, list_y + row_h, -1, lab, npick);
+		r = popup(pick_x, list_y + row_h, -1, lab, n);
+	}
+	strlcpy_(chat, pick_chat, sizeof(chat));
+	pick_chat[0] = 0;
+	if (r == 0) {
+		/* keep the chat highlighted while its new project is named */
+		new_project_for(chat);
+	} else if (r >= 2) {
+		tx_cmd("MOVE", chat, pick_id[r - 2]);
 	}
 	set_menu_target(-1);
-	if (r >= 0)
-		tx_cmd("MOVE", pick_chat, pick_id[r]);
-	pick_chat[0] = 0;
 }
 
 static short list_hit(short mx, short my)

@@ -72,6 +72,12 @@ is highlighted while its menu is open.
 
 ![The right-click menu](context-menu.png)
 
+**Move to project…** lists your projects, with **New project…** at the
+top, above a line. **New project…** asks for a name, creates the project
+and moves the chat into it.
+
+![Move to project, with New project at the top](move-to-project.png)
+
 **Rename…** opens a dialog with the current name: edit it and press
 `Return`, or `Esc` to cancel. **Delete…** always asks first. In menus,
 the arrow keys and `Return` work too, and `Esc` closes them.

@@ -526,8 +526,18 @@ class Session:
         self.out("Q")
         for it in projects[:20]:
             self.out("J", it[0], it[1] or "Untitled project")
+        self.online()           # clear "Loading projects..." before the menu opens
         self.out("W")
-        self.online()
+
+    def cmd_newproj(self, chat_id, name="", *_):
+        """"New project..." in the Move menu: create it, move the chat in."""
+        name = name.strip()
+        if not name:
+            return
+        self.notice("Creating project...")
+        project_id = self.be.create_project(name)
+        self.be.move_chat(chat_id, project_id)
+        self._done("Moved to " + name)
 
     def cmd_move(self, chat_id, project_id, *_):
         self.notice("Moving...")
