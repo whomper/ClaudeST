@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.11"
+#define VERSION "1.12"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -340,11 +340,24 @@ static void sup_restore_iorec(void)
 	ints_restore(sr);
 }
 
+static short aux_port;		/* CLAUDE.INF "port N": Bconmap device, 0 = TOS's choice */
+static short old_port;
+
 static void serial_open(void)
 {
 	if (serial_is_open)
 		return;
 	serial_is_open = 1;
+	/* on a TT or Falcon, "port N" picks which serial port AUX means; TOS
+	 * versions without Bconmap return the opcode (44) and change nothing */
+	old_port = 0;
+	if (aux_port) {
+		long prev = Bconmap(-1);
+		if (prev != 44 && prev > 0) {
+			old_port = (short)prev;
+			Bconmap(aux_port);
+		}
+	}
 	Rsconf(baud, 0, -1, -1, -1, -1);
 	iorec = Iorec(0);
 	old_ibuf = iorec->ibuf;
@@ -360,6 +373,8 @@ static void serial_close(void)
 		return;
 	serial_is_open = 0;
 	Supexec(sup_restore_iorec);
+	if (old_port)
+		Bconmap(old_port);
 }
 
 static void set_status(const char *s)
@@ -1706,6 +1721,8 @@ static void parse_config_line(const char *l)
 		baud = BAUD_19200;
 	else if (!memcmp(l, "keyboard hebrew", 15))
 		hebrew_kbd = 1;
+	else if (!memcmp(l, "port ", 5) && l[5] >= '6' && l[5] <= '9')
+		aux_port = l[5] - '0';
 	else if (!memcmp(l, "model ", 6)) {
 		/* model <id> [<effort>] */
 		const char *e = l + 6;
@@ -1791,6 +1808,11 @@ static void save_config(void)
 	p += strlen(p);
 	if (hebrew_kbd) {
 		strcpy(p, "keyboard hebrew\r\n");
+		p += strlen(p);
+	}
+	if (aux_port) {
+		strcpy(p, "port 6\r\n");
+		p[5] = '0' + aux_port;
 		p += strlen(p);
 	}
 	if (pref_model[0]) {

@@ -225,6 +225,7 @@ soon as you change them. You can also edit it in any text editor.
 | `baud 19200` (or 9600, 4800) | Options ▸ baud rate |
 | `sidebar 240` | dragging the divider (width in pixels) |
 | `keyboard hebrew` | `F10` / Options ▸ Hebrew keys |
+| `port 7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). Without it, Claude ST uses the port TOS has chosen. |
 | `model claude-sonnet-5-5 max` | the model chip / `F9` |
 
 Lines starting with `;` are comments. The window always opens full
@@ -364,6 +365,29 @@ serial port connected to the bridge. Hatari has no network card;
 `tools/fakesting/FAKESTNG.PRG` stands in for STinG by tunnelling one TCP
 connection over the serial port, to test the network code. It's for the
 emulator only; never install it on a real Atari.
+
+Hatari only connects the ST-style MFP serial port to the bridge. To run
+an emulated Falcon, put `serial` and `port 6` in its `CLAUDE.INF`; a
+real Falcon uses its Modem port, which needs no `port` line.
+
+### Recording a demo video
+
+`tools/reel/record.py` records a demo in Hatari: a Falcon in 640×480, 16
+colours, boots to the EmuTOS desktop with a Claude ST icon, opens Claude
+ST, opens a chat, and types a new question. The answer comes from
+`tools/reel/reel_bridge.py`, a bridge with a scripted showcase account
+and a pre-written reply, so the video needs no account. It needs Linux
+with Hatari, Xvfb, xdotool and ffmpeg, and EmuTOS 512K with its
+`emuicon.rsc`:
+
+```sh
+tools/reel/record.py out/ --tos etos512us.img --emuicon emuicon.rsc
+```
+
+It writes `claude-st-falcon.mp4` (1280×960) and `claude-st-reel.mp4`
+(1080×1920, for phones). `tools/icon/add_to_emuicon.py` adds the Claude
+ST icon to EmuTOS's `EMUICON.RSC`, which also works on a real Atari
+running EmuTOS.
 
 ### Source layout
 

@@ -121,6 +121,9 @@ static inline long trap14_w6(short fn, short a, short b, short c, short d, short
 
 /* XBIOS */
 #define Iorec(d)           ((void *)trap14_ww(14, (d)))
+/* Bconmap(dev): which serial port BIOS device 1 (AUX) means on a TT or
+ * Falcon (6 = MFP, 7 = SCC B, 8 = TT-MFP, 9 = SCC A); -1 asks, -2 table */
+#define Bconmap(d)         trap14_ww(44, (d))
 #define Rsconf(s,f,u,r,t,c) trap14_w6(15, (s), (f), (u), (r), (t), (c))
 #define Supexec(f)         trap14_wl(38, (long)(f))
 
