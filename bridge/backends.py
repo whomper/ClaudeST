@@ -455,6 +455,27 @@ def _text_of(msg):
     return "\n\n".join(parts)
 
 
+def _error_text(r, limit=400):
+    """The body of a failed response, even a streamed one, whose .text is
+    still empty because nothing has been read yet."""
+    text = ""
+    try:
+        text = r.text or ""
+    except Exception:
+        pass
+    if not text:
+        try:
+            chunks = []
+            for chunk in r.iter_content():
+                chunks.append(chunk if isinstance(chunk, bytes) else str(chunk).encode())
+                if sum(map(len, chunks)) > limit:
+                    break
+            text = b"".join(chunks).decode("utf-8", "replace")
+        except Exception:
+            pass
+    return " ".join(text.split())[:limit]
+
+
 def _local_tz():
     """IANA name of the local time zone, as claude.ai expects."""
     if os.environ.get("TZ", "").count("/"):
@@ -931,7 +952,7 @@ class ClaudeAiBackend(Backend):
         for attempt in range(3):
             if r.status_code != 409:
                 break
-            log.info("completion conflict (409), attempt %d: %s", attempt + 1, r.text[:300])
+            log.info("completion conflict (409), attempt %d: %s", attempt + 1, _error_text(r))
             time.sleep(2 * (attempt + 1))
             try:
                 conv = self._conversation(chat_id)
@@ -943,7 +964,13 @@ class ClaudeAiBackend(Backend):
                 body.pop("model", None)
             r = post(body)
         if r.status_code >= 400:
-            detail = " ".join((r.text or "").split())[:200]
+            detail = _error_text(r)
+            log.info("completion failed: HTTP %d %s", r.status_code, detail)
+            if r.status_code == 429:
+                raise RuntimeError(
+                    "claude.ai says too many requests (HTTP 429). You may have reached your "
+                    "usage limit: press F8 to see your usage, or wait a few minutes. "
+                    + (("claude.ai: " + detail) if detail else ""))
             raise RuntimeError("claude.ai completion failed: HTTP %d%s" % (
                 r.status_code, (": " + detail) if detail else ""))
         for raw in r.iter_lines():

@@ -596,7 +596,10 @@ class CompletionConflict(unittest.TestCase):
 
         class R:
             def __init__(self, code):
-                self.status_code, self.text = code, '{"error": "conflict"}' if code == 409 else ""
+                self.status_code, self.text = code, ""     # streamed: nothing read yet
+
+            def iter_content(self):
+                return iter([b'{"error": ', b'"conflict"}'] if self.status_code == 409 else [])
 
             def iter_lines(self):
                 return iter([b'data: {"type": "completion", "completion": "Hi"}'])
