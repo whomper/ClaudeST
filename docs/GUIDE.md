@@ -108,12 +108,11 @@ menu: the models, then the effort levels that model supports.
   them changes that chat, and also becomes the choice for new chats,
   which is saved in `CLAUDE.INF`.
 - **claude.ai:** new chats start on **Default model**, your account's
-  own choice, until you pick one. The Pi also remembers the effort you
-  choose for each chat and Code session, in
-  `/var/lib/claude-st/chat-effort.json` (the 500 most recent), for chats
-  where claude.ai doesn't report one. The bridge asks claude.ai for the
-  chosen effort with each message; if claude.ai refuses, it says so at
-  the top of the reply.
+  own choice, until you pick one. A chat's effort is read from, and
+  saved to, the chat's own settings on claude.ai, so the website shows
+  the same. The Pi also remembers the effort you choose for each chat
+  and Code session, in `/var/lib/claude-st/chat-effort.json` (the 500
+  most recent), for chats where claude.ai doesn't report one.
 - **API backend:** the model and effort go with every request and are
   stored with each chat.
 
@@ -257,6 +256,7 @@ All commands run on the Pi.
 | Problem | What to do |
 |---------|-----------|
 | *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDE.INF`, and that the Atari's address matches the installer's `--atari` |
+| "claude.ai has moved this chat to its new chat system" | claude.ai has moved some older chats to its newer chat system; Claude ST can show them but not add to them. Start a new chat, or continue that one on claude.ai |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo ./install.sh --set-key` |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 

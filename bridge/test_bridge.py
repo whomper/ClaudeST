@@ -650,6 +650,45 @@ class CompletionConflict(unittest.TestCase):
         self.assertNotIn("model", sent[-1])          # the last try without model/effort
 
 
+class MovedChats(unittest.TestCase):
+    """Chats claude.ai moved to its new system (workspace_upgraded)."""
+
+    def backend(self):
+        from backends import ChoiceMemory, ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org, be._artifacts, be.memory = "o1", {}, ChoiceMemory()
+        self.convs = {
+            "old": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5", workspace_upgraded=True,
+                        settings={"effort_level": "medium", "enabled_web_search": True}),
+            "fine": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5")}
+        be._conversation = lambda cid: self.convs[cid]
+        be.list_chats = lambda limit=100: []
+        self.sent = []
+        be._send = lambda method, path, body=None: self.sent.append((method, path, body))
+        be.send = lambda *a: (_ for _ in ()).throw(AssertionError("must not send"))
+        return be
+
+    def test_moved_chat_is_read_only(self):
+        link = FakeLink()
+        s = Session(link, self.backend())
+        s.handle(b"OPEN\tCHAT\told")
+        self.assertIn(b"moved this chat", link.sent)
+        self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())   # effort_level
+        link.sent = b""
+        s.handle(b"SEND\thello")                   # nothing goes to claude.ai
+        self.assertIn(b"moved this chat", link.sent)
+        self.assertNotIn([b"M", b"E"], link.lines())
+        s.handle(b"OPEN\tCHAT\tfine")
+        self.assertFalse(s.readonly)
+
+    def test_effort_is_saved_in_the_chat_settings(self):
+        be = self.backend()
+        be.set_chat_model("old", "claude-opus-5-5", "high")
+        method, path, body = self.sent[-1]
+        self.assertEqual((method, path), ("put", "/organizations/o1/chat_conversations/old"))
+        self.assertEqual(body["settings"], {"effort_level": "high", "enabled_web_search": True})
+
+
 class DateHeadings(unittest.TestCase):
     """Chat lists grouped like claude.ai's: Pinned, Today, Yesterday, the
     rest of the week by date, then Older."""

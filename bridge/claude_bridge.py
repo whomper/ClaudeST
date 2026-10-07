@@ -30,6 +30,9 @@ log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
 MAX_ID = 39              # Claude ST keeps item ids up to this many characters
+MOVED_CHAT = ("claude.ai has moved this chat to its new chat system. Claude ST can show "
+              "it, but can't add to it: to keep going, start a new chat, or continue "
+              "this one on claude.ai.")
 HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
 
 
@@ -188,6 +191,7 @@ class Session:
         self.project_id = None
         self.new_choice = None      # the model and effort for new chats (CHOOSE)
         self.chat_kind = "CHAT"     # or "CODE": chat_id is a Claude Code session
+        self.readonly = False       # the open chat was moved to claude.ai's new system
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
@@ -373,6 +377,7 @@ class Session:
         self.notice("Loading chat...")
         title, msgs = self.be.get_chat(oid)
         self.chat_id, self.chat_kind = oid, "CHAT"
+        self.readonly = bool(getattr(self.be, "chat_readonly", False))
         # each chat keeps its own model; chats without one get the choice
         # for new chats
         choice = getattr(self.be, "chat_choice", None)
@@ -389,6 +394,8 @@ class Session:
             msgs = msgs[-HISTORY_MESSAGES:]
         for role, body in msgs:
             self.message(role, body)
+        if self.readonly:
+            self.message("I", MOVED_CHAT)
         self.online()
 
     def cmd_new(self, quiet="", *_):
@@ -396,6 +403,7 @@ class Session:
         sets its own title; the next message still starts a new chat."""
         self.chat_id = None
         self.chat_kind = "CHAT"
+        self.readonly = False
         self.out("C", "")
         if self.new_choice and self.new_choice != (self.be.model, self.be.effort):
             self.be.choose(*self.new_choice)
@@ -408,6 +416,9 @@ class Session:
         if not text:
             return
         new = self.chat_id is None
+        if self.chat_kind == "CHAT" and not new and self.readonly:
+            self.message("I", MOVED_CHAT)       # nothing is sent to claude.ai
+            return
         if new:
             self.out("R")
         self.message("U", text)

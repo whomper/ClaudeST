@@ -334,6 +334,8 @@ class Backend:
     def set_chat_model(self, chat_id, model, effort):
         """Remember a chat's model, so it's still there when reopened."""
 
+    chat_readonly = False   # get_chat() read a chat Claude ST can't add to
+
     # Claude Code sessions (claude.ai/code)
     def list_code_sessions(self):
         """-> [(id, title)] newest first"""
@@ -746,12 +748,22 @@ class ClaudeAiBackend(Backend):
         self._memory().set(chat_id, effort)
 
     def set_chat_model(self, chat_id, model, effort):
-        self._memory().set(chat_id, effort)     # claude.ai doesn't keep effort
-        # the web app keeps the model on the conversation; replies sent
-        # with "model" update it too, so this is only a head start
+        self._memory().set(chat_id, effort)     # also kept on the Pi
+        # the web app keeps the model on the conversation, and the effort in
+        # its settings ("effort_level"); replies sent with "model" update it too
+        body = {}
         if model and model != "default":
+            body["model"] = model
+        if effort:
             try:
-                self._send("put", self._item_path("CHAT", chat_id), {"model": model})
+                settings = dict(self._conversation(chat_id).get("settings") or {})
+                settings["effort_level"] = effort   # keep the chat's other settings
+                body["settings"] = settings
+            except Exception as e:
+                log.info("could not read the chat's settings: %s", e)
+        if body:
+            try:
+                self._send("put", self._item_path("CHAT", chat_id), body)
             except Exception as e:
                 log.info("could not set the chat's model: %s", e)
 
@@ -911,6 +923,9 @@ class ClaudeAiBackend(Backend):
         conv = self._conversation(chat_id)
         effort = find_effort(conv) or self._memory().get(chat_id)
         self.chat_choice = (conv.get("model"), effort) if conv.get("model") else None
+        # moved to claude.ai's newer chat system: readable, but no longer
+        # continued through this interface (completion answers 409)
+        self.chat_readonly = bool(conv.get("workspace_upgraded"))
         out = []
         for m in self._current_branch(conv):
             role = "U" if m.get("sender") == "human" else "A"
