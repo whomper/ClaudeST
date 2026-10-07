@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.13"
+#define VERSION "1.14"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -91,6 +91,7 @@ static short nav_pending = -1;		/* area chosen, its list not arrived yet */
 static char list_kind[12] = "CHATS";
 static char list_title[48] = "Recents";
 static char cur_id[40];
+static short fresh = 1;			/* just started: nothing opened yet */
 static char chat_title[80] = "New chat";
 static char status[64] = "Waiting for bridge...";
 static short busy;
@@ -1491,6 +1492,10 @@ static void handle_line(char *s)
 		dirty |= D_SIDEBAR;
 		break;
 	case 'C':			/* C <id> : current chat (for highlight) */
+		/* just started, the pane is empty: don't highlight the chat
+		 * the bridge kept from our last run */
+		if (fresh)
+			break;
 		if (strcmp(cur_id, n > 1 ? f[1] : "")) {
 			strlcpy_(cur_id, n > 1 ? f[1] : "", sizeof(cur_id));
 			dirty |= D_SIDEBAR;
@@ -1885,6 +1890,7 @@ static void do_new_chat(void)
 	begin_message('I');
 	append("How can I help you today?", 25);
 	tx_cmd("NEW", 0, 0);
+	fresh = 0;
 	dirty |= D_ALL;
 }
 
@@ -1898,6 +1904,7 @@ static void clear_context(const char *title, const char *hint)
 	begin_message('I');
 	append(hint, strlen(hint));
 	tx_cmd("NEW", "QUIET", 0);
+	fresh = 0;
 	dirty |= D_ALL;
 }
 
@@ -1975,6 +1982,10 @@ static void submit(void)
 		search_mode = 0;
 		dirty |= D_SIDEBAR;
 	} else if (inlen > 0) {
+		if (fresh) {		/* not into the chat from our last run */
+			tx_cmd("NEW", "QUIET", 0);
+			fresh = 0;
+		}
 		tx_cmd("SEND", input, 0);
 	} else {
 		return;
@@ -2001,6 +2012,7 @@ static void open_item(short i)
 		return;
 	}
 	tx_cmd("OPEN", kind, it->id);
+	fresh = 0;
 	if (!strcmp(kind, "PROJECT")) {
 		static char hint[120];
 		strcpy(hint, "Pick a chat of this project on the left, or type below to "

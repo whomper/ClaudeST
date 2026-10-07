@@ -721,20 +721,6 @@ class MovedChats(unittest.TestCase):
         self.assertEqual(body["settings"], {"effort_level": "high", "enabled_web_search": True})
 
 
-class FreshStart(unittest.TestCase):
-    """An Atari that has just started shows no chat: the bridge must not
-    keep the chat from its last run highlighted."""
-
-    def test_hello_starts_afresh(self):
-        from backends import DemoBackend
-        link = FakeLink()
-        s = Session(link, DemoBackend())
-        s.chat_id = "old"
-        s.handle(b"HELLO\t1\t1.13")
-        self.assertIsNone(s.chat_id)
-        self.assertIn([b"C", b""], link.lines())
-
-
 class DateHeadings(unittest.TestCase):
     """Chat lists grouped like claude.ai's: Pinned, Today, Yesterday, the
     rest of the week by date, then Older."""
