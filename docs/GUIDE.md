@@ -389,7 +389,8 @@ tools/reel/record.py out/ --tos etos512us.img --emuicon emuicon.rsc
 ```
 
 It writes `claude-st-falcon.mp4` (1280×960) and `claude-st-reel.mp4`
-(1080×1920, for phones). `tools/icon/add_to_emuicon.py` adds the Claude
+(1080×1920, for phones). A recording is in [docs/demo](demo/); its
+chats and answer are scripted demo content. `tools/icon/add_to_emuicon.py` adds the Claude
 ST icon to EmuTOS's `EMUICON.RSC`, which also works on a real Atari
 running EmuTOS.
 
