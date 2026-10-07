@@ -681,6 +681,35 @@ class MovedChats(unittest.TestCase):
         s.handle(b"OPEN\tCHAT\tfine")
         self.assertFalse(s.readonly)
 
+    def test_moved_chat_continues_in_its_session(self):
+        be = self.backend()
+        self.convs["old"]["workspace_session_id"] = "cse_1"
+        posted = []
+        events = [{"id": "e1", "type": "user", "message": {"role": "user", "content": "later"}},
+                  {"id": "e2", "type": "assistant",
+                   "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}}]
+        be._code_events = lambda sid, after=None, cap=2000: (
+            [] if after else events) if sid == "cse_1" else []
+        be.send_code = lambda sid, text, on_delta: (posted.append((sid, text)), on_delta("Hi"))[1]
+        del be.send
+        link = FakeLink()
+        s = Session(link, be)
+        s.handle(b"OPEN\tCHAT\told")
+        self.assertFalse(s.readonly)
+        self.assertNotIn(b"moved this chat", link.sent)
+        self.assertIn(b"later", link.sent)            # what was said after the move
+        s.handle(b"SEND\thello")
+        self.assertEqual(posted, [("cse_1", "hello")])
+        self.assertIn(b"Hi", link.sent)
+
+    def test_merge_moved(self):
+        from backends import merge_moved
+        a, b, c = ("U", "a"), ("A", "b"), ("U", "c")
+        self.assertEqual(merge_moved([a, b], []), [a, b])
+        self.assertEqual(merge_moved([a, b], [a, b, c]), [a, b, c])   # whole chat
+        self.assertEqual(merge_moved([a, b], [c]), [a, b, c])         # only the new part
+        self.assertEqual(merge_moved([a, b], [b, c]), [a, b, c])      # overlapping
+
     def test_effort_is_saved_in_the_chat_settings(self):
         be = self.backend()
         be.set_chat_model("old", "claude-opus-5-5", "high")

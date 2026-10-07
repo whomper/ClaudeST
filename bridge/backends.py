@@ -242,6 +242,20 @@ def _tool_line(block):
     return "[%s%s]" % (block.get("name") or "tool", ": " + arg if arg else "")
 
 
+def merge_moved(classic, session):
+    """A moved chat's messages: its session may hold the whole chat, or
+    only what was said after the move."""
+    if not session:
+        return classic
+    key = lambda m: (m[0], " ".join(m[1].split())[:200])
+    if not classic or key(session[0]) == key(classic[0]):
+        return session
+    if any(key(m) == key(session[0]) for m in classic):     # overlap: join there
+        i = [key(m) for m in classic].index(key(session[0]))
+        return classic[:i] + session
+    return classic + session
+
+
 def code_messages(events):
     """Session events -> [(role, text)]: your messages, Claude's text and a
     one-line note per tool call; tool results and system events are left
@@ -923,15 +937,48 @@ class ClaudeAiBackend(Backend):
         conv = self._conversation(chat_id)
         effort = find_effort(conv) or self._memory().get(chat_id)
         self.chat_choice = (conv.get("model"), effort) if conv.get("model") else None
-        # moved to claude.ai's newer chat system: readable, but no longer
-        # continued through this interface (completion answers 409)
-        self.chat_readonly = bool(conv.get("workspace_upgraded"))
+        self.chat_readonly = False
         out = []
         for m in self._current_branch(conv):
             role = "U" if m.get("sender") == "human" else "A"
             out.append((role, _text_of(m)))
         self._harvest_artifacts(conv)
+        if conv.get("workspace_upgraded"):
+            out = self._moved_messages(chat_id, conv, out)
         return conv.get("name") or "Untitled", out
+
+    # -- chats claude.ai moved to its newer chat system -----------------
+    # A moved chat ("workspace_upgraded") is continued in a session of the
+    # same sessions API as Claude Code (its workspace_session_id); the
+    # classic completion endpoint answers 409 conversation_upgraded.
+    @staticmethod
+    def _moved_session(conv):
+        return conv.get("workspace_upgraded") and conv.get("workspace_session_id")
+
+    def _moved_messages(self, chat_id, conv, classic):
+        """The classic messages plus what was said since the move, from
+        the chat's session. A chat whose session can't be read is shown
+        read-only."""
+        sid = self._moved_session(conv)
+        if not sid:
+            self.chat_readonly = True
+            return classic
+        try:
+            events = self._code_events(sid)
+        except Exception as e:
+            log.info("moved chat %s: could not read session %s: %s", chat_id, sid, e)
+            self.chat_readonly = True
+            return classic
+        self._code_last = {sid: events[-1].get("id") if events else None}
+        return merge_moved(classic, code_messages(events))
+
+    def send_moved(self, chat_id, sid, text, on_delta):
+        try:
+            title = self.send_code(sid, text, on_delta)
+        except RuntimeError as e:
+            raise RuntimeError("Claude ST could not continue this moved chat: %s. You can "
+                               "start a new chat, or continue this one on claude.ai." % e)
+        return chat_id, title
 
     def send(self, chat_id, project_id, text, on_delta):
         title = None
@@ -946,6 +993,10 @@ class ClaudeAiBackend(Backend):
             new = True
         else:
             conv = self._conversation(chat_id)
+            sid = self._moved_session(conv)
+            if sid:
+                cid, stitle = self.send_moved(chat_id, sid, text, on_delta)
+                return cid, conv.get("name") or stitle or text[:40]
             parent = conv.get("current_leaf_message_uuid") or self.ROOT_PARENT
             title = conv.get("name")
             new = False

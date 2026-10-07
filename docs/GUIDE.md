@@ -256,7 +256,7 @@ All commands run on the Pi.
 | Problem | What to do |
 |---------|-----------|
 | *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDE.INF`, and that the Atari's address matches the installer's `--atari` |
-| "claude.ai has moved this chat to its new chat system" | claude.ai has moved some older chats to its newer chat system; Claude ST can show them but not add to them. Start a new chat, or continue that one on claude.ai |
+| "claude.ai has moved this chat to its new chat system, and Claude ST could not open its new part" | claude.ai moves some chats to its newer chat system. Claude ST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo ./install.sh --set-key` |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 
@@ -269,6 +269,7 @@ run() { sudo -u claude-st bash -c "set -a; . /etc/claude-st/claude-st.env; /opt/
 
 run --probe cover        # chats with "cover" in the title: where they are, their tools, files and model
 run --probe-code         # whether Claude Code sessions can be listed, and the newest one's model and effort
+run --probe-chat CHAT_ID # one chat's settings (not its messages), and for a moved chat, its session
 ```
 
 ### Extra bridge options

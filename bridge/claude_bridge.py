@@ -30,9 +30,9 @@ log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
 MAX_ID = 39              # Claude ST keeps item ids up to this many characters
-MOVED_CHAT = ("claude.ai has moved this chat to its new chat system. Claude ST can show "
-              "it, but can't add to it: to keep going, start a new chat, or continue "
-              "this one on claude.ai.")
+MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and Claude ST "
+              "could not open its new part. It shows what it can, but can't add to it: "
+              "to keep going, start a new chat, or continue this one on claude.ai.")
 HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
 
 
@@ -691,6 +691,16 @@ def main():
                 print("%s: %s" % (k, json.dumps(v)[:300]))
             else:
                 print("%s: %r" % (k, v if not isinstance(v, str) else v[:120]))
+        sid = conv.get("workspace_session_id")
+        if sid:
+            from collections import Counter
+            info = backend._code("get", "/sessions/%s" % sid)
+            print("session %s (via %s): fields %s" % (sid, backend._code_base, sorted(info)))
+            events = backend._code_events(sid, cap=400)
+            print("session: %d events, kinds %s" % (len(events), dict(Counter(
+                backends._event_payload(e)[0] for e in events))))
+            print("session messages: %s" % "".join(
+                r for r, _ in backends.code_messages(events)))
         return
     if args.probe_code:
         backend = make_backend(args)
