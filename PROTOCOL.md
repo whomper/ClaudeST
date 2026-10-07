@@ -14,7 +14,7 @@ flow control). The protocol is the same on both.
 
 | Line | Meaning |
 |------|---------|
-| `HELLO` `1` `<version>` | Atari is up (sent at start, on ^R, and every ~5 s until the bridge answers). Bridge replies with the chat list and a status. |
+| `HELLO` `1` `<version>` `<chat>` | Atari is up (sent at start, on ^R, and every ~5 s until the bridge answers). `<chat>` is the chat the Atari shows, empty for none (since 1.14): the bridge then starts a new chat instead of carrying over the one from the Atari's last run. Bridge replies with the chat list and a status. |
 | `LIST` `CHATS`\|`CODE`\|`PROJECTS`\|`ARTIFACTS` | Fill the sidebar with that list (`CODE`: Claude Code sessions). |
 | `OPEN` `CHAT`\|`CODE`\|`PROJECT`\|`ARTIFACT` `<id>` | Show a conversation or Claude Code session, list a project's chats, or show an artifact. After `OPEN CODE`, `SEND` goes to that session until `NEW` or another `OPEN`. |
 | `NEW` [`QUIET`] | Start a new chat (created on the first `SEND`; inside the open project, if any). `QUIET`: the Atari switched area and keeps its own title. |

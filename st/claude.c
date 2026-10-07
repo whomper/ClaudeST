@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.13"
+#define VERSION "1.14"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -468,7 +468,7 @@ static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
 static void send_hello(void)
 {
 	pref_sent = 0;
-	tx_cmd("HELLO", "1", VERSION);
+	tx_cmd4("HELLO", "1", VERSION, cur_id);	/* our open chat; empty when none */
 	last_hello = ticks;
 }
 
