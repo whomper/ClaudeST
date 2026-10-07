@@ -965,7 +965,15 @@ class ClaudeAiBackend(Backend):
         for attempt in range(3):
             if r.status_code != 409:
                 break
-            log.info("completion conflict (409), attempt %d: %s", attempt + 1, _error_text(r))
+            detail = _error_text(r, 3000)
+            log.info("completion conflict (409), attempt %d: %s", attempt + 1, detail)
+            if "conversation_upgraded" in detail:
+                # claude.ai moved this chat to its newer system, which this
+                # interface can read but not continue: retrying can't help
+                raise RuntimeError(
+                    "claude.ai has moved this chat to its new chat system, which Claude ST "
+                    "can't continue yet. You can still read it here; to keep going, start "
+                    "a new chat, or continue this one on claude.ai.")
             time.sleep(2 * (attempt + 1))
             try:
                 conv = self._conversation(chat_id)
@@ -977,8 +985,9 @@ class ClaudeAiBackend(Backend):
                 body.pop("model", None)
             r = post(body)
         if r.status_code >= 400:
-            detail = _error_text(r)
+            detail = _error_text(r, 3000)
             log.info("completion failed: HTTP %d %s", r.status_code, detail)
+            detail = detail[:300]
             if r.status_code == 429:
                 raise RuntimeError(
                     "claude.ai says too many requests (HTTP 429). You may have reached your "

@@ -14,6 +14,7 @@ Examples:
 """
 import argparse
 import hashlib
+import json
 import logging
 import os
 import socket
@@ -655,6 +656,9 @@ def main():
                     help="claude.ai: list what kinds of blocks your recent chats hold "
                          "(no content), to diagnose a missing artifact, then exit. With "
                          "WORD, also detail the chats with WORD in their title")
+    ap.add_argument("--probe-chat", metavar="CHAT_ID",
+                    help="claude.ai: show the fields claude.ai keeps for one chat (not its "
+                         "messages), then exit")
     ap.add_argument("--probe-code", action="store_true",
                     help="claude.ai: check that your Claude Code sessions can be listed "
                          "(titles and counts only), then exit")
@@ -665,6 +669,18 @@ def main():
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    if args.probe_chat:
+        backend = make_backend(args)
+        conv = backend._conversation(args.probe_chat)
+        for k in sorted(conv):
+            v = conv[k]
+            if k == "chat_messages":
+                print("chat_messages: %d messages" % len(v or []))
+            elif isinstance(v, (dict, list)):
+                print("%s: %s" % (k, json.dumps(v)[:300]))
+            else:
+                print("%s: %r" % (k, v if not isinstance(v, str) else v[:120]))
+        return
     if args.probe_code:
         backend = make_backend(args)
         sessions = backend.list_code_sessions()

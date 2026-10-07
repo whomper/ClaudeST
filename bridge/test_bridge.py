@@ -622,6 +622,21 @@ class CompletionConflict(unittest.TestCase):
         self.assertEqual(got, ["Hi"])
         self.assertEqual([b["parent_message_uuid"] for b in sent[:2]], ["m1", "m2"])
 
+    def test_upgraded_chat_is_not_retried(self):
+        import backends
+        be, sent = self.backend([409, 409, 409, 409])
+        upgraded = ('{"type":"error","error":{"type":"invalid_request_error","message":"This chat '
+                    'is available in the new Claude experience.","details":{"error_code":'
+                    '"conversation_upgraded"}}}')
+        backends._error_text, orig = (lambda r, limit=400: upgraded), backends._error_text
+        try:
+            with self.assertRaises(RuntimeError) as cm:
+                be.send("c1", None, "hello", lambda d: None)
+        finally:
+            backends._error_text = orig
+        self.assertIn("new chat system", str(cm.exception))
+        self.assertEqual(len(sent), 1)               # no retries, no rate limit
+
     def test_gives_up_with_the_reason(self):
         import backends
         be, sent = self.backend([409, 409, 409, 409])
