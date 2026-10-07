@@ -925,8 +925,27 @@ class ClaudeAiBackend(Backend):
             if r.status_code < 400:
                 on_delta("(claude.ai did not take the effort setting, so this reply "
                          "uses the model's own.)\n\n")
+        # 409 Conflict: the chat moved on (a newer message, or a reply still
+        # being written, e.g. from the website). Wait, fetch the chat's
+        # latest message again and retry; last, try without model/effort.
+        for attempt in range(3):
+            if r.status_code != 409:
+                break
+            log.info("completion conflict (409), attempt %d: %s", attempt + 1, r.text[:300])
+            time.sleep(2 * (attempt + 1))
+            try:
+                conv = self._conversation(chat_id)
+                body["parent_message_uuid"] = conv.get("current_leaf_message_uuid") or self.ROOT_PARENT
+            except Exception as e:
+                log.info("could not reload the chat: %s", e)
+            if attempt == 2:
+                body.pop("effort", None)
+                body.pop("model", None)
+            r = post(body)
         if r.status_code >= 400:
-            raise RuntimeError("claude.ai completion failed: HTTP %d %s" % (r.status_code, r.text[:200]))
+            detail = " ".join((r.text or "").split())[:200]
+            raise RuntimeError("claude.ai completion failed: HTTP %d%s" % (
+                r.status_code, (": " + detail) if detail else ""))
         for raw in r.iter_lines():
             if not raw:
                 continue

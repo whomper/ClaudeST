@@ -583,6 +583,55 @@ class EffortFromClaudeAi(unittest.TestCase):
         self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
 
 
+class CompletionConflict(unittest.TestCase):
+    """HTTP 409 from claude.ai's completion: reload the chat and retry."""
+
+    def backend(self, codes):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org, be.model, be.effort = "o1", "claude-opus-5-5", "high"
+        leaves = iter(["m1", "m2", "m3", "m4", "m5"])
+        be._conversation = lambda cid: {"current_leaf_message_uuid": next(leaves), "name": "Chat"}
+        sent = []
+
+        class R:
+            def __init__(self, code):
+                self.status_code, self.text = code, '{"error": "conflict"}' if code == 409 else ""
+
+            def iter_lines(self):
+                return iter([b'data: {"type": "completion", "completion": "Hi"}'])
+
+        def post(path, body, **kw):
+            sent.append(dict(body))
+            return R(codes.pop(0))
+        be._post = post
+        return be, sent
+
+    def test_retries_with_the_latest_message(self):
+        import backends
+        be, sent = self.backend([409, 200, 200])
+        orig, backends.time.sleep = backends.time.sleep, lambda s: None
+        try:
+            got = []
+            be.send("c1", None, "hello", got.append)
+        finally:
+            backends.time.sleep = orig
+        self.assertEqual(got, ["Hi"])
+        self.assertEqual([b["parent_message_uuid"] for b in sent[:2]], ["m1", "m2"])
+
+    def test_gives_up_with_the_reason(self):
+        import backends
+        be, sent = self.backend([409, 409, 409, 409])
+        orig, backends.time.sleep = backends.time.sleep, lambda s: None
+        try:
+            with self.assertRaises(RuntimeError) as cm:
+                be.send("c1", None, "hello", lambda d: None)
+        finally:
+            backends.time.sleep = orig
+        self.assertIn("HTTP 409: {\"error\": \"conflict\"}", str(cm.exception))
+        self.assertNotIn("model", sent[-1])          # the last try without model/effort
+
+
 class DateHeadings(unittest.TestCase):
     """Chat lists grouped like claude.ai's: Pinned, Today, Yesterday, the
     rest of the week by date, then Older."""
