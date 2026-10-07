@@ -43,6 +43,7 @@ All commands are one letter.
 | `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `CODE`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
 | `I` `<id>` `<label>` [`P`] | List item; `P` marks it pinned. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
+| `X` `<label>` | A heading in the list ("Pinned", "Today", "Yesterday", "Oct 4", "Older"); the items after it belong to it. Headings can't be selected. |
 | `E` | End of list. |
 | `Q` | Start a picker list (for "Move to project"). |
 | `J` `<id>` `<label>` | Picker entry. |

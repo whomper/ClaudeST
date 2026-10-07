@@ -80,6 +80,8 @@ class ShowcaseBackend(backends.DemoBackend):
                             "messages": [("U", q), ("A", a)]}
                       for cid, title, proj, q, a in chats}
         self.chats["r1"]["model"] = ("claude-opus-5-5", "high")
+        for cid, days in (("r1", 0), ("r2", 0), ("r3", 1), ("r4", 3), ("r5", 5), ("r6", 30)):
+            self.chats[cid]["updated"] = time.time() - days * 86400
         self.code = {
             "session_r1": {"title": "Add a Code view to Claude ST", "model": "claude-opus-5-5",
                            "messages": [("U", "Add a Code entry after Chats"),
@@ -93,7 +95,8 @@ class ShowcaseBackend(backends.DemoBackend):
         if not chat_id:
             chat_id = "r%d" % (len(self.chats) + 1)
             self.chats = {chat_id: {"title": "Why the Atari ST is still loved",
-                                    "project": project_id, "messages": []}, **self.chats}
+                                    "project": project_id, "messages": [],
+                                    "updated": time.time()}, **self.chats}
         time.sleep(1.6)                       # Claude thinking
         reply = ANSWER if "loved" in text.lower() else (
             "That's a great question for an Atari. Here's a short answer: it "

@@ -113,6 +113,34 @@ def default_effort(model):
     return "medium" if model == "claude-opus-5-5" else "high"
 
 
+def date_heading(when, now=None):
+    """The heading a chat goes under in a list, as on claude.ai: "Today",
+    "Yesterday", the date ("Oct 5") for the rest of the last seven days,
+    and "Older" before that. `when` is an ISO time or a Unix time."""
+    from datetime import datetime, timezone
+    if when in (None, ""):
+        return None
+    try:
+        if isinstance(when, (int, float)):
+            t = datetime.fromtimestamp(when, timezone.utc)
+        else:
+            t = datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
+    now = (now or datetime.now(timezone.utc)).astimezone()
+    days = (now.date() - t.astimezone().date()).days
+    if days <= 0:
+        return "Today"
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        local = t.astimezone()
+        return "%s %d" % (local.strftime("%b"), local.day)
+    return "Older"
+
+
 def usage_bar(pct, width=20):
     """[#####---------------] 25% -- a usage meter in plain text"""
     pct = max(0.0, min(100.0, float(pct or 0)))
@@ -606,7 +634,8 @@ class ClaudeAiBackend(Backend):
         sessions = [s for s in sessions if not s.get("archived_at")
                     and s.get("session_status") != "archived"]
         sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at") or "", reverse=True)
-        return [(s["id"], s.get("title") or "Untitled session") for s in sessions]
+        return [(s["id"], s.get("title") or "Untitled session", False,
+                 s.get("updated_at") or s.get("created_at")) for s in sessions]
 
     def _code_events(self, session_id, after=None, cap=2000):
         events, params = [], {"limit": 200}
@@ -765,7 +794,8 @@ class ClaudeAiBackend(Backend):
         return out
 
     def list_chats(self, limit=100):
-        return [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")))
+        return [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")),
+                 c.get("updated_at"))
                 for c in self._conversations(limit)]
 
     def list_projects(self):
@@ -822,7 +852,8 @@ class ClaudeAiBackend(Backend):
             convs = self._get("/organizations/%s/projects/%s/conversations" % (self.org, project_id))
         except Exception:
             convs = [c for c in self._conversations(500) if c.get("project_uuid") == project_id]
-        return name, [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")))
+        return name, [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")),
+                       c.get("updated_at"))
                       for c in convs]
 
     def _conversation(self, chat_id):
@@ -1231,7 +1262,8 @@ class ApiBackend(Backend):
             json.dump(projects, f, indent=1)
 
     def list_chats(self, limit=100):
-        return [(c["id"], c["title"], bool(c.get("pinned"))) for c in self._all()[:limit]]
+        return [(c["id"], c["title"], bool(c.get("pinned")), c.get("updated"))
+                for c in self._all()[:limit]]
 
     def list_projects(self):
         return [(p["id"], p["name"], bool(p.get("pinned")))
@@ -1239,7 +1271,7 @@ class ApiBackend(Backend):
 
     def project_chats(self, project_id):
         name = next((p["name"] for p in self._projects() if p["id"] == project_id), "Project")
-        return name, [(c["id"], c["title"], bool(c.get("pinned")))
+        return name, [(c["id"], c["title"], bool(c.get("pinned")), c.get("updated"))
                       for c in self._all() if c.get("project") == project_id]
 
     def create_project(self, name):
@@ -1407,6 +1439,8 @@ class DemoBackend(Backend):
                   "## יתרונות\n\n- סאונד של 16 ביט\n- גרפיקה של עד 65,536 צבעים\n\n"
                   "It was the last computer Atari made, אחרי ה-TT030.")]}
         self.projects = {"p1": {"name": "Falcon audio"}, "p2": {"name": "Demoscene"}}
+        for cid, days in (("d1", 0), ("d2", 1), ("d3", 3), ("d4", 20)):
+            self.chats[cid]["updated"] = time.time() - days * 86400
         self.code = {
             "session_d1": {"title": "Port the bridge to MicroPython", "model": "claude-sonnet-5-5",
                            "messages": [
@@ -1421,7 +1455,8 @@ class DemoBackend(Backend):
         }
 
     def list_chats(self, limit=100):
-        return [(k, v["title"], v.get("pinned", False)) for k, v in self.chats.items()][:limit]
+        return [(k, v["title"], v.get("pinned", False), v.get("updated"))
+                for k, v in self.chats.items()][:limit]
 
     def list_projects(self):
         return [(k, p["name"], p.get("pinned", False))
@@ -1436,7 +1471,7 @@ class DemoBackend(Backend):
 
     def project_chats(self, project_id):
         return self.projects.get(project_id, {}).get("name", "Project"), [
-            (k, v["title"], v.get("pinned", False))
+            (k, v["title"], v.get("pinned", False), v.get("updated"))
             for k, v in self.chats.items() if v["project"] == project_id]
 
     def _item(self, kind, item_id):
@@ -1492,6 +1527,7 @@ class DemoBackend(Backend):
         c = self.chats[chat_id]
         c["messages"] += [("U", text), ("A", reply)]
         c["model"] = (self.model, self.effort)
+        c["updated"] = time.time()
         return chat_id, c["title"]
 
     def account_report(self):

@@ -219,14 +219,30 @@ class Session:
         self.out("Z")
 
     def send_list(self, kind, title, items, back=False):
-        """items: (id, label) or (id, label, pinned); pinned ones go first,
-        like claude.ai's Starred section."""
+        """items: (id, label), (id, label, pinned) or (id, label, pinned,
+        when); pinned ones go first. Items with a time are grouped under
+        date headings (X lines) as on claude.ai: Pinned, Today, Yesterday,
+        a date for the rest of the week, then Older."""
         self.list_kind = kind
         items = sorted(items, key=lambda it: not (len(it) > 2 and it[2]))
+        dated = any(len(it) > 3 and it[3] for it in items)
         self.out("L", kind, title)
         if back:
             self.out("I", "..", "< All projects")
-        for it in items[:299]:
+        rows, last = 0, None
+        for it in items:
+            pinned = len(it) > 2 and it[2]
+            if dated:
+                head = "Pinned" if pinned else backends.date_heading(it[3] if len(it) > 3 else None)
+                if head and head != last:
+                    if rows >= 298:
+                        break
+                    self.out("X", head)
+                    rows += 1
+                last = head or last
+            if rows >= 299:                  # the Atari holds 300 rows
+                break
+            rows += 1
             iid = self.short_id(it[0])
             if len(it) > 2 and it[2]:
                 self.out("I", iid, it[1] or "Untitled", "P")

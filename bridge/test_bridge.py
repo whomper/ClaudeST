@@ -236,7 +236,7 @@ class ClaudeAiLists(unittest.TestCase):
     def test_artifacts_list_from_pinned_chats(self):
         # list_chats returns (id, title, pinned); this used to crash
         be = self.backend()
-        self.assertEqual(be.list_chats(), [(ClaudeAiParsing.CONV["uuid"], "Snake game", True)])
+        self.assertEqual([c[:3] for c in be.list_chats()], [(ClaudeAiParsing.CONV["uuid"], "Snake game", True)])
         arts = be.list_artifacts()
         self.assertEqual([a[1] for a in arts], ["Snake"])
         title, body = be.get_artifact(arts[0][0])
@@ -583,6 +583,45 @@ class EffortFromClaudeAi(unittest.TestCase):
         self.assertIn([b"K", b"claude-opus-5-5", b"medium"], link.lines())
 
 
+class DateHeadings(unittest.TestCase):
+    """Chat lists grouped like claude.ai's: Pinned, Today, Yesterday, the
+    rest of the week by date, then Older."""
+
+    def test_headings(self):
+        from datetime import datetime, timedelta, timezone
+        from backends import date_heading
+        now = datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)
+        local = now.astimezone()
+
+        def ago(days):
+            return (local - timedelta(days=days)).replace(hour=12).isoformat()
+        self.assertEqual(date_heading(ago(0), now), "Today")
+        self.assertEqual(date_heading(ago(1), now), "Yesterday")
+        d = (local - timedelta(days=6))
+        self.assertEqual(date_heading(ago(6), now), "%s %d" % (d.strftime("%b"), d.day))
+        self.assertEqual(date_heading(ago(7), now), "Older")
+        self.assertEqual(date_heading(ago(400), now), "Older")
+        self.assertIsNone(date_heading(None, now))
+        self.assertIsNone(date_heading("not a date", now))
+
+    def test_list_lines(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.be.chats["d3"]["pinned"] = True
+        s.handle(b"LIST\tCHATS")
+        rows = [l for l in link.lines() if l[0] in (b"X", b"I")]
+        kinds = [(l[0], l[1]) for l in rows]
+        self.assertEqual(kinds[:2], [(b"X", b"Pinned"), (b"I", b"d3")])
+        self.assertEqual(kinds[2:4], [(b"X", b"Today"), (b"I", b"d1")])
+        self.assertEqual(kinds[4:6], [(b"X", b"Yesterday"), (b"I", b"d2")])
+        self.assertEqual(kinds[6:], [(b"X", b"Older"), (b"I", b"d4")])
+
+    def test_projects_list_has_no_headings(self):
+        link = FakeLink()
+        Session(link, DemoBackend()).handle(b"LIST\tPROJECTS")
+        self.assertFalse([l for l in link.lines() if l[0] == b"X"])
+
+
 class NewProject(unittest.TestCase):
     def test_new_project_from_the_move_menu(self):
         link = FakeLink()
@@ -749,7 +788,7 @@ class CodeSessions(unittest.TestCase):
 
     def test_list_open_and_send(self):
         be, calls = self.backend()
-        self.assertEqual(be.list_code_sessions(), [("session_b", "New"), ("session_a", "Old")])
+        self.assertEqual([s[:2] for s in be.list_code_sessions()], [("session_b", "New"), ("session_a", "Old")])
         self.assertEqual(calls[0][2]["headers"]["anthropic-beta"], "ccr-byoc-2025-07-29")
         title, msgs = be.get_code_session("session_b")
         self.assertEqual((title, msgs), ("New", [("U", "fix the build")]))
@@ -918,9 +957,9 @@ class ApiBackendActions(unittest.TestCase):
         be._save({"id": "a" * 32, "title": "First", "project": None, "messages": []})
         be.rename("CHAT", "a" * 32, "Renamed")
         be.set_pinned("CHAT", "a" * 32, True)
-        self.assertEqual(be.list_chats(), [("a" * 32, "Renamed", True)])
+        self.assertEqual([c[:3] for c in be.list_chats()], [("a" * 32, "Renamed", True)])
         be.move_chat("a" * 32, "retro")
-        self.assertEqual(be.project_chats("retro")[1], [("a" * 32, "Renamed", True)])
+        self.assertEqual([c[:3] for c in be.project_chats("retro")[1]], [("a" * 32, "Renamed", True)])
         be.archive_project("retro")
         self.assertEqual(be.list_projects(), [])
         be.delete("PROJECT", "retro")

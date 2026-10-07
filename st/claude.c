@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.12"
+#define VERSION "1.13"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -73,6 +73,7 @@ typedef struct {
 	char id[40];
 	char label[72];
 	char pinned;
+	char heading;		/* a date heading ("Today"), not an item */
 } ITEM;
 
 #define MAXITEMS 300
@@ -865,6 +866,11 @@ static void draw_sidebar(void)
 			continue;
 		if (n > maxc - (it->pinned ? 1 : 0))
 			n = maxc - (it->pinned ? 1 : 0);
+		if (it->heading) {
+			/* a date heading, in grey like claude.ai's */
+			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 2, 1);
+			continue;
+		}
 		{
 			short cur = cur_id[0] && !strcmp(it->id, cur_id);
 			short target = list_top + i == menu_target;
@@ -1444,6 +1450,16 @@ static void handle_line(char *s)
 			strlcpy_(items[nitems].id, f[1], sizeof(items[0].id));
 			strlcpy_(items[nitems].label, f[2], sizeof(items[0].label));
 			items[nitems].pinned = n > 3 && f[3][0] == 'P';
+			items[nitems].heading = 0;
+			nitems++;
+		}
+		break;
+	case 'X':			/* X <label> : a heading in the list ("Today") */
+		if (!drop_list && nitems < MAXITEMS && n > 1) {
+			items[nitems].id[0] = 0;
+			strlcpy_(items[nitems].label, f[1], sizeof(items[0].label));
+			items[nitems].pinned = 0;
+			items[nitems].heading = 1;
 			nitems++;
 		}
 		break;
@@ -1971,6 +1987,8 @@ static void submit(void)
 static void open_item(short i)
 {
 	ITEM *it = &items[i];
+	if (it->heading)
+		return;
 	const char *kind = "CHAT";
 	if (!strcmp(list_kind, "PROJECTS"))
 		kind = "PROJECT";
@@ -2647,6 +2665,8 @@ static void set_menu_target(short i)
 /* right-click menu for a sidebar item, like the one on claude.ai */
 static void context_menu(short i, short x, short y)
 {
+	if (items[i].heading)
+		return;
 	static const char *chat_menu[6];
 	static const char *proj_menu[6];
 	static const char *art_menu[2] = { "Open", "Save to disk..." };
@@ -2925,8 +2945,8 @@ static short list_hit(short mx, short my)
 	if (mx < wx || mx >= wx + sb_w || my < list_y + row_h || my >= status_y - 2)
 		return -1;
 	r = (my - list_y - row_h) / row_h;
-	if (r >= list_rows || list_top + r >= nitems)
-		return -1;
+	if (r >= list_rows || list_top + r >= nitems || items[list_top + r].heading)
+		return -1;		/* headings can't be clicked */
 	return list_top + r;
 }
 
@@ -3196,6 +3216,7 @@ static void toggle_hebrew(void)
 
 static void move_cursor(short d)
 {
+	short start;
 	if (nitems == 0)
 		return;
 	lcur = lcur < 0 ? (d > 0 ? list_top : list_top + list_rows - 1) : lcur + d;
@@ -3203,6 +3224,18 @@ static void move_cursor(short d)
 		lcur = nitems - 1;
 	if (lcur < 0)
 		lcur = 0;
+	/* step over date headings; at either end, turn back */
+	start = lcur;
+	while (lcur >= 0 && lcur < nitems && items[lcur].heading)
+		lcur += d > 0 ? 1 : -1;
+	if (lcur < 0 || lcur >= nitems) {
+		for (lcur = start; lcur >= 0 && lcur < nitems && items[lcur].heading; )
+			lcur += d > 0 ? -1 : 1;
+		if (lcur < 0 || lcur >= nitems) {
+			lcur = -1;		/* nothing but headings */
+			return;
+		}
+	}
 	if (lcur < list_top)
 		list_top = lcur;
 	if (lcur >= list_top + list_rows)

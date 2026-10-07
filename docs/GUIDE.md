@@ -48,8 +48,12 @@ pointer turns into a hand over it.
 
 ## Chats, projects and search
 
-- **Chats** lists your recent chats. Pinned (starred) chats come first
-  and show a small diamond.
+- **Chats** lists your recent chats under date headings, as on claude.ai:
+  **Pinned** first (pinned chats also show a small diamond), then
+  **Today**, **Yesterday**, a date such as **Oct 4** for each of the
+  last seven days, and **Older** for the rest. Project chats, search
+  results and Code sessions are grouped the same way. The headings can't
+  be clicked, and `Tab` skips them.
 - **Projects** lists your projects. Opening one lists its chats, with
   **< All projects** at the top. A new chat started there is created in
   that project.
