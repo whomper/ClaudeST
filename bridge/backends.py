@@ -190,6 +190,17 @@ USAGE_NAMES = [
 USAGE_EXPIRES = {"iguana_necktie"}     # a credit that expires rather than resets
 
 
+def _expired(iso):
+    from datetime import datetime, timezone
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t < datetime.now(timezone.utc)
+
+
 def plan_name(capabilities, tier="", billing=""):
     caps = set(capabilities or [])
     tier = (tier or "").lower()
@@ -777,6 +788,8 @@ class ClaudeAiBackend(Backend):
                     continue
                 if k == "extra_usage" and not u.get("is_enabled"):
                     continue
+                if k in USAGE_EXPIRES and (float(u["utilization"]) >= 100 or _expired(u.get("resets_at"))):
+                    continue        # a used-up or expired credit: claude.ai hides it too
                 label = names.get(k, "Extra usage this month")
                 if shown:
                     out.append("")      # a blank line between the limits

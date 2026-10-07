@@ -925,6 +925,16 @@ class AccountPage(unittest.TestCase):
         self.assertIn("Organization: Erez's org", page)
         self.assertIn("Member since: 2023-03-14", page)
 
+    def test_used_up_credit_is_hidden(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "o1"
+        for usage in ({"iguana_necktie": {"utilization": 100, "resets_at": "2099-01-01T00:00:00Z"}},
+                      {"iguana_necktie": {"utilization": 50, "resets_at": "2020-01-01T00:00:00Z"}}):
+            be._get = lambda path, usage=usage, **p: (
+                {"memberships": []} if path == "/account" else usage)
+            self.assertNotIn("Cloud session credits", be.account_report())
+
     def test_plan_names(self):
         from backends import plan_name
         self.assertEqual(plan_name(["chat", "claude_pro"]), "Pro")
