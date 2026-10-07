@@ -304,11 +304,10 @@ class Session:
             self.out("U", eid, label)
         self.out("K", self.be.model, self.be.effort or "")
 
-    def cmd_hello(self, _proto="", _version="", atari_chat=None, *_):
-        # ATARI_CHAT: the chat the Atari shows ("" for none; older Atari
-        # versions don't say). An Atari that has just started shows none,
-        # so don't carry over the chat from its last run.
-        if atari_chat == "" and self.chat_id is not None:
+    def cmd_hello(self, *_):
+        # the Atari (re)started with an empty pane: don't carry over the
+        # chat from its last run, or the list highlights it
+        if self.chat_id is not None:
             self.cmd_new("QUIET")
         self.notice("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
