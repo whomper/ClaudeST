@@ -691,7 +691,9 @@ def main():
                 print("%s: %s" % (k, json.dumps(v)[:300]))
             else:
                 print("%s: %r" % (k, v if not isinstance(v, str) else v[:120]))
-        sid = conv.get("workspace_session_id")
+        sid = backend._moved_session(conv)
+        if conv.get("workspace_upgraded"):
+            print("moved chat; its session: %s" % (sid or "not found in the chat list"))
         if sid:
             from collections import Counter
             info = backend._code("get", "/sessions/%s" % sid)

@@ -951,9 +951,38 @@ class ClaudeAiBackend(Backend):
     # A moved chat ("workspace_upgraded") is continued in a session of the
     # same sessions API as Claude Code (its workspace_session_id); the
     # classic completion endpoint answers 409 conversation_upgraded.
-    @staticmethod
-    def _moved_session(conv):
-        return conv.get("workspace_upgraded") and conv.get("workspace_session_id")
+    def _moved_session(self, conv):
+        """A moved chat's session id. claude.ai's single-chat reply leaves
+        it out; its newer chat list (chat_conversations_v2) has it."""
+        if not conv.get("workspace_upgraded"):
+            return None
+        cid = conv.get("uuid")
+        sid = conv.get("workspace_session_id") or self._wsids().get(cid)
+        if sid:
+            return sid
+        for offset in range(0, 500, 100):
+            try:
+                page = self._get("/organizations/%s/chat_conversations_v2" % self.org,
+                                 limit=100, offset=offset, archived="false",
+                                 consistency="eventual")
+            except Exception as e:
+                log.info("could not list chats to find a moved chat's session: %s", e)
+                return None
+            batch = page.get("data", []) if isinstance(page, dict) else (page or [])
+            for c in batch:
+                if c.get("workspace_session_id"):
+                    self._wsids()[c.get("uuid")] = c["workspace_session_id"]
+            if cid in self._wsids():
+                return self._wsids()[cid]
+            if not (isinstance(page, dict) and page.get("has_more")) or not batch:
+                break
+        log.info("moved chat %s: no session found in the chat list", cid)
+        return None
+
+    def _wsids(self):
+        if not hasattr(self, "_wsid_cache"):
+            self._wsid_cache = {}
+        return self._wsid_cache
 
     def _moved_messages(self, chat_id, conv, classic):
         """The classic messages plus what was said since the move, from

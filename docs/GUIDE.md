@@ -265,7 +265,7 @@ content:
 
 ```sh
 # the commands below are all run as the bridge's own user
-run() { sudo -u claude-st bash -c "set -a; . /etc/claude-st/claude-st.env; /opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py $*"; }
+run() { sudo -u claude-st bash -c 'while IFS="=" read -r k v; do case "$k" in [A-Z]*) export "$k=$v";; esac; done < /etc/claude-st/claude-st.env; exec /opt/claude-st/venv/bin/python /opt/claude-st/bridge/claude_bridge.py "$@"' run "$@"; }
 
 run --probe cover        # chats with "cover" in the title: where they are, their tools, files and model
 run --probe-code         # whether Claude Code sessions can be listed, and the newest one's model and effort

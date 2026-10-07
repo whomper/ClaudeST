@@ -658,9 +658,9 @@ class MovedChats(unittest.TestCase):
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)
         be.org, be._artifacts, be.memory = "o1", {}, ChoiceMemory()
         self.convs = {
-            "old": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5", workspace_upgraded=True,
+            "old": dict(ClaudeAiParsing.CONV, uuid="old", model="claude-opus-5-5", workspace_upgraded=True,
                         settings={"effort_level": "medium", "enabled_web_search": True}),
-            "fine": dict(ClaudeAiParsing.CONV, model="claude-opus-5-5")}
+            "fine": dict(ClaudeAiParsing.CONV, uuid="fine", model="claude-opus-5-5")}
         be._conversation = lambda cid: self.convs[cid]
         be.list_chats = lambda limit=100: []
         self.sent = []
@@ -683,7 +683,10 @@ class MovedChats(unittest.TestCase):
 
     def test_moved_chat_continues_in_its_session(self):
         be = self.backend()
-        self.convs["old"]["workspace_session_id"] = "cse_1"
+        # the single-chat reply has no session id; the v2 chat list has
+        be._get = lambda path, **kw: {"data": [
+            {"uuid": "fine"}, {"uuid": "old", "workspace_session_id": "cse_1"}],
+            "has_more": False} if path.endswith("chat_conversations_v2") else {}
         posted = []
         events = [{"id": "e1", "type": "user", "message": {"role": "user", "content": "later"}},
                   {"id": "e2", "type": "assistant",
