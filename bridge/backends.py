@@ -715,7 +715,10 @@ class ClaudeAiBackend(Backend):
         self._code_last = {session_id: events[-1].get("id") if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
 
-    def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0):
+    def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0, settle=None):
+        """SETTLE: stop this many seconds after the last new event once a
+        reply has come (moved chats don't end their turn with a "result"
+        event, so without it this would poll until TIMEOUT)."""
         last = (getattr(self, "_code_last", None) or {}).get(session_id)
         if last is None:
             events = self._code_events(session_id)
@@ -724,12 +727,17 @@ class ClaudeAiBackend(Backend):
             "type": "user", "uuid": str(uuid.uuid4()), "session_id": session_id,
             "parent_tool_use_id": None,
             "message": {"role": "user", "content": text}}]})
-        start, said = time.time(), 0
+        start, said, wait = time.time(), 0, poll
+        quiet_since = start
         while time.time() - start < timeout:
-            time.sleep(poll)
+            time.sleep(wait)
             new = self._code_events(session_id, after=last)
             if not new:
+                if settle and said and time.time() - quiet_since >= settle:
+                    break
+                wait = min(wait * 1.5, 10.0)     # ask less often while it works
                 continue
+            wait, quiet_since = poll, time.time()
             last = new[-1].get("id") or last
             for role, body in code_messages(new):
                 if role == "A":
@@ -1003,7 +1011,7 @@ class ClaudeAiBackend(Backend):
 
     def send_moved(self, chat_id, sid, text, on_delta):
         try:
-            title = self.send_code(sid, text, on_delta)
+            title = self.send_code(sid, text, on_delta, timeout=600, settle=8)
         except RuntimeError as e:
             raise RuntimeError("Claude ST could not continue this moved chat: %s. You can "
                                "start a new chat, or continue this one on claude.ai." % e)

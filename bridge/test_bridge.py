@@ -693,7 +693,7 @@ class MovedChats(unittest.TestCase):
                    "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}}]
         be._code_events = lambda sid, after=None, cap=2000: (
             [] if after else events) if sid == "cse_1" else []
-        be.send_code = lambda sid, text, on_delta: (posted.append((sid, text)), on_delta("Hi"))[1]
+        be.send_code = lambda sid, text, on_delta, **kw: (posted.append((sid, text)), on_delta("Hi"))[1]
         del be.send
         link = FakeLink()
         s = Session(link, be)
@@ -704,6 +704,30 @@ class MovedChats(unittest.TestCase):
         s.handle(b"SEND\thello")
         self.assertEqual(posted, [("cse_1", "hello")])
         self.assertIn(b"Hi", link.sent)
+
+    def test_moved_chat_stops_polling_once_answered(self):
+        import backends
+        be = self.backend()
+        del be.send
+        polls, clock = [], [0.0]
+        reply = [{"id": "e9", "type": "assistant",
+                  "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi"}]}}]
+        def events(sid, after=None, cap=2000):
+            polls.append(after)
+            return reply if len(polls) == 2 else []   # one reply, then nothing
+        be._code_events = events
+        be._code = lambda method, path, body=None, **kw: {"title": "t"}
+        orig_sleep, orig_time = backends.time.sleep, backends.time.time
+        backends.time.sleep = lambda s: clock.__setitem__(0, clock[0] + s)
+        backends.time.time = lambda: clock[0]
+        try:
+            got = []
+            be.send_moved("old", "cse_1", "hello", got.append)
+        finally:
+            backends.time.sleep, backends.time.time = orig_sleep, orig_time
+        self.assertEqual(got, ["Hi"])
+        self.assertLess(len(polls), 8)              # not 15 minutes of polling
+        self.assertLess(clock[0], 30)
 
     def test_merge_moved(self):
         from backends import merge_moved
