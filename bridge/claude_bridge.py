@@ -673,7 +673,7 @@ def main():
     ap.add_argument("--probe-code", action="store_true",
                     help="claude.ai: check that your Claude Code sessions can be listed "
                          "(titles and counts only), then exit")
-    ap.add_argument("--artifact-scan", type=int, default=100, metavar="N",
+    ap.add_argument("--artifact-scan", type=int, default=40, metavar="N",
                     help="claude.ai: how many recent chats to search for artifacts")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()

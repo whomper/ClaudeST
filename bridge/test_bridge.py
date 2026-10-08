@@ -233,6 +233,25 @@ class ClaudeAiLists(unittest.TestCase):
         be._get = get
         return be
 
+    def test_artifacts_newest_first_with_dates(self):
+        import inspect
+        from backends import ClaudeAiBackend
+        be = self.backend()
+        be.artifact_scan = inspect.signature(ClaudeAiBackend).parameters["artifact_scan"].default
+        self.asked = []
+        be._recent_conversations = lambda n: (self.asked.append(n) or
+                                              [{"uuid": "aaaaaaaa-1"}, {"uuid": "bbbbbbbb-2"}])
+        be._conversation = lambda cid: {"uuid": cid, "chat_messages": []}
+        be._artifacts = {
+            "aaaaaaaa:old": {"title": "Old", "when": "2026-10-01T10:00:00Z", "created": "2026-09-01"},
+            "aaaaaaaa:new": {"title": "Updated today", "when": "2026-10-07T10:00:00Z", "created": "2026-09-02"},
+            "bbbbbbbb:tie1": {"title": "Older one", "when": "2026-10-05T10:00:00Z", "created": "2026-09-03"},
+            "bbbbbbbb:tie2": {"title": "Newer one", "when": "2026-10-05T10:00:00Z", "created": "2026-09-04"}}
+        arts = be.list_artifacts()
+        self.assertEqual(self.asked, [40])                      # the last 40 chats
+        self.assertEqual([a[1] for a in arts], ["Updated today", "Newer one", "Older one", "Old"])
+        self.assertEqual(arts[0][3], "2026-10-07T10:00:00Z")   # dated: date headings
+
     def test_artifacts_list_from_pinned_chats(self):
         # list_chats returns (id, title, pinned); this used to crash
         be = self.backend()
@@ -848,7 +867,7 @@ class LongRunningBridge(unittest.TestCase):
         downloads = []
         get = be.http.get
         be.http = type("H", (), {"get": lambda self, url, timeout=0: downloads.append(url) or get(url)})()
-        (aid, _), = be.list_artifacts()
+        (aid, *_), = be.list_artifacts()
         be.get_artifact(aid)                    # open: shown, then let go
         self.assertNotIn("data", be._artifacts[aid])
         link = FakeLink()

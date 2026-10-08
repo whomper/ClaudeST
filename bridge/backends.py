@@ -586,7 +586,7 @@ class ClaudeAiBackend(Backend):
     BASE = "https://claude.ai/api"
     ROOT_PARENT = "00000000-0000-4000-8000-000000000000"
 
-    def __init__(self, session_key, org_id=None, artifact_scan=100, state_dir=None):
+    def __init__(self, session_key, org_id=None, artifact_scan=40, state_dir=None):
         self.http, self.impersonating = _http_session()
         self.http.headers.update({
             "Cookie": "sessionKey=" + session_key,
@@ -1159,8 +1159,10 @@ class ClaudeAiBackend(Backend):
     def _art(self, key, title, cname):
         art = self._artifacts.setdefault(
             key, {"title": title, "content": "", "chat": cname, "type": "", "language": "",
-                  "path": "", "when": "", "conv": "", "remote": False})
-        art["when"] = max(art["when"], getattr(self, "_when", "") or "")
+                  "path": "", "when": "", "created": "", "conv": "", "remote": False})
+        when = getattr(self, "_when", "") or ""
+        art["when"] = max(art["when"], when)
+        art["created"] = min(art.get("created") or when, when) if when else art.get("created", "")
         art["conv"] = getattr(self, "_conv_uuid", "")
         return art
 
@@ -1232,9 +1234,11 @@ class ClaudeAiBackend(Backend):
         short = {u[:8] for u in recent}
         for key in [k for k in self._artifacts if k.split(":", 1)[0] not in short]:
             del self._artifacts[key]
-        # newest first, by when Claude last wrote each artifact
-        keys = sorted(self._artifacts, key=lambda k: self._artifacts[k]["when"], reverse=True)
-        return [(k, self._artifacts[k]["title"]) for k in keys]
+        # newest first: by when Claude last updated each artifact, then by
+        # when it was created; dated, so the list gets date headings
+        arts = self._artifacts
+        keys = sorted(arts, key=lambda k: (arts[k]["when"], arts[k].get("created", "")), reverse=True)
+        return [(k, arts[k]["title"], False, arts[k]["when"] or None) for k in keys]
 
     def _download(self, a):
         """The bytes of a file Claude made in a conversation's file store."""

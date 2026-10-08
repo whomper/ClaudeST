@@ -136,12 +136,14 @@ newest first.
 
 ## Artifacts
 
-**Artifacts** (`F4`) lists the artifacts in your 100 most recent chats,
-newest first. claude.ai keeps artifacts inside chats, so the bridge looks
-through them; the list shows *Scanning chat 12/100* meanwhile. The
+**Artifacts** (`F4`) lists the artifacts in your 40 most recent chats,
+newest first: by when Claude last updated each one, then by when it was
+created, under date headings like the chat list. claude.ai keeps
+artifacts inside chats, so the bridge looks through them; the list shows
+*Scanning chat 12/40* meanwhile. The
 bridge keeps what it found in memory, so the next time only new or
 changed chats are scanned. Artifacts from chats you delete, or that are
-no longer among the 100 most recent, leave the list the next time it
+no longer among the 40 most recent, leave the list the next time it
 loads.
 
 It finds artifacts in every form claude.ai has used, including files
