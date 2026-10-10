@@ -1,12 +1,12 @@
-# Claude ST line protocol
+# EClaude line protocol
 
-Claude ST (on the Atari) and `claude_bridge.py` (on a modern computer)
+EClaude (on the Atari) and `claude_bridge.py` (on a modern computer)
 exchange plain lines over the serial link: fields separated by TAB
 (`0x09`), lines ended by LF (`0x0A`). Text is in the Atari ST character
 set; the bridge converts to and from Unicode. Text fields never contain
 TAB or LF. Lines from the bridge are at most ~200 bytes.
 
-The link is either TCP (Claude ST connects through STinG to the bridge's
+The link is either TCP (EClaude connects through STinG to the bridge's
 `--tcp` port, 2323 by default) or the serial port (19200 baud, 8N1, no
 flow control). The protocol is the same on both.
 
@@ -29,9 +29,9 @@ flow control). The protocol is the same on both.
 | `NEWPROJ` `<chat id>` `<name>` | Create a project with this name and move the chat into it ("New project…" in the Move menu). |
 | `SAVE` `ARTIFACT` `<id>` | The user wants to save an artifact; the bridge answers `F`. |
 | `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
-| `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDE.INF` holds a choice. |
+| `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `ECLAUDE.INF` holds a choice. |
 | `ACCOUNT` | Show the Account page: the bridge answers `T Account`, `R` and an `X` message with Plan, Usage and Account sections. |
-| `BYE` | Claude ST is quitting. |
+| `BYE` | EClaude is quitting. |
 
 ## Bridge → Atari
 

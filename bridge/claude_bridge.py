@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Claude ST bridge.
+"""EClaude bridge.
 
 Runs on any modern computer and connects an Atari ST/STE/TT/Falcon running
-CLAUDE.PRG to Claude. The Atari can't do modern TLS, so the bridge does
+ECLAUDE.PRG to Claude. The Atari can't do modern TLS, so the bridge does
 the HTTPS work and talks a small line protocol (see ../PROTOCOL.md) to
 the Atari over a serial cable, a TCP socket (WiFi modems, emulators) or a
 pair of files/FIFOs (Hatari's --rs232-in/--rs232-out).
@@ -29,8 +29,8 @@ import backends  # noqa: E402
 log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
-MAX_ID = 39              # Claude ST keeps item ids up to this many characters
-MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and Claude ST "
+MAX_ID = 39              # EClaude keeps item ids up to this many characters
+MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and EClaude "
               "could not open its new part. It shows what it can, but can't add to it: "
               "to keep going, start a new chat, or continue this one on claude.ai.")
 HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
@@ -98,7 +98,7 @@ class SerialLink(Link):
 
 
 class TcpLink(Link):
-    """Serves one Atari at a time over TCP: Claude ST through STinG, a WiFi
+    """Serves one Atari at a time over TCP: EClaude through STinG, a WiFi
     modem in transparent mode, or an emulator. Only addresses in `allow`
     may connect (when given). A new connection from the Atari replaces the
     old one, so a rebooted Atari never waits on a stale socket."""
@@ -595,7 +595,7 @@ class Session:
         self.online()
 
     def cmd_bye(self, *_):
-        log.info("Atari closed Claude ST")
+        log.info("Atari closed EClaude")
 
     def handle(self, raw: bytes):
         fields = from_atari(raw).split("\t")
@@ -740,7 +740,7 @@ def main():
         link = TcpLink(args.tcp, args.allow)
     else:
         link = PipeLink(*args.pipe)
-    log.info("Claude ST bridge ready (%s backend)", backend.name)
+    log.info("EClaude bridge ready (%s backend)", backend.name)
     try:
         Session(link, backend).run()
     except KeyboardInterrupt:

@@ -1,5 +1,5 @@
 /*
- * gem.h - minimal AES/VDI bindings for Claude ST (no GEMlib needed).
+ * gem.h - minimal AES/VDI bindings for EClaude (no GEMlib needed).
  */
 #ifndef GEM_H
 #define GEM_H

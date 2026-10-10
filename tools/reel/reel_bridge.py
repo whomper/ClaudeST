@@ -83,9 +83,9 @@ class ShowcaseBackend(backends.DemoBackend):
         for cid, days in (("r1", 0), ("r2", 0), ("r3", 1), ("r4", 3), ("r5", 5), ("r6", 30)):
             self.chats[cid]["updated"] = time.time() - days * 86400
         self.code = {
-            "session_r1": {"title": "Add a Code view to Claude ST", "model": "claude-opus-5-5",
+            "session_r1": {"title": "Add a Code view to EClaude", "model": "claude-opus-5-5",
                            "messages": [("U", "Add a Code entry after Chats"),
-                                        ("A", "[Read: st/claude.c]\n\nDone: Code lists your "
+                                        ("A", "[Read: st/eclaude.c]\n\nDone: Code lists your "
                                               "sessions and opens them like chats.")]}}
 
     def whoami(self):

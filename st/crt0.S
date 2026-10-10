@@ -1,4 +1,4 @@
-| Minimal TOS startup for Claude ST.
+| Minimal TOS startup for EClaude.
 | TOS enters with 4(sp) = basepage. We give memory we don't need back
 | to GEMDOS (Mshrink), move the stack into our own BSS, run main() and
 | terminate with its return value.

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Add the Claude ST icon to EmuTOS's desktop icon file.
+"""Add the EClaude icon to EmuTOS's desktop icon file.
 
 EmuTOS's desktop loads its icons from EMUICON.RSC in the root of the boot
 drive (it ships with EmuTOS). This writes a copy with the black-and-white
-Claude ST icon added at the end, and prints its icon number, for use in
+EClaude icon added at the end, and prints its icon number, for use in
 EMUDESK.INF:
 
     tools/icon/add_to_emuicon.py path/to/emuicon.rsc EMUICON.RSC
 
-Then put EMUICON.RSC in the root of the boot drive, drag CLAUDE.PRG to
+Then put EMUICON.RSC in the root of the boot drive, drag ECLAUDE.PRG to
 the desktop, and pick the new icon with Options > Install icon.
 """
 import os
@@ -16,7 +16,7 @@ import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CLAUDE_RSC = os.path.join(HERE, "..", "..", "icons", "CLAUDE.RSC")
+CLAUDE_RSC = os.path.join(HERE, "..", "..", "icons", "ECLAUDE.RSC")
 IB = struct.Struct(">lllhhhhhhhhhhh")        # ICONBLK, 34 bytes
 
 
@@ -80,7 +80,7 @@ def main():
     claude = read_icons(CLAUDE_RSC)[0]          # the black-and-white G_ICON
     claude = (claude[0], claude[1], b"", claude[3])
     write_rsc(sys.argv[2], icons + [claude])
-    print("Wrote %s with %d icons; Claude ST is icon %d (hex %02X)"
+    print("Wrote %s with %d icons; EClaude is icon %d (hex %02X)"
           % (sys.argv[2], len(icons) + 1, len(icons), len(icons)))
 
 

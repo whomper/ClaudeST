@@ -348,7 +348,7 @@ class Backend:
     def set_chat_model(self, chat_id, model, effort):
         """Remember a chat's model, so it's still there when reopened."""
 
-    chat_readonly = False   # get_chat() read a chat Claude ST can't add to
+    chat_readonly = False   # get_chat() read a chat EClaude can't add to
 
     # Claude Code sessions (claude.ai/code)
     def list_code_sessions(self):
@@ -1013,7 +1013,7 @@ class ClaudeAiBackend(Backend):
         try:
             title = self.send_code(sid, text, on_delta, timeout=600, settle=8)
         except RuntimeError as e:
-            raise RuntimeError("Claude ST could not continue this moved chat: %s. You can "
+            raise RuntimeError("EClaude could not continue this moved chat: %s. You can "
                                "start a new chat, or continue this one on claude.ai." % e)
         return chat_id, title
 
@@ -1074,7 +1074,7 @@ class ClaudeAiBackend(Backend):
                 # claude.ai moved this chat to its newer system, which this
                 # interface can read but not continue: retrying can't help
                 raise RuntimeError(
-                    "claude.ai has moved this chat to its new chat system, which Claude ST "
+                    "claude.ai has moved this chat to its new chat system, which EClaude "
                     "can't continue yet. You can still read it here; to keep going, start "
                     "a new chat, or continue this one on claude.ai.")
             time.sleep(2 * (attempt + 1))
@@ -1360,7 +1360,7 @@ class LazyBackend:
 # ---------------------------------------------------------------------------
 
 ST_SYSTEM = (
-    "You are Claude, talking to the user through Claude ST, a client running on "
+    "You are Claude, talking to the user through EClaude, a client running on "
     "an Atari ST/Falcon with a monochrome 80-column text display. Prefer plain "
     "prose and simple lists; avoid emoji, wide tables and images."
 )
@@ -1624,8 +1624,8 @@ class DemoBackend(Backend):
                       "\n\nIt needs sockets and hashlib, both in MicroPython; serial would "
                       "use machine.UART instead of pyserial.")]},
             "session_d2": {"title": "Fix the 68000 store-merging crash", "messages": [
-                ("U", "CLAUDE.PRG crashes on /connect"),
-                ("A", "[Read: st/claude.c]\n\nGCC merged two byte stores into one word write "
+                ("U", "ECLAUDE.PRG crashes on /connect"),
+                ("A", "[Read: st/eclaude.c]\n\nGCC merged two byte stores into one word write "
                       "at an odd address. Building with -fno-store-merging fixes it.")]},
         }
 

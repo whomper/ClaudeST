@@ -1,5 +1,5 @@
 /*
- * gem.c - minimal AES/VDI bindings for Claude ST.
+ * gem.c - minimal AES/VDI bindings for EClaude.
  */
 #include "tos.h"
 #include "gem.h"

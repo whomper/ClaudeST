@@ -32,7 +32,7 @@ _SUBST = {
     # Hebrew punctuation the ST font lacks
     "\u05be": "-", "\u05f3": "'", "\u05f4": '"', "\u05c0": "|", "\u05c3": ":",
 }
-# invisible direction marks: Claude ST lays out right-to-left text itself
+# invisible direction marks: EClaude lays out right-to-left text itself
 _DROP = set("\u200e\u200f\u061c\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 

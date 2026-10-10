@@ -8,7 +8,7 @@
  * in a Hebrew paragraph R=1 and L=2, in a Latin one L=0 and R=1; then
  * runs are reversed from the highest level down (rule L2), and brackets
  * at odd levels are mirrored. Numbers stay left to right, so
- * "שנת 1990" and "Claude ST" read correctly inside Hebrew text.
+ * "שנת 1990" and "EClaude" read correctly inside Hebrew text.
  */
 #include "tos.h"
 #include "bidi.h"

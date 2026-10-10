@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Record a Claude ST demo video in Hatari: a Falcon in 640x480, 16
-colours, booting to the EmuTOS desktop with the Claude ST icon; the icon
+"""Record an EClaude demo video in Hatari: a Falcon in 640x480, 16
+colours, booting to the EmuTOS desktop with the EClaude icon; the icon
 is double-clicked, a chat is opened, and a new question is typed and
 answered by the scripted showcase bridge (reel_bridge.py).
 
@@ -39,7 +39,7 @@ DESKTOP_INF = (
     "#Y 06 FF *.GTP@ @\r\n#G 06 FF *.APP@ @\r\n#G 06 FF *.PRG@ @\r\n"
     "#P 06 FF *.TTP@ @\r\n#F 06 FF *.TOS@ @\r\n"
     "#T 00 07 03 FF   Trash@ @\r\n"
-    "#X 04 02 0E 07   C:\\CLAUDE.PRG@ Claude ST@\r\n")
+    "#X 04 02 0E 07   C:\\ECLAUDE.PRG@ EClaude@\r\n")
 
 
 class Rig:
@@ -129,10 +129,10 @@ def main():
     shutil.rmtree(work, ignore_errors=True)
     hd = os.path.join(work, "hd")
     os.makedirs(hd)
-    shutil.copy(os.path.join(ROOT, "st", "CLAUDE.PRG"), hd)
+    shutil.copy(os.path.join(ROOT, "st", "ECLAUDE.PRG"), hd)
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "icon", "add_to_emuicon.py"),
                     args.emuicon, os.path.join(hd, "EMUICON.RSC")], check=True)
-    with open(os.path.join(hd, "CLAUDE.INF"), "w", newline="") as f:
+    with open(os.path.join(hd, "ECLAUDE.INF"), "w", newline="") as f:
         f.write("serial\r\nport 6\r\n")     # Hatari's Falcon: the MFP serial port
     with open(os.path.join(hd, "EMUDESK.INF"), "w", newline="") as f:
         f.write(DESKTOP_INF)
@@ -200,11 +200,11 @@ def main():
         rig.glide(150, 380, 0.2)             # the pointer starts low left
         time.sleep(1.6)
         shot()
-        rig.glide(352, 130, 1.3)             # to the Claude ST icon
+        rig.glide(352, 130, 1.3)             # to the EClaude icon
         time.sleep(0.4)
         rig.click(double=True)
-        step("double-clicked Claude ST")
-        time.sleep(4.0)                      # Claude ST opens and connects
+        step("double-clicked EClaude")
+        time.sleep(4.0)                      # EClaude opens and connects
         shot()
         rig.glide(90, 241, 1.0)              # the first chat in Recents
         time.sleep(0.3)

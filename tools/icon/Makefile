@@ -1,4 +1,4 @@
-# RSCTEST.PRG: loads ../../icons/CLAUDE.RSC and draws it (a check, not shipped)
+# RSCTEST.PRG: loads ../../icons/ECLAUDE.RSC and draws it (a check, not shipped)
 CROSS  ?= m68k-linux-gnu-
 CC     := $(CROSS)gcc
 CFLAGS := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \

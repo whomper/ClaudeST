@@ -1,11 +1,14 @@
-# The build story of Claude ST
+# The build story of EClaude
+
+EClaude started life as "Claude ST" and was renamed after its first
+week, in the style of EDOS: an E, for Erez, in front of the name.
 
 A claude.ai client for the Atari ST and Falcon, written in one week by
 talking to Claude in Claude Code on claude.ai. Every line of code came
 from conversation: Erez described what he wanted, tried each build on a
 real Falcon, and reported back with photos of the screen.
 
-![Claude ST on an Atari](docs/st-high-mono.png)
+![EClaude on an Atari](docs/st-high-mono.png)
 
 ## The first prompt
 
@@ -25,13 +28,13 @@ quite well dare I say."
 - **About 80 prompts** from Erez, and **53 commits**
 - **About 5,000 lines of C** for the Atari and **4,000 lines of Python**
   for the bridge, plus **82 automated tests**
-- **CLAUDE.PRG is 46 KB**, smaller than one photo of the screen
+- **ECLAUDE.PRG is 46 KB**, smaller than one photo of the screen
 - Runs on an **8 MHz 68000** from 1985, with 1 MB of RAM
 
 ## How it works
 
 ```
-Atari Falcon (CLAUDE.PRG)  -- WiFi -->  Raspberry Pi (bridge)  -- HTTPS -->  claude.ai
+Atari Falcon (ECLAUDE.PRG)  -- WiFi -->  Raspberry Pi (bridge)  -- HTTPS -->  claude.ai
 ```
 
 An 8 MHz 68000 can't do modern encryption, so a small Python program,
@@ -173,7 +176,7 @@ pushed back, rightly: the Atari knows when it has just started. Now the
 Atari ignores the highlight until you open something, and sends its
 first message to a new chat.
 
-## What Claude ST does now
+## What EClaude does now
 
 - **Your real claude.ai account** on an Atari ST, STE, Mega, TT or
   Falcon, over WiFi or a serial cable
@@ -205,5 +208,5 @@ The code, setup guide and demo videos are on GitHub:
 | [docs/model-menu.png](docs/model-menu.png) | Picking the model and effort |
 | [docs/about-colour.png](docs/about-colour.png) | The About box with the 16-colour icon |
 
-Claude ST is an unofficial client, not affiliated with Anthropic or
+EClaude is an unofficial client, not affiliated with Anthropic or
 Atari.

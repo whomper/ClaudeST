@@ -1,5 +1,5 @@
 #!/bin/bash
-# Try Claude ST in the Hatari emulator, with the bridge on this computer.
+# Try EClaude in the Hatari emulator, with the bridge on this computer.
 #
 #   tools/hatari-test.sh                      demo chats, no account needed
 #   tools/hatari-test.sh claudeai             your claude.ai account
@@ -45,9 +45,9 @@ fi
 echo "Using Hatari: $HATARI_BIN"
 
 mkdir -p "$WORK/drive"
-cp "$ROOT/st/CLAUDE.PRG" "$WORK/drive/"
-# serial mode: the drive must not carry the network CLAUDE.INF
-printf 'serial\r\n' > "$WORK/drive/CLAUDE.INF"
+cp "$ROOT/st/ECLAUDE.PRG" "$WORK/drive/"
+# serial mode: the drive must not carry the network ECLAUDE.INF
+printf 'serial\r\n' > "$WORK/drive/ECLAUDE.INF"
 
 if [ -z "${TOS:-}" ]; then
   TOS="$WORK/etos512us.img"
@@ -71,5 +71,5 @@ case "$MACHINE" in
 esac
 
 "$HATARI_BIN" --machine "$MACHINE" "${DISPLAY_OPTS[@]}" --tos "$TOS" \
-  --harddrive "$WORK/drive" --auto 'C:\CLAUDE.PRG' --fast-boot yes \
+  --harddrive "$WORK/drive" --auto 'C:\ECLAUDE.PRG' --fast-boot yes \
   --rs232-out "$WORK/st_out" --rs232-in "$WORK/st_in" "${@:2}"

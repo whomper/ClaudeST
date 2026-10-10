@@ -42,7 +42,7 @@ int main(void)
 	      ALEF BET " " GIMEL DALET, 1, DALET GIMEL " " BET ALEF);
 	check("number stays LTR in Hebrew", ALEF " 1990 " BET, 1, BET " 1990 " ALEF);
 	check("English stays LTR in Hebrew",
-	      ALEF " Claude ST " BET, 1, BET " Claude ST " ALEF);
+	      ALEF " EClaude " BET, 1, BET " EClaude " ALEF);
 	check("trailing punctuation goes left", ALEF BET ".", 1, "." BET ALEF);
 	check("brackets mirror", "(" ALEF ")", 1, "(" ALEF ")");
 	check("Hebrew run inside English",

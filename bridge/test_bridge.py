@@ -1190,7 +1190,7 @@ class Gateway(unittest.TestCase):
 
 
 class TcpGateway(unittest.TestCase):
-    """The --tcp link as Claude ST uses it over STinG."""
+    """The --tcp link as EClaude uses it over STinG."""
 
     def setUp(self):
         import threading

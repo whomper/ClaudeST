@@ -1,0 +1,3 @@
+; EClaude settings. Put the IP address of your gateway (the Pi) on the
+; tcp line, or type /connect <address> in EClaude's reply line.
+tcp 192.168.1.10 2323

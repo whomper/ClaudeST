@@ -1,5 +1,5 @@
 /*
- * RSCTEST.PRG - loads CLAUDE.RSC with the AES and draws its icon tree,
+ * RSCTEST.PRG - loads ECLAUDE.RSC with the AES and draws its icon tree,
  * to check the resource file on a real (or emulated) Atari. Any key quits.
  */
 #include "../../st/tos.h"
@@ -14,8 +14,8 @@ int main(void)
 	appl_init();
 	graf_handle(&d1, &d2, &d3, &d4);
 	graf_mouse(ARROW, 0);
-	if (!rsrc_load("CLAUDE.RSC")) {
-		form_alert(1, "[3][CLAUDE.RSC didn't load.][ Quit ]");
+	if (!rsrc_load("ECLAUDE.RSC")) {
+		form_alert(1, "[3][ECLAUDE.RSC didn't load.][ Quit ]");
 		appl_exit();
 		return 1;
 	}

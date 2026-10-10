@@ -1,5 +1,5 @@
 /*
- * Claude ST - a Claude.ai client for the Atari ST, STE, TT and Falcon.
+ * EClaude - a Claude.ai client for the Atari ST, STE, TT and Falcon.
  *
  * A single GEM window: the sidebar on the left (New chat, Search, Chats,
  * Projects, Artifacts and the current list), the active conversation on
@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.14"
+#define VERSION "1.15"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -172,7 +172,7 @@ static char mod_id[NMODEL][28], mod_lab[NMODEL][20];
 static char eff_id[NEFFORT][8], eff_lab[NEFFORT][14];
 static short nmodel, neffort;
 static char cur_model[28], cur_effort[8];
-static char pref_model[28], pref_effort[8];	/* the user's choice, kept in CLAUDE.INF */
+static char pref_model[28], pref_effort[8];	/* the user's choice, kept in ECLAUDE.INF */
 static short pref_sent;				/* sent to the bridge since HELLO */
 static short chip_x0, chip_x1;			/* the model chip in the reply line */
 
@@ -190,7 +190,7 @@ static void save_config(void);
 static char t_desk[] = " Desk ";
 static char t_file[] = " File ";
 static char t_opts[] = " Options ";
-static char m_about[] = "  About Claude ST... ";
+static char m_about[] = "  About EClaude...   ";
 static char m_sep1[]  = "---------------------";
 static char m_acc[6][22] = {
 	"  Desk Accessory 1   ", "  Desk Accessory 2   ", "  Desk Accessory 3   ",
@@ -342,7 +342,7 @@ static void sup_restore_iorec(void)
 	ints_restore(sr);
 }
 
-static short aux_port;		/* CLAUDE.INF "port N": Bconmap device, 0 = TOS's choice */
+static short aux_port;		/* ECLAUDE.INF "port N": Bconmap device, 0 = TOS's choice */
 static short old_port;
 
 static void serial_open(void)
@@ -827,8 +827,7 @@ static void draw_sidebar(void)
 	/* brand */
 	if (row_visible(wy, wy + title_h)) {
 		spark(x + cw / 2, wy + title_h / 2, ch / 2 - 1);
-		text(x + 2 * cw, wy + (title_h - ch) / 2, "Claude", 6, 1, 1);
-		text(x + 9 * cw, wy + (title_h - ch) / 2, "ST", 2, 0, 1);
+		text(x + 2 * cw, wy + (title_h - ch) / 2, "EClaude", 7, 1, 1);
 		line(wx, wy + title_h, wx + sb_w - 1, wy + title_h, 1);
 	}
 
@@ -1555,7 +1554,7 @@ static void handle_line(char *s)
 		strlcpy_(cur_model, n > 1 ? f[1] : "", sizeof(cur_model));
 		strlcpy_(cur_effort, n > 2 ? f[2] : "", sizeof(cur_effort));
 		dirty |= D_TITLE;
-		/* after (re)connecting, ask for the model saved in CLAUDE.INF */
+		/* after (re)connecting, ask for the model saved in ECLAUDE.INF */
 		if (!pref_sent) {
 			pref_sent = 1;
 			if (pref_model[0] && (strcmp(pref_model, cur_model) ||
@@ -1693,7 +1692,7 @@ static void poll_link(void)
 	}
 }
 
-/* ---- settings: CLAUDE.INF next to the program ---- */
+/* ---- settings: ECLAUDE.INF next to the program ---- */
 
 static short parse_ip(const char *s, u32 *ip, u16 *port)
 {
@@ -1766,8 +1765,10 @@ static void parse_config_line(const char *l)
 static void load_config(void)
 {
 	char buf[256], *p, *l;
-	long fd = Fopen("CLAUDE.INF", 0);
+	long fd = Fopen("ECLAUDE.INF", 0);
 	long n;
+	if (fd < 0)
+		fd = Fopen("ECLAUDE.INF", 0);	/* settings from before the rename */
 	if (fd < 0)
 		return;
 	n = Fread((short)fd, sizeof(buf) - 1, buf);
@@ -1804,7 +1805,7 @@ static char *put_num(char *p, u16 v)
 static void save_config(void)
 {
 	char text[160], *p = text;
-	long fd = Fcreate("CLAUDE.INF", 0);
+	long fd = Fcreate("ECLAUDE.INF", 0);
 	if (fd < 0)
 		return;
 	if (link == LINK_TCP && tcp_ip) {
@@ -1877,7 +1878,7 @@ static void use_link(short l)
 
 static void set_window_name(void)
 {
-	static char name[] = " Claude ";
+	static char name[] = " EClaude ";
 	wind_set_str(win, WF_NAME, name);
 }
 
@@ -2563,7 +2564,7 @@ static void about(void)
 		draw_icon(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
 	}
 	y += ih + lh / 2;
-	center_text(y, "Claude ST", 1 | 8);		/* bold, underlined */
+	center_text(y, "EClaude", 1 | 8);		/* bold, underlined */
 	y += lh;
 	center_text(y, "Version " VERSION, 0);
 	y += lh + lh / 2;
@@ -3463,7 +3464,7 @@ int main(void)
 	ncolors = work_out[13];
 
 	if (!alloc_buffers()) {
-		form_alert(1, "[3][Claude ST: not enough memory.][ Quit ]");
+		form_alert(1, "[3][EClaude: not enough memory.][ Quit ]");
 		v_clsvwk(vh);
 		appl_exit();
 		return 1;
@@ -3477,7 +3478,7 @@ int main(void)
 	wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
 	win = wind_create(WKIND, dx, dy, dw, dh);
 	if (win < 0) {
-		form_alert(1, "[3][Claude ST: no window available.][ Quit ]");
+		form_alert(1, "[3][EClaude: no window available.][ Quit ]");
 		menu_bar(menu, 0);
 		v_clsvwk(vh);
 		appl_exit();
@@ -3492,7 +3493,7 @@ int main(void)
 
 	begin_message('I');
 	{
-		static const char hi[] = "Welcome to Claude ST. Connecting to your Claude "
+		static const char hi[] = "Welcome to EClaude. Connecting to your Claude "
 			"gateway (claude_bridge.py) over the network or the serial port...";
 		append(hi, sizeof(hi) - 1);
 	}

@@ -1,4 +1,4 @@
-/* Claude ST icon, 32x32 in 16 colours (VDI pens, 2 per byte), from
+/* EClaude icon, 32x32 in 16 colours (VDI pens, 2 per byte), from
  * tools/icon/make_icon.py. 0 = background, not drawn. */
 static const unsigned char icon16_px[32 * 16] = {
 	0x00, 0x0a, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xa0, 0x00,

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Write Claude ST's icons as files for Atari icon and resource editors:
+"""Write EClaude's icons as files for Atari icon and resource editors:
 
-  icons/CLAUDE.RSC    GEM resource, one tree: a monochrome G_ICON and a
+  icons/ECLAUDE.RSC    GEM resource, one tree: a monochrome G_ICON and a
                       colour G_CICON (16 colours), each with its mask and the
-                      label "Claude ST". Copy them into DESKICON.RSC /
+                      label "EClaude". Copy them into DESKICON.RSC /
                       DESKCICN.RSC with a resource editor (Interface, ORCS,
                       RSM...).
-  icons/CLAUDE.ICN    the monochrome image, ICN text format
-  icons/CLAUDEMK.ICN  its mask, ICN text format
+  icons/ECLAUDE.ICN    the monochrome image, ICN text format
+  icons/ECLAUDMK.ICN  its mask, ICN text format
 
 The colour icon uses the standard VDI colours (white, black, red, green,
 yellow, greys), since desktop icons can't bring their own palette.
@@ -60,7 +60,7 @@ PEN_TO_REG = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13]
 colour = [[PEN_TO_REG[TO_STD[mi.col[y][x]]] for x in range(W)] for y in range(H)]
 col_planes = b"".join(plane([[(colour[y][x] >> p) & 1 for x in range(W)] for y in range(H)])
                       for p in range(4))
-TEXT = b"Claude ST\0\0\0"          # 12 bytes, like every icon text
+TEXT = b"EClaude\0\0\0\0\0"      # 12 bytes, like every icon text
 assert len(TEXT) == 12
 
 
@@ -145,7 +145,7 @@ hdr = struct.pack(">18H",
 os.makedirs(OUT, exist_ok=True)
 data = hdr + body + ext + ctab + ciconblk
 assert len(data) == total
-with open(os.path.join(OUT, "CLAUDE.RSC"), "wb") as f:
+with open(os.path.join(OUT, "ECLAUDE.RSC"), "wb") as f:
     f.write(data)
 
 
@@ -164,6 +164,6 @@ def write_icn(name, bits):
         f.write("\n};\n")
 
 
-write_icn("CLAUDE.ICN", mono)
-write_icn("CLAUDEMK.ICN", mask)
-print("wrote", len(data), "byte CLAUDE.RSC and two ICN files to", os.path.normpath(OUT))
+write_icn("ECLAUDE.ICN", mono)
+write_icn("ECLAUDMK.ICN", mask)
+print("wrote", len(data), "byte ECLAUDE.RSC and two ICN files to", os.path.normpath(OUT))

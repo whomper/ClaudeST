@@ -1,10 +1,10 @@
 /*
  * FAKESTNG.PRG - a stand-in for the STinG TCP/IP stack, for testing
- * Claude ST in an emulator without networking. It installs a "STiK"
+ * EClaude in an emulator without networking. It installs a "STiK"
  * cookie and a TRANSPORT_TCPIP table whose single "connection" is
  * tunnelled over the serial port, so claude_bridge.py --pipe can serve
  * it. TCP_open announces "DBG OPEN <ip> <port>" so the bridge log shows
- * the address Claude ST asked for.
+ * the address EClaude asked for.
  */
 #include "../../st/tos.h"
 

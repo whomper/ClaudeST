@@ -1,5 +1,5 @@
 /*
- * tos.h - the handful of GEMDOS/BIOS/XBIOS calls Claude ST needs, as
+ * tos.h - the handful of GEMDOS/BIOS/XBIOS calls EClaude needs, as
  * inline traps. Built freestanding (no MiNTLib), so the program runs
  * on plain TOS 1.0 through TOS 4.x (Falcon), EmuTOS and MiNT.
  *

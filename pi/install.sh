@@ -1,10 +1,10 @@
 #!/bin/bash
-# Install the Claude ST bridge on a Raspberry Pi (or any Debian-style Linux)
+# Install the EClaude bridge on a Raspberry Pi (or any Debian-style Linux)
 # as an always-on systemd service called claude-st.
 #
 #   sudo ./install.sh                     install or update, asks what it needs
 #   sudo ./install.sh --network --atari 192.168.1.20
-#                                         wireless: Claude ST connects over STinG
+#                                         wireless: EClaude connects over STinG
 #                                         (several Ataris: --atari IP1,IP2;
 #                                          any address: --atari any)
 #   sudo ./install.sh --backend api       use the Anthropic API instead of claude.ai
@@ -62,7 +62,7 @@ ask_secret() {
 }
 
 if [ $uninstall -eq 1 ]; then
-  say "Removing Claude ST"
+  say "Removing EClaude"
   systemctl disable --now claude-st 2>/dev/null || true
   rm -f "$SVC"
   systemctl daemon-reload
@@ -110,7 +110,7 @@ mkdir -p "$CONF_DIR"
 if [ ! -f "$CONF" ]; then
   install -m 640 -o root -g claude-st /dev/null "$CONF"
   cat > "$CONF" <<'CONF_EOF'
-# Claude ST gateway settings. After editing: sudo systemctl restart claude-st
+# EClaude gateway settings. After editing: sudo systemctl restart claude-st
 # Bridge options, see: claude_bridge.py --help
 CLAUDE_ST_ARGS=--backend claudeai --serial auto --baud 19200
 # claude.ai "sessionKey" cookie (for --backend claudeai). Change it with:
@@ -190,7 +190,7 @@ say "Done"
 if [ "$mode" = tcp ]; then
   ip=$(hostname -I 2>/dev/null | awk '{print $1}')
   echo "Backend: $backend   wireless: listening on port $tcp_port for the Atari at $atari"
-  echo "On the Atari, CLAUDE.INF should say:  tcp ${ip:-THIS-PI-IP} $tcp_port"
+  echo "On the Atari, ECLAUDE.INF should say:  tcp ${ip:-THIS-PI-IP} $tcp_port"
 else
   echo "Backend: $backend   serial port: $port   baud: $baud"
 fi
