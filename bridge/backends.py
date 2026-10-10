@@ -169,6 +169,22 @@ def reset_text(iso, now=None, verb="resets"):
                                             local.strftime("%b"), local.strftime("%H:%M"))
 
 
+def short_span(iso, now=None):
+    """'2h 10m', '3d 4h' or '25m' until ISO time, for the Atari's status area"""
+    from datetime import datetime, timezone
+    try:
+        when = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    mins = max(0, int((when - (now or datetime.now(timezone.utc))).total_seconds() // 60))
+    days, rest = divmod(mins, 24 * 60)
+    if days:
+        return "%dd %dh" % (days, rest // 60)
+    return "%dh %dm" % (rest // 60, rest % 60) if rest >= 60 else "%dm" % rest
+
+
 def usage_lines(label, pct, resets_at=None, verb="resets"):
     """A usage limit for the Account page: its name, a meter, the reset."""
     out = [label, "  " + usage_bar(pct) + " used"]
@@ -371,6 +387,11 @@ class Backend:
 
     def archive_code(self, session_id):
         raise NotImplementedError("Archiving sessions isn't supported by the %s backend" % self.name)
+
+    def session_usage(self):
+        """(percent used, resets_at ISO) of the current session limit, or
+        None where the backend has no such limit."""
+        return None
 
     def account_report(self):
         """Markdown for the Account page: plan, usage and account details."""
@@ -788,6 +809,12 @@ class ClaudeAiBackend(Backend):
                 self._send("put", self._item_path("CHAT", chat_id), body)
             except Exception as e:
                 log.info("could not set the chat's model: %s", e)
+
+    def session_usage(self):
+        u = (self._get("/organizations/%s/usage" % self.org) or {}).get("five_hour")
+        if not isinstance(u, dict) or u.get("utilization") is None:
+            return None
+        return float(u["utilization"]), u.get("resets_at")
 
     def account_report(self):
         acct = self._get("/account")
@@ -1586,6 +1613,13 @@ class ApiBackend(Backend):
 
 class DemoBackend(Backend):
     name = "demo"
+
+    def session_usage(self):
+        """A pretend session limit that grows a little with each message."""
+        from datetime import datetime, timedelta, timezone
+        said = sum(len(c.get("messages", [])) for c in self.chats.values())
+        when = datetime.now(timezone.utc) + timedelta(hours=2, minutes=10)
+        return min(100.0, 10.0 + 2.5 * said), when.isoformat()
 
     def __init__(self):
         self.chats = {

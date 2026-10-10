@@ -19,6 +19,7 @@ import logging
 import os
 import socket
 import sys
+import time
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -192,6 +193,7 @@ class Session:
         self.new_choice = None      # the model and effort for new chats (CHOOSE)
         self.chat_kind = "CHAT"     # or "CODE": chat_id is a Claude Code session
         self.readonly = False       # the open chat was moved to claude.ai's new system
+        self._usage_at = -1e9          # when the session usage was last sent
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
@@ -283,9 +285,39 @@ class Session:
 
     def online(self):
         """The command is done: clear its notice (an empty N), and S, the
-        status line, which shows only the connection to claude.ai."""
+        status line, which shows only the connection to claude.ai; then the
+        session usage, if it's due."""
         self.out("N", "")
-        self.out("S", "Online: " + self.be.whoami())
+        self.out("S", self.online_text())
+        self.send_usage()
+
+    def online_text(self):
+        """The status line once connected: just "Online" with claude.ai; the
+        backend's name only when it's something else (the API, the demo)."""
+        who = self.be.whoami()
+        return "Online" if who == "claude.ai" else "Online: " + who
+
+    USAGE_EVERY = 120       # seconds between usage checks while browsing
+
+    def send_usage(self, force=False):
+        """u <percent> <time to reset>: the session usage ring on the Atari;
+        a bare u hides it. Asked for after each reply, otherwise at most
+        every USAGE_EVERY seconds, so as not to add to claude.ai's load."""
+        now = time.time()
+        if not force and now - self._usage_at < self.USAGE_EVERY:
+            return
+        self._usage_at = now
+        try:
+            got = self.be.session_usage()
+        except Exception as e:
+            log.info("session usage: %s", e)
+            return
+        if got is None:
+            self.out("u")
+        else:
+            pct, resets = got
+            self.out("u", str(int(round(max(0.0, min(100.0, pct))))),
+                     backends.short_span(resets) if resets else "")
 
     def notice(self, s):
         """N: a passing notice ("Loading...", "Model: Opus 5.5"). The Atari
@@ -436,6 +468,7 @@ class Session:
                 self.out("Y", "0")
             if title:
                 self.out("T", title)
+            self._usage_at = -1e9       # a reply uses some of the session
             self.online()
             return
         try:
@@ -456,6 +489,7 @@ class Session:
         elif new and self.list_kind == "PROJECT" and self.project_id:
             name, chats = self.be.project_chats(self.project_id)
             self.send_list("PROJECT", name, chats, back=True)
+        self._usage_at = -1e9           # a reply uses some of the session
         self.online()
 
     def cmd_account(self, *_):
@@ -465,6 +499,7 @@ class Session:
         self.out("T", "Account")
         self.out("R")
         self.message("X", report)     # a page: no "Info" label above it
+        self._usage_at = -1e9
         self.online()
 
     def cmd_choose(self, model="", effort="", *_):
@@ -618,7 +653,7 @@ class Session:
             if getattr(self.be, "real", True) is None:
                 self.out("S", "Not signed in to claude.ai")
             else:
-                self.out("S", "Online: " + self.be.whoami())
+                self.out("S", self.online_text())
 
     def run(self):
         while True:

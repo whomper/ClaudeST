@@ -16,7 +16,8 @@ streaming in as Claude writes them.
 - Artifacts: view them and save them to disk, Word documents included
 - Model and effort for each chat, from a chip in the title bar
 - Right-click menus: Pin, Rename, Move to project, Archive, Delete
-- An Account page with your plan and usage
+- A ring that fills as you use up the current session, and an Account
+  page with your plan and usage
 - Hebrew: right-to-left text and a Hebrew keyboard layout
 - Monochrome and colour, any resolution from 640×200
 
@@ -87,7 +88,7 @@ If the `ufw` firewall is on, the installer opens port 2323 for them.
    tcp 192.168.1.10 2323
    ```
 4. Run `ECLAUDE.PRG`. The status line at the bottom left shows
-   *Connecting…*, then *Online: claude.ai*.
+   *Connecting…*, then *Online*, with a green dot.
 
 Instead of step 3 you can type `/connect 192.168.1.10` in EClaude's
 reply line; EClaude saves the address to `ECLAUDE.INF`. If the Pi

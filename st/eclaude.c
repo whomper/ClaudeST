@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.15"
+#define VERSION "1.16"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -96,6 +96,8 @@ static char chat_title[80] = "New chat";
 static char status[64] = "Waiting for bridge...";
 static short busy;
 static short online;
+static short usage_pct = -1;		/* session usage from the bridge's u line; -1: none */
+static char usage_rst[12];		/* and the time until it resets, "2h 10m" */
 
 /* input line */
 #define INMAX 1000
@@ -733,6 +735,61 @@ static short accent(void)
 	return ncolors >= 4 ? 2 : 1;	/* red where we have colour, else black */
 }
 
+/* degrees clockwise from 12 o'clock to the point (x, y), y pointing up;
+ * a close integer approximation of atan2, good to about a degree */
+static short cw_angle(long x, long y)
+{
+	long ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+	short a;
+	if (!ax && !ay)
+		return 0;
+	if (ax <= ay)
+		a = (short)((45L * ax * ay + 16L * ax * (ay - ax)) / (ay * ay));
+	else
+		a = 90 - (short)((45L * ay * ax + 16L * ay * (ax - ay)) / (ax * ax));
+	if (x >= 0)
+		return y >= 0 ? a : 180 - a;
+	return y < 0 ? 180 + a : 360 - a;
+}
+
+/* a ring (or with thick >= rx, a disc) centred on cx,cy, rx pixels wide
+ * and ry tall (pixels aren't square in medium resolution). The first pct
+ * percent, clockwise from the top, is filled with colour fc; the rest is
+ * the track: solid colour tc, or with `outline` only its two edges, for
+ * screens with too few colours for a grey. Drawn as one-pixel strips. */
+static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
+		 short fc, short tc, short outline)
+{
+	long ri = rx - thick;
+	long ro2 = (long)rx * rx + rx, ri2 = ri > 0 ? ri * ri - ri : -1;
+	long edge_o = (long)(rx - 1) * (rx - 1), edge_i = (ri + 1) * (ri + 1);
+	short dy, x;
+	if (rx < 1 || ry < 1)
+		return;
+	for (dy = -ry; dy <= ry; dy++) {
+		long y = (long)dy * rx / ry;	/* in the units of x */
+		short state = 0, xs = 0;
+		for (x = -rx; x <= rx + 1; x++) {
+			short st = 0;
+			if (x <= rx) {
+				long d2 = (long)x * x + y * y;
+				if (d2 <= ro2 && d2 > ri2) {
+					if (pct > 0 && cw_angle(x, -y) * 10L < pct * 36L)
+						st = 1;
+					else if (!outline || d2 >= edge_o || d2 <= edge_i)
+						st = 2;
+				}
+			}
+			if (st != state) {
+				if (state)
+					fill(cx + xs, cy + dy, cx + x - 1, cy + dy, state == 1 ? fc : tc);
+				state = st;
+				xs = x;
+			}
+		}
+	}
+}
+
 /* the Claude "spark": eight rays around a centre */
 static void spark(short x, short y, short r)
 {
@@ -786,7 +843,7 @@ static void layout(void)
 
 	nav_y = wy + title_h + 2;
 	list_y = nav_y + (NNAV + 1) * row_h + 4;
-	status_y = wy + wh - row_h;
+	status_y = wy + wh - 2 * row_h;	/* two lines: connection and usage */
 	list_rows = (status_y - 2 - (list_y + row_h)) / row_h;
 	if (list_rows < 1)
 		list_rows = 1;
@@ -914,16 +971,54 @@ static void draw_sidebar(void)
 		text(x, y + (row_h - ch) / 2 - 1, e, n, 2, 1);
 	}
 
-	/* status line */
+	/* the status area: the session usage ring, then a dot for the
+	 * connection (green or red; filled or hollow in monochrome) with its
+	 * text, and the usage below it */
 	line(wx, status_y - 2, wx + sb_w - 1, status_y - 2, 1);
 	{
-		short n = strlen(status);
-		if (n > maxc - 1)
-			n = maxc - 1;
-		fill(x, status_y + row_h / 2 - 2, x + 3, status_y + row_h / 2 + 1, online ? accent() : 1);
-		if (!online)
-			fill(x + 1, status_y + row_h / 2 - 1, x + 2, status_y + row_h / 2, 0);
-		text_bidi(x + cw, status_y + (row_h - ch) / 2, status, n, 0, 1, 0);
+		short tx = x, n, room;
+		short dry = ch / 3, drx = dry * 16 / ch;
+		short colour = ncolors >= 16;
+		if (usage_pct >= 0) {
+			short ry = row_h - 3, rx = ry * 16 / ch;
+			short fc = usage_pct >= 90 ? accent() : colour ? 4 : 1;
+			ring(x + rx, status_y + row_h - 1, rx, ry, rx * 2 / 5 + 1, usage_pct,
+			     fc, colour ? 8 : 1, !colour);
+			tx = x + 2 * rx + cw;
+		}
+		room = (wx + sb_w - 4 - tx) / cw;
+		if (ncolors >= 4)
+			ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
+			     online ? 3 : 2, 0, 0);
+		else
+			ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
+			     1, 0, 0);
+		n = strlen(status);
+		if (n > room - 2)
+			n = room - 2;
+		if (n > 0)
+			text_bidi(tx + 2 * drx + cw / 2, status_y + (row_h - ch) / 2, status, n, 0, 1, 0);
+		if (usage_pct >= 0) {
+			char u[40], *p = u;
+			strcpy(p, "Session ");
+			p += 8;
+			if (usage_pct >= 100)
+				*p++ = '1';
+			if (usage_pct >= 10)
+				*p++ = '0' + usage_pct / 10 % 10;
+			*p++ = '0' + usage_pct % 10;
+			*p++ = '%';
+			*p = 0;
+			if (usage_rst[0] && strlen(u) + 3 + strlen(usage_rst) <= room) {
+				strcat(u, ", ");
+				strcat(u, usage_rst);
+			}
+			n = strlen(u);
+			if (n > room)
+				n = room;
+			if (n > 0)
+				text(tx, status_y + row_h + (row_h - ch) / 2, u, n, 0, 1);
+		}
 	}
 }
 
@@ -1423,6 +1518,23 @@ static void handle_line(char *s)
 			dirty |= D_STATUS;
 		}
 		list_loading = 0;
+		break;
+	case 'u':			/* u [<percent> <reset>] : session usage; bare: none */
+		{
+			short v = -1;
+			const char *q = n > 1 ? f[1] : "";
+			if (*q) {
+				for (v = 0; *q >= '0' && *q <= '9'; q++)
+					v = v * 10 + (*q - '0');
+				if (v > 100)
+					v = 100;
+			}
+			if (v != usage_pct || strcmp(usage_rst, n > 2 ? f[2] : "")) {
+				usage_pct = v;
+				strlcpy_(usage_rst, n > 2 ? f[2] : "", sizeof(usage_rst));
+				dirty |= D_STATUS;
+			}
+		}
 		break;
 	case 'N':			/* N <text> : a passing notice */
 		strlcpy_(notice, n > 1 ? f[1] : "", sizeof(notice));

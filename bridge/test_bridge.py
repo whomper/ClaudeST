@@ -71,7 +71,43 @@ class Protocol(unittest.TestCase):
         lines = self.link.lines()
         self.assertIn([b"L", b"CHATS", b"Recents"], lines)
         self.assertEqual(sum(1 for l in lines if l[0] == b"I"), 4)
-        self.assertEqual(lines[-1][0], b"S")
+        self.assertEqual(lines[-2][0], b"S")
+        self.assertEqual(lines[-1][0], b"u")         # then the session usage
+
+    def test_session_usage(self):
+        import backends
+        be = self.s.be
+        self.s.handle(b"HELLO\t1\t1.0")
+        u = [l for l in self.link.lines() if l[0] == b"u"]
+        self.assertEqual(len(u), 1)
+        self.assertTrue(0 <= int(u[0][1]) <= 100)
+        self.assertRegex(u[0][2].decode(), r"^2h (9|10)m$")
+        self.link.sent = b""
+        self.s.handle(b"LIST\tCHATS")               # browsing: not asked again so soon
+        self.assertNotIn(b"\nu", b"\n" + self.link.sent)
+        self.s.handle(b"SEND\thello")              # after a reply: asked again, and higher
+        u2 = [l for l in self.link.lines() if l[0] == b"u"]
+        self.assertEqual(len(u2), 1)
+        self.assertGreater(int(u2[0][1]), int(u[0][1]))
+        be.session_usage = lambda: None             # a backend without a session limit
+        self.s._usage_at = -1e9
+        self.link.sent = b""
+        self.s.handle(b"LIST\tCHATS")
+        self.assertIn([b"u"], self.link.lines())     # hides the ring
+
+    def test_online_text(self):
+        self.assertEqual(self.s.online_text(), "Online: demo")
+        self.s.be.whoami = lambda: "claude.ai"
+        self.assertEqual(self.s.online_text(), "Online")     # the dot says the rest
+
+    def test_short_span(self):
+        from datetime import datetime, timezone
+        from backends import short_span
+        now = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
+        self.assertEqual(short_span("2026-10-10T14:10:00Z", now), "2h 10m")
+        self.assertEqual(short_span("2026-10-10T12:25:00Z", now), "25m")
+        self.assertEqual(short_span("2026-10-13T16:00:00Z", now), "3d 4h")
+        self.assertEqual(short_span("nonsense", now), "")
 
     def test_open_chat(self):
         self.s.handle(b"OPEN\tCHAT\td1")

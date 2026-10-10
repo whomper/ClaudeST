@@ -31,8 +31,15 @@ pointer turns into a hand over it.
 
 ![STE medium resolution, in colour, inside a project](ste-medium-colour.png)
 
-- **Status line** (bottom left): only the connection, such as
-  *Connecting…*, *Online: claude.ai* or *Offline: …*.
+- **Status area** (bottom left): a dot for the connection, green when
+  online and red when not (filled or hollow in black and white), with
+  *Connecting…*, *Online* or *Offline: …* beside it. With claude.ai, a
+  ring next to it fills clockwise as you use up the current session
+  (claude.ai's 5-hour limit): blue, turning red from 90%, on a grey track
+  in 16 colours; black on an outline with fewer colours. Below, *Session
+  30%* and, when the sidebar is wide enough, the time until it resets.
+  The bridge checks after each reply, and at most every two minutes
+  otherwise. Click the area for the full Account page.
 - **Notices:** short messages such as *Loading chat...* or *Renamed*
   appear in grey at the right of the title bar for a few seconds.
 - **Tooltips:** rest the mouse on a name that's cut off, in the sidebar
