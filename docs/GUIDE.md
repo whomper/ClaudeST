@@ -61,6 +61,12 @@ pointer turns into a hand over it.
   last seven days, and **Older** for the rest. Project chats, search
   results and Code sessions are grouped the same way. The headings can't
   be clicked, and `Tab` skips them.
+- **Unread chats** have a small dot to the left of their name (blue in
+  16 colours): a reply came in since you last read the chat, on
+  claude.ai or on the Atari, for example one that finished on the
+  website or in the background. Opening it removes the dot. claude.ai
+  keeps no read time for older chats, so those never get a dot. Reading a
+  chat on the Atari doesn't mark it read on claude.ai.
 - **Projects** lists your projects. Opening one lists its chats, with
   **< All projects** at the top. A new chat started there is created in
   that project.

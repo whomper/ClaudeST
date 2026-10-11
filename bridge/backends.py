@@ -169,6 +169,20 @@ def reset_text(iso, now=None, verb="resets"):
                                             local.strftime("%b"), local.strftime("%H:%M"))
 
 
+def _utc(t):
+    """Seconds since 1970 for an ISO time (or a number); 0 if unreadable"""
+    if isinstance(t, (int, float)):
+        return float(t)
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return 0.0
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
+
+
 def short_span(iso, now=None):
     """'2h 10m', '3d 4h' or '25m' until ISO time, for the Atari's status area"""
     from datetime import datetime, timezone
@@ -392,6 +406,9 @@ class Backend:
         """(percent used, resets_at ISO) of the current session limit, or
         None where the backend has no such limit."""
         return None
+
+    def mark_read(self, chat_id):
+        """The chat was just read or answered on the Atari."""
 
     def account_report(self):
         """Markdown for the Account page: plan, usage and account details."""
@@ -889,9 +906,48 @@ class ClaudeAiBackend(Backend):
         return out
 
     def list_chats(self, limit=100):
+        """(id, title, pinned, updated, unread) for the most recent chats.
+        claude.ai's newer list (the website's) also says when each chat was
+        last read; the older one is the fallback."""
+        try:
+            page = self._get("/organizations/%s/chat_conversations_v2" % self.org,
+                             limit=limit, offset=0, archived="false", consistency="eventual")
+            convs = page.get("data", []) if isinstance(page, dict) else page
+        except Exception as e:
+            log.info("newer chat list unavailable (%s); using the older one", e)
+            convs = self._conversations(limit)
+        for c in convs:
+            if c.get("workspace_session_id"):
+                self._wsids()[c["uuid"]] = c["workspace_session_id"]
         return [(c["uuid"], c.get("name") or "Untitled", bool(c.get("is_starred")),
-                 c.get("updated_at"))
-                for c in self._conversations(limit)]
+                 c.get("updated_at"), self._unread(c))
+                for c in convs]
+
+    def _unread(self, c):
+        """Updated since it was last read, on claude.ai or here. Chats
+        claude.ai keeps no read time for count as read."""
+        read = c.get("last_read_at")
+        if not read:
+            return False
+        # the end of the last reply; updated_at also moves on a rename
+        changed = c.get("last_settled_at") or c.get("updated_at")
+        mine = self._read_here().get(c.get("uuid"))
+        read = max(_utc(read), _utc(mine)) if mine else _utc(read)
+        return bool(changed) and _utc(changed) > read + 2
+
+    def _read_here(self):
+        """When each chat was last opened or answered on the Atari: claude.ai
+        isn't told, so the bridge remembers it (in memory)."""
+        if not hasattr(self, "_read_at"):
+            self._read_at = {}
+        return self._read_at
+
+    def mark_read(self, chat_id):
+        if chat_id:
+            self._read_here()[chat_id] = time.time()
+            if len(self._read_at) > 500:            # keep it bounded
+                for k in sorted(self._read_at, key=self._read_at.get)[:100]:
+                    del self._read_at[k]
 
     def list_projects(self):
         projs = self._get("/organizations/%s/projects" % self.org)
@@ -980,6 +1036,7 @@ class ClaudeAiBackend(Backend):
         self._harvest_artifacts(conv)
         if conv.get("workspace_upgraded"):
             out = self._moved_messages(chat_id, conv, out)
+        self.mark_read(chat_id)
         return conv.get("name") or "Untitled", out
 
     # -- chats claude.ai moved to its newer chat system -----------------
@@ -1635,7 +1692,7 @@ class DemoBackend(Backend):
                 ("U", "Why is my FOR loop so slow in GFA BASIC?"),
                 ("A", "Use integer variables (`i%`) instead of floats, and compile it "
                       "with the GFA compiler:\n\n```\nFOR i%=1 TO 1000\n  PLOT i%,100\nNEXT i%\n```")]},
-            "d3": {"title": "Ideas for a demoscene intro", "project": None, "messages": [
+            "d3": {"title": "Ideas for a demoscene intro", "project": None, "unread": True, "messages": [
                 ("U", "Give me three ideas for a 4KB intro."),
                 ("A", "1. A rotozoomer with a Claude spark\n2. Raster bars synced to YM music\n"
                       "3. A sync-scroller greeting every ST in the house")]},
@@ -1664,8 +1721,12 @@ class DemoBackend(Backend):
         }
 
     def list_chats(self, limit=100):
-        return [(k, v["title"], v.get("pinned", False), v.get("updated"))
+        return [(k, v["title"], v.get("pinned", False), v.get("updated"), v.get("unread", False))
                 for k, v in self.chats.items()][:limit]
+
+    def mark_read(self, chat_id):
+        if chat_id in self.chats:
+            self.chats[chat_id]["unread"] = False
 
     def list_projects(self):
         return [(k, p["name"], p.get("pinned", False))

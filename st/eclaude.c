@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.16"
+#define VERSION "1.17"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -73,6 +73,7 @@ typedef struct {
 	char id[40];
 	char label[72];
 	char pinned;
+	char unread;		/* updated since last read: a dot in the margin */
 	char heading;		/* a date heading ("Today"), not an item */
 } ITEM;
 
@@ -944,6 +945,12 @@ static void draw_sidebar(void)
 			}
 			text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
 				  wx + sb_w - 6 - (it->pinned ? cw + 4 : 0));
+			if (it->unread) {
+				/* a small dot in the left margin: updated since last read */
+				short ry = ch >= 16 ? 2 : 1;
+				ring(wx + (cw + 2) / 2, y + row_h / 2 - 1, 2, ry, 2, 100,
+				     sel ? 0 : ncolors >= 16 ? 4 : accent(), 0, 0);
+			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
 				short cx = wx + sb_w - cw - 2, cy = y + row_h / 2 - 1, k;
@@ -1561,7 +1568,16 @@ static void handle_line(char *s)
 		if (!drop_list && nitems < MAXITEMS && n > 2) {
 			strlcpy_(items[nitems].id, f[1], sizeof(items[0].id));
 			strlcpy_(items[nitems].label, f[2], sizeof(items[0].label));
-			items[nitems].pinned = n > 3 && f[3][0] == 'P';
+			items[nitems].pinned = items[nitems].unread = 0;
+			if (n > 3) {		/* flags: P pinned, U unread */
+				const char *q;
+				for (q = f[3]; *q; q++) {
+					if (*q == 'P')
+						items[nitems].pinned = 1;
+					else if (*q == 'U')
+						items[nitems].unread = 1;
+				}
+			}
 			items[nitems].heading = 0;
 			nitems++;
 		}
@@ -1570,7 +1586,7 @@ static void handle_line(char *s)
 		if (!drop_list && nitems < MAXITEMS && n > 1) {
 			items[nitems].id[0] = 0;
 			strlcpy_(items[nitems].label, f[1], sizeof(items[0].label));
-			items[nitems].pinned = 0;
+			items[nitems].pinned = items[nitems].unread = 0;
 			items[nitems].heading = 1;
 			nitems++;
 		}

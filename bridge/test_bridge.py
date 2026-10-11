@@ -100,6 +100,30 @@ class Protocol(unittest.TestCase):
         self.s.be.whoami = lambda: "claude.ai"
         self.assertEqual(self.s.online_text(), "Online")     # the dot says the rest
 
+    def test_unread_chats(self):
+        self.s.handle(b"HELLO\t1\t1.0")
+        items = {l[1]: l for l in self.link.lines() if l[0] == b"I"}
+        self.assertEqual(items[b"d3"][3:], [b"U"])          # unread: a dot on the Atari
+        self.assertEqual(len(items[b"d2"]), 3)               # read: no flags
+        self.s.handle(b"OPEN\tCHAT\td3")
+        self.link.sent = b""
+        self.s.handle(b"LIST\tCHATS")
+        items = {l[1]: l for l in self.link.lines() if l[0] == b"I"}
+        self.assertEqual(len(items[b"d3"]), 3)               # opened: read now
+
+    def test_unread_rule(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        c = {"uuid": "c1", "last_read_at": "2026-10-07T14:51:07Z",
+             "last_settled_at": "2026-10-07T14:51:07Z", "updated_at": "2026-10-07T14:51:07.393026Z"}
+        self.assertFalse(be._unread(c))                       # read up to its last reply
+        c["last_settled_at"] = "2026-10-07T15:30:00Z"
+        self.assertTrue(be._unread(c))                        # a reply came later
+        be.mark_read("c1")
+        self.assertFalse(be._unread(c))                       # opened on the Atari
+        self.assertFalse(be._unread({"uuid": "c2", "last_read_at": None,
+                                     "updated_at": "2026-10-07T15:30:00Z"}))   # no read time
+
     def test_short_span(self):
         from datetime import datetime, timezone
         from backends import short_span
@@ -189,7 +213,7 @@ class ItemActions(unittest.TestCase):
 
     def test_pin_moves_item_to_top_with_flag(self):
         self.s.handle(b"PIN\tCHAT\td3\t1")
-        self.assertEqual(self.items()[0], [b"I", b"d3", b"Ideas for a demoscene intro", b"P"])
+        self.assertEqual(self.items()[0], [b"I", b"d3", b"Ideas for a demoscene intro", b"PU"])
         self.link.sent = b""
         self.s.handle(b"PIN\tCHAT\td3\t0")
         self.assertNotIn(b"\tP", self.link.sent)
@@ -261,6 +285,8 @@ class ClaudeAiLists(unittest.TestCase):
         def get(path, **params):
             if path.endswith("/chat_conversations"):
                 return chats
+            if path.endswith("/chat_conversations_v2"):
+                return {"data": chats, "has_more": False}
             if path.endswith("/projects"):
                 return projects
             if "/projects/" in path:

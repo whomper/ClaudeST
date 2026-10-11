@@ -226,8 +226,8 @@ class Session:
         self.out("Z")
 
     def send_list(self, kind, title, items, back=False):
-        """items: (id, label), (id, label, pinned) or (id, label, pinned,
-        when); pinned ones go first. Items with a time are grouped under
+        """items: (id, label), (id, label, pinned), (id, label, pinned,
+        when) or (id, label, pinned, when, unread); pinned ones go first. Items with a time are grouped under
         date headings (X lines) as on claude.ai: Pinned, Today, Yesterday,
         a date for the rest of the week, then Older."""
         self.list_kind = kind
@@ -251,8 +251,10 @@ class Session:
                 break
             rows += 1
             iid = self.short_id(it[0])
-            if len(it) > 2 and it[2]:
-                self.out("I", iid, it[1] or "Untitled", "P")
+            # flags: P pinned, U unread (updated since last read)
+            flags = ("P" if len(it) > 2 and it[2] else "") + ("U" if len(it) > 4 and it[4] else "")
+            if flags:
+                self.out("I", iid, it[1] or "Untitled", flags)
             else:
                 self.out("I", iid, it[1] or "Untitled")
         self.out("E")
@@ -408,6 +410,7 @@ class Session:
             return
         self.notice("Loading chat...")
         title, msgs = self.be.get_chat(oid)
+        self.be.mark_read(oid)
         self.chat_id, self.chat_kind = oid, "CHAT"
         self.readonly = bool(getattr(self.be, "chat_readonly", False))
         # each chat keeps its own model; chats without one get the choice
@@ -479,6 +482,7 @@ class Session:
             self.out("Z")
             self.out("Y", "0")
         self.chat_id = chat_id
+        self.be.mark_read(chat_id)          # its reply was read as it came in
         if new:
             self.be.remember_effort(chat_id, self.be.effort)
         if title:
