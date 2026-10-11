@@ -194,6 +194,7 @@ class Session:
         self.chat_kind = "CHAT"     # or "CODE": chat_id is a Claude Code session
         self.readonly = False       # the open chat was moved to claude.ai's new system
         self._usage_at = -1e9          # when the session usage was last sent
+        self._usage_last = False       # what it was, to log changes only
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
@@ -312,8 +313,12 @@ class Session:
         try:
             got = self.be.session_usage()
         except Exception as e:
-            log.info("session usage: %s", e)
+            log.info("session usage: could not read it: %s", e)
             return
+        if got != self._usage_last:
+            log.info("session usage: %s", "none" if got is None else "%.0f%%, resets %s" % (
+                got[0], got[1] or "-"))
+            self._usage_last = got
         if got is None:
             self.out("u")
         else:

@@ -111,6 +111,16 @@ class Protocol(unittest.TestCase):
         items = {l[1]: l for l in self.link.lines() if l[0] == b"I"}
         self.assertEqual(len(items[b"d3"]), 3)               # opened: read now
 
+    def test_claude_session_usage(self):
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org = "o1"
+        be._get = lambda path, **kw: {"five_hour": {"utilization": 25.0, "resets_at": "2026-10-11T15:00:00Z"}}
+        self.assertEqual(be.session_usage(), (25.0, "2026-10-11T15:00:00Z"))
+        for empty in ({}, {"five_hour": None}, {"five_hour": {"utilization": None}}):
+            be._get = lambda path, e=empty, **kw: e
+            self.assertEqual(be.session_usage(), (0.0, None))    # nothing used yet: 0%
+
     def test_unread_rule(self):
         from backends import ClaudeAiBackend
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)

@@ -828,9 +828,11 @@ class ClaudeAiBackend(Backend):
                 log.info("could not set the chat's model: %s", e)
 
     def session_usage(self):
+        # claude.ai always has a session (5-hour) limit; with nothing used
+        # yet it may leave the entry out or empty: that is 0%, not "none"
         u = (self._get("/organizations/%s/usage" % self.org) or {}).get("five_hour")
         if not isinstance(u, dict) or u.get("utilization") is None:
-            return None
+            return 0.0, None
         return float(u["utilization"]), u.get("resets_at")
 
     def account_report(self):
