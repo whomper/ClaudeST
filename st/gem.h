@@ -140,5 +140,15 @@ typedef struct {
 void vro_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst);
 void vrt_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst, const short *colors);
 void vq_extnd(short h, short owflag, short *work_out);
+short vq_gdos(void);
+short vst_load_fonts(short h, short select);
+short vqt_name(short h, short index, char *name);
+short vqt_font_format(short h, short index);
+short vst_font(short h, short id);
+short vst_point(short h, short point, short *cw_, short *ch_);
+short vqt_width(short h, short c);
+long vqt_char_index(short h, unsigned short c, short from, short to);
+short vst_map_mode(short h, short mode);
+void v_gtext_w(short h, short x, short y, const unsigned short *s, short n);
 
 #endif

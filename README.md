@@ -19,6 +19,8 @@ streaming in as Claude writes them.
 - A ring that fills as you use up the current session, and an Account
   page with your plan and usage
 - Hebrew: right-to-left text and a Hebrew keyboard layout
+- A font selector (Options ▸ Font), as in EMail and ECal: the system
+  font in two sizes, or any fixed-width GDOS font with NVDI
 - Monochrome and colour, any resolution from 640×200
 
 The [user guide](docs/GUIDE.md) describes every feature.
@@ -66,8 +68,8 @@ readable only by root and the bridge.
 ### 2. Install the bridge on the Pi
 
 ```sh
-git clone https://github.com/whomper/atari_claude.git
-cd atari_claude/pi
+git clone https://github.com/whomper/ECLAUDE.git
+cd ECLAUDE/pi
 sudo ./install.sh --network --atari 192.168.1.20
 ```
 
@@ -119,7 +121,7 @@ without any account, to test the setup.
 
 ## Looking after the Pi
 
-Run these in the `atari_claude/pi` folder:
+Run these in the `ECLAUDE/pi` folder (`atari_claude/pi` if you installed before the rename):
 
 | Task | Command |
 |------|---------|

@@ -47,7 +47,7 @@ echo "Using Hatari: $HATARI_BIN"
 mkdir -p "$WORK/drive"
 cp "$ROOT/st/ECLAUDE.PRG" "$WORK/drive/"
 # serial mode: the drive must not carry the network ECLAUDE.INF
-printf 'serial\r\n' > "$WORK/drive/ECLAUDE.INF"
+printf "serial\r\n${EXTRA_INF:-}" > "$WORK/drive/ECLAUDE.INF"
 
 if [ -z "${TOS:-}" ]; then
   TOS="$WORK/etos512us.img"

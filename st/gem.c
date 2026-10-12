@@ -436,3 +436,111 @@ void v_gtext_n(short h, short x, short y, const char *s, short n)
 	ptsin[1] = y;
 	vdi(8, 1, n, h);
 }
+
+/* ---------------- fonts (as in EMail and ECal) ---------------- */
+
+/* whether a GDOS (NVDI, SpeedoGDOS, FontGDOS...) is installed */
+short vq_gdos(void)
+{
+	register long r __asm__("d0");
+	__asm__ volatile("moveq #-2,%%d0\n\ttrap #2"
+		: "=r"(r) : : "d1", "d2", "a0", "a1", "a2", "memory", "cc");
+	return (short)r != -2;
+}
+
+/* load the GDOS fonts into the workstation; how many there are */
+short vst_load_fonts(short h, short select)
+{
+	vintin[0] = select;
+	vdi(119, 0, 1, h);
+	return vintout[0];
+}
+
+/* the id and name of font number index (1 = the system font) */
+short vqt_name(short h, short index, char *name)
+{
+	short i;
+	vintin[0] = index;
+	vdi(130, 0, 1, h);
+	for (i = 0; i < 32; i++)
+		name[i] = (char)vintout[1 + i];
+	name[32] = 0;
+	return vintout[0];
+}
+
+/* NVDI and SpeedoGDOS also say what kind of font it is (intout[34]):
+ * 1 bitmap, 2 Speedo, 4 TrueType, 8 Type 1; 0 when the VDI doesn't */
+short vqt_font_format(short h, short index)
+{
+	vintin[0] = index;
+	vintin[1] = 0;
+	contrl[4] = 0;
+	vdi(130, 0, 2, h);
+	if (contrl[4] < 35)
+		return 0;
+	return vintout[34] & 0xff;
+}
+
+short vst_font(short h, short id)
+{
+	vintin[0] = id;
+	vdi(21, 0, 1, h);
+	return vintout[0];
+}
+
+short vst_point(short h, short point, short *cw_, short *ch_)
+{
+	vintin[0] = point;
+	vdi(107, 0, 1, h);
+	*cw_ = ptsout[2];
+	*ch_ = ptsout[3];
+	return vintout[0];
+}
+
+/* a character's advance width */
+short vqt_width(short h, short c)
+{
+	vintin[0] = c;
+	vdi(117, 0, 1, h);
+	return ptsout[0];
+}
+
+/* NVDI 5: a character's index in another mapping (0 the font's own
+ * index, 1 the Atari character set, 2 Unicode); -1 when the font hasn't
+ * got it or the VDI can't say */
+long vqt_char_index(short h, unsigned short c, short from, short to)
+{
+	vintin[0] = (short)c;
+	vintin[1] = from;
+	vintin[2] = to;
+	contrl[4] = 0;
+	vdi(190, 0, 3, h);
+	if (contrl[4] < 1 || (unsigned short)vintout[0] == 0xffff)
+		return -1;
+	return (unsigned short)vintout[0];
+}
+
+/* NVDI 4 and later: how text codes are read (0 the font's own index,
+ * 1 the Atari character set); the mode now in force, -1 without */
+short vst_map_mode(short h, short mode)
+{
+	vintin[0] = mode;
+	contrl[4] = 0;
+	vdi(236, 0, 1, h);
+	return contrl[4] < 1 ? -1 : vintout[0];
+}
+
+/* text given as 16-bit codes (font indices in map mode 0) */
+void v_gtext_w(short h, short x, short y, const unsigned short *s, short n)
+{
+	short i;
+	if (n > 127)
+		n = 127;
+	if (n <= 0)
+		return;
+	for (i = 0; i < n; i++)
+		vintin[i] = (short)s[i];
+	ptsin[0] = x;
+	ptsin[1] = y;
+	vdi(8, 1, n, h);
+}

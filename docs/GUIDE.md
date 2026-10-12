@@ -208,6 +208,43 @@ The Atari font has only the plain letters, so the bridge drops vowel
 points (niqqud) and turns maqaf, geresh and gershayim into `-`, `'` and
 `"`.
 
+## Font
+
+**Options ▸ Font…** opens a font selector like EMail's and ECal's, and
+like other GEM programs': the font families on the left, the sizes of
+the chosen one beside them, what kind of font it is (bitmap, Speedo,
+TrueType, Type 1) and a sample below. The chosen font is used for
+everything in EClaude's window: the sidebar, the title bar, the
+conversation and the reply line. Menus and the font selector itself
+keep the system font.
+
+- **The system font** comes in two sizes, 8×8 and 8×16. 8×8 fits twice
+  as many lines on an ST high or a Falcon VGA screen.
+- **GDOS fonts:** with a GDOS such as NVDI or SpeedoGDOS, its fonts are
+  listed too. EClaude lays text out in character cells, so it needs a
+  fixed-width font: proportional ones are listed in grey and can't be
+  picked. The first time, EClaude measures each font to find them
+  ("Looking for fixed-width fonts" on the status line; it can take a
+  while with many vector fonts) and keeps the answers in `ECLAUDE.FNT`,
+  so the selector opens quickly afterwards and only new fonts are
+  measured. Delete `ECLAUDE.FNT` to measure them all again.
+- **Hebrew letters:** fonts keep them in different places: the standard
+  Atari font (TOS, EmuTOS) at the Atari character set's, Israeli system
+  fonts and many GDOS fonts where ISO-8859-8 or DOS 862 put them. If
+  Hebrew shows as other symbols, open Options ▸ Font: the three buttons
+  under "Hebrew in bitmap fonts" each show the word shalom as that kind
+  of font would; pick the one that reads correctly, and the sample below
+  shows the result. A vector font (Speedo, TrueType, Type 1) is asked
+  through NVDI 5 for its Hebrew letters by Unicode, as FreeMono and
+  Liberation Mono have them; the Type line then says "Hebrew from the
+  font". A vector font without Hebrew, or without NVDI 5 to ask, says
+  "Hebrew in the system font": those letters are then drawn in the
+  system font, in the same cells.
+
+Keys in the selector: `↑` `↓` change the family, `←` `→` the size,
+`Return` is OK and `Esc` cancels. A double click on a family or size
+also picks it.
+
 ## All keys
 
 | Key | Does |
@@ -245,6 +282,7 @@ soon as you change them. You can also edit it in any text editor.
 | `keyboard hebrew` | `F10` / Options ▸ Hebrew keys |
 | `port 7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). Without it, EClaude uses the port TOS has chosen. |
 | `model claude-sonnet-5-5 max` | the model chip / `F9` |
+| `font 1 8 0` | Options ▸ Font: the font's id (1 = the system font), its size in points (8 or 16 for the system font's two sizes) and where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 
 Lines starting with `;` are comments. The window always opens full
 screen with a new chat.
@@ -260,6 +298,7 @@ screen with a new chat.
 | Pi: the bridge's memory | The artifacts found in your recent chats, to load the list quickly; gone when the bridge restarts |
 | Pi: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
 | Atari: `ECLAUDE.INF` | EClaude's settings |
+| Atari: `ECLAUDE.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
 
 The open conversation lives only in the Atari's memory while EClaude
 runs.

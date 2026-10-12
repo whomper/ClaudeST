@@ -56,7 +56,7 @@ drops.
 - The Raspberry Pi bridge, installed as a service with one command
 - Wireless: STinG networking instead of a serial cable
 - The code moved to its own GitHub repository,
-  [whomper/atari_claude](https://github.com/whomper/atari_claude)
+  [whomper/ECLAUDE](https://github.com/whomper/ECLAUDE)
 - Right-click menus like the website's (Pin, Rename, Move to project,
   Archive, Delete) and a sidebar you can drag wider
 - **Hebrew, right to left**, on a computer from 1985
@@ -192,7 +192,7 @@ first message to a new chat.
 - **Replies stream in** as Claude writes them
 
 The code, setup guide and demo videos are on GitHub:
-[github.com/whomper/atari_claude](https://github.com/whomper/atari_claude).
+[github.com/whomper/ECLAUDE](https://github.com/whomper/ECLAUDE).
 
 ## Pictures and clips for posts
 
