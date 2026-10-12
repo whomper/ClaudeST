@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.17"
+#define VERSION "1.18"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -139,6 +139,7 @@ static char save_path[160];
 #define D_TEXT    4
 #define D_INPUT   8
 #define D_STATUS  16
+#define D_LIST    32		/* the list only, not the menu above it */
 #define D_ALL     15
 static short dirty;
 static short text_dirty_row = 0x7fff;	/* first text row needing redraw */
@@ -753,41 +754,81 @@ static short cw_angle(long x, long y)
 	return y < 0 ? 180 + a : 360 - a;
 }
 
+/* bitmaps for ring(): the filled part and the track, one bit per pixel */
+#define MK_W 4				/* words per row: up to 64 pixels */
+#define MK_H 64
+static unsigned short mk_fill[MK_W * MK_H], mk_track[MK_W * MK_H];
+
+/* copy a one-bit bitmap to the screen in `color`: mode 1 (replace) also
+ * paints its 0 bits white, mode 2 (transparent) leaves them alone */
+static void blit_mask(unsigned short *m, short w, short h, short x, short y,
+		      short mode, short color)
+{
+	MFDB src, dst;
+	short pxy[8], colors[2];
+	memset(&src, 0, sizeof(src));
+	memset(&dst, 0, sizeof(dst));
+	src.fd_addr = m;
+	src.fd_w = MK_W * 16;
+	src.fd_h = h;
+	src.fd_wdwidth = MK_W;
+	src.fd_nplanes = 1;
+	pxy[0] = 0;
+	pxy[1] = 0;
+	pxy[2] = w - 1;
+	pxy[3] = h - 1;
+	pxy[4] = x;
+	pxy[5] = y;
+	pxy[6] = x + w - 1;
+	pxy[7] = y + h - 1;
+	colors[0] = color;
+	colors[1] = 0;
+	vrt_cpyfm(vh, mode, pxy, &src, &dst, colors);
+}
+
 /* a ring (or with thick >= rx, a disc) centred on cx,cy, rx pixels wide
  * and ry tall (pixels aren't square in medium resolution). The first pct
  * percent, clockwise from the top, is filled with colour fc; the rest is
- * the track: solid colour tc, or with `outline` only its two edges, for
- * screens with too few colours for a grey. Drawn as one-pixel strips. */
+ * the track: solid colour tc, or with `outline` a dotted pattern that
+ * looks grey, for screens with too few colours for a real grey. It is worked out off screen
+ * and copied over in one go; `opaque` also repaints the background of its
+ * box white, so it replaces an older ring without first being erased. */
 static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
-		 short fc, short tc, short outline)
+		 short fc, short tc, short outline, short opaque)
 {
 	long ri = rx - thick;
 	long ro2 = (long)rx * rx + rx, ri2 = ri > 0 ? ri * ri - ri : -1;
-	long edge_o = (long)(rx - 1) * (rx - 1), edge_i = (ri + 1) * (ri + 1);
-	short dy, x;
-	if (rx < 1 || ry < 1)
+	short dy, x, w = 2 * rx + 1, h = 2 * ry + 1, track = 0;
+	if (rx < 1 || ry < 1 || w > MK_W * 16 || h > MK_H)
 		return;
+	memset(mk_fill, 0, sizeof(mk_fill));
+	memset(mk_track, 0, sizeof(mk_track));
 	for (dy = -ry; dy <= ry; dy++) {
 		long y = (long)dy * rx / ry;	/* in the units of x */
-		short state = 0, xs = 0;
-		for (x = -rx; x <= rx + 1; x++) {
-			short st = 0;
-			if (x <= rx) {
-				long d2 = (long)x * x + y * y;
-				if (d2 <= ro2 && d2 > ri2) {
-					if (pct > 0 && cw_angle(x, -y) * 10L < pct * 36L)
-						st = 1;
-					else if (!outline || d2 >= edge_o || d2 <= edge_i)
-						st = 2;
-				}
-			}
-			if (st != state) {
-				if (state)
-					fill(cx + xs, cy + dy, cx + x - 1, cy + dy, state == 1 ? fc : tc);
-				state = st;
-				xs = x;
+		unsigned short *rf = mk_fill + (dy + ry) * MK_W;
+		unsigned short *rt = mk_track + (dy + ry) * MK_W;
+		for (x = -rx; x <= rx; x++) {
+			long d2 = (long)x * x + y * y;
+			short bx = x + rx;
+			if (d2 > ro2 || d2 <= ri2)
+				continue;
+			if (pct > 0 && cw_angle(x, -y) * 10L < pct * 36L)
+				rf[bx >> 4] |= 0x8000 >> (bx & 15);
+			else if (!outline || ((x + dy) & 1)) {	/* outline: a dotted grey */
+				rt[bx >> 4] |= 0x8000 >> (bx & 15);
+				track = 1;
 			}
 		}
+	}
+	if (opaque && track) {
+		blit_mask(mk_track, w, h, cx - rx, cy - ry, 1, tc);
+		blit_mask(mk_fill, w, h, cx - rx, cy - ry, 2, fc);
+	} else if (opaque) {
+		blit_mask(mk_fill, w, h, cx - rx, cy - ry, 1, fc);
+	} else {
+		if (track)
+			blit_mask(mk_track, w, h, cx - rx, cy - ry, 2, tc);
+		blit_mask(mk_fill, w, h, cx - rx, cy - ry, 2, fc);
 	}
 }
 
@@ -874,6 +915,77 @@ static short nav_active(short i)
 	return 0;
 }
 
+/* The status area at the bottom of the sidebar: the session usage ring,
+ * then a dot for the connection (green or red; filled or hollow in
+ * monochrome) with its text, and the usage below it. With `full` the
+ * area has just been cleared; otherwise it is updated in place, without
+ * erasing it first: the ring and dot are copied over their old pictures
+ * and the text is written in replace mode, padded to its full width. */
+static void draw_status(short full)
+{
+	static short last_tx = -1, last_sb = -1;
+	short x = wx + cw, tx = x, n, room;
+	short dry = ch / 3, drx = dry * 16 / ch;
+	short colour = ncolors >= 16;
+	char t[80];
+
+	if (usage_pct >= 0)
+		tx = x + 2 * ((row_h - 3) * 16 / ch) + cw;
+	if (!full && (tx != last_tx || sb_w != last_sb))	/* the layout moved */
+		fill(wx, status_y - 1, wx + sb_w - 1, wy + wh - 1, 0);
+	last_tx = tx;
+	last_sb = sb_w;
+	if (usage_pct >= 0) {
+		short ry = row_h - 3, rx = ry * 16 / ch;
+		short fc = usage_pct >= 90 ? accent() : colour ? 4 : 1;
+		ring(x + rx, status_y + row_h - 1, rx, ry, rx / 6 + 1, usage_pct,
+		     fc, colour ? 8 : 1, !colour, 1);
+	}
+	room = (wx + sb_w - 4 - tx) / cw;
+	if (room > (short)sizeof(t) - 1)
+		room = sizeof(t) - 1;
+	if (ncolors >= 4)
+		ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
+		     online ? 3 : 2, 0, 0, 1);
+	else
+		ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
+		     1, 0, 0, 1);
+
+	vswr_mode(vh, 1);		/* replace: each character paints its cell */
+	n = room - 2;
+	if (n > 0) {
+		short k = strlen(status);
+		if (k > n)
+			k = n;
+		memcpy(t, status, k);
+		memset(t + k, ' ', n - k);
+		text(tx + 2 * drx + cw / 2, status_y + (row_h - ch) / 2, t, n, 0, 1);
+	}
+	if (usage_pct >= 0 && room > 0) {
+		char *p = t;
+		short k;
+		strcpy(p, "Session ");
+		p += 8;
+		if (usage_pct >= 100)
+			*p++ = '1';
+		if (usage_pct >= 10)
+			*p++ = '0' + usage_pct / 10 % 10;
+		*p++ = '0' + usage_pct % 10;
+		*p++ = '%';
+		*p = 0;
+		if (usage_rst[0] && strlen(t) + 3 + strlen(usage_rst) <= room) {
+			strcat(t, ", ");
+			strcat(t, usage_rst);
+		}
+		k = strlen(t);
+		if (k > room)
+			k = room;
+		memset(t + k, ' ', room - k);
+		text(tx, status_y + row_h + (row_h - ch) / 2, t, room, 0, 1);
+	}
+	vswr_mode(vh, 2);
+}
+
 static void draw_sidebar(void)
 {
 	short i, y, maxc = sb_w / cw - 2;
@@ -949,7 +1061,7 @@ static void draw_sidebar(void)
 				/* a small dot in the left margin: updated since last read */
 				short ry = ch >= 16 ? 2 : 1;
 				ring(wx + (cw + 2) / 2, y + row_h / 2 - 1, 2, ry, 2, 100,
-				     sel ? 0 : ncolors >= 16 ? 4 : accent(), 0, 0);
+				     sel ? 0 : ncolors >= 16 ? 4 : accent(), 0, 0, 0);
 			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
@@ -978,55 +1090,8 @@ static void draw_sidebar(void)
 		text(x, y + (row_h - ch) / 2 - 1, e, n, 2, 1);
 	}
 
-	/* the status area: the session usage ring, then a dot for the
-	 * connection (green or red; filled or hollow in monochrome) with its
-	 * text, and the usage below it */
 	line(wx, status_y - 2, wx + sb_w - 1, status_y - 2, 1);
-	{
-		short tx = x, n, room;
-		short dry = ch / 3, drx = dry * 16 / ch;
-		short colour = ncolors >= 16;
-		if (usage_pct >= 0) {
-			short ry = row_h - 3, rx = ry * 16 / ch;
-			short fc = usage_pct >= 90 ? accent() : colour ? 4 : 1;
-			ring(x + rx, status_y + row_h - 1, rx, ry, rx * 2 / 5 + 1, usage_pct,
-			     fc, colour ? 8 : 1, !colour);
-			tx = x + 2 * rx + cw;
-		}
-		room = (wx + sb_w - 4 - tx) / cw;
-		if (ncolors >= 4)
-			ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
-			     online ? 3 : 2, 0, 0);
-		else
-			ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
-			     1, 0, 0);
-		n = strlen(status);
-		if (n > room - 2)
-			n = room - 2;
-		if (n > 0)
-			text_bidi(tx + 2 * drx + cw / 2, status_y + (row_h - ch) / 2, status, n, 0, 1, 0);
-		if (usage_pct >= 0) {
-			char u[40], *p = u;
-			strcpy(p, "Session ");
-			p += 8;
-			if (usage_pct >= 100)
-				*p++ = '1';
-			if (usage_pct >= 10)
-				*p++ = '0' + usage_pct / 10 % 10;
-			*p++ = '0' + usage_pct % 10;
-			*p++ = '%';
-			*p = 0;
-			if (usage_rst[0] && strlen(u) + 3 + strlen(usage_rst) <= room) {
-				strcat(u, ", ");
-				strcat(u, usage_rst);
-			}
-			n = strlen(u);
-			if (n > room)
-				n = room;
-			if (n > 0)
-				text(tx, status_y + row_h + (row_h - ch) / 2, u, n, 0, 1);
-		}
-	}
+	draw_status(1);
 }
 
 static const char *model_label(void)
@@ -1413,8 +1478,10 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 			clip[2] = r[0] + r[2] - 1;
 			clip[3] = r[1] + r[3] - 1;
 			vs_clip(vh, 1, clip);
-			if (mask & D_SIDEBAR)
+			if (mask & (D_SIDEBAR | D_LIST))
 				draw_sidebar();
+			else if (mask & D_STATUS)
+				draw_status(0);
 			if (mask & D_TITLE)
 				draw_title();
 			if (mask & D_TEXT)
@@ -1467,10 +1534,14 @@ static void flush_dirty(void)
 		text_dirty_row = 0;
 		redraw(D_ALL, wx, wy, ww, wh);
 	} else {
+		/* the menu and list only: the header never changes, and the
+		 * status area has its own update below */
 		if (dirty & D_SIDEBAR)
-			redraw(D_SIDEBAR, wx, wy, sb_w + 1, wh);
-		else if (dirty & D_STATUS)
-			redraw(D_SIDEBAR, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
+			redraw(D_SIDEBAR, wx, wy + title_h + 1, sb_w, status_y - 2 - (wy + title_h + 1));
+		else if (dirty & D_LIST)
+			redraw(D_LIST, wx, list_y, sb_w, status_y - 2 - list_y);
+		if (dirty & D_STATUS)
+			redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
 		if (dirty & D_TITLE)
 			redraw(D_TITLE, px, wy, pw, title_h + 1);
 		if (dirty & D_TEXT) {
@@ -1616,7 +1687,7 @@ static void handle_line(char *s)
 		show_picker();
 		break;
 	case 'E':			/* end of list */
-		dirty |= D_SIDEBAR;
+		dirty |= D_LIST;
 		break;
 	case 'C':			/* C <id> : current chat (for highlight) */
 		/* just started, the pane is empty: don't highlight the chat
@@ -1625,7 +1696,7 @@ static void handle_line(char *s)
 			break;
 		if (strcmp(cur_id, n > 1 ? f[1] : "")) {
 			strlcpy_(cur_id, n > 1 ? f[1] : "", sizeof(cur_id));
-			dirty |= D_SIDEBAR;
+			dirty |= D_LIST;
 		}
 		break;
 	case 'T':			/* T <title> */
@@ -2155,7 +2226,7 @@ static void open_item(short i)
 		clear_text();
 		begin_message('I');
 		append("Loading...", 10);
-		dirty |= D_SIDEBAR | D_TITLE;
+		dirty |= D_LIST | D_TITLE;
 	}
 }
 
@@ -2179,7 +2250,7 @@ static void scroll_list(short delta)
 	if (list_top < 0)
 		list_top = 0;
 	if (list_top != old)
-		dirty |= D_SIDEBAR;
+		dirty |= D_LIST;
 }
 
 static void about(void);
@@ -3381,7 +3452,7 @@ static void move_cursor(short d)
 		list_top = lcur;
 	if (lcur >= list_top + list_rows)
 		list_top = lcur - list_rows + 1;
-	dirty |= D_SIDEBAR;
+	dirty |= D_LIST;
 }
 
 static void handle_key(short kstate, short kr)
@@ -3426,7 +3497,7 @@ static void handle_key(short kstate, short kr)
 		if (inlen == 0 && !search_mode && lcur >= 0 && lcur < nitems) {
 			short i = lcur;
 			lcur = -1;
-			dirty |= D_SIDEBAR;
+			dirty |= D_LIST;
 			open_item(i);
 		} else {
 			submit();
@@ -3435,7 +3506,7 @@ static void handle_key(short kstate, short kr)
 	case 0x1b:				/* Esc */
 		if (lcur >= 0) {
 			lcur = -1;
-			dirty |= D_SIDEBAR;
+			dirty |= D_LIST;
 		}
 		inlen = in_cur = in_start = 0;
 		search_mode = 0;

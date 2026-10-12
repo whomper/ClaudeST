@@ -36,7 +36,7 @@ pointer turns into a hand over it.
   *Connecting…*, *Online* or *Offline: …* beside it. With claude.ai, a
   ring next to it fills clockwise as you use up the current session
   (claude.ai's 5-hour limit): blue, turning red from 90%, on a grey track
-  in 16 colours; black on an outline with fewer colours. Below, *Session
+  in 16 colours; black on a dotted grey track with fewer colours. Below, *Session
   30%* and, when the sidebar is wide enough, the time until it resets.
   The bridge checks after each reply, and at most every two minutes
   otherwise. Click the area for the full Account page.
