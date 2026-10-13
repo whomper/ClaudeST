@@ -84,7 +84,8 @@ If the `ufw` firewall is on, the installer opens port 2323 for them.
 
 1. Load **STinG** and check that the network works, for example by
    pinging the Pi.
-2. Copy `binary/CLAUDEST.PRG` and `binary/CLAUDEST.INF` into one folder.
+2. Copy `binary/CLAUDEST.PRG`, `binary/CLAUDEST.INF` and `binary/CLAUDEST.HYP`
+   (the ST-Guide help) into one folder.
 3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text
    editor:
    ```
@@ -148,7 +149,7 @@ reached or the session key has expired, the error appears on the Atari.
 | `F8`, or click the status line | Account: plan, usage and details |
 | `F9`, or click the model chip | Model and effort |
 | `F10` | Hebrew keyboard on or off |
-| `Help` | About |
+| `Help` | Help in ST-Guide, or About |
 | `Ctrl+Q` | Quit |
 
 ## Good to know

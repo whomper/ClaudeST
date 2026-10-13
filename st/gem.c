@@ -544,3 +544,21 @@ void v_gtext_w(short h, short x, short y, const unsigned short *s, short n)
 	ptsin[1] = y;
 	vdi(8, 1, n, h);
 }
+
+/* ---------------- talking to other programs ---------------- */
+
+/* the AES id of a running program or accessory ("ST-GUIDE"), -1 if none */
+short appl_find(const char *name)
+{
+	addrin[0] = (void *)name;
+	return aes(13, 0, 1, 1, 0);
+}
+
+/* send a message (msg: len bytes) to the program with AES id `id` */
+short appl_write(short id, short len, const void *msg)
+{
+	aintin[0] = id;
+	aintin[1] = len;
+	addrin[0] = (void *)msg;
+	return aes(12, 2, 1, 1, 0);
+}

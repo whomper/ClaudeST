@@ -15,7 +15,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.20"
+#define VERSION "1.21"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -3562,6 +3562,32 @@ static void center_text(short y, const char *s, short fx)
 	text(dlg_x + (dlg_w - n * cw) / 2, y, s, n, fx, 1);
 }
 
+/* The help: ST-Guide (as an accessory or a program) shows CLAUDEST.HYP
+ * from ClaudeST's own folder, sent the usual way, with VA_START. Without
+ * ST-Guide, the About box. */
+static char home_dir[128];		/* where CLAUDEST.PRG was started */
+
+static void help(void)
+{
+	static char path[160];		/* ST-Guide reads it after we return */
+	short msg[8], id = appl_find("ST-GUIDE");
+	long p;
+	if (id < 0) {
+		about();
+		return;
+	}
+	strlcpy_(path, home_dir, sizeof(path));
+	strcat(path, "CLAUDEST.HYP");
+	p = (long)path;
+	msg[0] = 0x4711;		/* VA_START */
+	msg[1] = apid;
+	msg[2] = 0;
+	msg[3] = (short)(p >> 16);
+	msg[4] = (short)p;
+	msg[5] = msg[6] = msg[7] = 0;
+	appl_write(id, 16, msg);
+}
+
 static void about(void)
 {
 	static char conn[64];
@@ -4330,7 +4356,7 @@ static void handle_key(short kstate, short kr)
 	case 0x48: scroll_text(shift ? -(rows - 1) : -1); return;	/* up */
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
-	case 0x62: about(); return;					/* Help */
+	case 0x62: help(); return;					/* Help */
 	case 0x61: inlen = in_cur = in_start = 0; search_mode = 0; dirty |= D_INPUT | D_SIDEBAR; return; /* Undo */
 	case 0x52:						/* Insert: item menu */
 		{
@@ -4525,6 +4551,16 @@ int main(void)
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
 	sys_cw = cw;
 	sys_ch = ch;
+	{
+		/* our folder, for the help file: the current one at start */
+		short drv = (short)Dgetdrv();
+		home_dir[0] = 'A' + drv;
+		home_dir[1] = ':';
+		home_dir[2] = 0;
+		Dgetpath(home_dir + 2, 0);
+		if (home_dir[strlen(home_dir) - 1] != '\\')
+			strcat(home_dir, "\\");
+	}
 	vh = v_opnvwk_(phys, work_out);
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;

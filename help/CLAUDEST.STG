@@ -1,0 +1,424 @@
+## CLAUDEST.STG - the ST-Guide help for ClaudeST.
+## Compile with HCP (ST-Guide's compiler, or hcp from th-otto/hypview):
+##     make -C help        ->  binary/CLAUDEST.HYP and binary/CLAUDEST.REF
+## Plain ASCII only: the Atari character set is the same there.
+
+@database "ClaudeST"
+@charset "atarist"
+@subject "Communication"
+@author "Erez Yaary"
+@$VER: CLAUDEST.HYP 1.21 (13.10.2026)
+@options "+z -s"
+@width 75
+@help "Help on help"
+
+## ------------------------------------------------------------------------
+@node "Main" "ClaudeST"
+@symbol "ClaudeST"
+
+                     @{B}ClaudeST@{b} - claude.ai on the Atari
+
+  A GEM client for claude.ai on the Atari ST, STE, Mega ST/STE, TT and
+  Falcon. It works like the claude.ai website: your chats, Search, Code,
+  Projects and Artifacts on the left, the open conversation on the
+  right, and replies streaming in as Claude writes them.
+
+  @{U}Contents@{u}
+
+    @{"Getting started" link "Getting started"}
+    @{"The window" link "The window"}
+    @{"The status area" link "The status area"}
+    @{"Chats, projects and search" link "Chats, projects and search"}
+    @{"Right-click menus" link "Right-click menus"}
+    @{"Model and effort" link "Model and effort"}
+    @{"Code: Claude Code sessions" link "Code sessions"}
+    @{"Artifacts" link "Artifacts"}
+    @{"Account, plan and usage" link "Account, plan and usage"}
+    @{"Hebrew" link "Hebrew"}
+    @{"Font" link "Font"}
+    @{"Keys" link "Keys"}
+    @{"Settings (CLAUDEST.INF)" link "Settings"}
+    @{"What is stored where" link "What is stored where"}
+    @{"Troubleshooting" link "Troubleshooting"}
+    @{"About ClaudeST" link "About ClaudeST"}
+
+  ClaudeST is an unofficial client, not affiliated with Anthropic or
+  Atari. Claude is a trademark of Anthropic PBC.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Getting started"
+@{U}Getting started@{u}
+
+  An 8 MHz 68000 can't do the encryption claude.ai needs, so a small
+  program, the @{B}bridge@{b}, runs on a Raspberry Pi (or any Linux
+  computer) on your network and talks to claude.ai for the Atari:
+
+    Atari (CLAUDEST.PRG) <-- STinG or serial --> Pi (bridge) <--> claude.ai
+
+  @{U}What you need@{u}
+
+    - An ST, STE, Mega ST/STE, TT or Falcon with TOS 1.0 to 4.x, EmuTOS
+      or MiNT, a screen of 640 x 200 or more, about 250 KB free RAM
+    - STinG with a working network, or a null-modem serial cable
+    - A Raspberry Pi, or any Linux computer, on the same network
+    - A claude.ai account (or an Anthropic API key)
+
+  @{U}On the Pi@{u}
+
+      git clone https://github.com/whomper/ClaudeST.git
+      cd ClaudeST/pi
+      sudo ./install.sh --network --atari 192.168.1.20
+
+  The installer asks for your claude.ai @{B}sessionKey@{b} (a cookie from
+  the website, starting with sk-ant-sid) and runs the bridge as a
+  service that starts at every boot.
+
+  @{U}On the Atari@{u}
+
+    1. Load STinG and check that the network works.
+    2. Copy CLAUDEST.PRG, CLAUDEST.INF and CLAUDEST.HYP into one
+       folder.
+    3. Put the Pi's address on the tcp line of CLAUDEST.INF:
+           tcp 192.168.1.10 2323
+       or type @{B}/connect 192.168.1.10@{b} in the reply line instead.
+    4. Run CLAUDEST.PRG. The status line shows Connecting..., then
+       Online, with a green dot.
+
+  If the Pi restarts or the network drops, ClaudeST reconnects by
+  itself. For a serial cable, see @{"Settings" link "Settings"}.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "The window"
+@{U}The window@{u}
+
+  The sidebar on the left has @{B}+ New chat@{b}, @{B}Search@{b},
+  @{B}Chats@{b}, @{B}Code@{b}, @{B}Projects@{b} and @{B}Artifacts@{b},
+  then the list for the chosen area. The open conversation fills the
+  right side, with the reply line at the bottom. Drag the divider
+  between them to resize the sidebar; the pointer turns into a hand
+  over it.
+
+  - @{B}Title bar:@{b} the chat's name, and at the right the model chip
+    (see @{"Model and effort" link "Model and effort"}).
+  - @{B}Notices:@{b} short messages such as "Loading chat..." or
+    "Renamed" appear in grey in the title bar for a few seconds.
+  - @{B}Tooltips:@{b} rest the mouse on a name that's cut off, in the
+    sidebar or the title bar, and a tooltip shows all of it.
+  - @{B}Switching area@{b} empties the list at once, showing
+    "Loading..." until the new list arrives. It also clears the
+    conversation, so what you type next starts a new chat.
+  - @{B}Scrolling:@{b} the scroll bar, Up and Down, Shift+Up/Down by
+    page, Clr/Home and Shift+Clr/Home for the top and bottom.
+
+  See also: @{"The status area" link "The status area"}
+@endnode
+
+## ------------------------------------------------------------------------
+@node "The status area"
+@{U}The status area@{u}
+
+  The bottom of the sidebar shows the connection and your usage:
+
+  - @{B}The dot:@{b} green when online, red when not (filled or hollow
+    in black and white), with Connecting..., Online or Offline beside
+    it.
+  - @{B}The ring@{b} fills clockwise as you use up the current session,
+    claude.ai's 5-hour limit: blue, turning red from 90%, on a grey
+    track in 16 colours; black on a dotted grey track with fewer
+    colours. Below it, "Session 30%" and, when the sidebar is wide
+    enough, the time until the session resets.
+
+  The bridge checks the usage after each reply, and at most every two
+  minutes otherwise. Click the area for the full
+  @{"Account" link "Account, plan and usage"} page.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Chats, projects and search"
+@{U}Chats, projects and search@{u}
+
+  @{B}Chats@{b} (F2) lists your recent chats under date headings, as on
+  claude.ai: Pinned first (pinned chats also show a small diamond), then
+  Today, Yesterday, a date for each of the last seven days, and Older.
+  The headings can't be clicked, and Tab skips them.
+
+  @{B}Unread chats@{b} have a small dot to the left of their name (blue
+  in 16 colours): a reply came in since you last read the chat, for
+  example one that finished on the website. Opening it removes the dot.
+  Older chats never get one: claude.ai keeps no read time for them.
+
+  @{B}Projects@{b} (F3) lists your projects. Opening one lists its chats,
+  with "< All projects" at the top. A new chat started there is created
+  in that project.
+
+  @{B}Search@{b} (F5 or Control+F) empties the list and turns the reply
+  line into "Find:". Type words from a chat's title and press Return.
+
+  @{B}New chat@{b} (F1 or Control+N) starts a new conversation.
+
+  A long conversation shows its last 40 messages.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Right-click menus"
+@{U}Right-click menus@{u}
+
+  Right-click an item, or pick it with Tab and press Insert. The item
+  is highlighted while its menu is open.
+
+    Chat           Open, Pin/Unpin, Rename..., Move to project...,
+                   Delete...
+    Project        Open, Pin/Unpin, Rename..., Archive, Delete...
+    Code session   Open, Rename..., Archive
+    Artifact       Open, Save to disk...
+
+  @{B}Move to project...@{b} lists your projects, with "New project..."
+  at the top: it asks for a name, creates the project and moves the chat
+  into it.
+
+  @{B}Rename...@{b} opens a dialog with the current name: edit it and
+  press Return, or Esc to cancel. @{B}Delete...@{b} always asks first.
+  In menus, the arrow keys and Return work too, and Esc closes them.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Model and effort"
+@{U}Model and effort@{u}
+
+  The chip at the right of the title bar shows the open chat's model
+  and effort, such as "Opus 5.5 . Med". Click it, or press F9, for the
+  menu: the models, then the effort levels that model supports.
+
+  - @{B}Effort:@{b} Low, Medium, High, Extra high and Max. Higher effort
+    means more thinking: slower and more thorough.
+  - @{B}Each chat keeps its own model and effort.@{b} Opening a chat
+    shows what claude.ai has for it. Changing them changes that chat,
+    and also becomes the choice for new chats, saved in CLAUDEST.INF.
+  - New chats start on @{B}Default model@{b}, your account's own choice,
+    until you pick one.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Code sessions" "Code: Claude Code sessions"
+@{U}Code: Claude Code sessions@{u}
+
+  @{B}Code@{b} (F6) lists your Claude Code sessions from claude.ai/code,
+  newest first.
+
+  - @{B}Reading:@{b} your messages and Claude's replies, with each tool
+    call as a one-line note such as [Bash: make -C st]. Tool output is
+    left out.
+  - @{B}Replying:@{b} what you type goes to the open session, and Claude
+    Code's replies appear as it works. If it's still working after 15
+    minutes, ClaudeST stops waiting; open the session again later to see
+    the rest.
+  - @{B}Model:@{b} the chip shows the session's own model. Changing it
+    switches only that session.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Artifacts"
+@{U}Artifacts@{u}
+
+  @{B}Artifacts@{b} (F4) lists the artifacts in your 40 most recent
+  chats, newest first, under date headings. claude.ai keeps artifacts
+  inside chats, so the bridge looks through them, showing "Scanning chat
+  12/40" meanwhile. The next time, only new or changed chats are
+  scanned.
+
+  - @{B}Open@{b} shows the source. A Word document shows its text.
+  - @{B}Save to disk...@{b} opens the file selector with an 8.3 name
+    such as SNAKE_GA.PY or COVER_LE.DOC. Text is saved in the Atari
+    character set with CR/LF line ends; Word, PDF and other binary files
+    are saved unchanged.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Account, plan and usage"
+@{U}Account, plan and usage@{u}
+
+  Press F8, click the status area, or choose Options > Account...
+
+  - @{B}Plan:@{b} Free, Pro, Max (5x or 20x usage), Team or Enterprise.
+  - @{B}Usage:@{b} a meter for each limit, as on claude.ai's Usage page:
+    the current 5-hour session, this week's usage, and any included
+    cloud session credit, each with when it resets or expires.
+  - @{B}Account:@{b} your name, email, organization and the date you
+    joined.
+
+  See also: @{"The status area" link "The status area"}
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Hebrew"
+@{U}Hebrew@{u}
+
+  TOS has no right-to-left text support, so ClaudeST lays it out
+  itself. A paragraph that starts in Hebrew is right-aligned and reads
+  right to left, with English words and numbers inside it kept in
+  order. The same applies to titles and to the reply line.
+
+  @{B}Typing Hebrew:@{b} press F10, or choose Options > Hebrew keys. The
+  letter keys then type Hebrew in the Israeli SI-1452 layout, and an HE
+  badge shows in the reply box. Keys are mapped by position, so any
+  national Atari keyboard works.
+
+  The Atari font has only the plain letters, so the bridge drops vowel
+  points (niqqud). If Hebrew shows as other symbols with your font, see
+  @{"Font" link "Font"}.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Font"
+@{U}Font@{u}
+
+  @{B}Options > Font...@{b} opens a font selector: the font families on
+  the left, the sizes of the chosen one beside them, what kind of font
+  it is (bitmap, Speedo, TrueType, Type 1) and a sample below. The font
+  is used for everything in ClaudeST's window; menus and the selector
+  keep the system font.
+
+  - @{B}The system font@{b} comes in two sizes, 8 x 8 and 8 x 16.
+  - @{B}GDOS fonts:@{b} with NVDI or SpeedoGDOS, its fonts are listed
+    too. ClaudeST needs a fixed-width font: proportional ones are listed
+    in grey. The first time, each font is measured ("Looking for
+    fixed-width fonts" on the status line) and the answers kept in
+    CLAUDEST.FNT. Delete that file to measure them all again.
+  - @{B}Hebrew letters:@{b} fonts keep them in different places. The
+    three buttons under "Hebrew in bitmap fonts" each show the word
+    shalom as that kind of font would (Atari, ISO 8859-8, DOS 862): pick
+    the one that reads correctly. A vector font is asked through NVDI 5
+    for its own Hebrew letters; without them, they are drawn in the
+    system font.
+
+  Keys: Up and Down change the family, Left and Right the size, Return
+  is OK and Esc cancels.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Keys"
+@{U}Keys@{u}
+
+    F1, Control+N     New chat
+    F2                Chats
+    F3                Projects
+    F4                Artifacts
+    F5, Control+F     Search chat titles
+    F6                Code
+    F8                Account
+    F9                Model and effort
+    F10               Hebrew keyboard on or off
+    Tab, Shift+Tab    Pick a sidebar item; Return opens it
+    Insert            The picked item's menu
+    Left, Right       Move in the reply line (Shift: to the start or
+                      end; Control: by word)
+    Esc, Undo         Clear the reply line
+    Control+R         Reconnect to the bridge
+    Help              This help, in ST-Guide (without ST-Guide:
+                      About ClaudeST)
+    Control+Q         Quit
+
+  In the reply line, @{B}/connect 192.168.1.10@{b} (or /connect
+  host:port) sets the gateway address, and @{B}/serial@{b} switches to
+  the serial port.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Settings" "Settings (CLAUDEST.INF)"
+@{U}Settings (CLAUDEST.INF)@{u}
+
+  ClaudeST saves its settings to CLAUDEST.INF, next to CLAUDEST.PRG, as
+  soon as you change them. You can also edit it with any text editor.
+  Lines starting with ; are comments.
+
+    tcp 192.168.1.10 2323   the bridge over STinG (/connect, Options)
+    serial                  the bridge over the serial port
+    baud 19200              4800, 9600 or 19200 (Options)
+    sidebar 240             the sidebar's width, by dragging the divider
+    keyboard hebrew         F10 / Options > Hebrew keys
+    port 7                  on a TT or Falcon, which serial port to use:
+                            6 MFP, 7 SCC B (the Falcon's Modem port),
+                            8 TT-MFP, 9 SCC A
+    model <id> <effort>     the model chip / F9
+    font 1 8 0              Options > Font: the font's id (1 = system
+                            font), its size, and where it keeps Hebrew
+                            (0 Atari, 1 ISO-8859-8, 2 DOS 862)
+
+  A @{B}serial cable@{b}: connect the Atari's Modem port to a
+  USB-to-RS-232 adapter on the Pi with a null-modem cable (never
+  straight to the Pi's pins), run "sudo ./install.sh --port auto" on the
+  Pi, and choose Options > Serial port on the Atari.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "What is stored where"
+@{U}What is stored where@{u}
+
+  - @{B}claude.ai:@{b} your chats, projects, artifacts and Code
+    sessions. The bridge fetches them each time; no chat is stored on
+    the Pi.
+  - @{B}Pi:@{b} your session key and the bridge's options (readable only
+    by root and the bridge), and the effort you chose for each chat.
+  - @{B}Atari:@{b} CLAUDEST.INF (settings) and CLAUDEST.FNT (which fonts
+    are fixed-width). The open conversation lives only in memory while
+    ClaudeST runs.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Troubleshooting"
+@{U}Troubleshooting@{u}
+
+  @{B}Connecting... never turns into Online@{b}
+    On the Pi, check "systemctl status claude-st", the address in
+    CLAUDEST.INF, and that the Atari's address matches the installer's
+    --atari option.
+
+  @{B}An error mentions the session key, or HTTP 401/403@{b}
+    claude.ai logged you out: get a new sessionKey from the website and
+    run "sudo ./install.sh --set-key" on the Pi.
+
+  @{B}"Too many requests" (HTTP 429)@{b}
+    claude.ai is limiting requests for a while. Wait a few minutes; F8
+    shows your usage.
+
+  @{B}Hebrew shows as other symbols@{b}
+    Your font keeps its Hebrew letters elsewhere: pick the right sample
+    in Options > Font, see @{"Font" link "Font"}.
+
+  @{B}Something else fails@{b}
+    Watch "journalctl -u claude-st -f" on the Pi while you try again on
+    the Atari.
+
+  The full guide is docs/GUIDE.md at github.com/whomper/ClaudeST.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "About ClaudeST"
+@{U}About ClaudeST@{u}
+
+  ClaudeST 1.21
+  Created by Erez Yaary, (c) 2026.
+
+  Written with Claude, in Claude Code on claude.ai: a claude.ai client
+  for the Atari, built by talking to claude.ai.
+
+  Source, setup and the user guide:
+  https://github.com/whomper/ClaudeST
+
+  ClaudeST is an unofficial client, not affiliated with Anthropic or
+  Atari. Claude is a trademark of Anthropic PBC. Atari is a trademark
+  of Atari Interactive.
+@endnode
+
+## ------------------------------------------------------------------------
+@node "Help on help"
+@{U}Using this help@{u}
+
+  Click an underlined or highlighted word to follow it. In ST-Guide,
+  Undo or Backspace goes back, Help shows ST-Guide's own help, and the
+  Index lists every page.
+
+  Back to the @{"Contents" link "Main"}.
+@endnode

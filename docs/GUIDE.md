@@ -245,6 +245,14 @@ Keys in the selector: `↑` `↓` change the family, `←` `→` the size,
 `Return` is OK and `Esc` cancels. A double click on a family or size
 also picks it.
 
+## Help in ST-Guide
+
+`CLAUDEST.HYP` is a short ST-Guide hypertext of this guide: setup, every
+part of the window, the keys, the settings and troubleshooting. Keep it
+next to `CLAUDEST.PRG`; with ST-Guide installed (as an accessory or
+running), `Help` in ClaudeST opens it. Without ST-Guide, `Help` shows the
+About box. It also opens on its own in ST-Guide or HypView.
+
 ## All keys
 
 | Key | Does |
@@ -263,7 +271,7 @@ also picks it.
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
-| `Help` | About |
+| `Help` | This help in ST-Guide (`CLAUDEST.HYP`), or the About box without ST-Guide |
 | `Ctrl+Q` | Quit |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
@@ -375,7 +383,7 @@ install the Pi with `--network --atari <the modem's IP>`.
 
 ## Icons
 
-**Desk ▸ About ClaudeST…** (or `Help`) shows the About box, with a
+**Desk ▸ About ClaudeST…** (or `Help` when ST-Guide isn't installed) shows the About box, with a
 colour icon on screens with 16 colours or more.
 
 ![The About box](about.png)
@@ -452,6 +460,7 @@ running EmuTOS.
 ### Source layout
 
 ```
+help/      CLAUDEST.STG, the ST-Guide help: make -C help (needs HCP) -> binary/CLAUDEST.HYP
 st/        the Atari program: claudest.c (UI and protocol), gem.c (AES/VDI),
            sting.c (STinG client), bidi.c (right-to-left), tos.c (traps, mini libc)
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
