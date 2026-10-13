@@ -1,11 +1,11 @@
-# EClaude
+# ClaudeST
 
-<img src="docs/icon.png" width="96" align="right" alt="EClaude icon: an Atari SM124-style monitor showing a spark and a prompt">
+<img src="docs/icon.png" width="96" align="right" alt="ClaudeST icon: an Atari SM124-style monitor showing a spark and a prompt">
 
 A native GEM client for [claude.ai](https://claude.ai) on the Atari ST,
 STE, Mega ST/STE, TT and Falcon.
 
-![EClaude in ST high resolution](docs/st-high-mono.png)
+![ClaudeST in ST high resolution](docs/st-high-mono.png)
 
 It works like the claude.ai website: chats, Search, Code, Projects and
 Artifacts on the left, the open conversation on the right, and replies
@@ -25,15 +25,16 @@ streaming in as Claude writes them.
 
 The [user guide](docs/GUIDE.md) describes every feature.
 
-EClaude was first called Claude ST. To upgrade from it, replace
-`CLAUDE.PRG` with `ECLAUDE.PRG`: your settings in `CLAUDE.INF` are read
-the first time, then saved as `ECLAUDE.INF`. The Raspberry Pi side keeps
-its service name, `claude-st`.
+ClaudeST was first called Claude ST, then EClaude for a few days. To
+upgrade, replace `CLAUDE.PRG` or `ECLAUDE.PRG` with `CLAUDEST.PRG`: your
+settings in `CLAUDE.INF` or `ECLAUDE.INF` are read the first time, then
+saved as `CLAUDEST.INF`. The Raspberry Pi side keeps its service name,
+`claude-st`.
 
 ## How it works
 
 ```
-Atari (ECLAUDE.PRG)  <-- STinG or serial -->  Raspberry Pi (bridge)  <-- HTTPS -->  claude.ai
+Atari (CLAUDEST.PRG)  <-- STinG or serial -->  Raspberry Pi (bridge)  <-- HTTPS -->  claude.ai
 ```
 
 An 8 MHz 68000 can't do modern HTTPS, so a small Python program, the
@@ -68,8 +69,8 @@ readable only by root and the bridge.
 ### 2. Install the bridge on the Pi
 
 ```sh
-git clone https://github.com/whomper/ECLAUDE.git
-cd ECLAUDE/pi
+git clone https://github.com/whomper/ClaudeST.git
+cd ClaudeST/pi
 sudo ./install.sh --network --atari 192.168.1.20
 ```
 
@@ -83,18 +84,18 @@ If the `ufw` firewall is on, the installer opens port 2323 for them.
 
 1. Load **STinG** and check that the network works, for example by
    pinging the Pi.
-2. Copy `st/ECLAUDE.PRG` and `st/ECLAUDE.INF` into one folder.
-3. Put the Pi's address on the `tcp` line of `ECLAUDE.INF`, with any text
+2. Copy `st/CLAUDEST.PRG` and `st/CLAUDEST.INF` into one folder.
+3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text
    editor:
    ```
    tcp 192.168.1.10 2323
    ```
-4. Run `ECLAUDE.PRG`. The status line at the bottom left shows
+4. Run `CLAUDEST.PRG`. The status line at the bottom left shows
    *Connecting…*, then *Online*, with a green dot.
 
-Instead of step 3 you can type `/connect 192.168.1.10` in EClaude's
-reply line; EClaude saves the address to `ECLAUDE.INF`. If the Pi
-restarts or the network drops, EClaude reconnects by itself.
+Instead of step 3 you can type `/connect 192.168.1.10` in ClaudeST's
+reply line; ClaudeST saves the address to `CLAUDEST.INF`. If the Pi
+restarts or the network drops, ClaudeST reconnects by itself.
 
 ### Using a serial cable instead
 
@@ -107,7 +108,7 @@ sudo ./install.sh --port auto
 ```
 
 On the Atari, choose **Options ▸ Serial port**, or leave out
-`ECLAUDE.INF`. Both sides use 19200 baud by default.
+`CLAUDEST.INF`. Both sides use 19200 baud by default.
 
 ### Using the Anthropic API instead of claude.ai
 
@@ -121,7 +122,7 @@ without any account, to test the setup.
 
 ## Looking after the Pi
 
-Run these in the `ECLAUDE/pi` folder (`atari_claude/pi` if you installed before the rename):
+Run these in the `ClaudeST/pi` folder (`atari_claude/pi` if you installed before the rename):
 
 | Task | Command |
 |------|---------|
@@ -152,7 +153,7 @@ reached or the session key has expired, the error appears on the Atari.
 
 ## Good to know
 
-EClaude is an unofficial client, not affiliated with Anthropic or
+ClaudeST is an unofficial client, not affiliated with Anthropic or
 Atari. claude.ai has no public API for personal accounts, so the bridge
 uses the same private interface as the claude.ai website. If claude.ai
 changes it, parts can stop working until the bridge is updated. The
@@ -164,7 +165,7 @@ each time and doesn't store them. The Pi keeps only your session key,
 the bridge's settings and the effort you chose for each chat. The guide
 lists [what is stored where](docs/GUIDE.md#what-is-stored-where).
 
-EClaude was written with Claude, in Claude Code on claude.ai: a
+ClaudeST was written with Claude, in Claude Code on claude.ai: a
 claude.ai client for the Atari, built by talking to claude.ai.
 
 ## For developers

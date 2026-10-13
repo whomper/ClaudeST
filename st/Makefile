@@ -1,4 +1,4 @@
-# EClaude - builds ECLAUDE.PRG with a stock m68k ELF cross compiler
+# ClaudeST - builds CLAUDEST.PRG with a stock m68k ELF cross compiler
 # (Debian/Ubuntu: apt install gcc-m68k-linux-gnu). No MiNTLib needed:
 # the program is freestanding and elf2tos.py writes the TOS header.
 # An m68k-atari-mint toolchain works too: make CROSS=m68k-atari-mint-
@@ -10,14 +10,14 @@ CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
            -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,link.ld -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-OBJS := crt0.o eclaude.o gem.o tos.o sting.o sting_s.o bidi.o
+OBJS := crt0.o claudest.o gem.o tos.o sting.o sting_s.o bidi.o
 
-all: ECLAUDE.PRG
+all: CLAUDEST.PRG
 
-ECLAUDE.PRG: eclaude.elf ../tools/elf2tos.py
+CLAUDEST.PRG: claudest.elf ../tools/elf2tos.py
 	python3 ../tools/elf2tos.py $< $@
 
-eclaude.elf: $(OBJS) link.ld
+claudest.elf: $(OBJS) link.ld
 	$(CC) $(LDFLAGS) -o $@ $(OBJS)
 
 %.o: %.c tos.h gem.h sting.h bidi.h icon.h icon16.h
@@ -27,7 +27,7 @@ crt0.o: crt0.S
 	$(CC) -m68000 -c -o $@ $<
 
 clean:
-	rm -f *.o eclaude.elf ECLAUDE.PRG
+	rm -f *.o claudest.elf CLAUDEST.PRG
 
 .PHONY: all clean
 

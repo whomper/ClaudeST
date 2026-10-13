@@ -1,7 +1,7 @@
-# EClaude user guide
+# ClaudeST user guide
 
 The [README](../README.md) covers setup. This guide describes each part
-of EClaude, then troubleshooting, settings and building. The
+of ClaudeST, then troubleshooting, settings and building. The
 screenshots use the bridge's demo backend, so they show sample chats.
 
 - [The window](#the-window)
@@ -13,7 +13,7 @@ screenshots use the bridge's demo backend, so they show sample chats.
 - [Account, plan and usage](#account-plan-and-usage)
 - [Hebrew](#hebrew)
 - [All keys](#all-keys)
-- [Settings (ECLAUDE.INF)](#settings-claudeinf)
+- [Settings (CLAUDEST.INF)](#settings-claudeinf)
 - [What is stored where](#what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [The bridge on another computer](#the-bridge-on-another-computer)
@@ -119,7 +119,7 @@ menu: the models, then the effort levels that model supports.
   has for it. If claude.ai has no effort for it, the chip shows the one
   you last chose for that chat, or else the model's default. Changing
   them changes that chat, and also becomes the choice for new chats,
-  which is saved in `ECLAUDE.INF`.
+  which is saved in `CLAUDEST.INF`.
 - **claude.ai:** new chats start on **Default model**, your account's
   own choice, until you pick one. A chat's effort is read from, and
   saved to, the chat's own settings on claude.ai, so the website shows
@@ -141,7 +141,7 @@ newest first.
   out.
 - **Replying:** what you type goes to the open session, and Claude
   Code's replies appear as it works. If it's still working after 15
-  minutes, EClaude stops waiting; open the session again later to see
+  minutes, ClaudeST stops waiting; open the session again later to see
   the rest.
 - **Model:** the chip shows the session's own model. Changing it asks
   claude.ai to switch that session, without changing the model for your
@@ -191,7 +191,7 @@ started instead.
 
 ## Hebrew
 
-TOS has no right-to-left text support, so EClaude lays it out itself.
+TOS has no right-to-left text support, so ClaudeST lays it out itself.
 A paragraph that starts in Hebrew is right-aligned and reads right to
 left, with English words and numbers inside it kept in order. The same
 applies to titles in the sidebar and the title bar, and to the reply
@@ -214,20 +214,20 @@ points (niqqud) and turns maqaf, geresh and gershayim into `-`, `'` and
 like other GEM programs': the font families on the left, the sizes of
 the chosen one beside them, what kind of font it is (bitmap, Speedo,
 TrueType, Type 1) and a sample below. The chosen font is used for
-everything in EClaude's window: the sidebar, the title bar, the
+everything in ClaudeST's window: the sidebar, the title bar, the
 conversation and the reply line. Menus and the font selector itself
 keep the system font.
 
 - **The system font** comes in two sizes, 8×8 and 8×16. 8×8 fits twice
   as many lines on an ST high or a Falcon VGA screen.
 - **GDOS fonts:** with a GDOS such as NVDI or SpeedoGDOS, its fonts are
-  listed too. EClaude lays text out in character cells, so it needs a
+  listed too. ClaudeST lays text out in character cells, so it needs a
   fixed-width font: proportional ones are listed in grey and can't be
-  picked. The first time, EClaude measures each font to find them
+  picked. The first time, ClaudeST measures each font to find them
   ("Looking for fixed-width fonts" on the status line; it can take a
-  while with many vector fonts) and keeps the answers in `ECLAUDE.FNT`,
+  while with many vector fonts) and keeps the answers in `CLAUDEST.FNT`,
   so the selector opens quickly afterwards and only new fonts are
-  measured. Delete `ECLAUDE.FNT` to measure them all again.
+  measured. Delete `CLAUDEST.FNT` to measure them all again.
 - **Hebrew letters:** fonts keep them in different places: the standard
   Atari font (TOS, EmuTOS) at the Atari character set's, Israeli system
   fonts and many GDOS fonts where ISO-8859-8 or DOS 862 put them. If
@@ -269,9 +269,9 @@ also picks it.
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
 sets the gateway address, and `/serial` switches to the serial port.
 
-## Settings (ECLAUDE.INF)
+## Settings (CLAUDEST.INF)
 
-EClaude saves its settings to `ECLAUDE.INF`, next to `ECLAUDE.PRG`, as
+ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`, as
 soon as you change them. You can also edit it in any text editor.
 
 | Line | Set by |
@@ -280,7 +280,7 @@ soon as you change them. You can also edit it in any text editor.
 | `baud 19200` (or 9600, 4800) | Options ▸ baud rate |
 | `sidebar 240` | dragging the divider (width in pixels) |
 | `keyboard hebrew` | `F10` / Options ▸ Hebrew keys |
-| `port 7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). Without it, EClaude uses the port TOS has chosen. |
+| `port 7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). Without it, ClaudeST uses the port TOS has chosen. |
 | `model claude-sonnet-5-5 max` | the model chip / `F9` |
 | `font 1 8 0` | Options ▸ Font: the font's id (1 = the system font), its size in points (8 or 16 for the system font's two sizes) and where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 
@@ -297,10 +297,10 @@ screen with a new chat.
 | Pi: `/var/lib/claude-st/chats/` | Only with the API backend: your chats, one file each |
 | Pi: the bridge's memory | The artifacts found in your recent chats, to load the list quickly; gone when the bridge restarts |
 | Pi: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
-| Atari: `ECLAUDE.INF` | EClaude's settings |
-| Atari: `ECLAUDE.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
+| Atari: `CLAUDEST.INF` | ClaudeST's settings |
+| Atari: `CLAUDEST.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
 
-The open conversation lives only in the Atari's memory while EClaude
+The open conversation lives only in the Atari's memory while ClaudeST
 runs.
 
 ## Troubleshooting
@@ -309,8 +309,8 @@ All commands run on the Pi.
 
 | Problem | What to do |
 |---------|-----------|
-| *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `ECLAUDE.INF`, and that the Atari's address matches the installer's `--atari` |
-| "claude.ai has moved this chat to its new chat system, and EClaude could not open its new part" | claude.ai moves some chats to its newer chat system. EClaude normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
+| *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDEST.INF`, and that the Atari's address matches the installer's `--atari` |
+| "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo ./install.sh --set-key` |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 
@@ -370,12 +370,12 @@ turn off the serial console in `raspi-config`, and install with
 **Options** and give the Pi the same `--baud`.
 
 A WiFi modem on the serial port also works in transparent TCP mode:
-point it at the Pi's port 2323, keep EClaude on the serial link, and
+point it at the Pi's port 2323, keep ClaudeST on the serial link, and
 install the Pi with `--network --atari <the modem's IP>`.
 
 ## Icons
 
-**Desk ▸ About EClaude…** (or `Help`) shows the About box, with a
+**Desk ▸ About ClaudeST…** (or `Help`) shows the About box, with a
 colour icon on screens with 16 colours or more.
 
 ![The About box](about.png)
@@ -387,12 +387,12 @@ spark and a GEM prompt. The `icons/` folder has it for the desktop:
 
 | File | What it is |
 |------|-----------|
-| `ECLAUDE.RSC` | a resource file with a black-and-white and a 16-colour icon |
-| `ECLAUDE.ICN`, `ECLAUDMK.ICN` | the black-and-white image and its mask |
+| `CLAUDEST.RSC` | a resource file with a black-and-white and a 16-colour icon |
+| `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white image and its mask |
 
-Copy the icon from `ECLAUDE.RSC` into `DESKICON.RSC` (or `DESKCICN.RSC`
+Copy the icon from `CLAUDEST.RSC` into `DESKICON.RSC` (or `DESKCICN.RSC`
 for colour icons on TOS 4) with a resource editor, then install it for
-`ECLAUDE.PRG` from the desktop.
+`CLAUDEST.PRG` from the desktop.
 
 ## Building
 
@@ -400,7 +400,7 @@ You need an m68k GCC; the stock Debian/Ubuntu cross compiler works.
 
 ```sh
 sudo apt install gcc-m68k-linux-gnu
-cd st && make            # -> ECLAUDE.PRG
+cd st && make            # -> CLAUDEST.PRG
 make test                # right-to-left layout tests, on the host
 cd ../bridge && python3 -m unittest
 ```
@@ -419,20 +419,20 @@ MACHINE=ste tools/hatari-test.sh     # STE in colour (st, ste or tt)
 ```
 
 The script downloads EmuTOS the first time, starts the bridge and boots
-[Hatari](https://hatari.tuxfamily.org/) into EClaude, with the emulated
+[Hatari](https://hatari.tuxfamily.org/) into ClaudeST, with the emulated
 serial port connected to the bridge. Hatari has no network card;
 `tools/fakesting/FAKESTNG.PRG` stands in for STinG by tunnelling one TCP
 connection over the serial port, to test the network code. It's for the
 emulator only; never install it on a real Atari.
 
 Hatari only connects the ST-style MFP serial port to the bridge. To run
-an emulated Falcon, put `serial` and `port 6` in its `ECLAUDE.INF`; a
+an emulated Falcon, put `serial` and `port 6` in its `CLAUDEST.INF`; a
 real Falcon uses its Modem port, which needs no `port` line.
 
 ### Recording a demo video
 
 `tools/reel/record.py` records a demo in Hatari: a Falcon in 640×480, 16
-colours, boots to the EmuTOS desktop with an EClaude icon, opens Claude
+colours, boots to the EmuTOS desktop with a ClaudeST icon, opens Claude
 ST, opens a chat, and types a new question. The answer comes from
 `tools/reel/reel_bridge.py`, a bridge with a scripted showcase account
 and a pre-written reply, so the video needs no account. It needs Linux
@@ -452,7 +452,7 @@ running EmuTOS.
 ### Source layout
 
 ```
-st/        the Atari program: eclaude.c (UI and protocol), gem.c (AES/VDI),
+st/        the Atari program: claudest.c (UI and protocol), gem.c (AES/VDI),
            sting.c (STinG client), bidi.c (right-to-left), tos.c (traps, mini libc)
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py

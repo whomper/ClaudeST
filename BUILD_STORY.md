@@ -1,14 +1,15 @@
-# The build story of EClaude
+# The build story of ClaudeST
 
-EClaude started life as "Claude ST" and was renamed after its first
-week, in the style of EDOS: an E, for Erez, in front of the name.
+ClaudeST started life as "Claude ST", was briefly renamed EClaude (an E,
+for Erez, in front of the name, in the style of EDOS), and settled on
+ClaudeST.
 
 A claude.ai client for the Atari ST and Falcon, written in one week by
 talking to Claude in Claude Code on claude.ai. Every line of code came
 from conversation: Erez described what he wanted, tried each build on a
 real Falcon, and reported back with photos of the screen.
 
-![EClaude on an Atari](docs/st-high-mono.png)
+![ClaudeST on an Atari](docs/st-high-mono.png)
 
 ## The first prompt
 
@@ -28,13 +29,13 @@ quite well dare I say."
 - **About 80 prompts** from Erez, and **53 commits**
 - **About 5,000 lines of C** for the Atari and **4,000 lines of Python**
   for the bridge, plus **82 automated tests**
-- **ECLAUDE.PRG is 46 KB**, smaller than one photo of the screen
+- **CLAUDEST.PRG is 46 KB**, smaller than one photo of the screen
 - Runs on an **8 MHz 68000** from 1985, with 1 MB of RAM
 
 ## How it works
 
 ```
-Atari Falcon (ECLAUDE.PRG)  -- WiFi -->  Raspberry Pi (bridge)  -- HTTPS -->  claude.ai
+Atari Falcon (CLAUDEST.PRG)  -- WiFi -->  Raspberry Pi (bridge)  -- HTTPS -->  claude.ai
 ```
 
 An 8 MHz 68000 can't do modern encryption, so a small Python program,
@@ -56,7 +57,7 @@ drops.
 - The Raspberry Pi bridge, installed as a service with one command
 - Wireless: STinG networking instead of a serial cable
 - The code moved to its own GitHub repository,
-  [whomper/ECLAUDE](https://github.com/whomper/ECLAUDE)
+  [whomper/ClaudeST](https://github.com/whomper/ClaudeST)
 - Right-click menus like the website's (Pin, Rename, Move to project,
   Archive, Delete) and a sidebar you can drag wider
 - **Hebrew, right to left**, on a computer from 1985
@@ -176,7 +177,7 @@ pushed back, rightly: the Atari knows when it has just started. Now the
 Atari ignores the highlight until you open something, and sends its
 first message to a new chat.
 
-## What EClaude does now
+## What ClaudeST does now
 
 - **Your real claude.ai account** on an Atari ST, STE, Mega, TT or
   Falcon, over WiFi or a serial cable
@@ -192,7 +193,7 @@ first message to a new chat.
 - **Replies stream in** as Claude writes them
 
 The code, setup guide and demo videos are on GitHub:
-[github.com/whomper/ECLAUDE](https://github.com/whomper/ECLAUDE).
+[github.com/whomper/ClaudeST](https://github.com/whomper/ClaudeST).
 
 ## Pictures and clips for posts
 
@@ -208,5 +209,5 @@ The code, setup guide and demo videos are on GitHub:
 | [docs/model-menu.png](docs/model-menu.png) | Picking the model and effort |
 | [docs/about-colour.png](docs/about-colour.png) | The About box with the 16-colour icon |
 
-EClaude is an unofficial client, not affiliated with Anthropic or
+ClaudeST is an unofficial client, not affiliated with Anthropic or
 Atari.

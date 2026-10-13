@@ -1,5 +1,5 @@
 /*
- * tos.c - the bits of libc and libgcc EClaude needs.
+ * tos.c - the bits of libc and libgcc ClaudeST needs.
  *
  * The cross compiler's libgcc is built for 68020+, so the 32-bit
  * multiply/divide helpers a plain 68000 needs are provided here,
