@@ -84,7 +84,7 @@ If the `ufw` firewall is on, the installer opens port 2323 for them.
 
 1. Load **STinG** and check that the network works, for example by
    pinging the Pi.
-2. Copy `st/CLAUDEST.PRG` and `st/CLAUDEST.INF` into one folder.
+2. Copy `binary/CLAUDEST.PRG` and `binary/CLAUDEST.INF` into one folder.
 3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text
    editor:
    ```

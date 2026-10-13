@@ -383,7 +383,7 @@ colour icon on screens with 16 colours or more.
 ![The About box in colour, on a TT](about-colour.png)
 
 The icon is original 32×32 pixel art: an SM124-style monitor with a
-spark and a GEM prompt. The `icons/` folder has it for the desktop:
+spark and a GEM prompt. The `binary/` folder has it for the desktop:
 
 | File | What it is |
 |------|-----------|
@@ -400,7 +400,7 @@ You need an m68k GCC; the stock Debian/Ubuntu cross compiler works.
 
 ```sh
 sudo apt install gcc-m68k-linux-gnu
-cd st && make            # -> CLAUDEST.PRG
+cd st && make            # -> ../binary/CLAUDEST.PRG
 make test                # right-to-left layout tests, on the host
 cd ../bridge && python3 -m unittest
 ```
@@ -458,7 +458,8 @@ bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
 pi/        install.sh and the systemd service
 tools/     hatari-test.sh, elf2tos.py, fakesting/, icon/
-icons/     desktop icon files
+binary/    what goes on the Atari: CLAUDEST.PRG, an example CLAUDEST.INF
+           and the desktop icon files
 ```
 
 [PROTOCOL.md](../PROTOCOL.md) describes the line protocol between the

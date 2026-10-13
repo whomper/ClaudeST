@@ -1,4 +1,4 @@
-# ClaudeST - builds CLAUDEST.PRG with a stock m68k ELF cross compiler
+# ClaudeST - builds ../binary/CLAUDEST.PRG with a stock m68k ELF cross compiler
 # (Debian/Ubuntu: apt install gcc-m68k-linux-gnu). No MiNTLib needed:
 # the program is freestanding and elf2tos.py writes the TOS header.
 # An m68k-atari-mint toolchain works too: make CROSS=m68k-atari-mint-
@@ -12,9 +12,9 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,link.ld -W
 
 OBJS := crt0.o claudest.o gem.o tos.o sting.o sting_s.o bidi.o
 
-all: CLAUDEST.PRG
+all: ../binary/CLAUDEST.PRG
 
-CLAUDEST.PRG: claudest.elf ../tools/elf2tos.py
+../binary/CLAUDEST.PRG: claudest.elf ../tools/elf2tos.py
 	python3 ../tools/elf2tos.py $< $@
 
 claudest.elf: $(OBJS) link.ld
@@ -27,7 +27,7 @@ crt0.o: crt0.S
 	$(CC) -m68000 -c -o $@ $<
 
 clean:
-	rm -f *.o claudest.elf CLAUDEST.PRG
+	rm -f *.o claudest.elf ../binary/CLAUDEST.PRG
 
 .PHONY: all clean
 

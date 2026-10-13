@@ -129,7 +129,7 @@ def main():
     shutil.rmtree(work, ignore_errors=True)
     hd = os.path.join(work, "hd")
     os.makedirs(hd)
-    shutil.copy(os.path.join(ROOT, "st", "CLAUDEST.PRG"), hd)
+    shutil.copy(os.path.join(ROOT, "binary", "CLAUDEST.PRG"), hd)
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "icon", "add_to_emuicon.py"),
                     args.emuicon, os.path.join(hd, "EMUICON.RSC")], check=True)
     with open(os.path.join(hd, "CLAUDEST.INF"), "w", newline="") as f:

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Write ClaudeST's icons as files for Atari icon and resource editors:
 
-  icons/CLAUDEST.RSC    GEM resource, one tree: a monochrome G_ICON and a
+  binary/CLAUDEST.RSC    GEM resource, one tree: a monochrome G_ICON and a
                       colour G_CICON (16 colours), each with its mask and the
                       label "ClaudeST". Copy them into DESKICON.RSC /
                       DESKCICN.RSC with a resource editor (Interface, ORCS,
                       RSM...).
-  icons/CLAUDEST.ICN    the monochrome image, ICN text format
-  icons/CLAUDSMK.ICN  its mask, ICN text format
+  binary/CLAUDEST.ICN    the monochrome image, ICN text format
+  binary/CLAUDSMK.ICN  its mask, ICN text format
 
 The colour icon uses the standard VDI colours (white, black, red, green,
 yellow, greys), since desktop icons can't bring their own palette.
@@ -19,7 +19,7 @@ import make_icon as mi   # draws the icon (px: mono, col: 16-colour design)
 
 W = H = 32
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-OUT = os.path.join(ROOT, "icons")
+OUT = os.path.join(ROOT, "binary")
 
 # the About box's colours -> standard VDI pens for the desktop
 TO_STD = {0: 0, 1: 1, 8: 8, 9: 9, 10: 1, 11: 1, 12: 2, 13: 6, 14: 3, 15: 9}

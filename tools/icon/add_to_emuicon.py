@@ -16,7 +16,7 @@ import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CLAUDE_RSC = os.path.join(HERE, "..", "..", "icons", "CLAUDEST.RSC")
+CLAUDE_RSC = os.path.join(HERE, "..", "..", "binary", "CLAUDEST.RSC")
 IB = struct.Struct(">lllhhhhhhhhhhh")        # ICONBLK, 34 bytes
 
 
