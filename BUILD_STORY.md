@@ -9,7 +9,7 @@ talking to Claude in Claude Code on claude.ai. Every line of code came
 from conversation: Erez described what he wanted, tried each build on a
 real Falcon, and reported back with photos of the screen.
 
-![ClaudeST on an Atari](docs/st-high-mono.png)
+![ClaudeST on a Falcon in 16 colours](docs/falcon-colour.png)
 
 ## The first prompt
 
@@ -201,6 +201,7 @@ The code, setup guide and demo videos are on GitHub:
 |---|---|
 | [docs/demo/claude-st-reel.mp4](docs/demo/claude-st-reel.mp4) | Vertical reel: Falcon desktop, launch, a question answered |
 | [docs/demo/claude-st-falcon.mp4](docs/demo/claude-st-falcon.mp4) | The same demo in 4:3 |
+| [docs/falcon-colour.png](docs/falcon-colour.png) | The main window on a Falcon in 16 colours, with a chat open |
 | [docs/st-high-mono.png](docs/st-high-mono.png) | The main window in classic black and white |
 | [docs/ste-medium-colour.png](docs/ste-medium-colour.png) | The same on a colour STE |
 | [docs/hebrew.png](docs/hebrew.png) | Hebrew, right to left |

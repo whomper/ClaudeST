@@ -1,11 +1,11 @@
 # ClaudeST
 
-<img src="docs/icon.png" width="96" align="right" alt="ClaudeST icon: an Atari SM124-style monitor showing a spark and a prompt">
+<img src="docs/icon16.png" width="96" align="right" alt="ClaudeST icon: an Atari SM124-style monitor showing a spark and a prompt">
 
 A native GEM client for [claude.ai](https://claude.ai) on the Atari ST,
 STE, Mega ST/STE, TT and Falcon.
 
-![ClaudeST in ST high resolution](docs/st-high-mono.png)
+![ClaudeST on a Falcon in 16 colours](docs/falcon-colour.png)
 
 It works like the claude.ai website: chats, Search, Code, Projects and
 Artifacts on the left, the open conversation on the right, and replies
