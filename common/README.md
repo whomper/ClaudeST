@@ -16,9 +16,8 @@ branch, which holds just this folder and is kept up to date by a workflow.
 | EMail | 14 Oct 2026 | programs byte-identical; unit and Dovecot tests (plain, Falcon TLS, stunnel gateway) |
 | ECal | 14 Oct 2026 | programs byte-identical; unit, gateway and Radicale tests (same results as before) |
 | EContact | 14 Oct 2026 | programs byte-identical; unit, low-memory and Radicale tests |
-
-ClaudeST (`st/`) and EHypView carry older copies of some of these files; they follow once layer 2
-is in, since their copies differ more.
+| ClaudeST | 14 Oct 2026 | layout and bridge tests; demo recording (Falcon, serial) and STinG through FAKESTNG (ST): every screenshot the same as the old build's |
+| EHypView | 14 Oct 2026 | unit, ASan, big-endian (QEMU) and golden tests; Atari report equal to the host's; GUI test (45 checks) |
 
 ## What's here (layer 1)
 
@@ -99,6 +98,16 @@ What they brought in:
 - **ClaudeST:** the serial port calls (`Rsconf`, `Bconmap`, `Bcostat`, `DEV_AUX`, the `BAUD_*`
   codes) in `tos.h`.
 - `appl_write()` now takes a `const` message.
+
+In EFTP, EMail, ECal and EContact only `gem.o` and `nf.o` changed: every other object file builds the
+same as before.
+
+## Layer 3: GEM building blocks (October 2026)
+
+| File | From | What it does |
+|---|---|---|
+| `atari/crash.c/.S/.h` | EMail | the crash catcher: a crash in the program (2 to 8 bombs) writes `CRASH.LOG` and quits tidily; TOS's record of a crash in the system is added at the next start. `crash_install(workdir, "ECal", version)`, in a program only (a desk accessory never installs it, and takes no memory for it). `crash_report = conn_log_append` adds the report to the protocol log too. `tests/crash/` checks every kind of crash in Hatari on a 68000 and a 68030 |
+| `tools/crashaddr.py` | EMail | turns the offsets in a `CRASH.LOG` into function names, from the ELF file of the same build |
 
 ## Coming next
 
