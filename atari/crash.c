@@ -15,10 +15,13 @@
 #include "crash.h"
 
 /* the landing's stack and the report: taken when the catcher is
-   installed (not in a desk accessory, which never installs it); an app
-   short of memory sets CRASH_STACK (EFTP's ST edition: 4096) */
+   installed (not in a desk accessory, which never installs it). The
+   landing, the report and the app's crash_cleanup (alerts, closing its
+   windows: the AES and VDI work on the system stack) used 424 bytes of
+   it in EMail's check; test builds (CRASH_TEST) say how much on the
+   emulator's console */
 #ifndef CRASH_STACK
-#define CRASH_STACK 8192
+#define CRASH_STACK 4096
 #endif
 #define REP_SIZE 3000
 
@@ -255,6 +258,16 @@ void crash_landing(void)
 	Supexec(crash_restore);
 	if (crash_cleanup)
 		crash_cleanup(name);
+#ifdef CRASH_TEST
+	{
+		const unsigned char *p = (const unsigned char *)(crash_stack_top - CRASH_STACK + 4);
+		char s[60];
+		while (*p == 0xA5)
+			p++;
+		snprintf(s, sizeof(s), "crash: %ld bytes of the stack used\n", crash_stack_top - (long)p);
+		nf_debug(s);
+	}
+#endif
 	Pterm(1);
 }
 
@@ -273,6 +286,9 @@ void crash_install(const char *workdir, const char *name, const char *version)
 			return;
 		crash_stack_top = ((long)mem + CRASH_STACK) & ~3L;
 		rep = mem + CRASH_STACK;
+#ifdef CRASH_TEST
+		memset(mem, 0xA5, CRASH_STACK);	/* to see how much is used */
+#endif
 	}
 	app = name;
 	app_version = version;
@@ -328,3 +344,39 @@ const char *crash_previous(void)
 {
 	return prev_name;
 }
+
+#ifdef CRASH_TEST
+static void crash_test_sup(void)
+{
+	volatile long *p = (volatile long *)0xFFFFFA40L;	/* no TT MFP here */
+	(void)*p;
+}
+
+int crash_test(short scan)
+{
+	static volatile long *volatile bad;
+	static void (*volatile ill)(void);
+	static const unsigned short illegal[] = { 0x4afc };
+	if (scan == 0x3b) {		/* F1: bus error in the program */
+		bad = (long *)0x10L;
+		*bad = 0;
+	} else if (scan == 0x3c) {	/* F2: bus error in supervisor mode */
+		Supexec(crash_test_sup);
+	} else if (scan == 0x3d) {	/* F3: illegal instruction */
+		ill = (void (*)(void))illegal;
+		ill();
+	} else if (scan == 0x3e) {	/* F4: address error (68000) */
+		bad = (long *)0x20001L;
+		*bad = 0;
+	} else {
+		return 0;
+	}
+	return 1;
+}
+#else
+int crash_test(short scan)
+{
+	(void)scan;
+	return 0;
+}
+#endif
