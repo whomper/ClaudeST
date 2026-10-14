@@ -26,6 +26,8 @@
 #include "popup.h"
 #include "aboutbox.h"
 #include "iconify.h"
+#include "clip.h"
+#include "dd.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -40,7 +42,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.32"
+#define VERSION "1.33"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -245,7 +247,7 @@ static void save_config(void);
 
 /* the commands of the menu bar */
 enum {
-	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT,
+	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
 	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT
 };
 
@@ -263,6 +265,14 @@ static const MBAR_ITEM m_file[] = {
 	{ "Quit", "^Q", C_QUIT },
 	{ 0, 0, 0 }
 };
+static const MBAR_ITEM m_edit[] = {
+	{ "Cut", "^X", C_CUT },
+	{ "Copy", "^C", C_COPY },
+	{ "Paste", "^V", C_PASTE },
+	{ "-", 0, 0 },
+	{ "Copy Claude's answer", 0, C_ANSWER },
+	{ 0, 0, 0 }
+};
 static const MBAR_ITEM m_opts[] = {
 	{ "4800 baud", 0, C_B48 },
 	{ "9600 baud", 0, C_B96 },
@@ -277,7 +287,7 @@ static const MBAR_ITEM m_opts[] = {
 	{ 0, 0, 0 }
 };
 static const MBAR_TITLE bar[] = {
-	{ " Desk ", m_desk }, { " File ", m_file }, { " Options ", m_opts }, { 0, 0 }
+	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Options ", m_opts }, { 0, 0 }
 };
 static MBAR mb;
 
@@ -1372,6 +1382,9 @@ static short is_space(char c)
  * Returns 1 if the key was used. Arrows move the cursor (with Shift: to
  * the start/end; with Control: by word), in screen direction when the
  * text is Hebrew. Backspace/Delete remove, other keys insert. */
+static short field_clip(int what, char *buf, short *len, short *cur, short max);
+static void reply_clip(int what);
+
 static short edit_key(char *buf, short *len, short *cur, short max, short kstate, short kr)
 {
 	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff, c;
@@ -2551,6 +2564,8 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 				len = cur = start = 0;
 			else if (sc == 0x44)
 				toggle_hebrew();
+			else if (clip_key(e.kreturn))
+				changed = field_clip(clip_key(e.kreturn), edit, &len, &cur, max - 1);
 			else
 				changed = edit_key(edit, &len, &cur, max - 1, e.kstate, e.kreturn);
 			if (changed && res < 0) {
@@ -4106,6 +4121,10 @@ static void handle_key(short kstate, short kr)
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
+	if (clip_key(kr)) {
+		reply_clip(clip_key(kr));
+		return;
+	}
 	switch (ascii) {
 	case 0x0e: do_new_chat(); return;	/* ^N */
 	case 0x06: do_search(); return;		/* ^F */
@@ -4187,6 +4206,91 @@ static int input_put(char c)
    nothing brings the window to the front; a text file goes into the
    reply line at the cursor, its lines joined by spaces, as much as
    fits */
+/* ---- the clipboard (common/ui/clip.c) ---- */
+
+static void say_notice(const char *s)
+{
+	strlcpy_(notice, s, sizeof(notice));
+	notice_until = ticks + 125;
+	dirty |= D_TITLE;
+}
+
+/* text into a field at the cursor: a reply is one line, so line breaks
+   and tabs become spaces and control characters stay out; 0 when not
+   all of it fitted */
+static int field_paste(char *buf, short *len, short *cur, short max, const char *t)
+{
+	for (; *t; t++) {
+		u8 c = (u8)*t;
+		if (c == '\n' || c == '\t')
+			c = ' ';
+		if (c < 32 || (c == ' ' && *cur > 0 && buf[*cur - 1] == ' '))
+			continue;
+		if (*len >= max)
+			return 0;
+		memmove(buf + *cur + 1, buf + *cur, *len - *cur);
+		buf[(*cur)++] = (char)c;
+		(*len)++;
+	}
+	return 1;
+}
+
+/* ^C ^X ^V on a field with nothing selected: all of it */
+static short field_clip(int what, char *buf, short *len, short *cur, short max)
+{
+	char t[INMAX + 1];
+	if (what == CLIP_PASTE) {
+		clip_get(t, sizeof(t));
+		if (!field_paste(buf, len, cur, max, t))
+			say_notice("Only the start fits");
+		return 1;
+	}
+	if (!*len || !clip_put(buf, *len) || what != CLIP_CUT)
+		return 0;
+	*len = *cur = 0;
+	return 1;
+}
+
+/* Claude's last answer, a line for each paragraph */
+static void copy_answer(void)
+{
+	long p, s = -1, e, k = 0;
+	char *t;
+	for (p = tlen - 3; p >= 0 && s < 0; p--)
+		if (tb[p] == MK_HEADER && tb[p + 1] == 'A' && tb[p + 2] == '\n' && (!p || tb[p - 1] == '\n'))
+			s = p + 3;
+	if (s < 0) {
+		say_notice("No answer to copy");
+		return;
+	}
+	for (e = s; e < tlen && !(tb[e] == MK_HEADER && tb[e - 1] == '\n'); e++)
+		;
+	if (!(t = malloc(e - s + 1)))
+		return;
+	for (p = s; p < e; p++)
+		if (tb[p] != MK_BOLD)
+			t[k++] = tb[p];
+	while (k > 0 && t[k - 1] == '\n')
+		k--;
+	say_notice(clip_put(t, k) ? "Copied Claude's answer" : "Couldn't write the clipboard");
+	free(t);
+}
+
+/* ^C ^X ^V in the reply line; ^C on an empty one copies Claude's answer */
+static void reply_clip(int what)
+{
+	if (what == CLIP_COPY && !inlen) {
+		copy_answer();
+		return;
+	}
+	if (field_clip(what, input, &inlen, &in_cur, INMAX)) {
+		in_start = 0;
+		dirty |= D_INPUT;
+		if (what == CLIP_COPY)
+			say_notice("Copied to the clipboard");
+	}
+}
+
 static void av_start(const char *s)
 {
 	char path[200], buf[256];
@@ -4260,6 +4364,10 @@ static void handle_msg(short *msg)
 		case C_HEB: toggle_hebrew(); break;
 		case C_ACCT: do_account(); break;
 		case C_FONT: font_menu(); break;
+		case C_CUT: reply_clip(CLIP_CUT); break;
+		case C_COPY: reply_clip(CLIP_COPY); break;
+		case C_PASTE: reply_clip(CLIP_PASTE); break;
+		case C_ANSWER: copy_answer(); break;
 		case C_QUIT: quit = 1; break;
 		case C_B48: set_baud(BAUD_4800); break;
 		case C_B96: set_baud(BAUD_9600); break;
@@ -4349,8 +4457,23 @@ static void handle_msg(short *msg)
 		break;
 	default: {
 		const char *va;
-		if (av_message(msg, &va) == AV_START)
-			av_start(va);
+		DROP d;
+		/* dropped: a text file as VA_START's, text into the reply line */
+		switch (dd_message(msg, DD_WANT_FILES | DD_WANT_TEXT, &d)) {
+		case DD_FILES:
+			av_start(d.data);
+			break;
+		case DD_TEXT:
+			wind_set(win, WF_TOP, 0, 0, 0, 0);
+			if (!field_paste(input, &inlen, &in_cur, INMAX, d.data))
+				say_notice("Only the start fits");
+			dirty |= D_INPUT;
+			break;
+		case DD_NONE:
+			if (av_message(msg, &va) == AV_START)
+				av_start(va);
+		}
+		dd_done(&d);
 		break;
 	}
 	}

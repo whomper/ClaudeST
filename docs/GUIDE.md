@@ -200,6 +200,22 @@ A text file handed to ClaudeST while it runs, by a desktop such as
 Thing, jinnee or Gemini (or any program, with the AV protocol's
 VA_START), goes into the reply line at the cursor, its lines joined by
 spaces, as much as fits (1000 characters). Other files are refused.
+Under MultiTOS, MagiC or XaAES you can drag a text file onto the window
+too, or text from another program: it goes into the reply line the same
+way.
+
+## Copy and paste
+
+Edit > Cut, Copy and Paste (`Ctrl+X`, `Ctrl+C`, `Ctrl+V`) use the GEM
+clipboard, which other programs share:
+
+- **`Ctrl+V`** puts the clipboard's text into the reply line at the
+  cursor, its lines joined by spaces.
+- **`Ctrl+C`** copies the reply line, and **`Ctrl+X`** cuts it.
+- **With the reply line empty,** `Ctrl+C` copies Claude's last answer, a
+  line for each paragraph, ready to paste into EMail or a text editor.
+  **Edit > Copy Claude's answer** does the same.
+- **In the rename and new project boxes,** the same keys work on the name.
 
 ## Hebrew
 
@@ -285,6 +301,7 @@ of them.
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
+| `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the About box) |
 | `Ctrl+Q`, `Ctrl+W` | Quit (Ctrl+W closes the window, ClaudeST's only one) |
 

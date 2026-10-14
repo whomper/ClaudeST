@@ -265,7 +265,17 @@
   Thing, jinnee or Gemini (or any program, with the AV protocol's
   VA_START), goes into the reply line at the cursor, its lines joined
   by spaces, as much as fits (1000 characters). Other files are
-  refused.
+  refused. Under MultiTOS, MagiC or XaAES you can drag a text file onto
+  the window too, or text from another program: it goes into the reply
+  line the same way.
+
+  @{B}Copy and paste@{b}: Edit > Cut, Copy and Paste (Control+X,
+  Control+C, Control+V) use the GEM clipboard. Control+V puts its text
+  into the reply line at the cursor, its lines joined by spaces;
+  Control+C copies the reply line and Control+X cuts it. With the reply
+  line empty, Control+C copies Claude's last answer, a line for each
+  paragraph (Edit > Copy Claude's answer does the same). In the rename
+  and new project boxes the same keys work on the name.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -333,6 +343,8 @@
                       end; Control: by word)
     Esc, Undo         Clear the reply line
     Control+R         Reconnect to the bridge
+    Control+C X V     Copy, cut, paste the reply line
+                      (Control+C with it empty: Claude's last answer)
     Help              This help, in EHypView, ST-Guide or HypView
                       (without a viewer: how to get one, or About)
     Control+Q         Quit
