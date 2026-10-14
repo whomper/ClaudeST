@@ -10,7 +10,7 @@ stand-in viewer build/FAKEVIEW.ACC (make) installed under viewers' names:
   3. no NAME.HYP next to the app: "*:\\NAME.HYP";
   4. no viewer: whatever the app does then (a screenshot).
 
-    app_help.py WORK EMUTOS.IMG APP.PRG NAME.HYP [--machine falcon|st]
+    app_help.py WORK EMUTOS.IMG APP.PRG NAME.HYP [--machine falcon|st] [--memsize MB]
                 [--wait SECONDS] [--page PAGE] [--copy FILE ...]
 
 --page: the page the app asks for (" PAGE" after the file name).
@@ -25,6 +25,7 @@ ap.add_argument("tos")
 ap.add_argument("prg")
 ap.add_argument("hyp")
 ap.add_argument("--machine", default="falcon")
+ap.add_argument("--memsize", help="MB (default: 14 on a Falcon, Hatari's own on an ST)")
 ap.add_argument("--wait", type=float, default=15)
 ap.add_argument("--page", default="")
 ap.add_argument("--copy", nargs="*", default=[])
@@ -61,6 +62,9 @@ def run(tag, viewers, with_hyp):
             "--confirm-quit", "no", "--statusbar", "no", "--cmd-fifo", fifo,
             "--screenshot-dir", shots, "--log-level", "fatal"]
     args += ["--mono"] if a.machine == "st" else ["--monitor", "vga", "--dsp", "none"]
+    mem = a.memsize or ("14" if a.machine == "falcon" else None)
+    if mem:
+        args += ["--memsize", mem]
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     h = subprocess.Popen(args, env=env, stdout=open(os.path.join(d, "hatari.log"), "w"),
                          stderr=subprocess.STDOUT)
