@@ -66,6 +66,24 @@ int main(void)
 	expect("the hook only for lines with Hebrew", "[1][no hebrew here][ OK ]");
 	alert(1, "[1][\xC2\xC3 shalom][ OK ]");
 	expect("a Hebrew line: in display order, then the hook", "[1][SHALOM \xC3\xC2][ OK ]");
+	alert_hebrew = 0;
+	shown[0] = 0;
+	checks++;
+	if (!screen_check("ECal", 640) || shown[0]) {
+		failed++;
+		printf("FAIL screen_check: 640 wide is fine, no alert\n");
+	} else {
+		printf("ok   screen_check: 640 wide is fine, no alert\n");
+	}
+	checks++;
+	if (screen_check("ECal", 320)) {
+		failed++;
+		printf("FAIL screen_check: 320 wide is not\n");
+	} else {
+		printf("ok   screen_check: 320 wide is not\n");
+	}
+	expect("screen_check's alert, wrapped",
+	       "[3][ECal needs a screen 640 pixels|wide: ST medium or high, or a|TT or Falcon mode.][ OK ]");
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;
 }

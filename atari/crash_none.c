@@ -31,6 +31,11 @@ const char *crash_previous(void)
 	return 0;
 }
 
+const char *crash_log(void)
+{
+	return "";
+}
+
 int crash_test(short scan)
 {
 	(void)scan;

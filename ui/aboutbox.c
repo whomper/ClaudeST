@@ -2,13 +2,16 @@
  * Copyright (C) 2026 Erez Yaary */
 /*
  * aboutbox.c - the About box (see aboutbox.h), ECal's, drawn as EMail's and
- * Claude ST's were.
+ * Claude ST's were; in the same frame, a box of plain text (CRASH.LOG).
  */
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "gemui.h"
 #include "aboutbox.h"
+#include "alert.h"
+#include "crash.h"
+#include "tos.h"
 
 #define ICON_W 32
 #define ICON_H 32
@@ -153,14 +156,33 @@ static void wait_up(void)
 	} while (mb & 3);
 }
 
+/* Return, Esc, Undo, Help, Space or a click closes it */
+static void wait_close(void)
+{
+	short m[8], done = 0;
+	AEVENT e;
+	wait_up();
+	while (!done) {
+		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		if (e.which & MU_KEYBD) {
+			short sc = KEY_SCAN(e.kreturn), as = KEY_ASCII(e.kreturn);
+			if (as == 0x0d || as == 0x1b || as == ' ' || sc == 0x61 || sc == 0x62)
+				done = 1;
+		}
+		if (e.which & MU_BUTTON) {
+			wait_up();
+			done = 1;
+		}
+	}
+}
+
 void about_show(const ABOUT *a)
 {
 	char v[40];
 	short sx = 2, sy = gl_hchar >= 16 ? 2 : 1;
-	short ih, lh, m[8], y, done = 0, i, nst = 0, widest = 0, nfine, fcw, fch, fstep;
+	short ih, lh, y, i, nst = 0, widest = 0, nfine, fcw, fch, fstep;
 	short saved_rgb[8][3], colour;
 	short bw, bh, by;
-	AEVENT e;
 
 	font_sys_push();
 	ih = ICON_H * sy;
@@ -254,21 +276,7 @@ void about_show(const ABOUT *a)
 		v_gtext_n(vdi_h, dx + (dw - n * fcw) / 2, y, s, n);
 	}
 	graf_mouse(M_ON, 0);
-	wait_up();
-
-	/* Return, Esc, Undo, Help, Space or a click closes it */
-	while (!done) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
-		if (e.which & MU_KEYBD) {
-			short sc = KEY_SCAN(e.kreturn), as = KEY_ASCII(e.kreturn);
-			if (as == 0x0d || as == 0x1b || as == ' ' || sc == 0x61 || sc == 0x62)
-				done = 1;
-		}
-		if (e.which & MU_BUTTON) {
-			wait_up();
-			done = 1;
-		}
-	}
+	wait_close();
 	if (colour)
 		for (i = 0; i < 8; i++)
 			vs_color(vdi_h, 8 + i, saved_rgb[i]);
@@ -276,4 +284,108 @@ void about_show(const ABOUT *a)
 	wind_update(END_UPDATE);
 	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
 	font_sys_pop();
+}
+
+/* ---------------- a box of plain text ---------------- */
+
+#define TB_LINES 40
+
+void text_box(const char *title, const char *text)
+{
+	static char buf[TB_LINES][82];
+	short n = 0, cols, widest, lh, i, bw, bh, y;
+	const char *p = text;
+
+	font_sys_push();
+	cols = desk_w / cw - 6;
+	if (cols > 80)
+		cols = 80;
+	/* the lines, long ones broken at a space */
+	while (*p && n < TB_LINES) {
+		const char *e = p;
+		short k = 0, cut = -1;
+		while (*e && *e != '\r' && *e != '\n' && k < cols) {
+			if (*e == ' ')
+				cut = k;
+			e++;
+			k++;
+		}
+		if (*e && *e != '\r' && *e != '\n' && cut > cols / 2) {
+			k = cut;
+			e = p + cut + 1;	/* the space goes */
+		}
+		memcpy(buf[n], p, k);
+		buf[n++][k] = 0;
+		p = e;
+		if (*p == '\r')
+			p++;
+		if (*p == '\n')
+			p++;
+	}
+	widest = (short)strlen(title);
+	for (i = 0; i < n; i++)
+		if ((short)strlen(buf[i]) > widest)
+			widest = (short)strlen(buf[i]);
+	lh = ch + (ch >= 16 ? 1 : 0);
+	bw = 10 * cw;
+	bh = ch + 6;
+	if (n > (desk_h - 4 * lh - bh) / lh)
+		n = (desk_h - 4 * lh - bh) / lh;
+	dw = (widest + 4) * cw;
+	if (dw < 30 * cw)
+		dw = 30 * cw;
+	dh = lh + lh + lh / 2 + n * lh + lh + bh + lh;
+	dx = desk_x + (desk_w - dw) / 2;
+	dy = desk_y + (desk_h - dh) / 2;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);
+	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
+	graf_mouse(M_OFF, 0);
+	clip_off();
+	box(dx, dy, dw, dh);
+	y = dy + lh;
+	center(y, title, TX_BOLD);
+	y += lh + lh / 2;
+	for (i = 0; i < n; i++, y += lh)
+		text_at(dx + 2 * cw, y, buf[i], (long)strlen(buf[i]), cols, TX_LTR);
+	button(dx + (dw - bw) / 2, dy + dh - bh - lh, bw, bh, "OK");
+	graf_mouse(M_ON, 0);
+	wait_close();
+	wind_update(2);
+	wind_update(END_UPDATE);
+	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
+	font_sys_pop();
+}
+
+/* ---------------- after a crash ---------------- */
+
+void crash_offer(const char *app, const char *where)
+{
+	static char text[4096];
+	long h, n, size;
+	char *last, *q;
+	if (!crash_previous())
+		return;
+	if (alert(1, "[1][%s crashed last time|(%s).|What happened is in|CRASH.LOG, %s.][Show|OK]",
+		  app, crash_previous(), where) != 1)
+		return;
+	/* the end of CRASH.LOG, and in it the last report */
+	h = Fopen(crash_log(), 0);
+	if (h < 0) {
+		alert(1, "[1][Can't read CRASH.LOG.][ OK ]");
+		return;
+	}
+	size = Fseek(0, (short)h, 2);
+	Fseek(size > (long)sizeof(text) - 1 ? size - ((long)sizeof(text) - 1) : 0, (short)h, 0);
+	n = Fread((short)h, sizeof(text) - 1, text);
+	Fclose((short)h);
+	if (n < 0)
+		n = 0;
+	text[n] = 0;
+	last = text;
+	for (q = text; (q = strstr(q, "---- ")) != 0; q++)
+		if (q == text || q[-1] == '\n')
+			last = q;
+	text_box("CRASH.LOG", last);
 }

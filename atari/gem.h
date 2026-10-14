@@ -66,6 +66,7 @@ typedef struct {
 #define WM_MOVED    28
 #define WM_NEWTOP   29
 #define WM_ONTOP    31
+#define WM_BOTTOMED 33	/* AES 4.1 and newer, MagiC, XaAES: to the back */
 #define WM_ICONIFY     34	/* AES 4.1 and newer, MagiC, XaAES */
 #define WM_UNICONIFY   35
 #define WM_ALLICONIFY  36
@@ -105,6 +106,7 @@ typedef struct {
 #define WF_VSLSIZE    16
 #define WF_ICONIFY    26
 #define WF_UNICONIFY  27
+#define WF_BOTTOM     25	/* AES 4.1 and newer: send the window to the back */
 
 #define WC_BORDER 0
 #define WC_WORK   1

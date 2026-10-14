@@ -23,6 +23,11 @@ void help_init(void);
    its keys or says how to get a viewer */
 int help_show(const char *dir, const char *hyp, const char *page);
 
+/* the Help key: help_show(), else an alert saying to install EHypView or
+   ST-Guide (the guidelines, 4.3), with a button for what the app shows
+   itself ("Keys", "About"; 0 for none): 1 when that was chosen */
+int help_key(const char *dir, const char *hyp, const char *page, const char *own);
+
 /* av_send(), for another program: av.h */
 #include "av.h"
 

@@ -19,4 +19,9 @@ short alert(short def, const char *fmt, ...) __attribute__((format(printf, 2, 3)
    them) */
 extern void (*alert_hebrew)(char *line, long n);
 
+/* the guidelines' 5.2: on a screen narrower than 640 pixels (ST low) an
+   alert says the app needs a wider one; 0 then: a program quits, an
+   accessory doesn't open its window */
+int screen_check(const char *app, short width);
+
 #endif
