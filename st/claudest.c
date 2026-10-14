@@ -20,6 +20,7 @@
 #include "crash.h"
 #include "help.h"
 #include "alert.h"
+#include "mbar.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -34,7 +35,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.27"
+#define VERSION "1.28"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -234,121 +235,59 @@ static void save_config(void);
 /* menu bar (built in code, so no .RSC file is needed)                 */
 /* ------------------------------------------------------------------ */
 
-static char t_desk[] = " Desk ";
-static char t_file[] = " File ";
-static char t_opts[] = " Options ";
-static char m_about[] = "  About ClaudeST...  ";
-static char m_sep1[]  = "---------------------";
-static char m_acc[6][22] = {
-	"  Desk Accessory 1   ", "  Desk Accessory 2   ", "  Desk Accessory 3   ",
-	"  Desk Accessory 4   ", "  Desk Accessory 5   ", "  Desk Accessory 6   "
-};
-static char m_new[]   = "  New chat      ^N ";
-static char m_find[]  = "  Search chats  ^F ";
-static char m_ref[]   = "  Reconnect     ^R ";
-static char m_sep2[]  = "-------------------";
-static char m_quit[]  = "  Quit          ^Q ";
-static char m_b48[]   = "  4800 baud       ";
-static char m_b96[]   = "  9600 baud       ";
-static char m_b192[]  = "  19200 baud      ";
-static char m_sep3[]  = "------------------";
-static char m_net[]   = "  Network (STinG) ";
-static char m_ser[]   = "  Serial port     ";
-static char m_sep4[]  = "------------------";
-static char m_heb[]   = "  Hebrew keys F10 ";
-static char m_acct[]  = "  Account...   F8 ";
-static char m_font[]  = "  Font...         ";
-
+/* the commands of the menu bar */
 enum {
-	MN_ROOT, MN_BAR, MN_ACTIVE, MN_TDESK, MN_TFILE, MN_TOPTS, MN_SCREEN,
-	MN_DDESK, MN_ABOUT, MN_SEP1, MN_ACC1, MN_ACC2, MN_ACC3, MN_ACC4, MN_ACC5, MN_ACC6,
-	MN_DFILE, MN_NEW, MN_FIND, MN_REF, MN_SEP2, MN_QUIT,
-	MN_DOPTS, MN_B48, MN_B96, MN_B192, MN_SEP3, MN_NET, MN_SER, MN_SEP4, MN_HEB,
-	MN_ACCT, MN_FONT,
-	MN_COUNT
+	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT,
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT
 };
 
-#define S(p) ((long)(p))
-static OBJECT menu[MN_COUNT] = {
-	/* next  head tail type    flags state spec       x  y  w   h */
-	{ -1, 1, 6,  G_IBOX, 0, 0, 0,          0, 0, 80, 25 },		/* ROOT */
-	{ 6, 2, 2,   G_BOX,  0, 0, 0x1100L,    0, 0, 80, 0x201 },	/* BAR */
-	{ 1, 3, 5,   G_IBOX, 0, 0, 0,          2, 0, 21, 0x301 },	/* ACTIVE */
-	{ 4, -1, -1, G_TITLE, 0, 0, 0,         0, 0, 6, 0x301 },
-	{ 5, -1, -1, G_TITLE, 0, 0, 0,         6, 0, 6, 0x301 },
-	{ 2, -1, -1, G_TITLE, 0, 0, 0,         12, 0, 9, 0x301 },
-	{ 0, 7, 22,  G_IBOX, 0, 0, 0,          0, 0x301, 80, 19 },	/* SCREEN */
-	{ 16, 8, 15, G_BOX,  0, 0, 0xFF1100L, 2, 0, 21, 8 },		/* desk drop */
-	{ 9, -1, -1, G_STRING, 0, 0, 0,        0, 0, 21, 1 },
-	{ 10, -1, -1, G_STRING, 0, DISABLED, 0, 0, 1, 21, 1 },
-	{ 11, -1, -1, G_STRING, 0, 0, 0,       0, 2, 21, 1 },
-	{ 12, -1, -1, G_STRING, 0, 0, 0,       0, 3, 21, 1 },
-	{ 13, -1, -1, G_STRING, 0, 0, 0,       0, 4, 21, 1 },
-	{ 14, -1, -1, G_STRING, 0, 0, 0,       0, 5, 21, 1 },
-	{ 15, -1, -1, G_STRING, 0, 0, 0,       0, 6, 21, 1 },
-	{ 7, -1, -1, G_STRING, 0, 0, 0,        0, 7, 21, 1 },
-	{ 22, 17, 21, G_BOX, 0, 0, 0xFF1100L,  8, 0, 19, 5 },		/* file drop */
-	{ 18, -1, -1, G_STRING, 0, 0, 0,       0, 0, 19, 1 },
-	{ 19, -1, -1, G_STRING, 0, 0, 0,       0, 1, 19, 1 },
-	{ 20, -1, -1, G_STRING, 0, 0, 0,       0, 2, 19, 1 },
-	{ 21, -1, -1, G_STRING, 0, DISABLED, 0, 0, 3, 19, 1 },
-	{ 16, -1, -1, G_STRING, 0, 0, 0,       0, 4, 19, 1 },
-	{ 6, 23, 32, G_BOX,  0, 0, 0xFF1100L,  14, 0, 18, 10 },		/* options drop */
-	{ 24, -1, -1, G_STRING, 0, 0, 0,       0, 0, 18, 1 },
-	{ 25, -1, -1, G_STRING, 0, 0, 0,       0, 1, 18, 1 },
-	{ 26, -1, -1, G_STRING, 0, 0, 0,       0, 2, 18, 1 },
-	{ 27, -1, -1, G_STRING, 0, DISABLED, 0, 0, 3, 18, 1 },
-	{ 28, -1, -1, G_STRING, 0, 0, 0,       0, 4, 18, 1 },
-	{ 29, -1, -1, G_STRING, 0, 0, 0,       0, 5, 18, 1 },
-	{ 30, -1, -1, G_STRING, 0, DISABLED, 0, 0, 6, 18, 1 },
-	{ 31, -1, -1, G_STRING, 0, 0, 0,       0, 7, 18, 1 },
-	{ 32, -1, -1, G_STRING, 0, 0, 0,       0, 8, 18, 1 },
-	{ 22, -1, -1, G_STRING, LASTOB, 0, 0,  0, 9, 18, 1 },
+/* the menu bar, built by the AERA programs' shared builder
+   (common/ui/mbar.c), so no .RSC file is needed */
+static const MBAR_ITEM m_desk[] = {
+	{ "About ClaudeST...", 0, C_ABOUT },
+	{ 0, 0, 0 }
 };
+static const MBAR_ITEM m_file[] = {
+	{ "New chat", "^N", C_NEW },
+	{ "Search chats", "^F", C_FIND },
+	{ "Reconnect", "^R", C_REF },
+	{ "-", 0, 0 },
+	{ "Quit", "^Q", C_QUIT },
+	{ 0, 0, 0 }
+};
+static const MBAR_ITEM m_opts[] = {
+	{ "4800 baud", 0, C_B48 },
+	{ "9600 baud", 0, C_B96 },
+	{ "19200 baud", 0, C_B192 },
+	{ "-", 0, 0 },
+	{ "Network (STinG)", 0, C_NET },
+	{ "Serial port", 0, C_SER },
+	{ "-", 0, 0 },
+	{ "Hebrew keys", "F10", C_HEB },
+	{ "Account...", "F8", C_ACCT },
+	{ "Font...", 0, C_FONT },
+	{ 0, 0, 0 }
+};
+static const MBAR_TITLE bar[] = {
+	{ " Desk ", m_desk }, { " File ", m_file }, { " Options ", m_opts }, { 0, 0 }
+};
+static MBAR mb;
 
-static void menu_init(void)
+static void check(int cmd, int on)
 {
-	short i, cols_ = scr_w / cw;
-
-	menu[MN_TDESK].ob_spec = S(t_desk);
-	menu[MN_TFILE].ob_spec = S(t_file);
-	menu[MN_TOPTS].ob_spec = S(t_opts);
-	menu[MN_ABOUT].ob_spec = S(m_about);
-	menu[MN_SEP1].ob_spec = S(m_sep1);
-	for (i = 0; i < 6; i++)
-		menu[MN_ACC1 + i].ob_spec = S(m_acc[i]);
-	menu[MN_NEW].ob_spec = S(m_new);
-	menu[MN_FIND].ob_spec = S(m_find);
-	menu[MN_REF].ob_spec = S(m_ref);
-	menu[MN_SEP2].ob_spec = S(m_sep2);
-	menu[MN_QUIT].ob_spec = S(m_quit);
-	menu[MN_B48].ob_spec = S(m_b48);
-	menu[MN_B96].ob_spec = S(m_b96);
-	menu[MN_B192].ob_spec = S(m_b192);
-	menu[MN_SEP3].ob_spec = S(m_sep3);
-	menu[MN_NET].ob_spec = S(m_net);
-	menu[MN_SER].ob_spec = S(m_ser);
-	menu[MN_SEP4].ob_spec = S(m_sep4);
-	menu[MN_HEB].ob_spec = S(m_heb);
-	menu[MN_ACCT].ob_spec = S(m_acct);
-	menu[MN_FONT].ob_spec = S(m_font);
-
-	menu[MN_ROOT].ob_width = cols_;
-	menu[MN_ROOT].ob_height = scr_h / ch;
-	menu[MN_BAR].ob_width = cols_;
-	menu[MN_SCREEN].ob_width = cols_;
-	for (i = 0; i < MN_COUNT; i++)
-		rsrc_obfix(menu, i);
+	short o = mbar_object(&mb, cmd);
+	if (o > 0)
+		mb.tree[o].ob_state = on ? CHECKED : 0;
 }
 
 static void menu_check_baud(void)
 {
-	menu[MN_B48].ob_state = baud == BAUD_4800 ? CHECKED : 0;
-	menu[MN_B96].ob_state = baud == BAUD_9600 ? CHECKED : 0;
-	menu[MN_B192].ob_state = baud == BAUD_19200 ? CHECKED : 0;
-	menu[MN_NET].ob_state = link == LINK_TCP ? CHECKED : 0;
-	menu[MN_SER].ob_state = link == LINK_SERIAL ? CHECKED : 0;
-	menu[MN_HEB].ob_state = hebrew_kbd ? CHECKED : 0;
+	check(C_B48, baud == BAUD_4800);
+	check(C_B96, baud == BAUD_9600);
+	check(C_B192, baud == BAUD_19200);
+	check(C_NET, link == LINK_TCP);
+	check(C_SER, link == LINK_SERIAL);
+	check(C_HEB, hebrew_kbd);
 }
 
 /* ------------------------------------------------------------------ */
@@ -4447,27 +4386,27 @@ static void handle_msg(short *msg)
 {
 	switch (msg[0]) {
 	case MN_SELECTED:
-		switch (msg[4]) {
-		case MN_ABOUT: about(); break;
-		case MN_NEW: do_new_chat(); break;
-		case MN_FIND: do_search(); break;
-		case MN_REF: reconnect(); break;
-		case MN_NET:
+		switch (mbar_command(&mb, msg[4])) {
+		case C_ABOUT: about(); break;
+		case C_NEW: do_new_chat(); break;
+		case C_FIND: do_search(); break;
+		case C_REF: reconnect(); break;
+		case C_NET:
 			if (tcp_ip)
 				use_link(LINK_TCP);
 			else
 				alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
 			break;
-		case MN_SER: use_link(LINK_SERIAL); break;
-		case MN_HEB: toggle_hebrew(); break;
-		case MN_ACCT: do_account(); break;
-		case MN_FONT: font_menu(); break;
-		case MN_QUIT: quit = 1; break;
-		case MN_B48: set_baud(BAUD_4800); break;
-		case MN_B96: set_baud(BAUD_9600); break;
-		case MN_B192: set_baud(BAUD_19200); break;
+		case C_SER: use_link(LINK_SERIAL); break;
+		case C_HEB: toggle_hebrew(); break;
+		case C_ACCT: do_account(); break;
+		case C_FONT: font_menu(); break;
+		case C_QUIT: quit = 1; break;
+		case C_B48: set_baud(BAUD_4800); break;
+		case C_B96: set_baud(BAUD_9600); break;
+		case C_B192: set_baud(BAUD_19200); break;
 		}
-		menu_tnormal(menu, msg[3], 1);
+		menu_tnormal(mb.tree, msg[3], 1);
 		break;
 	case WM_REDRAW:
 		if (msg[3] == win) {
@@ -4555,7 +4494,8 @@ static void crash_quit(const char *what)
 		wind_close(win);
 		wind_delete(win);
 	}
-	menu_bar(menu, 0);
+	if (mb.tree)
+		menu_bar(mb.tree, 0);
 	v_clsvwk(vh);
 	appl_exit();
 }
@@ -4597,16 +4537,21 @@ int main(void)
 		return 1;
 	}
 
-	menu_init();
+	if (mbar_build(&mb, bar, sys_cw, sys_ch, scr_w, scr_h)) {
+		alert(1, "[3][ClaudeST: not enough memory.][ Quit ]");
+		v_clsvwk(vh);
+		appl_exit();
+		return 1;
+	}
 	menu_check_baud();
-	menu_bar(menu, 1);
+	menu_bar(mb.tree, 1);
 	graf_mouse(ARROW, 0);
 
 	wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
 	win = wind_create(WKIND, dx, dy, dw, dh);
 	if (win < 0) {
 		alert(1, "[3][ClaudeST: no window available.][ Quit ]");
-		menu_bar(menu, 0);
+		menu_bar(mb.tree, 0);
 		v_clsvwk(vh);
 		appl_exit();
 		return 1;
@@ -4696,7 +4641,7 @@ int main(void)
 	serial_close();
 	wind_close(win);
 	wind_delete(win);
-	menu_bar(menu, 0);
+	menu_bar(mb.tree, 0);
 	v_clsvwk(vh);
 	Mfree(tb);
 	crash_remove();

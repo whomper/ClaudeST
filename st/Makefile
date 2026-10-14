@@ -20,7 +20,7 @@ CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o alert.o
+OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o alert.o mbar.o
 HDRS := icon.h icon16.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h $(COMMON)/src/bidi.h)
 
 all: ../binary/CLAUDEST.PRG
