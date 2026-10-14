@@ -110,6 +110,7 @@ same as before.
 | `atari/crash_none.c` | | the same calls, doing nothing, for an edition that is only ever a desk accessory (ECal's and EContact's ST editions) |
 | `tools/crashaddr.py` | EMail | turns the offsets in a `CRASH.LOG` into function names, from the ELF file of the same build |
 | `ui/help.c/.h` | ECal + EContact | the Help key: `help_show(dir, "ECAL.HYP", page)` sends `VA_START "C:\ECAL\ECAL.HYP page"` (or `"*:\ECAL.HYP page"`) to the viewer that runs, EHypView first, then ST-Guide and HypView; 0 when none runs. `av_send(name, text)` hands another program a string the same way (EContact's `mailto:` to EMail). The strings are in memory the other program may read (Mxalloc 0x2B under MiNT and MagiC, static on plain TOS); `help_init()` takes it at start-up. `tests/help/app_help.py` checks an app's Help key in Hatari with a stand-in viewer |
+| `ui/alert.c/.h` | ECal + EContact | `alert(def, "[3][Can't reach %s.|...][ OK ]", host)`: form_alert with printf formatting, words wrapped into lines of 30 characters, at most 5 lines, brackets in the text made parentheses, an empty line kept (EmuTOS reads `||` as `|`), Hebrew put into display order; `alert_hebrew` lets an app map the letters for its font. `tests/alert` checks it on the build machine |
 
 ## Coming next
 
