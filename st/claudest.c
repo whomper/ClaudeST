@@ -19,6 +19,7 @@
 #include "bidi.h"
 #include "crash.h"
 #include "help.h"
+#include "alert.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -33,7 +34,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.26"
+#define VERSION "1.27"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -1900,22 +1901,10 @@ static void handle_line(char *s)
 		busy = n > 1 && f[1][0] == '1';
 		dirty |= D_TITLE | D_INPUT;
 		break;
-	case 'A': {			/* A <text> : alert box */
-		static char buf[200];
-		char *p = buf;
-		const char *q = n > 1 ? f[1] : "";
-		const char *pre = "[1][", *post = "][ OK ]";
-		while (*pre)
-			*p++ = *pre++;
-		while (*q && p < buf + 180)
-			*p++ = (*q == '[' || *q == ']') ? '|' : *q, q++;
-		while (*post)
-			*p++ = *post++;
-		*p = 0;
+	case 'A':			/* A <text> : alert box */
 		flush_dirty();
-		form_alert(1, buf);
+		alert(1, "[1][%s][ OK ]", n > 1 ? f[1] : "");	/* wrapped, Hebrew in order */
 		break;
-	}
 	}
 }
 
@@ -2334,7 +2323,7 @@ static void submit(void)
 			tcp_port = port;
 			use_link(LINK_TCP);
 		} else {
-			form_alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(your gateway's address)][ OK ]");
+			alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(your gateway's address)][ OK ]");
 			return;
 		}
 	} else if (!search_mode && !strcmp(input, "/serial")) {
@@ -3842,7 +3831,7 @@ static void context_menu(short i, short x, short y)
 		case 2: rename_item("PROJECT", it); break;
 		case 3: tx_cmd("ARCHIVE", "PROJECT", it->id); break;
 		case 5:
-			if (form_alert(1, "[3][Delete this project?|This can't be undone.][Cancel|Delete]") == 2)
+			if (alert(1, "[3][Delete this project?|This can't be undone.][Cancel|Delete]") == 2)
 				tx_cmd("DELETE", "PROJECT", it->id);
 			break;
 		}
@@ -3866,7 +3855,7 @@ static void context_menu(short i, short x, short y)
 		tx_cmd("PICKPROJ", it->id, 0);
 		break;
 	case 5:
-		if (form_alert(1, "[3][Delete this chat?|This can't be undone.][Cancel|Delete]") == 2)
+		if (alert(1, "[3][Delete this chat?|This can't be undone.][Cancel|Delete]") == 2)
 			tx_cmd("DELETE", "CHAT", it->id);
 		break;
 	}
@@ -3906,7 +3895,7 @@ static void choose_save_file(const char *name)
 	strcpy(p, file);
 	fd = Fcreate(save_path, 0);
 	if (fd < 0) {
-		form_alert(1, "[3][Couldn't create that file.|Is the disk write-protected|or full?][ OK ]");
+		alert(1, "[3][Couldn't create that file.|Is the disk write-protected|or full?][ OK ]");
 		save_id[0] = 0;
 		return;
 	}
@@ -3941,7 +3930,7 @@ static void save_chunk(const char *hex)
 		Fclose(save_fd);
 		save_fd = -1;
 		Fdelete(save_path);
-		form_alert(1, "[3][Writing the file failed.|The disk may be full.][ OK ]");
+		alert(1, "[3][Writing the file failed.|The disk may be full.][ OK ]");
 		return;
 	}
 	save_bytes += n;
@@ -3949,24 +3938,15 @@ static void save_chunk(const char *hex)
 
 static void finish_save(void)
 {
-	static char msg[200];
-	char *p;
 	if (save_fd < 0)
 		return;
 	Fclose(save_fd);
 	save_fd = -1;
 	save_id[0] = 0;
-	strcpy(msg, "[1][Saved ");
-	p = msg + strlen(msg);
-	strlcpy_(p, save_path, 60);
-	p += strlen(p);
-	strcpy(p, "|");
-	p = put_num(p + 1, save_bytes > 65535 ? 65535 : (u16)save_bytes);
-	strcpy(p, save_bytes > 65535 ? "+ bytes][ OK ]" : " bytes][ OK ]");
 	notice[0] = 0;
 	dirty |= D_TITLE;
 	flush_dirty();
-	form_alert(1, msg);
+	alert(1, "[1][Saved %s|%lu bytes][ OK ]", save_path, (unsigned long)save_bytes);
 }
 
 /* The model menu: the models, then the effort levels for this model.
@@ -3977,7 +3957,7 @@ static void model_menu(void)
 	const char *lp[NMODEL + NEFFORT + 1];
 	short i, n = 0, r;
 	if (!nmodel) {
-		form_alert(1, "[1][The gateway hasn't sent|the list of models yet.][ OK ]");
+		alert(1, "[1][The gateway hasn't sent|the list of models yet.][ OK ]");
 		return;
 	}
 	for (i = 0; i < nmodel; i++, n++) {
@@ -4476,7 +4456,7 @@ static void handle_msg(short *msg)
 			if (tcp_ip)
 				use_link(LINK_TCP);
 			else
-				form_alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
+				alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
 			break;
 		case MN_SER: use_link(LINK_SERIAL); break;
 		case MN_HEB: toggle_hebrew(); break;
@@ -4611,7 +4591,7 @@ int main(void)
 	ncolors = work_out[13];
 
 	if (!alloc_buffers()) {
-		form_alert(1, "[3][ClaudeST: not enough memory.][ Quit ]");
+		alert(1, "[3][ClaudeST: not enough memory.][ Quit ]");
 		v_clsvwk(vh);
 		appl_exit();
 		return 1;
@@ -4625,7 +4605,7 @@ int main(void)
 	wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
 	win = wind_create(WKIND, dx, dy, dw, dh);
 	if (win < 0) {
-		form_alert(1, "[3][ClaudeST: no window available.][ Quit ]");
+		alert(1, "[3][ClaudeST: no window available.][ Quit ]");
 		menu_bar(menu, 0);
 		v_clsvwk(vh);
 		appl_exit();
@@ -4653,10 +4633,8 @@ int main(void)
 	}
 	dirty = D_ALL;
 	if (crash_previous()) {
-		char a[200];
 		flush_dirty();
-		snprintf(a, sizeof(a), "[1][ClaudeST crashed last time|(%s).|What happened is in|CRASH.LOG, next to CLAUDEST.PRG.][ OK ]", crash_previous());
-		form_alert(1, a);
+		alert(1, "[1][ClaudeST crashed last time|(%s).|What happened is in|CRASH.LOG, next to CLAUDEST.PRG.][ OK ]", crash_previous());
 	}
 
 	while (!quit) {
