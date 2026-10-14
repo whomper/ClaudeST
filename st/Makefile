@@ -3,40 +3,54 @@
 # ClaudeST - builds ../binary/CLAUDEST.PRG with a stock m68k ELF cross compiler
 # (Debian/Ubuntu: apt install gcc-m68k-linux-gnu). No MiNTLib needed:
 # the program is freestanding and elf2tos.py writes the TOS header.
-# An m68k-atari-mint toolchain works too: make CROSS=m68k-atari-mint-
+#
+# The Atari runtime (start-up, C library, GEM and TOS calls, STinG) and the
+# right-to-left layout are the AERA programs' shared code in ../common/, a
+# git subtree of github.com/whomper/AERA-Atari: change it there, then
+# ../tools/sync-common.sh.
 
 CROSS   ?= m68k-linux-gnu-
 CC      := $(CROSS)gcc
+GCCINC  := $(shell $(CC) -print-file-name=include 2>/dev/null)
+COMMON  := ../common
 CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
            -fno-pic -fno-pie -fno-tree-loop-distribute-patterns -fno-store-merging \
-           -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign
-LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,link.ld -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
+           -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
+           -nostdinc -isystem $(GCCINC) -I$(COMMON)/atari/include -I$(COMMON)/atari -I$(COMMON)/src
+LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
+           -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-OBJS := crt0.o claudest.o gem.o tos.o sting.o sting_s.o bidi.o
+OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o
+HDRS := icon.h icon16.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h $(COMMON)/src/bidi.h)
 
 all: ../binary/CLAUDEST.PRG
 
-../binary/CLAUDEST.PRG: claudest.elf ../tools/elf2tos.py
-	python3 ../tools/elf2tos.py $< $@
+../binary/CLAUDEST.PRG: claudest.elf $(COMMON)/tools/elf2tos.py
+	python3 $(COMMON)/tools/elf2tos.py $< $@
 
-claudest.elf: $(OBJS) link.ld
-	$(CC) $(LDFLAGS) -o $@ $(OBJS)
+claudest.elf: $(OBJS) $(COMMON)/atari/link.ld
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) -lgcc
 
-%.o: %.c tos.h gem.h sting.h bidi.h icon.h icon16.h
+claudest.o: claudest.c $(HDRS)
+	$(CC) $(CFLAGS) -c -o $@ $<
+%.o: $(COMMON)/atari/%.c $(HDRS)
+	$(CC) $(CFLAGS) -c -o $@ $<
+%.o: $(COMMON)/src/%.c $(HDRS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-crt0.o: crt0.S
+# a 24 KB stack (48 KB by default): enough for ClaudeST
+crt0.o: $(COMMON)/atari/crt0.S
+	$(CC) -m68000 -DSTACK_SIZE=24576 -c -o $@ $<
+sting_s.o: $(COMMON)/atari/sting.S
+	$(CC) -m68000 -c -o $@ $<
+nf.o: $(COMMON)/atari/nf.S
 	$(CC) -m68000 -c -o $@ $<
 
 clean:
 	rm -f *.o claudest.elf ../binary/CLAUDEST.PRG
 
-.PHONY: all clean
-
-sting_s.o: sting.S
-	$(CC) -m68000 -c -o $@ $<
-
 # host-side unit test for the right-to-left layout
-test: bidi_test.c bidi.c bidi.h
-	cc -O2 -Wall -o /tmp/bidi_test bidi_test.c bidi.c && /tmp/bidi_test
-.PHONY: test
+test: bidi_test.c $(COMMON)/src/bidi.c $(COMMON)/src/bidi.h
+	cc -O2 -Wall -I$(COMMON)/src -o /tmp/bidi_test bidi_test.c $(COMMON)/src/bidi.c && /tmp/bidi_test
+
+.PHONY: all clean test

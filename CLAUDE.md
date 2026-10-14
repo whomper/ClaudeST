@@ -10,3 +10,7 @@
   `cd ~/atari_claude/pi && git pull && sudo ./install.sh`.
 - Run the bridge tests (`cd bridge && python3 -m unittest test_bridge`)
   and build (`make -C st`) before pushing.
+- `common/` is the AERA programs' shared code (start-up, C library, TOS,
+  AES/VDI, STinG, right-to-left layout), a git subtree of
+  github.com/whomper/AERA-Atari. Change it there, never here, then
+  `tools/sync-common.sh`; `make -C st test` runs the layout tests.

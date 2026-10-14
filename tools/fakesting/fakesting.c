@@ -8,7 +8,8 @@
  * it. TCP_open announces "DBG OPEN <ip> <port>" so the bridge log shows
  * the address ClaudeST asked for.
  */
-#include "../../st/tos.h"
+#include <string.h>
+#include "tos.h"
 
 long get_dftab(void), TCP_open(void), TCP_close(void), TCP_send(void),
      TCP_wait_state(void), CNbyte_count(void), CNget_block(void),

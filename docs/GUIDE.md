@@ -415,8 +415,13 @@ cd ../bridge && python3 -m unittest
 
 The program is freestanding C with its own startup code, AES, VDI and
 STinG bindings, and 68000 helpers, so it needs no MiNTLib and no
-resource file. `tools/elf2tos.py` turns the ELF into a TOS program. An
-`m68k-atari-mint` toolchain also works: `make CROSS=m68k-atari-mint-`.
+resource file. That runtime, and the right-to-left layout, are shared
+with the other AERA programs: they live in `common/`, a copy of
+[AERA-Atari](https://github.com/whomper/AERA-Atari)'s `common/` folder.
+Change them there and bring the copy up to date with
+`tools/sync-common.sh`. `common/tools/elf2tos.py` turns the ELF into a
+TOS program. An `m68k-atari-mint` toolchain also works:
+`make CROSS=m68k-atari-mint-`.
 
 ### Running it in Hatari
 
@@ -461,12 +466,14 @@ running EmuTOS.
 
 ```
 help/      CLAUDEST.STG, the ST-Guide help: make -C help (needs HCP) -> binary/CLAUDEST.HYP
-st/        the Atari program: claudest.c (UI and protocol), gem.c (AES/VDI),
-           sting.c (STinG client), bidi.c (right-to-left), tos.c (traps, mini libc)
+st/        the Atari program: claudest.c (UI and protocol), bidi_test.c
+common/    the AERA programs' shared code (a git subtree of AERA-Atari):
+           atari/ (start-up, C library, TOS traps, AES/VDI, STinG client),
+           src/bidi.c (right-to-left), tools/elf2tos.py
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
 pi/        install.sh and the systemd service
-tools/     hatari-test.sh, elf2tos.py, fakesting/, icon/
+tools/     hatari-test.sh, sync-common.sh, fakesting/, icon/
 binary/    what goes on the Atari: CLAUDEST.PRG, an example CLAUDEST.INF
            and the desktop icon files
 ```

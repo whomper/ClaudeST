@@ -10,6 +10,9 @@
  * on any modern computer, which does the TLS/HTTP work against claude.ai.
  * See ../PROTOCOL.md.
  */
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "tos.h"
 #include "gem.h"
 #include "sting.h"
@@ -17,7 +20,18 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.23"
+/* copy at most n-1 characters and always end the string (ClaudeST's own;
+   the shared C library has none) */
+static void strlcpy_(char *d, const char *s, int n)
+{
+	while (n > 1 && *s) {
+		*d++ = *s++;
+		n--;
+	}
+	*d = 0;
+}
+
+#define VERSION "1.24"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -449,7 +463,7 @@ static void link_flush(void)
 			}
 			{
 				short m[8];
-				EVENT e;
+				AEVENT e;
 				evnt_multi_(MU_TIMER, 0, 0, 0, 20, m, &e);
 			}
 		}
@@ -2431,7 +2445,7 @@ static void reconnect(void)
 static void wait_release(void)
 {
 	short mx, my, mb, ks, m[8];
-	EVENT e;
+	AEVENT e;
 	for (;;) {
 		graf_mkstate(&mx, &my, &mb, &ks);
 		if (!(mb & 3))
@@ -2474,7 +2488,7 @@ static short popup(short x, short y, short alt_y, const char *const *lab, short 
 {
 	short i, w = 0, sel = -1, res = -1, held, moved = 0;
 	short mx, my, mb, ks, ox, oy, m[8], clipr[4];
-	EVENT e;
+	AEVENT e;
 
 	for (i = 0; i < n; i++)
 		if ((short)strlen(lab[i]) > w)
@@ -2660,7 +2674,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 {
 	char edit[128];
 	short len, cur, start = 0, res = -1, clipr[4], m[8], tl = strlen(title);
-	EVENT e;
+	AEVENT e;
 
 	if (max > (short)sizeof(edit))
 		max = sizeof(edit);
@@ -3318,7 +3332,7 @@ static void font_menu(void)
 	static char heb_label[3][24];
 	short i, done = 0, ok = 0, m[8], clipr[4];
 	short keep_id = cur_font_id, keep_pt = cur_font_pt, keep_heb = hebfont;
-	EVENT e;
+	AEVENT e;
 
 	hebfont = HEB_ATARI;	/* the dialog's own samples are drawn as they are */
 	use_sys();
@@ -3597,7 +3611,7 @@ static void about(void)
 	short ih = ICON_H * sy, lh = ch + (ch >= 16 ? 2 : 1);
 	short m[8], clipr[4], y, done = 0, i, gap, fcw, fch, fstep;
 	short saved_rgb[8][3], colour = ncolors >= 16;
-	EVENT e;
+	AEVENT e;
 
 	if (link == LINK_TCP && tcp_ip) {
 		char *p;
@@ -4220,7 +4234,7 @@ static void drag_divider(void)
 {
 	short mx, my, mb, ks, x, last = -1, m[8], clipr[4];
 	short minx = wx + 14 * cw, maxx = wx + ww - 34 * cw;
-	EVENT e;
+	AEVENT e;
 
 	wind_update(BEG_UPDATE);
 	wind_update(3);
@@ -4560,7 +4574,7 @@ int main(void)
 {
 	short work_out[57], dx, dy, dw, dh, wbox, hbox;
 	short msg[8];
-	EVENT ev;
+	AEVENT ev;
 
 	apid = appl_init();
 	if (apid < 0)
@@ -4651,7 +4665,7 @@ int main(void)
 			 * button is still down, so one press acts only once */
 			for (;;) {
 				short bx, by, bb, bk, m2[8];
-				EVENT e2;
+				AEVENT e2;
 				flush_dirty();
 				graf_mkstate(&bx, &by, &bb, &bk);
 				if (!(bb & 3)) {

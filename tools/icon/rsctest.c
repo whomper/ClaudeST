@@ -4,14 +4,14 @@
  * RSCTEST.PRG - loads CLAUDEST.RSC with the AES and draws its icon tree,
  * to check the resource file on a real (or emulated) Atari. Any key quits.
  */
-#include "../../st/tos.h"
-#include "../../st/gem.h"
+#include "tos.h"
+#include "gem.h"
 
 int main(void)
 {
 	OBJECT *tree;
 	short m[8], d1, d2, d3, d4;
-	EVENT e;
+	AEVENT e;
 
 	appl_init();
 	graf_handle(&d1, &d2, &d3, &d4);

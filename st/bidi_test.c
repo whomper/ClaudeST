@@ -3,7 +3,6 @@
 /* Host-side test for bidi.c: cc -o bidi_test bidi_test.c bidi.c && ./bidi_test */
 #include <stdio.h>
 #include <string.h>
-#include "tos.h"
 #include "bidi.h"
 
 /* Atari codes for a few Hebrew letters */

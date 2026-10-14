@@ -196,6 +196,7 @@ def main():
     marks = {"start": time.time()}
     try:
         step("waiting for the desktop")
+        time.sleep(3)                        # a screenshot asked for too early can crash Hatari 2.4
         wait_for_desktop()                   # EmuTOS boots to the desktop
         step("desktop")
         marks["desktop"] = time.time()
