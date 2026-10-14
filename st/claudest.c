@@ -21,6 +21,9 @@
 #include "help.h"
 #include "alert.h"
 #include "mbar.h"
+#include "grect.h"
+#include "popup.h"
+#include "aboutbox.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -35,15 +38,16 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.28"
+#define VERSION "1.29"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
 /* ------------------------------------------------------------------ */
 
-static short apid, phys, vh;
-static short cw, ch;			/* character cell of the text font */
-static short sys_cw, sys_ch;		/* the system font's, as the AES uses it */
+static short apid, phys;
+short vh;				/* the VDI workstation (and the shared blocks', st/ui.h) */
+short cw, ch;				/* character cell of the text font */
+short sys_cw, sys_ch;			/* the system font's, as the AES uses it */
 
 /* the text font (Options > Font), as in EMail and ECal: font_id 1 is the
  * system font (font_pt 8 or 16: its 8x8 or 8x16 size; 0 the screen's
@@ -68,7 +72,8 @@ static short heb_why;
 static unsigned short heb_idx[27];	/* HM_UNICODE: the font's index of each letter */
 static void font_reselect(void);
 static short ncolors;
-static short scr_w, scr_h;
+short scr_w, scr_h;
+short desk_x, desk_y, desk_w, desk_h, planes;	/* for the shared popup and About box */
 static short win = -1;
 static short wx, wy, ww, wh;		/* window work area */
 static short quit;
@@ -2385,161 +2390,17 @@ static void wait_release(void)
 	}
 }
 
-static short pop_x, pop_y, pop_w, pop_ih;
-
-static void pop_item(const char *const *lab, short i, short on)
+/* list and right-click menus: the AERA programs' shared popup
+ * (common/ui/popup.c), above the row it is for when there is no room
+ * below; what it covered is repainted at once */
+static short menu_popup(short x, short y, short alt_y, const char *const *lab, short n)
 {
-	short y = pop_y + 2 + i * pop_ih;
-	short x1 = pop_x + 1, x2 = pop_x + pop_w - 2;
-	if (lab[i][0] == '-') {
-		fill(x1, y, x2, y + pop_ih - 1, 0);
-		line(x1 + 2, y + pop_ih / 2, x2 - 2, y + pop_ih / 2, 1);
-		return;
-	}
-	fill(x1, y, x2, y + pop_ih - 1, on ? 1 : 0);
-	text(pop_x + 2 * cw, y + (pop_ih - ch) / 2, lab[i], strlen(lab[i]), 0, on ? 0 : 1);
+	short r = popup_alt(x, y, alt_y, lab, n), saved = text_dirty_row;
+	text_dirty_row = 0;
+	redraw(D_ALL, popup_area.x, popup_area.y, popup_area.w, popup_area.h);
+	text_dirty_row = saved;
+	return r;
 }
-
-static short pop_next(const char *const *lab, short n, short from, short d)
-{
-	short i = from;
-	do {
-		i += d;
-		if (i < 0)
-			i = n - 1;
-		if (i >= n)
-			i = 0;
-	} while (lab[i][0] == '-' && i != from);
-	return i;
-}
-
-/* a GEM-style popup at (x, y); returns the chosen item or -1.
- * Mouse: click an item (or press-drag-release). Keys: arrows, Return, Esc. */
-static short popup(short x, short y, short alt_y, const char *const *lab, short n)
-{
-	short i, w = 0, sel = -1, res = -1, held, moved = 0;
-	short mx, my, mb, ks, ox, oy, m[8], clipr[4];
-	AEVENT e;
-
-	for (i = 0; i < n; i++)
-		if ((short)strlen(lab[i]) > w)
-			w = strlen(lab[i]);
-	pop_ih = row_h;
-	pop_w = (w + 4) * cw;
-	{
-		short bh = n * pop_ih + 4;
-		if (x + pop_w + 2 > wx + ww)
-			x = wx + ww - pop_w - 2;
-		if (x < wx)
-			x = wx;
-		if (y + bh + 2 > wy + wh)
-			y = alt_y >= 0 ? alt_y - bh - 2 : wy + wh - bh - 2;
-		if (y < wy)
-			y = wy;
-		pop_x = x;
-		pop_y = y;
-
-		wind_update(BEG_UPDATE);
-		wind_update(3);		/* BEG_MCTRL: we own the mouse */
-		form_dial(FMD_START, x, y, pop_w + 3, bh + 3);
-		graf_mouse(M_OFF, 0);
-		vswr_mode(vh, 2);
-		vsf_perimeter(vh, 0);
-		vst_alignment(vh, 0, 5);
-		clipr[0] = 0;
-		clipr[1] = 0;
-		clipr[2] = scr_w - 1;
-		clipr[3] = scr_h - 1;
-		vs_clip(vh, 1, clipr);
-		fill(x + 2, y + 2, x + pop_w + 2, y + bh + 2, 1);	/* shadow */
-		fill(x, y, x + pop_w - 1, y + bh - 1, 0);
-		line(x, y, x + pop_w - 1, y, 1);
-		line(x + pop_w - 1, y, x + pop_w - 1, y + bh - 1, 1);
-		line(x + pop_w - 1, y + bh - 1, x, y + bh - 1, 1);
-		line(x, y + bh - 1, x, y, 1);
-		for (i = 0; i < n; i++)
-			pop_item(lab, i, 0);
-		graf_mouse(M_ON, 0);
-	}
-
-	graf_mkstate(&ox, &oy, &held, &ks);
-	held &= 3;
-	for (;;) {
-		short hit = -1, nsel, ev_x, ev_y;
-		/* button events come from the AES queue, so even a very quick
-		 * click is never missed; while the opening button is still held
-		 * we wait for its release instead */
-		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_TIMER,
-			    held ? 1 : 0x101, 3, 0, 20, m, &e);
-		graf_mkstate(&mx, &my, &mb, &ks);
-		if (e.which & MU_BUTTON) {
-			ev_x = e.mx;
-			ev_y = e.my;
-		} else {
-			ev_x = mx;
-			ev_y = my;
-		}
-		if (ev_x - ox > 3 || ox - ev_x > 3 || ev_y - oy > 3 || oy - ev_y > 3)
-			moved = 1;
-		if (ev_x >= pop_x && ev_x < pop_x + pop_w && ev_y >= pop_y + 2 &&
-		    ev_y < pop_y + 2 + n * pop_ih) {
-			hit = (ev_y - pop_y - 2) / pop_ih;
-			if (lab[hit][0] == '-')
-				hit = -1;
-		}
-		nsel = sel;
-		if (e.which & MU_KEYBD) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			if (as == 0x1b || sc == 0x61)
-				break;
-			if (sc == 0x48)
-				nsel = pop_next(lab, n, sel < 0 ? 0 : sel, -1);
-			else if (sc == 0x50)
-				nsel = pop_next(lab, n, sel < 0 ? n - 1 : sel, 1);
-			else if ((as == 0x0d || as == ' ') && sel >= 0) {
-				res = sel;
-				break;
-			}
-		} else if (moved) {
-			nsel = hit;
-		}
-		if (nsel != sel) {
-			graf_mouse(M_OFF, 0);
-			if (sel >= 0)
-				pop_item(lab, sel, 0);
-			if (nsel >= 0)
-				pop_item(lab, nsel, 1);
-			graf_mouse(M_ON, 0);
-			sel = nsel;
-		}
-		if (!(e.which & MU_BUTTON))
-			continue;
-		if (held) {				/* the opening button came up */
-			held = 0;
-			if (moved && hit >= 0) {	/* press, drag, release */
-				res = hit;
-				break;
-			}
-		} else {				/* click: an item, or outside to cancel */
-			res = hit;
-			break;
-		}
-	}
-	vs_clip(vh, 0, clipr);
-	wind_update(2);		/* END_MCTRL */
-	wind_update(END_UPDATE);
-	wait_release();
-	/* repaint our part now, and let the AES repaint anything else covered */
-	{
-		short saved = text_dirty_row;
-		text_dirty_row = 0;
-		redraw(D_ALL, pop_x, pop_y, pop_w + 3, n * pop_ih + 4 + 3);
-		text_dirty_row = saved;
-	}
-	form_dial(FMD_FINISH, pop_x, pop_y, pop_w + 3, n * pop_ih + 4 + 3);
-	return res;
-}
-
 
 /* ------------------------------------------------------------------ */
 /* a small GEM-style dialog with one text field                        */
@@ -2843,6 +2704,98 @@ static void use_sys(void)
 	set_font(1, sys_ch >= 16 ? 16 : 8);
 	cw = sys_cw;
 	ch = sys_ch;
+}
+
+/* ---- what the shared popup and About box draw with (common/ui/gemui.h;
+ * st/ui.h gives them these names) ---- */
+
+void cst_ui_fill(GRECT *r, short color)
+{
+	if (r->w <= 0 || r->h <= 0)
+		return;
+	vswr_mode(vh, 1);
+	vsf_perimeter(vh, 0);
+	fill(r->x, r->y, r->x + r->w - 1, r->y + r->h - 1, color);
+}
+
+void cst_ui_line_col(short x1, short y1, short x2, short y2, short color)
+{
+	vswr_mode(vh, 1);
+	line(x1, y1, x2, y2, color);
+}
+
+void cst_ui_hline(short x1, short x2, short y)
+{
+	cst_ui_line_col(x1, y, x2, y, 1);
+}
+
+void cst_ui_frame(GRECT *r, short color)
+{
+	short p[10];
+	p[0] = p[6] = p[8] = r->x;
+	p[1] = p[3] = p[9] = r->y;
+	p[2] = p[4] = r->x + r->w - 1;
+	p[5] = p[7] = r->y + r->h - 1;
+	vswr_mode(vh, 1);
+	vsl_color(vh, color);
+	v_pline(vh, 5, p);
+}
+
+/* bold, white on black, or light for what can't be used; at most cols
+   characters; Hebrew as text() draws it */
+void cst_ui_text_at(short x, short y, const char *s, long n, short cols, short flags)
+{
+	if (n > cols)
+		n = cols;
+	vswr_mode(vh, 2);
+	text(x, y, s, (short)n, (flags & 1) ? 1 : (flags & 128) ? 2 : 0, (flags & 2) ? 0 : 1);
+	vst_effects(vh, 0);
+}
+
+void cst_ui_clip_off(void)
+{
+	short p[4];
+	p[0] = 0;
+	p[1] = 0;
+	p[2] = scr_w - 1;
+	p[3] = scr_h - 1;
+	vs_clip(vh, 0, p);
+}
+
+/* ST RAM for a bitmap to blit: the screen can't be fed from TT RAM */
+void *cst_ui_st_ram(long n)
+{
+	static unsigned short fallback[256];
+	static void *buf;
+	if (!buf) {
+		void *p = Mxalloc(sizeof(fallback), 0);
+		buf = (long)p > 0 ? p : fallback;
+	}
+	return n <= (long)sizeof(fallback) ? buf : 0;
+}
+
+/* the system font for the shared popup and About box, then the text font
+   (and its cell) back */
+static short sys_depth, sys_saved_id, sys_saved_pt, sys_saved_cw, sys_saved_ch;
+
+void cst_ui_font_sys_push(void)
+{
+	if (sys_depth++)
+		return;
+	sys_saved_id = cur_font_id;
+	sys_saved_pt = cur_font_pt;
+	sys_saved_cw = cw;
+	sys_saved_ch = ch;
+	use_sys();
+}
+
+void cst_ui_font_sys_pop(void)
+{
+	if (!sys_depth || --sys_depth)
+		return;
+	set_font(sys_saved_id, sys_saved_pt);
+	cw = sys_saved_cw;
+	ch = sys_saved_ch;
 }
 
 /* whether a font is monospaced: 'i', 'W' and 'm' as wide */
@@ -3424,91 +3377,6 @@ static void font_menu(void)
 	}
 }
 
-/* ---- the About box ---- */
-
-/* the 32x32 icon scaled by sx, sy (2x on square pixels; 2x1 in ST medium,
- * whose pixels are twice as tall as wide) */
-static unsigned short icon_big[64 * 4];
-
-static void draw_icon(short x, short y, short sx, short sy)
-{
-	MFDB src, dst;
-	short pxy[8], colors[2], r, c, k, wpl = 2 * sx;
-	short w = ICON_W * sx, h = ICON_H * sy;
-
-	memset(icon_big, 0, sizeof(icon_big));
-	for (r = 0; r < ICON_H; r++) {
-		for (c = 0; c < ICON_W; c++) {
-			if (!(icon_bits[r * 2 + c / 16] & (0x8000 >> (c & 15))))
-				continue;
-			for (k = 0; k < sx; k++) {
-				short bx = c * sx + k, yy;
-				for (yy = 0; yy < sy; yy++)
-					icon_big[(r * sy + yy) * wpl + bx / 16] |= 0x8000 >> (bx & 15);
-			}
-		}
-	}
-	memset(&src, 0, sizeof(src));
-	memset(&dst, 0, sizeof(dst));
-	src.fd_addr = icon_big;
-	src.fd_w = w;
-	src.fd_h = h;
-	src.fd_wdwidth = wpl;
-	src.fd_nplanes = 1;
-	pxy[0] = 0;
-	pxy[1] = 0;
-	pxy[2] = w - 1;
-	pxy[3] = h - 1;
-	pxy[4] = x;
-	pxy[5] = y;
-	pxy[6] = x + w - 1;
-	pxy[7] = y + h - 1;
-	colors[0] = 1;		/* set bits black */
-	colors[1] = 0;
-	vrt_cpyfm(vh, 2, pxy, &src, &dst, colors);	/* transparent */
-}
-
-/* The 16-colour icon, drawn as runs of VDI fills so that the pen numbers
- * mean the same thing in every video mode. Pens 8..15 are given the
- * icon's colours while the About box is open (see about()). */
-static void draw_icon16(short x, short y, short sx, short sy)
-{
-	short r, c, p[4];
-	vsf_interior(vh, 1);
-	for (r = 0; r < ICON_H; r++) {
-		for (c = 0; c < ICON_W; ) {
-			u8 b = icon16_px[r * 16 + c / 2];
-			short pen = (c & 1) ? (b & 15) : (b >> 4), e = c + 1;
-			for (;;) {
-				u8 b2;
-				short pen2;
-				if (e >= ICON_W)
-					break;
-				b2 = icon16_px[r * 16 + e / 2];
-				pen2 = (e & 1) ? (b2 & 15) : (b2 >> 4);
-				if (pen2 != pen)
-					break;
-				e++;
-			}
-			if (pen) {
-				vsf_color(vh, pen);
-				p[0] = x + c * sx;
-				p[1] = y + r * sy;
-				p[2] = x + e * sx - 1;
-				p[3] = y + r * sy + sy - 1;
-				vr_recfl(vh, p);
-			}
-			c = e;
-		}
-	}
-}
-
-static void center_text(short y, const char *s, short fx)
-{
-	short n = strlen(s);
-	text(dlg_x + (dlg_w - n * cw) / 2, y, s, n, fx, 1);
-}
-
 /* The help: EHypView or ST-Guide (as an accessory or a program) shows
  * CLAUDEST.HYP from ClaudeST's own folder (common/ui/help.c). Without a
  * viewer, the About box. */
@@ -3520,15 +3388,16 @@ static void help(void)
 		about();
 }
 
+/* the About box: the AERA programs' shared one (common/ui/aboutbox.c),
+ * with how ClaudeST is connected and the trademarks it names */
 static void about(void)
 {
 	static char conn[64];
-	short sx = 2, sy = ch >= 16 ? 2 : 1;
-	short ih = ICON_H * sy, lh = ch + (ch >= 16 ? 2 : 1);
-	short m[8], clipr[4], y, done = 0, i, gap, fcw, fch, fstep;
-	short saved_rgb[8][3], colour = ncolors >= 16;
-	AEVENT e;
-
+	ABOUT a = { "ClaudeST", VERSION, "Claude.ai for the Atari ST, TT and Falcon", { conn, 0, 0 },
+		    { "Unofficial client, not affiliated with Anthropic or Atari.",
+		      "Claude is a trademark of Anthropic PBC.",
+		      "Atari is a trademark of Atari Interactive." },
+		    icon_bits, icon16_px, icon16_rgb };
 	if (link == LINK_TCP && tcp_ip) {
 		char *p;
 		strcpy(conn, "Gateway ");
@@ -3542,123 +3411,7 @@ static void about(void)
 		       baud == BAUD_9600 ? "Serial port, 9600 baud" : "Serial port, 19200 baud");
 		strcpy(conn + strlen(conn), online ? "  \xF9  online" : "  \xF9  offline");
 	}
-
-	dlg_w = 62 * cw;
-	if (dlg_w > ww - 2 * cw)
-		dlg_w = ww - 2 * cw;
-	/* the content, top to bottom, sets the height (see the drawing below) */
-	btn_h = ch + 6;
-	/* the fine print (licence, trademarks) is in a smaller system font:
-	   8x8 on high-resolution screens, 6x6 on 640x200 */
-	vst_font(vh, 1);
-	vst_height(vh, ch >= 16 ? 6 : 4, &fcw, &fch);
-	fstep = fch + (ch >= 16 ? 3 : 2);
-	font_reselect();
-	/* gap: the space between some sections, a line and a half, or one
-	   line where the screen is too low for that */
-	gap = lh + lh / 2;
-	dlg_h = lh + ih + lh / 2 + lh + gap + (lh + lh / 2) + lh / 4 + lh +
-		gap + gap + lh + 4 * fstep + lh / 2 + btn_h + lh;
-	if (dlg_h > wh - 4) {
-		dlg_h -= 3 * (gap - lh);
-		gap = lh;
-	}
-	if (dlg_h > wh - 4)
-		dlg_h = wh - 4;
-	dlg_x = wx + (ww - dlg_w) / 2;
-	dlg_y = wy + (wh - dlg_h) / 2;
-	btn_w = 10 * cw;
-	btn_y = dlg_y + dlg_h - btn_h - lh;
-	ok_x = dlg_x + (dlg_w - btn_w) / 2;
-
-	wind_update(BEG_UPDATE);
-	wind_update(3);
-	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-	graf_mouse(M_OFF, 0);
-	vswr_mode(vh, 2);
-	vsf_perimeter(vh, 0);
-	vst_alignment(vh, 0, 5);
-	clipr[0] = 0;
-	clipr[1] = 0;
-	clipr[2] = scr_w - 1;
-	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
-	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
-
-	y = dlg_y + lh;
-	if (colour) {
-		/* lend pens 8..15 to the icon while the box is open */
-		for (i = 0; i < 8; i++) {
-			vq_color(vh, 8 + i, saved_rgb[i]);
-			vs_color(vh, 8 + i, icon16_rgb[i]);
-		}
-		draw_icon16(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
-	} else {
-		draw_icon(dlg_x + (dlg_w - ICON_W * sx) / 2, y, sx, sy);
-	}
-	y += ih + lh / 2;
-	center_text(y, "ClaudeST", 1 | 8);		/* bold, underlined */
-	y += lh;
-	center_text(y, "Version " VERSION, 0);
-	y += gap;
-	center_text(y, "Claude.ai for the Atari ST, TT and Falcon", 0);
-	y += lh + lh / 2;
-	line(dlg_x + 4 * cw, y - lh / 4, dlg_x + dlg_w - 4 * cw, y - lh / 4, 1);
-	y += lh / 4;
-	center_text(y, "Created by Erez Yaary", 1);
-	y += lh;
-	center_text(y, "\xBD 2026 Erez Yaary", 0);
-	y += gap;
-	center_text(y, conn, 0);
-	y += gap;
-	/* a line's space, then the fine print */
-	y += lh;
-	{
-		static const char *const fine[] = {
-			"Free software under the GNU GPL 2 or later.",
-			"Unofficial client, not affiliated with Anthropic or Atari.",
-			"Claude is a trademark of Anthropic PBC.",
-			"Atari is a trademark of Atari Interactive.",
-		};
-		vst_font(vh, 1);
-		vst_height(vh, ch >= 16 ? 6 : 4, &fcw, &fch);
-		for (i = 0; i < 4; i++) {
-			short n = strlen(fine[i]);
-			text(dlg_x + (dlg_w - n * fcw) / 2, y, fine[i], n, 0, 1);
-			y += fstep;
-		}
-		font_reselect();
-	}
-	dlg_button(ok_x, "OK", 1);
-	graf_mouse(M_ON, 0);
-	wait_release();
-
-	/* Return, Esc, Undo, Help, Space or a click closes it */
-	while (!done) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
-		if (e.which & MU_KEYBD) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			if (as == 0x0d || as == 0x1b || as == ' ' || sc == 0x61 || sc == 0x62)
-				done = 1;
-		}
-		if (e.which & MU_BUTTON) {
-			wait_release();
-			done = 1;
-		}
-	}
-	vs_clip(vh, 0, clipr);
-	if (colour)
-		for (i = 0; i < 8; i++)
-			vs_color(vh, 8 + i, saved_rgb[i]);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	{
-		short saved = text_dirty_row;
-		text_dirty_row = 0;
-		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-		text_dirty_row = saved;
-	}
-	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	about_show(&a);
 }
 
 static void rename_item(const char *kind, ITEM *it)
@@ -3735,7 +3488,7 @@ static void context_menu(short i, short x, short y)
 	set_menu_target(i);		/* highlight the item before the menu opens */
 
 	if (!strcmp(list_kind, "ARTIFACTS")) {
-		r = popup(x, y1, y0, art_menu, 2);
+		r = menu_popup(x, y1, y0, art_menu, 2);
 		set_menu_target(-1);
 		if (r == 0)
 			open_item(i);
@@ -3747,7 +3500,7 @@ static void context_menu(short i, short x, short y)
 	}
 	if (!strcmp(list_kind, "CODE")) {
 		static const char *code_menu[4] = { "Open", "Rename...", "-", "Archive" };
-		r = popup(x, y1, y0, code_menu, 4);
+		r = menu_popup(x, y1, y0, code_menu, 4);
 		switch (r) {
 		case 0: open_item(i); break;
 		case 1: rename_item("CODE", it); break;
@@ -3763,7 +3516,7 @@ static void context_menu(short i, short x, short y)
 		proj_menu[3] = "Archive";
 		proj_menu[4] = "-";
 		proj_menu[5] = "Delete...";
-		r = popup(x, y1, y0, proj_menu, 6);
+		r = menu_popup(x, y1, y0, proj_menu, 6);
 		switch (r) {
 		case 0: open_item(i); break;
 		case 1: tx_cmd4("PIN", "PROJECT", it->id, it->pinned ? "0" : "1"); break;
@@ -3783,7 +3536,7 @@ static void context_menu(short i, short x, short y)
 	chat_menu[3] = "Move to project...";
 	chat_menu[4] = "-";
 	chat_menu[5] = "Delete...";
-	r = popup(x, y1, y0, chat_menu, 6);
+	r = menu_popup(x, y1, y0, chat_menu, 6);
 	switch (r) {
 	case 0: open_item(i); break;
 	case 1: tx_cmd4("PIN", "CHAT", it->id, it->pinned ? "0" : "1"); break;
@@ -3900,13 +3653,13 @@ static void model_menu(void)
 		return;
 	}
 	for (i = 0; i < nmodel; i++, n++) {
-		strcpy(lab[n], strcmp(mod_id[i], cur_model) ? "  " : "\x08 ");
-		strlcpy_(lab[n] + 2, mod_lab[i], 20);
+		strcpy(lab[n], strcmp(mod_id[i], cur_model) ? " " : "\x08");	/* ticked (common/ui/popup.c) */
+		strlcpy_(lab[n] + 1, mod_lab[i], 20);
 	}
 	if (neffort) {
 		strcpy(lab[n++], "----------------");
 		for (i = 0; i < neffort; i++, n++) {
-			strcpy(lab[n], strcmp(eff_id[i], cur_effort) ? "  " : "\x08 ");
+			strcpy(lab[n], strcmp(eff_id[i], cur_effort) ? " " : "\x08");
 			strcat(lab[n], "Effort: ");
 			strlcpy_(lab[n] + strlen(lab[n]), eff_lab[i], 13);
 		}
@@ -3914,7 +3667,7 @@ static void model_menu(void)
 	for (i = 0; i < n; i++)
 		lp[i] = lab[i];
 	flush_dirty();
-	r = popup(chip_x0 ? chip_x0 : px + pw / 2, wy + title_h + 1, -1, lp, n);
+	r = menu_popup(chip_x0 ? chip_x0 : px + pw / 2, wy + title_h + 1, -1, lp, n);
 	if (r < 0)
 		return;
 	if (r < nmodel)
@@ -3964,10 +3717,10 @@ static void show_picker(void)
 	if (t < nitems && t >= list_top && t < list_top + list_rows) {
 		set_menu_target(t);
 		y0 = item_row_y(t);
-		r = popup(pick_x, y0 + row_h, y0, lab, n);
+		r = menu_popup(pick_x, y0 + row_h, y0, lab, n);
 	} else {
 		flush_dirty();
-		r = popup(pick_x, list_y + row_h, -1, lab, n);
+		r = menu_popup(pick_x, list_y + row_h, -1, lab, n);
 	}
 	strlcpy_(chat, pick_chat, sizeof(chat));
 	pick_chat[0] = 0;
@@ -4548,6 +4301,12 @@ int main(void)
 	graf_mouse(ARROW, 0);
 
 	wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
+	desk_x = dx;
+	desk_y = dy;
+	desk_w = dw;
+	desk_h = dh;
+	vq_extnd(vh, 1, work_out);
+	planes = work_out[4];
 	win = wind_create(WKIND, dx, dy, dw, dh);
 	if (win < 0) {
 		alert(1, "[3][ClaudeST: no window available.][ Quit ]");

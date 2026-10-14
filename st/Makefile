@@ -16,12 +16,13 @@ COMMON  := ../common
 CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
            -fno-pic -fno-pie -fno-tree-loop-distribute-patterns -fno-store-merging \
            -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
-           -nostdinc -isystem $(GCCINC) -I$(COMMON)/atari/include -I$(COMMON)/atari -I$(COMMON)/src -I$(COMMON)/ui
+           -nostdinc -isystem $(GCCINC) -I$(COMMON)/atari/include -I$(COMMON)/atari -I$(COMMON)/src -I$(COMMON)/ui -I.
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o alert.o mbar.o
-HDRS := icon.h icon16.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h $(COMMON)/src/bidi.h)
+OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o alert.o mbar.o \
+        popup.o aboutbox.o
+HDRS := icon.h icon16.h ui.h grect.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h $(COMMON)/src/bidi.h)
 
 all: ../binary/CLAUDEST.PRG
 
