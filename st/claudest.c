@@ -17,6 +17,7 @@
 #include "gem.h"
 #include "sting.h"
 #include "bidi.h"
+#include "crash.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -31,7 +32,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.24"
+#define VERSION "1.25"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -428,6 +429,7 @@ static void serial_close(void)
 
 static void set_status(const char *s)
 {
+	crash_note(s);			/* for CRASH.LOG, should ClaudeST crash */
 	strlcpy_(status, s, sizeof(status));
 	dirty |= D_STATUS;
 }
@@ -4383,6 +4385,8 @@ static void handle_key(short kstate, short kr)
 	u8 scan = (kr >> 8) & 0xff;
 	short shift = kstate & (K_LSHIFT | K_RSHIFT);
 
+	if (crash_test(scan))		/* test builds only: F1-F4 crash on purpose */
+		return;
 	switch (scan) {
 	case 0x48: scroll_text(shift ? -(rows - 1) : -1); return;	/* up */
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
@@ -4570,6 +4574,26 @@ static short alloc_buffers(void)
 	return 0;
 }
 
+/* ClaudeST crashed and CRASH.LOG is written (common/atari/crash.c): say
+   so, let the connection and the serial port go, and leave GEM tidy */
+static void crash_quit(const char *what)
+{
+	char a[200];
+	graf_mouse(ARROW, 0);
+	snprintf(a, sizeof(a), "[3][ClaudeST has crashed|(%s).|What happened is in|CRASH.LOG, next to CLAUDEST.PRG.][ Quit ]", what);
+	form_alert(1, a);
+	if (tcp_cn >= 0)
+		sting_close(tcp_cn);
+	serial_close();
+	if (win > 0) {
+		wind_close(win);
+		wind_delete(win);
+	}
+	menu_bar(menu, 0);
+	v_clsvwk(vh);
+	appl_exit();
+}
+
 int main(void)
 {
 	short work_out[57], dx, dy, dw, dh, wbox, hbox;
@@ -4592,6 +4616,8 @@ int main(void)
 		if (home_dir[strlen(home_dir) - 1] != '\\')
 			strcat(home_dir, "\\");
 	}
+	crash_install(home_dir, "ClaudeST", VERSION);
+	crash_cleanup = crash_quit;
 	vh = v_opnvwk_(phys, work_out);
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
@@ -4639,6 +4665,12 @@ int main(void)
 		send_hello();
 	}
 	dirty = D_ALL;
+	if (crash_previous()) {
+		char a[200];
+		flush_dirty();
+		snprintf(a, sizeof(a), "[1][ClaudeST crashed last time|(%s).|What happened is in|CRASH.LOG, next to CLAUDEST.PRG.][ OK ]", crash_previous());
+		form_alert(1, a);
+	}
 
 	while (!quit) {
 		/* 0x101/3/0: wake on any button press, left or right */
@@ -4702,6 +4734,7 @@ int main(void)
 	menu_bar(menu, 0);
 	v_clsvwk(vh);
 	Mfree(tb);
+	crash_remove();
 	appl_exit();
 	return 0;
 }
