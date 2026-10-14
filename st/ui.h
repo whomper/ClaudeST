@@ -24,6 +24,7 @@
 #define hline          cst_ui_hline
 #define line_col       cst_ui_line_col
 #define text_at        cst_ui_text_at
+#define clip_on        cst_ui_clip_on
 #define clip_off       cst_ui_clip_off
 #define st_ram         cst_ui_st_ram
 #define font_sys_push  cst_ui_font_sys_push

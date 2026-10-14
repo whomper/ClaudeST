@@ -25,6 +25,7 @@
 #include "grect.h"
 #include "popup.h"
 #include "aboutbox.h"
+#include "iconify.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -39,7 +40,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.31"
+#define VERSION "1.32"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -147,6 +148,7 @@ static char chat_title[80] = "New chat";
 static char status[64] = "Waiting for bridge...";
 static short busy;
 static short online;
+static short win_icon;			/* shown as ClaudeST's icon (WM_ICONIFY) */
 static short usage_pct = -1;		/* session usage from the bridge's u line; -1: none */
 static char usage_rst[12];		/* and the time until it resets, "2h 10m" */
 
@@ -313,9 +315,19 @@ static void ints_restore(short sr)
 	__asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "memory", "cc");
 }
 
+/* In supervisor mode: under MiNT the IOREC is the system's memory, which
+   memory protection keeps a program from reading. MiNT may have none to
+   give (Iorec() says 0): then TOS's own buffer stays */
 static void sup_set_iorec(void)
 {
-	short sr = ints_off();
+	short sr;
+	if (!iorec)
+		return;
+	sr = ints_off();
+	old_ibuf = iorec->ibuf;
+	old_ibufsiz = iorec->ibufsiz;
+	old_low = iorec->ibuflow;
+	old_high = iorec->ibufhi;
 	iorec->ibuf = rxring;
 	iorec->ibufsiz = RXBUF;
 	iorec->ibufhd = 0;
@@ -327,7 +339,10 @@ static void sup_set_iorec(void)
 
 static void sup_restore_iorec(void)
 {
-	short sr = ints_off();
+	short sr;
+	if (!iorec)
+		return;
+	sr = ints_off();
 	iorec->ibuf = old_ibuf;
 	iorec->ibufsiz = old_ibufsiz;
 	iorec->ibufhd = 0;
@@ -357,10 +372,6 @@ static void serial_open(void)
 	}
 	Rsconf(baud, 0, -1, -1, -1, -1);
 	iorec = Iorec(0);
-	old_ibuf = iorec->ibuf;
-	old_ibufsiz = iorec->ibufsiz;
-	old_low = iorec->ibuflow;
-	old_high = iorec->ibufhi;
 	Supexec(sup_set_iorec);
 }
 
@@ -1533,7 +1544,7 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 	short r[4], area[4], scr[4];
 	short text_from = mask & D_TEXT ? text_dirty_row : 0;
 
-	if (win < 0)
+	if (win < 0 || win_icon)
 		return;
 	area[0] = ax;
 	area[1] = ay;
@@ -1596,8 +1607,18 @@ static void update_slider(void)
 	}
 }
 
+static void icon_window(GRECT *area);
+
 static void flush_dirty(void)
 {
+	if (win_icon) {
+		/* nothing of it shows: all of it is drawn when it comes back */
+		pending_scroll = 0;
+		dirty = 0;
+		text_dirty_row = 0x7fff;
+		icon_window(0);
+		return;
+	}
 	if (pending_scroll) {
 		if (text_dirty_row > 0 && blit_scroll(pending_scroll)) {
 			short keep = rows - pending_scroll - 1;
@@ -2753,6 +2774,16 @@ void cst_ui_text_at(short x, short y, const char *s, long n, short cols, short f
 	vst_effects(vh, 0);
 }
 
+void cst_ui_clip_on(GRECT *r)
+{
+	short p[4];
+	p[0] = r->x;
+	p[1] = r->y;
+	p[2] = r->x + r->w - 1;
+	p[3] = r->y + r->h - 1;
+	vs_clip(vh, 1, p);
+}
+
 void cst_ui_clip_off(void)
 {
 	short p[4];
@@ -3839,6 +3870,8 @@ static void tip_poll(short events)
 {
 	short mx, my, mb, ks, ty;
 	const char *t;
+	if (win_icon)
+		return;
 	graf_mkstate(&mx, &my, &mb, &ks);
 	if (mx != tip_mx || my != tip_my || (events & (MU_KEYBD | MU_BUTTON)) || mb) {
 		hide_tip();
@@ -4113,6 +4146,8 @@ static void handle_key(short kstate, short kr)
 static void on_resize(void)
 {
 	short at_end;
+	if (win_icon)		/* laid out when it comes back */
+		return;
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
 	at_end = at_bottom();
 	layout();
@@ -4193,6 +4228,19 @@ static void av_start(const char *s)
 	dirty |= D_INPUT;
 }
 
+/* the iconified window (common/ui/iconify.c): the icon, and under it
+   whether Claude is busy or the bridge isn't there. From a redraw
+   message, area; from ClaudeST itself (0), only when that changed */
+static void icon_window(GRECT *area)
+{
+	static const char *shown = "-";
+	const char *s = busy ? "busy" : online ? "" : "offline";
+	if (!area && s == shown)
+		return;
+	shown = s;
+	icon_redraw(win, area, icon_bits, icon16_px, s);
+}
+
 static void handle_msg(short *msg)
 {
 	switch (msg[0]) {
@@ -4220,7 +4268,14 @@ static void handle_msg(short *msg)
 		menu_tnormal(mb.tree, msg[3], 1);
 		break;
 	case WM_REDRAW:
-		if (msg[3] == win) {
+		if (msg[3] == win && win_icon) {
+			GRECT a;
+			a.x = msg[4];
+			a.y = msg[5];
+			a.w = msg[6];
+			a.h = msg[7];
+			icon_window(&a);
+		} else if (msg[3] == win) {
 			short saved = text_dirty_row;
 			text_dirty_row = 0;
 			redraw(D_ALL, msg[4], msg[5], msg[6], msg[7]);
@@ -4232,6 +4287,23 @@ static void handle_msg(short *msg)
 				dirty |= D_TEXT;
 			}
 		}
+		break;
+	case WM_ICONIFY:
+	case WM_ALLICONIFY:
+		if (win_icon)
+			break;
+		hide_tip();
+		over_divider = 0;
+		graf_mouse(ARROW, 0);
+		win_icon = 1;
+		wind_set(win, WF_ICONIFY, msg[4], msg[5], msg[6], msg[7]);
+		break;
+	case WM_UNICONIFY:
+		if (!win_icon)
+			break;
+		wind_set(win, WF_UNICONIFY, msg[4], msg[5], msg[6], msg[7]);
+		win_icon = 0;
+		on_resize();
 		break;
 	case WM_TOPPED:
 		wind_set(win, WF_TOP, 0, 0, 0, 0);
@@ -4245,6 +4317,8 @@ static void handle_msg(short *msg)
 		break;
 	case WM_FULLED: {
 		short cx, cy, cw_, ch_, fx, fy, fw, fh;
+		if (win_icon)
+			break;
 		wind_get(win, WF_CURRXYWH, &cx, &cy, &cw_, &ch_);
 		wind_get(win, WF_FULLXYWH, &fx, &fy, &fw, &fh);
 		if (cx == fx && cy == fy && cw_ == fw && ch_ == fh)
@@ -4254,7 +4328,10 @@ static void handle_msg(short *msg)
 	}
 	case WM_SIZED:
 	case WM_MOVED:
-		set_curr(msg[4], msg[5], msg[6], msg[7]);
+		if (win_icon)	/* the icon goes where it is put, as it is */
+			wind_set(win, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
+		else
+			set_curr(msg[4], msg[5], msg[6], msg[7]);
 		break;
 	case WM_ARROWED:
 		switch (msg[4]) {
@@ -4380,7 +4457,7 @@ int main(void)
 	desk_h = dh;
 	vq_extnd(vh, 1, work_out);
 	planes = work_out[4];
-	win = wind_create(WKIND, dx, dy, dw, dh);
+	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
 	if (win < 0) {
 		alert(1, "[3][ClaudeST: no window available.][ Quit ]");
 		menu_bar(mb.tree, 0);
@@ -4416,8 +4493,10 @@ int main(void)
 
 	while (!quit) {
 		/* 0x101/3/0: wake on any button press, left or right */
-		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_MESAG | MU_TIMER | MU_M1,
+		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_MESAG | MU_TIMER | (win_icon ? 0 : MU_M1),
 			    0x101, 3, 0, 40, msg, &ev);
+		if (win_icon)	/* an icon takes no keys or clicks */
+			ev.which &= ~(MU_KEYBD | MU_BUTTON);
 		ticks++;
 		tip_poll(ev.which);
 		if (ev.which & MU_MESAG)

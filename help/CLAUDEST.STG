@@ -101,6 +101,11 @@
   between them to resize the sidebar; the pointer turns into a hand
   over it.
 
+  Where the AES can iconify windows (MultiTOS, MagiC, XaAES, N.AES),
+  the window has the iconify button: ClaudeST shrinks to its icon,
+  with "busy" under it while Claude answers and "offline" when the
+  bridge isn't there. Replies still come in while it is iconified.
+
   - @{B}Title bar:@{b} the chat's name, and at the right the model chip
     (see @{"Model and effort" link "Model and effort"}).
   - @{B}Notices:@{b} short messages such as "Loading chat..." or

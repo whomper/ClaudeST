@@ -29,6 +29,11 @@ area. The open conversation fills the right side, with the reply line at
 the bottom. Drag the divider between them to resize the sidebar; the
 pointer turns into a hand over it.
 
+Where the AES can iconify windows (MultiTOS, MagiC, XaAES, N.AES), the
+window has the iconify button: ClaudeST shrinks to its icon, with *busy*
+under it while Claude answers and *offline* when the bridge isn't there.
+Replies still come in while it is iconified.
+
 ![STE medium resolution, in colour, inside a project](ste-medium-colour.png)
 
 - **Status area** (bottom left): a dot for the connection, green when
