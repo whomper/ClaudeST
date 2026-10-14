@@ -19,6 +19,7 @@
 #include "bidi.h"
 #include "crash.h"
 #include "help.h"
+#include "av.h"
 #include "alert.h"
 #include "mbar.h"
 #include "grect.h"
@@ -38,7 +39,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.29"
+#define VERSION "1.30"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -4135,6 +4136,62 @@ static void set_curr(short x, short y, short w, short h)
 	on_resize();
 }
 
+/* a character into the reply line at the cursor; 0 when it is full */
+static int input_put(char c)
+{
+	if (inlen >= INMAX)
+		return 0;
+	memmove(input + in_cur + 1, input + in_cur, inlen - in_cur);
+	input[in_cur++] = c;
+	inlen++;
+	return 1;
+}
+
+/* VA_START (common/ui/av.c), from the desktop or another program:
+   nothing brings the window to the front; a text file goes into the
+   reply line at the cursor, its lines joined by spaces, as much as
+   fits */
+static void av_start(const char *s)
+{
+	char path[200], buf[256];
+	const char *p = s;
+	wind_set(win, WF_TOP, 0, 0, 0, 0);
+	while ((p = av_arg(p, path, sizeof(path))) != 0) {
+		long fd = Fopen(path, 0), n, i, first = 1;
+		int full = 0, space = in_cur > 0 && input[in_cur - 1] != ' ';
+		if (fd < 0) {
+			alert(1, "[1][Can't read %s.][ OK ]", path);
+			continue;
+		}
+		while (!full && (n = Fread((short)fd, sizeof(buf), buf)) > 0) {
+			for (i = 0; i < n && !full; i++) {
+				unsigned char c = (unsigned char)buf[i];
+				/* only text: a control character other than these
+				   in the first block, and it isn't */
+				if (first && c < 32 && c != '\r' && c != '\n' && c != '\t' && c != 27) {
+					alert(1, "[1][%s isn't a text file.][ OK ]", path);
+					full = -1;
+					break;
+				}
+				if (c == '\r' || c == '\n' || c == '\t' || c == ' ') {
+					space = in_cur > 0;
+					continue;
+				}
+				if (c < 32)
+					continue;
+				if ((space && !input_put(' ')) || !input_put((char)c))
+					full = 1;
+				space = 0;
+			}
+			first = 0;
+		}
+		Fclose((short)fd);
+		if (full > 0)
+			alert(1, "[1][Only the start of %s|fits in the reply line|(%d characters).][ OK ]", path, INMAX);
+	}
+	dirty |= D_INPUT;
+}
+
 static void handle_msg(short *msg)
 {
 	switch (msg[0]) {
@@ -4209,6 +4266,12 @@ static void handle_msg(short *msg)
 			scroll_text(want - top_line);
 		}
 		break;
+	default: {
+		const char *va;
+		if (av_message(msg, &va) == AV_START)
+			av_start(va);
+		break;
+	}
 	}
 }
 
@@ -4278,6 +4341,7 @@ int main(void)
 	crash_install(home_dir, "ClaudeST", VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */
+	av_init("CLAUDEST");		/* the desktop's AV server, if there is one */
 	vh = v_opnvwk_(phys, work_out);
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
@@ -4401,6 +4465,7 @@ int main(void)
 	wind_close(win);
 	wind_delete(win);
 	menu_bar(mb.tree, 0);
+	av_exit();
 	v_clsvwk(vh);
 	Mfree(tb);
 	crash_remove();

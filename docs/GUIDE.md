@@ -189,6 +189,13 @@ Press `F8`, click the status line, or choose **Options ▸ Account…**.
 With the API backend, the page shows the tokens used since the bridge
 started instead.
 
+## From other programs
+
+A text file handed to ClaudeST while it runs, by a desktop such as
+Thing, jinnee or Gemini (or any program, with the AV protocol's
+VA_START), goes into the reply line at the cursor, its lines joined by
+spaces, as much as fits (1000 characters). Other files are refused.
+
 ## Hebrew
 
 TOS has no right-to-left text support, so ClaudeST lays it out itself.

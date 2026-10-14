@@ -34,6 +34,7 @@
     @{"Code: Claude Code sessions" link "Code sessions"}
     @{"Artifacts" link "Artifacts"}
     @{"Account, plan and usage" link "Account, plan and usage"}
+    @{"From other programs" link "From other programs"}
     @{"Hebrew" link "Hebrew"}
     @{"Font" link "Font"}
     @{"Keys" link "Keys"}
@@ -252,6 +253,17 @@
 @endnode
 
 ## ------------------------------------------------------------------------
+@node "From other programs"
+@{U}From other programs@{u}
+
+  A text file handed to ClaudeST while it runs, by a desktop such as
+  Thing, jinnee or Gemini (or any program, with the AV protocol's
+  VA_START), goes into the reply line at the cursor, its lines joined
+  by spaces, as much as fits (1000 characters). Other files are
+  refused.
+@endnode
+
+## ------------------------------------------------------------------------
 @node "Hebrew"
 @{U}Hebrew@{u}
 
@@ -406,7 +418,7 @@
 @node "About ClaudeST"
 @{U}About ClaudeST@{u}
 
-  ClaudeST 1.29
+  ClaudeST 1.30
   Created by Erez Yaary, (c) 2026.
 
   Written with Claude, in Claude Code on claude.ai: a claude.ai client
