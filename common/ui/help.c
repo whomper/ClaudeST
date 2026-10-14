@@ -1,43 +1,27 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 Erez Yaary */
 /*
- * help.c - the Help key and VA_START to other programs (see help.h).
+ * help.c - the Help key (see help.h).
  */
 #include <string.h>
 #include "tos.h"
 #include "gem.h"
 #include "help.h"
+#include "av.h"
 
 #define VA_START 0x4711
 
-static char local_help[256], local_av[1024];
-static char *help_buf = local_help, *av_buf = local_av;
+static char local_help[256];
+static char *help_buf = local_help;
 
-/* Memory another program reads, kept while we run. An accessory under
-   plain TOS has no memory of its own after the start: what Malloc or
-   Mxalloc give it then belongs to the program running at the moment and
-   goes when that one ends. Nothing is protected there, so a static
-   buffer does. Under MiNT or MagiC the accessory is a process like the
-   others: global memory, which memory protection lets others read
-   (Mxalloc mode 0x2B; 0x20 alone without 0x08 isn't heeded). On TOS 1.x
-   Mxalloc doesn't exist (an error): the static buffer again. */
-static char *shared(char *local, long size)
-{
-	long m;
-	if (!get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L))	/* MiNT, MagX */
-		return local;
-	m = (long)Mxalloc(size, 0x2B);	/* global, TT RAM preferred */
-	return m > 0 ? (char *)m : local;
-}
-
+/* the name stays where the viewer may read it (av.c) */
 void help_init(void)
 {
 	static int done;
 	if (done)
 		return;
 	done = 1;
-	help_buf = shared(local_help, sizeof(local_help));
-	av_buf = shared(local_av, sizeof(local_av));
+	help_buf = av_shared(local_help, sizeof(local_help));
 }
 
 static void send(short id, const char *s)
@@ -89,17 +73,5 @@ int help_show(const char *dir, const char *hyp, const char *page)
 		add(help_buf, n, page);
 	}
 	send(id, help_buf);
-	return 1;
-}
-
-int av_send(const char *name, const char *text)
-{
-	short id = appl_find(name);
-	if (id < 0)
-		return 0;
-	help_init();
-	av_buf[0] = 0;
-	add(av_buf, sizeof(local_av), text);
-	send(id, av_buf);
 	return 1;
 }
