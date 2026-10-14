@@ -329,8 +329,9 @@
     Esc, Undo         Clear the reply line
     Control+R         Reconnect to the bridge
     Help              This help, in EHypView, ST-Guide or HypView
-                      (without a viewer: About ClaudeST)
+                      (without a viewer: how to get one, or About)
     Control+Q         Quit
+    Control+W         Quit (closes the window, the only one)
 
   In the reply line, @{B}/connect 192.168.1.10@{b} (or /connect
   host:port) sets the gateway address, and @{B}/serial@{b} switches to
@@ -418,7 +419,7 @@
 @node "About ClaudeST"
 @{U}About ClaudeST@{u}
 
-  ClaudeST 1.30
+  ClaudeST 1.31
   Created by Erez Yaary, (c) 2026.
 
   Written with Claude, in Claude Code on claude.ai: a claude.ai client

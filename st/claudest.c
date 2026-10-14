@@ -39,7 +39,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.30"
+#define VERSION "1.31"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -3380,12 +3380,12 @@ static void font_menu(void)
 
 /* The help: EHypView or ST-Guide (as an accessory or a program) shows
  * CLAUDEST.HYP from ClaudeST's own folder (common/ui/help.c). Without a
- * viewer, the About box. */
+ * viewer, an alert says how to get one and offers the About box. */
 static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 static void help(void)
 {
-	if (!help_show(home_dir, "CLAUDEST.HYP", 0))
+	if (help_key(home_dir, "CLAUDEST.HYP", 0, "About"))
 		about();
 }
 
@@ -4078,6 +4078,7 @@ static void handle_key(short kstate, short kr)
 	case 0x06: do_search(); return;		/* ^F */
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
+	case 0x17: quit = 1; return;		/* ^W: closes the one window */
 	case 0x0d:				/* Return / Enter */
 		if (inlen == 0 && !search_mode && lcur >= 0 && lcur < nitems) {
 			short i = lcur;
@@ -4235,6 +4236,9 @@ static void handle_msg(short *msg)
 	case WM_TOPPED:
 		wind_set(win, WF_TOP, 0, 0, 0, 0);
 		break;
+	case WM_BOTTOMED:
+		wind_set(win, WF_BOTTOM, 0, 0, 0, 0);
+		break;
 	case WM_CLOSED:
 	case AP_TERM:
 		quit = 1;
@@ -4346,6 +4350,11 @@ int main(void)
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
 	ncolors = work_out[13];
+	if (!screen_check("ClaudeST", scr_w)) {	/* not in ST low */
+		v_clsvwk(vh);
+		appl_exit();
+		return 1;
+	}
 
 	if (!alloc_buffers()) {
 		alert(1, "[3][ClaudeST: not enough memory.][ Quit ]");
@@ -4402,7 +4411,7 @@ int main(void)
 	dirty = D_ALL;
 	if (crash_previous()) {
 		flush_dirty();
-		alert(1, "[1][ClaudeST crashed last time|(%s).|What happened is in|CRASH.LOG, next to CLAUDEST.PRG.][ OK ]", crash_previous());
+		crash_offer("ClaudeST", "next to CLAUDEST.PRG");
 	}
 
 	while (!quit) {

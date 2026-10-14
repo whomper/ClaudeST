@@ -258,8 +258,9 @@ also picks it.
 the window, the keys, the settings and troubleshooting. Keep it next to
 `CLAUDEST.PRG` (or in the viewer's help folder); with EHypView, ST-Guide
 or HypView running (as an accessory, or as a program under MultiTOS or
-MagiC), `Help` in ClaudeST opens it. Without a viewer, `Help` shows the
-About box. It also opens on its own in any of them.
+MagiC), `Help` in ClaudeST opens it. Without a viewer, `Help` says how to
+get one and offers the About box instead. It also opens on its own in any
+of them.
 
 ## All keys
 
@@ -279,8 +280,8 @@ About box. It also opens on its own in any of them.
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
-| `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView, or the About box without one |
-| `Ctrl+Q` | Quit |
+| `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the About box) |
+| `Ctrl+Q`, `Ctrl+W` | Quit (Ctrl+W closes the window, ClaudeST's only one) |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
 sets the gateway address, and `/serial` switches to the serial port.
@@ -393,7 +394,7 @@ install the Pi with `--network --atari <the modem's IP>`.
 
 ## Icons
 
-**Desk ▸ About ClaudeST…** (or `Help` when no hypertext viewer runs) shows the About box, with a
+**Desk ▸ About ClaudeST…** (or `Help` > About when no hypertext viewer runs) shows the About box, with a
 colour icon on screens with 16 colours or more.
 
 ![The About box](about.png)
