@@ -18,6 +18,7 @@
 #include "sting.h"
 #include "bidi.h"
 #include "crash.h"
+#include "help.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -32,7 +33,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.25"
+#define VERSION "1.26"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -3580,30 +3581,15 @@ static void center_text(short y, const char *s, short fx)
 	text(dlg_x + (dlg_w - n * cw) / 2, y, s, n, fx, 1);
 }
 
-/* The help: ST-Guide (as an accessory or a program) shows CLAUDEST.HYP
- * from ClaudeST's own folder, sent the usual way, with VA_START. Without
- * ST-Guide, the About box. */
+/* The help: EHypView or ST-Guide (as an accessory or a program) shows
+ * CLAUDEST.HYP from ClaudeST's own folder (common/ui/help.c). Without a
+ * viewer, the About box. */
 static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 static void help(void)
 {
-	static char path[160];		/* ST-Guide reads it after we return */
-	short msg[8], id = appl_find("ST-GUIDE");
-	long p;
-	if (id < 0) {
+	if (!help_show(home_dir, "CLAUDEST.HYP", 0))
 		about();
-		return;
-	}
-	strlcpy_(path, home_dir, sizeof(path));
-	strcat(path, "CLAUDEST.HYP");
-	p = (long)path;
-	msg[0] = 0x4711;		/* VA_START */
-	msg[1] = apid;
-	msg[2] = 0;
-	msg[3] = (short)(p >> 16);
-	msg[4] = (short)p;
-	msg[5] = msg[6] = msg[7] = 0;
-	appl_write(id, 16, msg);
 }
 
 static void about(void)
@@ -4618,6 +4604,7 @@ int main(void)
 	}
 	crash_install(home_dir, "ClaudeST", VERSION);
 	crash_cleanup = crash_quit;
+	help_init();			/* memory the help viewer may read */
 	vh = v_opnvwk_(phys, work_out);
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
