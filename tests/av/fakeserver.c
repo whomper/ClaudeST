@@ -15,6 +15,10 @@
  *                       app_av.py (a screenshot; "say key 0x1c": a key),
  *                       then 2 s for it to happen
  *   term EMAIL          AP_TERM to EMAIL
+ *   icon EMAIL          WM_ICONIFY to EMAIL for the window on top, then
+ *                       a redraw of it: the AES (EmuTOS's) can't shrink
+ *                       it, so the icon is drawn in the window as it is
+ *   uniconify EMAIL     WM_UNICONIFY to EMAIL, back where it was
  *   done                "AVTEST done"
  */
 #include <string.h>
@@ -23,6 +27,7 @@
 
 static char script[2048], texts[8][300];
 static short ntext, protokoll_from = -1;
+static short icon_h, icon_was[4];	/* the window "iconified", and where it was */
 static char protokoll_name[9];
 
 static void log_line(const char *s)
@@ -193,6 +198,35 @@ int main(void)
 				appl_write(to, 16, msg);
 				log_line("AP_TERM sent");
 			}
+		} else if (!strncmp(line, "icon ", 5) || !strncmp(line, "uniconify ", 10)) {
+			short to, d, x, y, w, ht, on = line[0] == 'i';
+			name8(n, line + (on ? 5 : 10));
+			to = appl_find(n);
+			if (on)
+				wind_get(0, WF_TOP, &icon_h, &d, &d, &d);
+			if (to < 0 || icon_h <= 0) {
+				log_line("no window to iconify");
+				continue;
+			}
+			memset(msg, 0, sizeof(msg));
+			msg[0] = on ? 34 : 35;	/* WM_ICONIFY, WM_UNICONIFY */
+			msg[1] = id;
+			msg[3] = icon_h;
+			if (on) {
+				wind_get(icon_h, WF_CURRXYWH, &icon_was[0], &icon_was[1], &icon_was[2], &icon_was[3]);
+				msg[4] = 0;		/* where XaAES would put it */
+				msg[5] = 400;
+				msg[6] = 72;
+				msg[7] = 72;
+			} else {
+				memcpy(&msg[4], icon_was, sizeof(icon_was));
+			}
+			appl_write(to, 16, msg);
+			log_line(on ? "WM_ICONIFY sent" : "WM_UNICONIFY sent");
+			pause(500, 0);
+			/* what the AES would redraw now */
+			wind_get(icon_h, WF_CURRXYWH, &x, &y, &w, &ht);
+			form_dial(3, x, y, w, ht);	/* FMD_FINISH */
 		} else if (!strcmp(line, "done")) {
 			say("done");
 		}

@@ -11,7 +11,8 @@ VA_START with AV_STARTED, and say AV_EXIT when it quits.
 
 SCRIPT is THING.ACC's C:\\AVSEND.TXT (see fakeserver.c), lines separated
 by ';' or a file. "say shot NAME" takes a screenshot (WORK/shots/NAME.png),
-"say key 0x1c" presses a key. The checks:
+"say key 0x1c" presses a key, "icon NAME" and "uniconify NAME" send the
+app's window WM_ICONIFY and WM_UNICONIFY. The checks:
   - AV_PROTOKOLL from NAME, saying VA_START, AV_STARTED and quoting;
   - as many AV_STARTED as VA_START sent;
   - AV_EXIT after AP_TERM, when the script sends one ("term NAME").
