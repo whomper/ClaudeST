@@ -1,0 +1,15 @@
+# XaAES for Hatari tests (run.py adds a "run" line at the end)
+setenv ACCPATH  C:\
+setenv ACCEXT   ACC,ACX
+setenv GEMEXT   PRG,APP,GTP
+setenv TOSEXT   TOS,TTP
+naes_cookie = yes
+usehome = no
+redraw_timeout = 2000
+app_options = default,thinwork = true, winframe_size = 2, xa_nomove = false, clwtna = 0, nolive = true
+app_options = xasys, thinwork = true, winframe_size = 3, xa_nomove = false, clwtna = 1, nolive = false
+app_options = aessys, thinwork = true, winframe_size = 3, xa_nomove = false, clwtna = 1, nolive = false
+clipboard  = c:\clipbrd\
+accpath    = c:\
+launchpath = c:\
+filters = *.*

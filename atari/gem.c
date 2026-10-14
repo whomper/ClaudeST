@@ -267,6 +267,16 @@ short scrp_write(const char *path)
 	return aes(81, 0, 1, 1, 0);
 }
 
+short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const void *tail)
+{
+	aintin[0] = mode;
+	aintin[1] = wisgr;
+	aintin[2] = wiscr;
+	addrin[0] = (void *)cmd;
+	addrin[1] = (void *)tail;
+	return aes(121, 3, 1, 2, 0);
+}
+
 short aes_version(void)
 {
 	return global[0];
