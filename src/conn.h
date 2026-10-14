@@ -64,6 +64,9 @@ int   conn_pending(CONN *c);
 extern char conn_logfile[200];
 void conn_log(const char *who, const char *dir, const char *text, long n);
 void conn_log_flush(void);	/* write out what is still buffered */
+/* add text (a crash report) at the end of the log, after what is still
+   buffered: crash_report = conn_log_append (crash.h) */
+void conn_log_append(const char *text, long n);
 /* the shape of a login (lengths, '@', '-') without the login itself, so
    the log shows a cut-off or mistyped password without giving it away */
 void conn_log_login(const char *who, const char *user, const char *pass);

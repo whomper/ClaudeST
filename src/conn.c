@@ -116,6 +116,16 @@ void conn_log_flush(void)
 	loglen = 0;
 }
 
+void conn_log_append(const char *text, long n)
+{
+	int h;
+	conn_log_flush();
+	if (conn_logfile[0] && (h = pf_open(conn_logfile, PF_APPEND)) >= 0) {
+		pf_write(h, text, n);
+		pf_close(h);
+	}
+}
+
 static void log_add(const char *s, long n)
 {
 	while (n > 0) {
