@@ -7,7 +7,7 @@
 @charset "atarist"
 @subject "Communication"
 @author "Erez Yaary"
-@$VER: CLAUDEST.HYP 1.21 (13.10.2026)
+@$VER: CLAUDEST.HYP 1.23 (14.10.2026)
 @options "+z -s"
 @width 75
 @help "Help on help"
@@ -398,7 +398,7 @@
 @node "About ClaudeST"
 @{U}About ClaudeST@{u}
 
-  ClaudeST 1.21
+  ClaudeST 1.23
   Created by Erez Yaary, (c) 2026.
 
   Written with Claude, in Claude Code on claude.ai: a claude.ai client
@@ -406,6 +406,10 @@
 
   Source, setup and the user guide:
   https://github.com/whomper/ClaudeST
+
+  Free software under the GNU General Public License, version 2 or
+  (at your option) any later version, with NO WARRANTY. See the file
+  COPYING in the source.
 
   ClaudeST is an unofficial client, not affiliated with Anthropic or
   Atari. Claude is a trademark of Anthropic PBC. Atari is a trademark

@@ -17,7 +17,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.22"
+#define VERSION "1.23"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -3595,7 +3595,7 @@ static void about(void)
 	static char conn[64];
 	short sx = 2, sy = ch >= 16 ? 2 : 1;
 	short ih = ICON_H * sy, lh = ch + (ch >= 16 ? 2 : 1);
-	short m[8], clipr[4], y, done = 0, i;
+	short m[8], clipr[4], y, done = 0, i, gap, fcw, fch, fstep;
 	short saved_rgb[8][3], colour = ncolors >= 16;
 	EVENT e;
 
@@ -3618,8 +3618,21 @@ static void about(void)
 		dlg_w = ww - 2 * cw;
 	/* the content, top to bottom, sets the height (see the drawing below) */
 	btn_h = ch + 6;
-	dlg_h = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh +
-		(lh + lh / 2) + (lh + lh / 2) + 4 * lh + lh / 2 + btn_h + lh;
+	/* the fine print (licence, trademarks) is in a smaller system font:
+	   8x8 on high-resolution screens, 6x6 on 640x200 */
+	vst_font(vh, 1);
+	vst_height(vh, ch >= 16 ? 6 : 4, &fcw, &fch);
+	fstep = fch + (ch >= 16 ? 3 : 2);
+	font_reselect();
+	/* gap: the space between some sections, a line and a half, or one
+	   line where the screen is too low for that */
+	gap = lh + lh / 2;
+	dlg_h = lh + ih + lh / 2 + lh + gap + (lh + lh / 2) + lh / 4 + lh +
+		gap + gap + lh + 4 * fstep + lh / 2 + btn_h + lh;
+	if (dlg_h > wh - 4) {
+		dlg_h -= 3 * (gap - lh);
+		gap = lh;
+	}
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
@@ -3657,7 +3670,7 @@ static void about(void)
 	center_text(y, "ClaudeST", 1 | 8);		/* bold, underlined */
 	y += lh;
 	center_text(y, "Version " VERSION, 0);
-	y += lh + lh / 2;
+	y += gap;
 	center_text(y, "Claude.ai for the Atari ST, TT and Falcon", 0);
 	y += lh + lh / 2;
 	line(dlg_x + 4 * cw, y - lh / 4, dlg_x + dlg_w - 4 * cw, y - lh / 4, 1);
@@ -3665,26 +3678,26 @@ static void about(void)
 	center_text(y, "Created by Erez Yaary", 1);
 	y += lh;
 	center_text(y, "\xBD 2026 Erez Yaary", 0);
-	y += lh + lh / 2;
+	y += gap;
 	center_text(y, conn, 0);
-	y += lh + lh / 2;
-	/* the fine print, in the 8x8 system font where the screen has room */
+	y += gap;
+	/* a line's space, then the fine print */
+	y += lh;
 	{
-		short scw, sch, big = ch >= 16;
-		if (big) {
-			vst_font(vh, 1);
-			vst_height(vh, 6, &scw, &sch);
+		static const char *const fine[] = {
+			"Free software under the GNU GPL 2 or later.",
+			"Unofficial client, not affiliated with Anthropic or Atari.",
+			"Claude is a trademark of Anthropic PBC.",
+			"Atari is a trademark of Atari Interactive.",
+		};
+		vst_font(vh, 1);
+		vst_height(vh, ch >= 16 ? 6 : 4, &fcw, &fch);
+		for (i = 0; i < 4; i++) {
+			short n = strlen(fine[i]);
+			text(dlg_x + (dlg_w - n * fcw) / 2, y, fine[i], n, 0, 1);
+			y += fstep;
 		}
-		short step = big ? sch + 3 : lh;
-		center_text(y, "Free software under the GNU GPL 2 or later.", 0);
-		y += step;
-		center_text(y, "Unofficial client, not affiliated with Anthropic or Atari.", 0);
-		y += step;
-		center_text(y, "Claude is a trademark of Anthropic PBC.", 0);
-		y += step;
-		center_text(y, "Atari is a trademark of Atari Interactive.", 0);
-		if (big)
-			font_reselect();
+		font_reselect();
 	}
 	dlg_button(ok_x, "OK", 1);
 	graf_mouse(M_ON, 0);
