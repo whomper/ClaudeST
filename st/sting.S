@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 | long sting_call(void *fn, const short *args, long nwords)
 |
 | Calls a STinG (Pure C "cdecl") function: the arguments are pushed as

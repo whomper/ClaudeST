@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 /*
  * tos.h - the handful of GEMDOS/BIOS/XBIOS calls ClaudeST needs, as
  * inline traps. Built freestanding (no MiNTLib), so the program runs

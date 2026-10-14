@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Erez Yaary
 """Offline tests for the bridge: charset, Markdown formatting and the
 protocol session against the demo backend. Run: python3 -m unittest"""
 import os

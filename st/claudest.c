@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 /*
  * ClaudeST - a Claude.ai client for the Atari ST, STE, TT and Falcon.
  *
@@ -15,7 +17,7 @@
 #include "icon.h"
 #include "icon16.h"
 
-#define VERSION "1.21"
+#define VERSION "1.22"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -3617,7 +3619,7 @@ static void about(void)
 	/* the content, top to bottom, sets the height (see the drawing below) */
 	btn_h = ch + 6;
 	dlg_h = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh +
-		(lh + lh / 2) + (lh + lh / 2) + 3 * lh + lh / 2 + btn_h + lh;
+		(lh + lh / 2) + (lh + lh / 2) + 4 * lh + lh / 2 + btn_h + lh;
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
@@ -3674,6 +3676,8 @@ static void about(void)
 			vst_height(vh, 6, &scw, &sch);
 		}
 		short step = big ? sch + 3 : lh;
+		center_text(y, "Free software under the GNU GPL 2 or later.", 0);
+		y += step;
 		center_text(y, "Unofficial client, not affiliated with Anthropic or Atari.", 0);
 		y += step;
 		center_text(y, "Claude is a trademark of Anthropic PBC.", 0);

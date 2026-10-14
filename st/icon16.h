@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 /* ClaudeST icon, 32x32 in 16 colours (VDI pens, 2 per byte), from
  * tools/icon/make_icon.py. 0 = background, not drawn. */
 static const unsigned char icon16_px[32 * 16] = {

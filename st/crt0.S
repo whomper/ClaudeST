@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 | Minimal TOS startup for ClaudeST.
 | TOS enters with 4(sp) = basepage. We give memory we don't need back
 | to GEMDOS (Mshrink), move the stack into our own BSS, run main() and

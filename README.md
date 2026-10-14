@@ -177,3 +177,17 @@ claude.ai client for the Atari, built by talking to claude.ai.
   bridge
 
 © 2026 Whomper
+
+## Licence
+
+ClaudeST (the Atari program, the bridge and the Pi's setup) is free
+software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation,
+either version 2 of the License, or (at your option) any later version. It
+is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [COPYING](COPYING).
+
+Copyright (C) 2026 Erez Yaary. ClaudeST is an unofficial client, not
+affiliated with Anthropic or Atari; Claude is a trademark of Anthropic
+PBC, Atari a trademark of Atari Interactive.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Erez Yaary
 # ClaudeST - builds ../binary/CLAUDEST.PRG with a stock m68k ELF cross compiler
 # (Debian/Ubuntu: apt install gcc-m68k-linux-gnu). No MiNTLib needed:
 # the program is freestanding and elf2tos.py writes the TOS header.

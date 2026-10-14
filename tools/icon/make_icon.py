@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Erez Yaary
 """ClaudeST's icon, drawn as 32x32 1-bit pixel art: an SM124-style
 monochrome monitor whose dark screen shows an eight-ray spark (a plain
 pixel asterisk) and a GEM

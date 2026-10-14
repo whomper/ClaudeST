@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 Erez Yaary */
 /*
  * sting.h - a small STinG TCP client (STinG / STiK transport layer).
  */

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Erez Yaary
 """Text helpers for the Atari side: the ST character set and a light
 Markdown-to-protocol formatter that works on streamed deltas."""
 import re
