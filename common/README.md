@@ -106,7 +106,8 @@ same as before.
 
 | File | From | What it does |
 |---|---|---|
-| `atari/crash.c/.S/.h` | EMail | the crash catcher: a crash in the program (2 to 8 bombs) writes `CRASH.LOG` and quits tidily; TOS's record of a crash in the system is added at the next start. `crash_install(workdir, "ECal", version)`, in a program only (a desk accessory never installs it, and takes no memory for it). `crash_report = conn_log_append` adds the report to the protocol log too. `tests/crash/` checks every kind of crash in Hatari on a 68000 and a 68030 |
+| `atari/crash.c/.S/.h` | EMail | the crash catcher: a crash in the program (2 to 8 bombs) writes `CRASH.LOG` and quits tidily; TOS's record of a crash in the system is added at the next start. `crash_install(workdir, "ECal", version)`, in a program only (a desk accessory never installs it, and takes no memory for it). `crash_report = conn_log_append` adds the report to the protocol log too. Test builds (`-DCRASH_TEST`) crash on purpose with F1 to F4 (`crash_test()` in the app's key handler). `tests/crash/run.py` checks every kind of crash in Hatari on a 68000 and a 68030; `tests/crash/app_crash.py` checks an app's own handling (its alert, a tidy exit, "crashed last time" after a reset) |
+| `atari/crash_none.c` | | the same calls, doing nothing, for an edition that is only ever a desk accessory (ECal's and EContact's ST editions) |
 | `tools/crashaddr.py` | EMail | turns the offsets in a `CRASH.LOG` into function names, from the ELF file of the same build |
 
 ## Coming next
