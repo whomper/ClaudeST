@@ -149,7 +149,7 @@ reached or the session key has expired, the error appears on the Atari.
 | `F8`, or click the status line | Account: plan, usage and details |
 | `F9`, or click the model chip | Model and effort |
 | `F10` | Hebrew keyboard on or off |
-| `Help` | Help in ST-Guide, or About |
+| `Help` | Help in EHypView or ST-Guide, or About |
 | `Ctrl+Q` | Quit |
 
 ## Good to know

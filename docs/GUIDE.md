@@ -245,13 +245,14 @@ Keys in the selector: `↑` `↓` change the family, `←` `→` the size,
 `Return` is OK and `Esc` cancels. A double click on a family or size
 also picks it.
 
-## Help in ST-Guide
+## Help
 
-`CLAUDEST.HYP` is a short ST-Guide hypertext of this guide: setup, every
-part of the window, the keys, the settings and troubleshooting. Keep it
-next to `CLAUDEST.PRG`; with ST-Guide installed (as an accessory or
-running), `Help` in ClaudeST opens it. Without ST-Guide, `Help` shows the
-About box. It also opens on its own in ST-Guide or HypView.
+`CLAUDEST.HYP` is a short hypertext of this guide: setup, every part of
+the window, the keys, the settings and troubleshooting. Keep it next to
+`CLAUDEST.PRG` (or in the viewer's help folder); with EHypView, ST-Guide
+or HypView running (as an accessory, or as a program under MultiTOS or
+MagiC), `Help` in ClaudeST opens it. Without a viewer, `Help` shows the
+About box. It also opens on its own in any of them.
 
 ## All keys
 
@@ -271,7 +272,7 @@ About box. It also opens on its own in ST-Guide or HypView.
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
-| `Help` | This help in ST-Guide (`CLAUDEST.HYP`), or the About box without ST-Guide |
+| `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView, or the About box without one |
 | `Ctrl+Q` | Quit |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
@@ -307,6 +308,7 @@ screen with a new chat.
 | Pi: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
 | Atari: `CLAUDEST.INF` | ClaudeST's settings |
 | Atari: `CLAUDEST.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
+| Atari: `CRASH.LOG` | What happened, if ClaudeST ever crashed (next to `CLAUDEST.PRG`) |
 
 The open conversation lives only in the Atari's memory while ClaudeST
 runs.
@@ -321,6 +323,7 @@ All commands run on the Pi.
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo ./install.sh --set-key` |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
+| ClaudeST itself crashed (on the Atari) | It says so, writes what happened to `CRASH.LOG` next to `CLAUDEST.PRG` and quits, leaving the Atari running. A crash in the system or a driver still gives the bombs; TOS keeps a record of them, and ClaudeST adds it to `CRASH.LOG` the next time it starts. Send `CRASH.LOG` to the author. Under MiNT or MagiC, which handle crashes themselves, there is none |
 
 These commands check the claude.ai side without showing any of your
 content:
@@ -383,12 +386,12 @@ install the Pi with `--network --atari <the modem's IP>`.
 
 ## Icons
 
-**Desk ▸ About ClaudeST…** (or `Help` when ST-Guide isn't installed) shows the About box, with a
+**Desk ▸ About ClaudeST…** (or `Help` when no hypertext viewer runs) shows the About box, with a
 colour icon on screens with 16 colours or more.
 
 ![The About box](about.png)
 
-![The About box in colour, on a TT](about-colour.png)
+![The About box in colour, on a Falcon](about-colour.png)
 
 The icon is original 32×32 pixel art: an SM124-style monitor with a
 spark and a GEM prompt. The `binary/` folder has it for the desktop:
