@@ -14,6 +14,9 @@
  *                                  "" (open or top the window), file names,
  *                                  or a command such as "mailto:..."
  *   av_exit();                     when a program quits (AV_EXIT)
+ *   av_window(h, 1);               a window opened (AV_ACCWINDOPEN; 0: closed,
+ *                                  AV_ACCWINDCLOSED): the desktop then drops
+ *                                  files on it with VA_DRAGACCWIND (dd.c)
  *
  * av_arg() takes the next file name off a VA_START string, without its
  * quotes ('...' around a name with spaces, '' for a quote in it).
@@ -29,6 +32,7 @@ enum { AV_NONE, AV_START, AV_DONE };
    "ECONTACT|ECONTST" (the one appl_find gives our id is used) */
 void av_init(const char *names);
 void av_exit(void);
+void av_window(short h, int open);
 int av_message(const short *msg, const char **s);	/* AV_NONE: not the AV protocol's */
 const char *av_arg(const char *p, char *out, long n);	/* 0 when none is left */
 

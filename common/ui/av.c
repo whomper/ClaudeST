@@ -12,6 +12,8 @@
 #define AV_PROTOKOLL	0x4700
 #define VA_PROTOSTATUS	0x4701
 #define VA_START	0x4711
+#define AV_ACCWINDOPEN	0x4724
+#define AV_ACCWINDCLOSED 0x4726
 #define AV_EXIT		0x4736
 #define AV_STARTED	0x4738
 
@@ -158,6 +160,12 @@ void av_exit(void)
 		post(server, AV_EXIT, appl_id(), 0);
 	registered = 0;
 	name_buf[0] = 0;		/* and not again, whatever comes now */
+}
+
+void av_window(short h, int open)
+{
+	if (registered && h > 0)
+		post(server, open ? AV_ACCWINDOPEN : AV_ACCWINDCLOSED, h, 0);
 }
 
 int av_message(const short *msg, const char **s)

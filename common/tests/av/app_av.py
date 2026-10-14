@@ -11,10 +11,10 @@ VA_START with AV_STARTED, and say AV_EXIT when it quits.
 
 SCRIPT is THING.ACC's C:\\AVSEND.TXT (see fakeserver.c), lines separated
 by ';' or a file. "say shot NAME" takes a screenshot (WORK/shots/NAME.png),
-"say key 0x1c" presses a key, "icon NAME" and "uniconify NAME" send the
+"say key 0x1c" presses a key ("say ctrl 0x2f": with Control), "icon NAME" and "uniconify NAME" send the
 app's window WM_ICONIFY and WM_UNICONIFY. The checks:
   - AV_PROTOKOLL from NAME, saying VA_START, AV_STARTED and quoting;
-  - as many AV_STARTED as VA_START sent;
+  - as many AV_STARTED as VA_START and VA_DRAGACCWIND sent;
   - AV_EXIT after AP_TERM, when the script sends one ("term NAME").
 """
 import argparse, os, re, shutil, subprocess, sys, time
@@ -80,7 +80,7 @@ try:
     seen, t0 = 0, time.time()
     while time.time() - t0 < a.timeout and not done:
         time.sleep(0.3)
-        said = re.findall(r"AVTEST (shot|key|done)[ \t]*([^\s]*?)(?=AVTEST|\s|$)",
+        said = re.findall(r"AVTEST (shot|key|ctrl|done)[ \t]*([^\s]*?)(?=AVTEST|\s|$)",
                           open(log, errors="replace").read())
         for m in said[seen:]:
             what, arg = m
@@ -96,6 +96,10 @@ try:
                     time.sleep(0.2)
             elif what == "key":
                 cmd("hatari-event keypress %s" % arg)
+            elif what == "ctrl":
+                cmd("hatari-event keydown 29")
+                cmd("hatari-event keypress %s" % arg)
+                cmd("hatari-event keyup 29")
             elif what == "done":
                 done = True
         seen = len(said)
@@ -109,8 +113,9 @@ got = open(p, "rb").read().decode("latin-1").splitlines() if os.path.exists(p) e
 print("".join("     | %s\n" % l for l in got), end="")
 name = (a.name + "        ")[:8]
 check("AV_PROTOKOLL bits 0016 name " + name in got, "AV_PROTOKOLL from %r: VA_START, AV_STARTED, quoting" % name)
-sent = sum(1 for l in got if l.startswith("VA_START sent"))
-check(sent == sum(1 for l in got if l == "AV_STARTED"), "an AV_STARTED for each of the %d VA_START" % sent)
+sent = sum(1 for l in got if l.startswith("VA_START sent") or l.startswith("VA_DRAGACCWIND sent"))
+check(sent == sum(1 for l in got if l == "AV_STARTED"),
+      "an AV_STARTED for each of the %d VA_START and VA_DRAGACCWIND" % sent)
 if "AP_TERM sent" in got:
     i = got.index("AP_TERM sent")
     check("AV_EXIT" in got[i:], "AV_EXIT when it quit")

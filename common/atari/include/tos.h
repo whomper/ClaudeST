@@ -82,6 +82,14 @@ static inline long trap1_wwlw(short fn, short a, long b, short c)
 	return r;
 }
 
+static inline long trap1_wwl(short fn, short a, long b)
+{
+	register long r __asm__("d0");
+	__asm__ volatile("move.l %3,-(%%sp)\n\tmove.w %2,-(%%sp)\n\tmove.w %1,-(%%sp)\n\ttrap #1\n\taddq.l #8,%%sp"
+		: "=r"(r) : "r"(fn), "r"(a), "r"(b) : TRAP_CLOBBER);
+	return r;
+}
+
 static inline long trap1_wwlll(short fn, short a, long b, long c, long d)
 {
 	register long r __asm__("d0");
@@ -183,6 +191,9 @@ static inline long trap14_wl(short fn, long a)
 /* MiNT and MiNTnet (GEMDOS extensions; -32 EINVFN when absent) */
 #define Fcntl(h, a, c)     trap1_wwlw(0x104, (h), (long)(a), (c))
 #define Fselect(t, r, w, x) trap1_wwlll(0x11d, (t), (long)(r), (long)(w), (long)(x))
+#define Psignal(s, h)      trap1_wwl(0x112, (s), (long)(h))
+#define SIGPIPE   13
+#define SIG_IGN   1L
 #define Fsocket(d, t, p)   trap1_wlll(0x160, (long)(d), (long)(t), (long)(p))
 #define Fconnect(h, a, l)  trap1_wwll(0x163, (h), (long)(a), (long)(l))
 #define FIONREAD  0x4601

@@ -19,15 +19,26 @@
  *                       a redraw of it: the AES (EmuTOS's) can't shrink
  *                       it, so the icon is drawn in the window as it is
  *   uniconify EMAIL     WM_UNICONIFY to EMAIL, back where it was
+ *   dropfiles ECONTACT|C:\A.VCF  files dropped from the desktop on the
+ *                       window ECONTACT said it opened (AV_ACCWINDOPEN),
+ *                       else the one on top: VA_DRAGACCWIND
+ *   drop 300 200 .TXT|text  drag and drop (AP_DRAGDROP, MiNT and MagiC
+ *                       only) on the window at 300,200: text (.TXT; \n
+ *                       for a new line) or files (ARGS); what the program
+ *                       answers is written down
+ *   clip text           the clipboard is this text (\n: a new line)
+ *   clipshow            what the clipboard holds, written down
  *   done                "AVTEST done"
  */
 #include <string.h>
 #include "tos.h"
 #include "gem.h"
+#include "clip.h"
 
 static char script[2048], texts[8][300];
 static short ntext, protokoll_from = -1;
 static short icon_h, icon_was[4];	/* the window "iconified", and where it was */
+static short accwin = -1;		/* the window AV_ACCWINDOPEN named */
 static char protokoll_name[9];
 
 static void log_line(const char *s)
@@ -87,6 +98,14 @@ static void got(const short *msg)
 	case 0x4738:		/* AV_STARTED */
 		strcpy(l, "AV_STARTED");
 		break;
+	case 0x4724:		/* AV_ACCWINDOPEN */
+	case 0x4726:		/* AV_ACCWINDCLOSED */
+		accwin = msg[0] == 0x4724 ? msg[3] : -1;
+		strcpy(l, msg[0] == 0x4724 ? "AV_ACCWINDOPEN" : "AV_ACCWINDCLOSED");
+		break;
+	case 80:		/* SC_CHANGED */
+		strcpy(l, "SC_CHANGED");
+		break;
 	default:
 		hex(h, (unsigned short)msg[0]);
 		strcpy(l, "message ");
@@ -112,6 +131,80 @@ static int pause(long ms, const char *until)
 		}
 	}
 	return 0;
+}
+
+/* "\n" in a script line as a new line (CR LF) */
+static long unescape(char *s)
+{
+	char *r = s, *w = s;
+	while (*r) {
+		if (r[0] == '\\' && r[1] == 'n') {
+			*w++ = '\r';
+			*w++ = '\n';
+			r += 2;
+		} else {
+			*w++ = *r++;
+		}
+	}
+	*w = 0;
+	return w - s;
+}
+
+/* the sending side of drag and drop (Atari Compendium, appendix H; cflib's
+   dd_create and dd_stry): a pipe, AP_DRAGDROP to the window's owner, then
+   one header; the answer written down */
+static void drop(short id, short x, short y, const char *kind, const char *data, long n)
+{
+	static const char *const answer[] = { "DD_OK", "DD_NAK", "DD_EXT", "DD_LEN" };
+	char pipe[] = "U:\\PIPE\\DRAGDROP.AA", c, kinds[32], l[120];
+	short msg[8], win = wind_find(x, y), owner = -1, d, hdr;
+	long fd = -1, mask;
+	strcpy(l, "drop ");
+	strcat(l, kind);
+	strcat(l, ": ");
+	if (win <= 0 || !wind_get(win, 20, &owner, &d, &d, &d) || owner < 0) {	/* WF_OWNER */
+		strcat(l, "no window there");
+		goto out;
+	}
+	for (pipe[18] = 'A'; pipe[18] <= 'Z'; pipe[18]++)
+		if ((fd = Fcreate(pipe, 2)) >= 0)	/* hidden: EOF when the other end goes */
+			break;
+	if (fd < 0) {
+		strcat(l, "no pipe");
+		goto out;
+	}
+	Psignal(SIGPIPE, SIG_IGN);
+	memset(msg, 0, sizeof(msg));
+	msg[0] = 63;			/* AP_DRAGDROP */
+	msg[1] = id;
+	msg[3] = win;
+	msg[4] = x;
+	msg[5] = y;
+	msg[7] = (short)(pipe[17] << 8 | pipe[18]);
+	appl_write(owner, 16, msg);
+	mask = 1L << fd;
+	if (Fselect(4000, &mask, 0, 0) <= 0 || !mask || Fread((short)fd, 1, &c) != 1) {
+		strcat(l, "no answer");
+		goto out;
+	}
+	if (c != 0 || Fread((short)fd, 32, kinds) != 32) {
+		strcat(l, "refused at once");
+		goto out;
+	}
+	hdr = 4 + 4 + 2;		/* the kind, the size, two empty names */
+	if (Fwrite((short)fd, 2, &hdr) != 2 || Fwrite((short)fd, 4, kind) != 4 ||
+	    Fwrite((short)fd, 4, &n) != 4 || Fwrite((short)fd, 2, "\0") != 2 ||
+	    Fread((short)fd, 1, &c) != 1) {
+		strcat(l, "broken off");
+		goto out;
+	}
+	strcat(l, c >= 0 && c <= 3 ? answer[(int)c] : "?");
+	if (c == 0 && n)
+		Fwrite((short)fd, n, data);
+out:
+	if (fd >= 0)
+		Fclose((short)fd);
+	log_line(l);
 }
 
 static void say(const char *s)
@@ -227,6 +320,73 @@ int main(void)
 			/* what the AES would redraw now */
 			wind_get(icon_h, WF_CURRXYWH, &x, &y, &w, &ht);
 			form_dial(3, x, y, w, ht);	/* FMD_FINISH */
+		} else if (!strncmp(line, "dropfiles ", 10)) {
+			char *t = strchr(line + 10, '|'), *buf = texts[ntext++ & 7];
+			short to, win = accwin, d, x, y, w, ht;
+			name8(n, line + 10);
+			to = appl_find(n);
+			strcpy(buf, t ? t + 1 : "");
+			if (win <= 0)
+				wind_get(0, WF_TOP, &win, &d, &d, &d);
+			if (to < 0 || win <= 0) {
+				log_line("no window to drop on");
+				continue;
+			}
+			wind_get(win, WF_WORKXYWH, &x, &y, &w, &ht);
+			memset(msg, 0, sizeof(msg));
+			msg[0] = 0x4725;		/* VA_DRAGACCWIND */
+			msg[1] = id;
+			msg[3] = win;
+			msg[4] = x + w / 2;
+			msg[5] = y + ht / 2;
+			msg[6] = (short)((long)buf >> 16);
+			msg[7] = (short)(long)buf;
+			appl_write(to, 16, msg);
+			strcpy(line, "VA_DRAGACCWIND sent: ");
+			strncat(line, buf, 200);
+			log_line(line);
+		} else if (!strncmp(line, "drop ", 5)) {
+			char *p = line + 5, *t = strchr(line, '|'), kind[5];
+			short x = 0, y = 0;
+			while (*p >= '0' && *p <= '9')
+				x = x * 10 + *p++ - '0';
+			while (*p == ' ')
+				p++;
+			while (*p >= '0' && *p <= '9')
+				y = y * 10 + *p++ - '0';
+			while (*p == ' ')
+				p++;
+			memcpy(kind, p, 4);
+			kind[4] = 0;
+			if (t) {
+				long len = unescape(t + 1);
+				drop(id, x, y, kind, t + 1, len);
+			}
+		} else if (!strncmp(line, "clip ", 5)) {
+			long len = unescape(line + 5);
+			if (clip_put(line + 5, len)) {
+				log_line("clipboard set");
+			} else {
+				char dir[160];
+				dir[0] = 0;
+				scrp_read(dir);
+				strcpy(line, "clipboard not set: folder ");
+				strcat(line, dir);
+				strcat(line, ", boot drive ");
+				n[0] = (char)('A' + boot_drive());
+				n[1] = 0;
+				strcat(line, n);
+				log_line(line);
+			}
+		} else if (!strcmp(line, "clipshow")) {
+			char text[200], *q;
+			clip_get(text, sizeof(text));
+			for (q = text; *q; q++)
+				if (*q == '\n')
+					*q = '|';
+			strcpy(line, "clipboard: ");
+			strcat(line, text);
+			log_line(line);
 		} else if (!strcmp(line, "done")) {
 			say("done");
 		}

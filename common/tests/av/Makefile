@@ -18,10 +18,12 @@ B       := build
 
 $(B)/THING.ACC: $(B)/fakeserver.elf ../../tools/elf2tos.py
 	python3 ../../tools/elf2tos.py $< $@
-$(B)/fakeserver.elf: $(B)/crt0.o $(B)/fakeserver.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
+$(B)/fakeserver.elf: $(B)/crt0.o $(B)/fakeserver.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o $(B)/clip.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/fakeserver.o: fakeserver.c | $(B)
-	$(CC) $(ACFLAGS) -c -o $@ $<
+	$(CC) $(ACFLAGS) -I../../ui -c -o $@ $<
+$(B)/clip.o: ../../ui/clip.c ../../ui/clip.h | $(B)
+	$(CC) $(ACFLAGS) -I../../ui -c -o $@ $<
 $(B)/%.o: $(A)/%.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<
 $(B)/crt0.o: $(A)/crt0.S | $(B)
