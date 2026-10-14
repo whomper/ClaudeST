@@ -16,6 +16,7 @@ Examples:
 """
 import argparse
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -103,7 +104,8 @@ class SerialLink(Link):
 class TcpLink(Link):
     """Serves one Atari at a time over TCP: ClaudeST through STinG, a WiFi
     modem in transparent mode, or an emulator. Only addresses in `allow`
-    may connect (when given). A new connection from the Atari replaces the
+    may connect; with no `allow`, only private (home network) addresses
+    may, so a port forward can't expose the account. A new connection from the Atari replaces the
     old one, so a rebooted Atari never waits on a stale socket."""
 
     def __init__(self, hostport, allow=None):
@@ -122,6 +124,10 @@ class TcpLink(Link):
         conn, addr = self.srv.accept()
         if self.allow and addr[0] not in self.allow:
             log.warning("refused connection from %s (not in --allow)", addr[0])
+            conn.close()
+            return
+        if not self.allow and not ipaddress.ip_address(addr[0]).is_private:
+            log.warning("refused connection from %s (not a private address)", addr[0])
             conn.close()
             return
         conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
@@ -703,7 +709,7 @@ def main():
     link.add_argument("--tcp", metavar="HOST:PORT", help="listen for the Atari on a TCP port (STinG, WiFi modem)")
     link.add_argument("--pipe", nargs=2, metavar=("FROM_ST", "TO_ST"), help="files/FIFOs (Hatari)")
     ap.add_argument("--allow", action="append", metavar="IP",
-                    help="with --tcp: only accept this Atari address (repeatable)")
+                    help="with --tcp: only accept this Atari address (repeatable; without it, any private address)")
     ap.add_argument("--baud", type=int, default=19200)
     ap.add_argument("--rtscts", action="store_true", help="hardware flow control")
     ap.add_argument("--org", help="claude.ai organization uuid (default: first chat org)")

@@ -8,7 +8,8 @@
 #   sudo ./install.sh --network --atari 192.168.1.20
 #                                         wireless: ClaudeST connects over STinG
 #                                         (several Ataris: --atari IP1,IP2;
-#                                          any address: --atari any)
+#                                          any address on the home
+#                                          network: --atari any)
 #   sudo ./install.sh --backend api       use the Anthropic API instead of claude.ai
 #   sudo ./install.sh --port /dev/ttyUSB0 --baud 9600   serial cable instead
 #   sudo ./install.sh --set-key           paste a new claude.ai session key
@@ -156,7 +157,9 @@ if [ "$mode" = tcp ]; then
   set_var CLAUDE_ST_ARGS "--backend $backend --tcp 0.0.0.0:$tcp_port$allow"
   if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
     if [ "$atari" = any ]; then
-      ufw allow "$tcp_port"/tcp >/dev/null
+      for net in 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8; do
+        ufw allow from "$net" to any port "$tcp_port" proto tcp >/dev/null
+      done
     else
       for ip in ${atari//,/ }; do ufw allow from "$ip" to any port "$tcp_port" proto tcp >/dev/null; done
     fi

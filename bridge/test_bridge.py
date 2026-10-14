@@ -1319,6 +1319,34 @@ class TcpGateway(unittest.TestCase):
         self.assertEqual(c.recv(10), b"")  # closed on us
         c.close()
 
+    def test_no_allow_list_takes_private_addresses_only(self):
+        from claude_bridge import TcpLink
+
+        class FakeConn:
+            closed = False
+
+            def setsockopt(self, *a):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        class FakeServer:
+            def accept(self):
+                return self.next
+
+        link = TcpLink("127.0.0.1:0")
+        link.srv.close()
+        link.srv = FakeServer()
+        for addr, accepted in (("8.8.8.8", False), ("192.168.1.20", True),
+                               ("10.0.0.5", True), ("127.0.0.1", True)):
+            conn = FakeConn()
+            link.srv.next = (conn, (addr, 1234))
+            link.conn = None
+            link._accept()
+            self.assertEqual(link.conn is conn, accepted, addr)
+            self.assertEqual(conn.closed, not accepted, addr)
+
 
 class ClaudeAiParsing(unittest.TestCase):
     """The claude.ai backend can't be exercised offline, but its parsing can."""
