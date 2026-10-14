@@ -9,7 +9,7 @@
   2. F2, a bus error in supervisor mode: the bombs; after a warm reset
      the app starts again and says it crashed last time.
 
-    app_crash.py WORK EMUTOS.IMG APP.PRG NAME [--machine falcon|st]
+    app_crash.py WORK EMUTOS.IMG APP.PRG NAME [--machine falcon|st] [--memsize MB]
                  [--wait SECONDS] [--log DIR] [--copy FILE ...]
 
 NAME is the program's name in the report ("ECal"); --log is the folder
@@ -24,6 +24,7 @@ ap.add_argument("tos")
 ap.add_argument("prg")
 ap.add_argument("name")
 ap.add_argument("--machine", default="falcon")
+ap.add_argument("--memsize", help="MB (default: 14 on a Falcon, Hatari's own on an ST)")
 ap.add_argument("--wait", type=float, default=15)
 ap.add_argument("--log", default="")
 ap.add_argument("--copy", nargs="*", default=[])
@@ -60,6 +61,9 @@ class Run:
                 "--confirm-quit", "no", "--statusbar", "no", "--cmd-fifo", self.fifo,
                 "--screenshot-dir", self.shots, "--log-level", "fatal"]
         args += ["--mono"] if a.machine == "st" else ["--monitor", "vga", "--dsp", "none"]
+        mem = a.memsize or ("14" if a.machine == "falcon" else None)
+        if mem:
+            args += ["--memsize", mem]
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
         self.h = subprocess.Popen(args, env=env, stdout=open(os.path.join(self.d, "hatari.log"), "w"),
                                   stderr=subprocess.STDOUT)
