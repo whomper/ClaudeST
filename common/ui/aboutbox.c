@@ -12,6 +12,7 @@
 
 #define ICON_W 32
 #define ICON_H 32
+#define GPL_LINE "Free software under the GNU GPL 2 or later."
 
 static short dx, dy, dw, dh;
 
@@ -156,7 +157,7 @@ void about_show(const ABOUT *a)
 {
 	char v[40];
 	short sx = 2, sy = gl_hchar >= 16 ? 2 : 1;
-	short ih, lh, m[8], y, done = 0, i, nst = 0, widest = 0;
+	short ih, lh, m[8], y, done = 0, i, nst = 0, widest = 0, nfine, fcw, fch, fstep;
 	short saved_rgb[8][3], colour;
 	short bw, bh, by;
 	AEVENT e;
@@ -175,10 +176,25 @@ void about_show(const ABOUT *a)
 	dw = 50 * cw;
 	if (widest + 4 > 50)			/* the status lines fit whole */
 		dw = (widest + 4) * cw;
+	/* the fine print: the system font's small size, 8x8 on a high
+	   screen, 6x6 on a low one; measured, then back to the normal size
+	   (font_sys_push's: 13 or 6) */
+	vst_height(vdi_h, ch >= 16 ? 6 : 4, &fcw, &fch);
+	vst_height(vdi_h, ch >= 16 ? 13 : 6, &fch, &fch);
+	fstep = ch >= 16 ? 8 + 3 : 6 + 2;
+	nfine = 1;
+	widest = (short)strlen(GPL_LINE);
+	for (i = 0; i < 3 && a->fine[i]; i++) {
+		if ((short)strlen(a->fine[i]) > widest)
+			widest = (short)strlen(a->fine[i]);
+		nfine++;
+	}
+	if ((widest + 2) * fcw > dw)		/* and so does the fine print */
+		dw = (widest + 2) * fcw;
 	if (dw > desk_w - 2 * cw)
 		dw = desk_w - 2 * cw;
-	dh = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh + lh +
-	     (lh + lh / 2) + (nst ? nst * lh + lh / 2 : 0) + bh + lh;
+	dh = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh + (lh + lh / 2) +
+	     (nst ? nst * lh + lh / 2 : 0) + lh / 2 + nfine * fstep + lh / 2 + bh + lh;
 	if (dh > desk_h - 4)
 		dh = desk_h - 4;
 	dx = desk_x + (desk_w - dw) / 2;
@@ -220,12 +236,23 @@ void about_show(const ABOUT *a)
 	center(y, "Created by Erez Yaary", TX_BOLD);
 	y += lh;
 	center(y, "\xBD 2026 Erez Yaary", 0);
-	y += lh;
-	center(y, "Free software under the GNU GPL 2 or later", 0);
 	y += lh + lh / 2;
 	for (i = 0; i < nst; i++, y += lh)
 		center(y, a->status[i], 0);
+	if (nst)
+		y += lh / 2;
 	button(dx + (dw - bw) / 2, by, bw, bh, "OK");
+	/* the fine print, last: the small size stays until font_sys_pop */
+	y += lh / 2;
+	vst_height(vdi_h, ch >= 16 ? 6 : 4, &fcw, &fch);
+	vswr_mode(vdi_h, MD_TRANS);
+	vst_color(vdi_h, 1);
+	vst_effects(vdi_h, 0);
+	for (i = 0; i < nfine; i++, y += fstep) {
+		const char *s = i ? a->fine[i - 1] : GPL_LINE;
+		short n = (short)strlen(s);
+		v_gtext_n(vdi_h, dx + (dw - n * fcw) / 2, y, s, n);
+	}
 	graf_mouse(M_ON, 0);
 	wait_up();
 

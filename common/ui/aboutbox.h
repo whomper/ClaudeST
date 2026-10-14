@@ -2,16 +2,17 @@
  * Copyright (C) 2026 Erez Yaary */
 /*
  * aboutbox.h - the About box of the AERA programs (the guidelines, 1.3),
- * ECal's: centred on the screen, in the system font, the icon large (in
- * colour with 16 colours or more), the name bold and underlined, the
- * version, a one-line tagline, who made it, the licence, and up to three
- * lines of the app's own (how it is connected, its memory). Return, Esc,
+ * ECal's with Claude ST's fine print: centred on the screen, in the
+ * system font, the icon large (in colour with 16 colours or more), the
+ * name bold and underlined, the version, a one-line tagline, who made
+ * it, up to three lines of the app's own (how it is connected, its
+ * memory), then the fine print in the small system font: the licence and
+ * up to three lines of the app's (trademarks it names). Return, Esc,
  * Undo, Help, Space or a click closes it. Drawn with the app's own
  * primitives (gemui.h).
  *
- *   static const ABOUT about = { "ECal", cal_version,
- *       "A calendar for the Atari ST, TT and Falcon", { 0 },
- *       icon_bits, icon16_px, icon16_rgb };
+ *   ABOUT a = { "ECal", cal_version, "A calendar for the Atari ST, TT and Falcon",
+ *               { status, 0, 0 }, { 0, 0, 0 }, icon_bits, icon16_px, icon16_rgb };
  */
 #ifndef AERA_ABOUTBOX_H
 #define AERA_ABOUTBOX_H
@@ -21,6 +22,7 @@ typedef struct {
 	const char *version;		/* "1.32" */
 	const char *tagline;		/* at most 44 characters */
 	const char *status[3];		/* the app's own lines, 0 for none */
+	const char *fine[3];		/* fine print after the licence, 0 for none */
 	const unsigned short *icon;	/* 32x32, one plane: icon.h's icon_bits */
 	const unsigned char *icon16;	/* 32x32, 4 bits a pixel: icon16.h's icon16_px */
 	const short (*icon16_rgb)[3];	/* its colours for pens 8-15: icon16_rgb */

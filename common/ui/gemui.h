@@ -6,6 +6,7 @@
  * (its draw.c, font.c) provides them; the declarations here must match,
  * so the compiler checks the app keeps to them.
  *
+ *   types:       GRECT { x, y, w, h }; KEY_SCAN, KEY_ASCII
  *   the screen:  vdi_h, cw, ch (the current font's cell), scr_w, scr_h,
  *                desk_x/y/w/h, planes, gl_wchar, gl_hchar (the AES's)
  *   drawing:     fill, frame, hline, line_col, text_at with TX_BOLD,
