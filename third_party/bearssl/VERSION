@@ -1,0 +1,4 @@
+BearSSL 0.6 (https://bearssl.org/), MIT licence, unmodified.
+Source: Debian bearssl_0.6+dfsg.1.orig.tar.xz
+sha256 102a625bd8f6155260867a50c508df8d8c3f796985dd744df1a68e5cd1a79004
+Only inc/, src/, LICENSE.txt and README.txt are kept.
