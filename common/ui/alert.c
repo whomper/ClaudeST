@@ -79,3 +79,11 @@ short alert(short def, const char *fmt, ...)
 	out[o] = 0;
 	return form_alert(def, out);
 }
+
+int screen_check(const char *app, short width)
+{
+	if (width >= 640)
+		return 1;
+	alert(1, "[3][%s needs a screen 640 pixels wide: ST medium or high, or a TT or Falcon mode.][ OK ]", app);
+	return 0;
+}

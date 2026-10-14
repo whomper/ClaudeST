@@ -8,6 +8,7 @@
 #include "gem.h"
 #include "help.h"
 #include "av.h"
+#include "alert.h"
 
 #define VA_START 0x4711
 
@@ -74,4 +75,16 @@ int help_show(const char *dir, const char *hyp, const char *page)
 	}
 	send(id, help_buf);
 	return 1;
+}
+
+int help_key(const char *dir, const char *hyp, const char *page, const char *own)
+{
+	if (help_show(dir, hyp, page))
+		return 0;
+	if (!own) {
+		alert(1, "[1][No help viewer is running:|install EHypView or ST-Guide|as an accessory.][ OK ]");
+		return 0;
+	}
+	return alert(2, "[1][No help viewer is running:|install EHypView or ST-Guide|as an accessory.][%s|OK]",
+		     own) == 1;
 }

@@ -340,6 +340,11 @@ void crash_remove(void)
 	Supexec(crash_restore);
 }
 
+const char *crash_log(void)
+{
+	return path;
+}
+
 const char *crash_previous(void)
 {
 	return prev_name;

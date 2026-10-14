@@ -38,4 +38,13 @@ const char *about_ram(void);
    icon's own pens 8-15), for an iconified window too */
 void about_icon16(const unsigned char *px, short x, short y, short sx, short sy, const short *pens);
 
+/* plain text in the same frame, under a title, with OK: lines broken to
+   fit the screen, as many as fit */
+void text_box(const char *title, const char *text);
+
+/* at start-up, after a crash TOS recorded in the program (crash.h's
+   crash_previous()): an alert saying so, "What happened is in CRASH.LOG,
+   <where>." ("next to ECAL.PRG"), which offers to show the report */
+void crash_offer(const char *app, const char *where);
+
 #endif

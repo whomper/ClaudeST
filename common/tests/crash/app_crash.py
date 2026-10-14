@@ -7,7 +7,8 @@
   1. F1, a bus error in the program: the app's alert, CRASH.LOG, and
      back to the desktop with the emulator still running;
   2. F2, a bus error in supervisor mode: the bombs; after a warm reset
-     the app starts again and says it crashed last time.
+     the app starts again, says it crashed last time and, with Return
+     (Show), shows the report.
 
     app_crash.py WORK EMUTOS.IMG APP.PRG NAME [--machine falcon|st] [--memsize MB]
                  [--wait SECONDS] [--log DIR] [--copy FILE ...]
@@ -120,7 +121,12 @@ try:
     r.shot()
     r.cmd("hatari-shortcut warmreset")
     time.sleep(a.wait + 3)
-    r.shot()				# "crashed last time"
+    r.shot()				# "crashed last time", offering to show it
+    r.key(0x1c)				# Return: Show, the default
+    time.sleep(3)
+    r.shot()				# the report, in a box (crash_offer)
+    r.key(0x1c)				# OK
+    time.sleep(2)
     rep = r.log()
     check("found TOS's record of a crash before this run" in rep and "bus error, 2 bombs at" in rep,
           "F2: CRASH.LOG has TOS's record after the reset")

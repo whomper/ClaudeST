@@ -31,6 +31,8 @@ extern void (*crash_report)(const char *text, long n);
 /* a crash TOS recorded before this run: its report is in CRASH.LOG; the
    bombs' name when the crash was in the program's code, else 0 */
 const char *crash_previous(void);
+/* where CRASH.LOG is ("" before crash_install, or when it does nothing) */
+const char *crash_log(void);
 /* test builds (-DCRASH_TEST) only: F1 to F4 (the scancode) crash on
    purpose: a bus error in the program, one in supervisor mode, an
    illegal instruction, an address error (68000). 0 for other keys */
