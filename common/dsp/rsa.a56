@@ -1,0 +1,353 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
+; Copyright (C) 2026 Erez Yaary
+; rsa.a56 - RSA public-key operation y = x^e mod n on the Falcon's DSP56001,
+; for the Falcon mode of the AERA programs (checking the signatures of a TLS handshake).
+;
+; Numbers are little-endian arrays of 23-bit digits in 24-bit words, so
+; the signed 24x24 multiplier and the 56-bit accumulator never overflow.
+; After a MAC the accumulator holds twice the column sum: its low word is
+; the new digit doubled, its middle word the carry. Montgomery
+; multiplication (CIOS) with R = 2^(23N), R >= 4n, so results below 2n
+; can be fed back without reducing them.
+;
+; The host (dsprsa.c) sends, through the host port:
+;   N      digits per number (n has at most 23N-2 bits)
+;   mp     -n^-1 mod 2^23
+;   c1     doublings from 2^(bits-1) to 2^(23N+r) mod n
+;   c2     further doublings to 2^(23N+d0) (d0 = 23N >> s, r = 23N - d0 << s)
+;   s      squarings that take 2^(23N+d0) to 2^(23N+d0*2^s); times 2^(23N+r)
+;          that gives R^2 mod n
+;   eal    e without its top bit, shifted up so its next bit is bit 23
+;   ecnt   number of bits of e - 1
+;   ti     digit holding the top bit of n
+;   tw     that digit's value 2^((bits-1) mod 23)
+;   n[N], x[N]
+; and receives y[N]. Then it waits for the next number.
+
+HSR	equ	$ffe9
+HRX	equ	$ffeb
+
+; variables, internal X memory
+NV	equ	$00		; N
+MPV	equ	$01
+C1V	equ	$02
+C2V	equ	$03
+SV	equ	$04
+EV	equ	$05
+ECV	equ	$06
+TIV	equ	$07
+TWV	equ	$08
+N2V	equ	$09		; N + 2
+CDV	equ	$0a		; carry of a doubling
+TMPV	equ	$0b
+
+; arrays, external memory (X and Y external RAM are separate on the Falcon)
+XA	equ	$0200		; x: Montgomery operand a / the running value
+XN	equ	$0400		; x: n
+XX	equ	$0600		; x: the input x
+XD	equ	$0800		; x: the number being doubled
+YT	equ	$0300		; y: CIOS result t[0..N+1]; y:$2ff is scratch
+YB	equ	$0500		; y: Montgomery operand b
+YM	equ	$0700		; y: x*R mod n
+YZ	equ	$0900		; y: zeros
+YS	equ	$0b00		; y: a difference
+YR	equ	$0d00		; y: 2^(23N+r) mod n
+YO	equ	$0f00		; y: the number 1
+YW	equ	$1100		; y: a doubled number
+
+	org	p:$0
+	jmp	start
+
+	org	p:$40
+start
+	movep	#1,x:$ffe0		; port B is the host port
+	movep	#0,x:$fffe		; no wait states
+	move	#>1,y1			; the constant 1 (as an integer)
+cmd
+	jsr	rd
+	move	x0,x:NV
+	move	x0,a
+	move	#>2,x1
+	add	x1,a
+	move	a1,x:N2V
+	jsr	rd
+	move	x0,x:MPV
+	jsr	rd
+	move	x0,x:C1V
+	jsr	rd
+	move	x0,x:C2V
+	jsr	rd
+	move	x0,x:SV
+	jsr	rd
+	move	x0,x:EV
+	jsr	rd
+	move	x0,x:ECV
+	jsr	rd
+	move	x0,x:TIV
+	jsr	rd
+	move	x0,x:TWV
+	move	#XN,r0
+	nop
+	do	x:NV,rn
+	jsr	rd
+	move	x0,x:(r0)+
+rn
+	move	#XX,r0
+	nop
+	do	x:NV,rx
+	jsr	rd
+	move	x0,x:(r0)+
+rx
+	; zeros, and the number 1
+	clr	a	#YZ,r4
+	nop
+	do	x:N2V,z1
+	move	a,y:(r4)+
+z1
+	move	#YO,r4
+	nop
+	do	x:N2V,z2
+	move	a,y:(r4)+
+z2
+	move	#>1,x0
+	move	x0,y:YO
+	; XD = 2^(bits-1)
+	move	#XD,r0
+	nop
+	do	x:NV,z3
+	move	a,x:(r0)+
+z3
+	move	#XD,a
+	move	x:TIV,x0
+	add	x0,a
+	move	a1,r0
+	move	x:TWV,x0
+	move	x0,x:(r0)
+
+	; 2^(23N+r) mod n, kept in YR
+	do	x:C1V,d1
+	jsr	double
+	nop
+d1
+	move	#XD,r0
+	move	#YR,r4
+	jsr	copyxy
+	; 2^(23N+d0)
+	do	x:C2V,d2
+	jsr	double
+	nop
+d2
+	move	#XD,r0
+	move	#XA,r4
+	jsr	copyxx
+	move	#XD,r0
+	move	#YB,r4
+	jsr	copyxy
+	; s squarings
+	do	x:SV,sq
+	move	#XA,r1
+	move	#YB,r2
+	jsr	mont
+	move	#YT,r4
+	move	#XA,r0
+	jsr	copyyx
+	move	#YT,r4
+	move	#YB,r0
+	jsr	copyyy
+	nop
+sq
+	; times 2^(23N+r): R^2 mod n, into YB
+	move	#XA,r1
+	move	#YR,r2
+	jsr	mont
+	move	#YT,r4
+	move	#YB,r0
+	jsr	copyyy
+
+	; x*R mod n: into YM and XA
+	move	#XX,r1
+	move	#YB,r2
+	jsr	mont
+	move	#YT,r4
+	move	#YM,r0
+	jsr	copyyy
+	move	#YT,r4
+	move	#XA,r0
+	jsr	copyyx
+
+	; the exponent, from its second bit down
+	do	x:ECV,el
+	move	#XA,r0
+	move	#YB,r4
+	jsr	copyxy
+	move	#XA,r1
+	move	#YB,r2
+	jsr	mont			; square
+	move	#YT,r4
+	move	#XA,r0
+	jsr	copyyx
+	jclr	#23,x:EV,enext
+	move	#XA,r1
+	move	#YM,r2
+	jsr	mont			; times x
+	move	#YT,r4
+	move	#XA,r0
+	jsr	copyyx
+enext
+	move	x:EV,a
+	lsl	a
+	move	a1,x:EV
+	nop
+el
+	; out of Montgomery form: times 1
+	move	#XA,r1
+	move	#YO,r2
+	jsr	mont
+	; YS = t - n; if that didn't borrow, it is the answer
+	move	#>-1,x0
+	clr	b
+	move	b1,x1
+	move	#YT,r4
+	move	#XN,r0
+	move	#YS,r5
+	jsr	rowop
+	move	x1,a
+	tst	a
+	jeq	useys
+	move	#YT,r4
+	jmp	send
+useys
+	move	#YS,r4
+send
+	nop
+	do	x:NV,so
+	move	y:(r4)+,x1
+	jsr	wr
+	nop
+so
+	jmp	cmd
+
+; ---- host port
+rd	jclr	#0,x:HSR,rd
+	movep	x:HRX,x0
+	rts
+wr	jclr	#1,x:HSR,wr
+	movep	x1,x:HRX
+	rts
+
+; ---- copies of N digits: r0 -> r4, or r4 -> r0
+copyxy
+	do	x:NV,cxy
+	move	x:(r0)+,x0
+	move	x0,y:(r4)+
+cxy
+	rts
+copyyx
+	do	x:NV,cyx
+	move	y:(r4)+,x0
+	move	x0,x:(r0)+
+cyx
+	rts
+copyyy
+	do	x:NV,cyy
+	move	y:(r4)+,x0
+	move	x0,y:(r0)+
+cyy
+	rts
+copyxx
+	do	x:NV,cxx
+	move	x:(r0)+,x0
+	move	x0,x:(r4)+
+cxx
+	rts
+
+; ---- one row: y:dst[j] = y:t[j] + x0 * x:src[j] + carry, N digits.
+; r4 = t, r0 = src, r5 = dst, x1 = carry in and out; keeps y1 = 1
+rowop
+	do	x:NV,ro
+	mpy	y1,x1,a	y:(r4)+,y0	; 2C
+	mac	y0,y1,a	x:(r0)+,y0	; + 2t[j]
+	mac	y0,x0,a			; + 2 x0 src[j]
+	move	a0,b1
+	lsr	b	a1,x1		; digit; carry
+	move	b1,y:(r5)+
+ro
+	rts
+
+; ---- XD = 2 XD mod n (XD < n stays below n)
+double
+	clr	b	#YZ,r4
+	move	b1,x1
+	move	#XD,r0
+	move	#YW,r5
+	move	#>2,x0
+	jsr	rowop			; YW = 2 XD, carry 0 or 1
+	move	x1,x:CDV
+	clr	b	#YW,r4
+	move	b1,x1
+	move	#XN,r0
+	move	#YS,r5
+	move	#>-1,x0
+	jsr	rowop			; YS = YW - n, carry 0 or -1
+	move	x:CDV,a
+	move	x1,x0
+	add	x0,a			; 0: the difference is the result
+	tst	a
+	jeq	dys
+	move	#YW,r4
+	jmp	dcopy
+dys
+	move	#YS,r4
+dcopy
+	move	#XD,r0
+	jsr	copyyx
+	rts
+
+; ---- Montgomery multiplication: YT = x:r1 * y:r2 / R mod n (below 2n)
+mont
+	clr	a	#YT,r4
+	nop
+	do	x:N2V,mc
+	move	a,y:(r4)+
+mc
+	move	r2,r6
+	nop
+	do	x:NV,mo
+	move	y:(r6)+,x0		; b[i]
+	move	r1,r0
+	move	#YT,r4
+	move	#YT,r5
+	clr	b
+	move	b1,x1
+	jsr	rowop			; t += a * b[i]
+	mpy	y1,x1,a	y:(r4)+,y0	; t[N] + C
+	mac	y0,y1,a
+	move	a0,b1
+	lsr	b	a1,x1
+	move	b1,y:(r5)+		; t[N]
+	move	x1,y:(r5)		; t[N+1]
+	move	#YT,r4
+	move	x:MPV,x0
+	move	y:(r4),y0
+	mpy	y0,x0,a			; t[0] * mp
+	move	a0,b1
+	lsr	b
+	move	b1,x0			; m_i
+	clr	b
+	move	b1,x1
+	move	#XN,r0
+	move	#YT-1,r5
+	jsr	rowop			; t += m_i * n, shifted down one digit
+	mpy	y1,x1,a	y:(r4)+,y0	; t[N] + C -> t[N-1]
+	mac	y0,y1,a
+	move	a0,b1
+	lsr	b	a1,x1
+	move	b1,y:(r5)+
+	mpy	y1,x1,a	y:(r4),y0	; t[N+1] + C -> t[N]
+	mac	y0,y1,a
+	move	a0,b1
+	lsr	b
+	move	b1,y:(r5)
+	nop
+mo
+	rts
