@@ -84,6 +84,11 @@ GRECT popup_area;
 
 short popup(short x, short y, const char *const *lab, short n)
 {
+	return popup_alt(x, y, -1, lab, n);
+}
+
+short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
+{
 	short i, w = 0, sel = -1, res = -1, held, moved = 0, bh;
 	short mx, my, ox, oy, m[8], clipr[4];
 	GRECT shadow, body;
@@ -102,8 +107,12 @@ short popup(short x, short y, const char *const *lab, short n)
 		x = desk_x + desk_w - pw - 2;
 	if (x < desk_x)
 		x = desk_x;
-	if (y + bh + 2 > desk_y + desk_h)
-		y = y - bh > desk_y ? y - bh : desk_y + desk_h - bh - 2;
+	if (y + bh + 2 > desk_y + desk_h) {
+		if (alt_y >= 0)			/* above the item it is for */
+			y = alt_y - bh - 2;
+		else
+			y = y - bh > desk_y ? y - bh : desk_y + desk_h - bh - 2;
+	}
 	if (y < desk_y)
 		y = desk_y;
 	px = x;

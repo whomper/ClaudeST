@@ -12,6 +12,9 @@
 #include "gem.h"
 
 short popup(short x, short y, const char *const *labels, short n);
+/* the same; with no room below y, it ends above alt_y (the top of the
+   row it is for) instead of above y (Claude ST's list menus) */
+short popup_alt(short x, short y, short alt_y, const char *const *labels, short n);
 extern GRECT popup_area;	/* where the last popup was: what the app repaints */
 
 #endif
