@@ -1,0 +1,1006 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 AERA | Erez Yaary
+"""aera-gateway - sets up the AERA gateways on a Raspberry Pi (or any
+Debian, Ubuntu or Raspberry Pi OS computer), brings them up to date and
+says how they are.
+
+  sudo ./aera-gateway install mail IMAP SMTP[:587] [POP3]   EMail's (emailgate)
+  sudo ./aera-gateway install dav                           ECal's and EContact's (ecalgate)
+  sudo ./aera-gateway install ftp                           EFTP's (eftpgate)
+  sudo ./aera-gateway install claude --network --atari ATARI_IP
+                                                            ClaudeST's bridge (claude-st)
+  sudo ./aera-gateway update        every one installed, from this copy, settings kept
+  aera-gateway status               what runs, on which ports, with which settings
+  sudo ./aera-gateway remove SERVICE
+  sudo ./aera-gateway set-key       a new claude.ai session key for ClaudeST
+
+`aera-gateway install SERVICE --help` lists a service's settings. Run
+install again to change some of them: the others stay as they are.
+
+A gateway set up by an app's own install.sh (EMail, ECal or EFTP before
+the gateways moved here) is taken over by `update` or `install`: the
+same service, user, ports and settings, the old copy removed only once
+the new one answers.
+"""
+
+import argparse
+import contextlib
+import getpass
+import glob
+import importlib.util
+import io
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
+OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
+UNITS = "/etc/systemd/system"
+OLD_BIN = "/usr/local/bin"                  # where the apps' own install.sh put them
+FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py")
+HOME_NETS = ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8")
+CLAUDEST = "whomper/ClaudeST"
+
+
+class Failed(Exception):
+    """what went wrong, for the person at the Pi"""
+
+
+class Usage(Failed):
+    pass
+
+
+# ---------------------------------------------------------------- the computer
+
+class Pi:
+    """The computer being set up: its commands and files. The tests give
+    a stand-in with its files in a folder of their own."""
+
+    def __init__(self, root="/"):
+        self.root = root
+
+    def path(self, p):
+        return os.path.join(self.root, p.lstrip("/"))
+
+    def run(self, *cmd, check=True, out="show", errors=True, input=None):
+        """out: "show" it, "hide" it or "keep" it (returned)"""
+        r = subprocess.run(cmd, input=input, universal_newlines=True,
+                           stdout={"show": None, "hide": subprocess.DEVNULL, "keep": subprocess.PIPE}[out],
+                           stderr=None if errors else subprocess.DEVNULL)
+        if check and r.returncode:
+            raise Failed("%s failed" % " ".join(cmd))
+        return r
+
+    def ok(self, *cmd):
+        return self.run(*cmd, check=False, out="hide", errors=False).returncode == 0
+
+    def out(self, *cmd):
+        r = self.run(*cmd, check=False, out="keep", errors=False)
+        return r.stdout if r.returncode == 0 else ""
+
+    def have(self, prog):
+        return shutil.which(prog) is not None
+
+    def is_root(self):
+        return os.geteuid() == 0
+
+    def tty(self):
+        return sys.stdin.isatty()
+
+    def ask(self, prompt, secret=False):
+        if not self.tty():
+            return ""
+        try:
+            return (getpass.getpass(prompt) if secret else input(prompt)).strip()
+        except EOFError:
+            return ""
+
+    def sleep(self, s):
+        time.sleep(s)
+
+    def exists(self, p):
+        return os.path.lexists(self.path(p))
+
+    def read(self, p):
+        try:
+            with open(self.path(p)) as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def write(self, p, text, mode=0o644):
+        """the whole file at once: nobody sees half of it"""
+        full = self.path(p)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        tmp = full + ".aera-new"
+        with open(tmp, "w") as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, full)
+
+    def copy(self, src, p, mode=None):
+        """src to p; without a mode, src's as cp gives it"""
+        if mode is None:
+            mode = os.stat(src).st_mode & 0o755
+        with open(src) as f:
+            self.write(p, f.read(), mode)
+
+    def makedirs(self, p):
+        os.makedirs(self.path(p), exist_ok=True)
+
+    def rename(self, a, b):
+        os.rename(self.path(a), self.path(b))
+
+    def remove(self, p):
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(self.path(p))
+
+    def rmtree(self, p):
+        shutil.rmtree(self.path(p), ignore_errors=True)
+
+    def chown(self, p, owner):
+        self.run("chown", owner, self.path(p))
+
+    def ip(self):
+        words = self.out("hostname", "-I").split()
+        return words[0] if words else ""
+
+
+def say(*lines):
+    for line in lines:
+        print(line)
+    sys.stdout.flush()
+
+
+def heading(text):
+    say("", "== " + text)
+
+
+# ---------------------------------------------------------------- services and units
+
+def unit_path(name):
+    return "%s/%s.service" % (UNITS, name)
+
+
+def unit_word(w):
+    """one argument on an ExecStart= line"""
+    w = w.replace("%", "%%").replace("$", "$$")
+    if not w or re.search(r"[\s\"'\\;]", w):
+        w = '"' + w.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return w
+
+
+def exec_args(unit, script):
+    """(the path, the arguments) of script on the unit's ExecStart= line,
+    or (None, None) when it doesn't run script"""
+    for line in unit.splitlines():
+        if line.startswith("ExecStart="):
+            try:
+                words = shlex.split(line[len("ExecStart="):].lstrip("-@:+!"))
+            except ValueError:
+                return None, None
+            words = [w.replace("%%", "%").replace("$$", "$") for w in words]
+            for i, w in enumerate(words):
+                if os.path.basename(w) == script:
+                    return w, words[i + 1:]
+    return None, None
+
+
+def carried(unit):
+    """lines of an old unit to keep: Environment= (HTTPS_PROXY, say)"""
+    return [line for line in (unit or "").splitlines()
+            if line.startswith(("Environment=", "EnvironmentFile="))]
+
+
+def listening(pi, port):
+    return "LISTEN" in pi.out("ss", "-ltn", "( sport = :%s )" % port)
+
+
+def up(pi, name, ports, wait=10):
+    """Is the service running, and listening on all its ports, twice in a row?"""
+    steady = 0
+    for _ in range(wait * 2):
+        pi.sleep(0.5)
+        if pi.ok("systemctl", "is-active", "--quiet", name) and all(listening(pi, p) for p in ports):
+            steady += 1
+            if steady == 2:
+                return True
+        else:
+            steady = 0
+    return False
+
+
+def firewall(pi, ports, allow):
+    """A firewall that is on must let the Atari in, or it can't connect;
+    if a rule can't be added, say so and stop."""
+    if not pi.have("ufw") or not re.search(r"^Status: active", pi.out("ufw", "status"), re.M):
+        return
+    for p in ports:
+        for who in allow or HOME_NETS:
+            if not pi.ok("ufw", "allow", "from", who, "to", "any", "port", str(p), "proto", "tcp"):
+                raise Failed("Couldn't let %s in on port %s with ufw: stopping. The gateway runs, but the\n"
+                             "firewall may keep the Atari out; add the rule by hand:\n"
+                             "   sudo ufw allow from %s to any port %s proto tcp" % (who, p, who, p))
+
+
+def allow_list(values):
+    """--allow as given: repeated or with commas; "any" means the home network"""
+    out = []
+    for v in values:
+        for a in v.split(","):
+            a = a.strip()
+            if a == "any":
+                return []
+            if a:
+                out.append(a)
+    return out
+
+
+# ---------------------------------------------------------------- the gateways
+
+def load(src, script):
+    """a gateway's code from src, for its parser()"""
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    spec = importlib.util.spec_from_file_location(script[:-3], os.path.join(src, script))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class Gateway:
+    """emailgate, ecalgate or eftpgate: a script in OPT run as a service
+    by a user of its own"""
+    key = name = script = title = ""
+    packages = ()               # Debian packages beyond python3 and ca-certificates
+    state = False               # a StateDirectory (eftpgate's SSH host keys)
+    removed = ""
+
+    def unit_file(self):
+        return unit_path(self.name)
+
+    def installed(self, pi):
+        return pi.exists(self.unit_file())
+
+    def parse(self, src, args):
+        """the gateway's settings from its command line"""
+        ap = load(src, self.script).parser()
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                ns, extra = ap.parse_known_args(args)
+        except SystemExit:
+            raise Failed("can't read %s's settings in %s (%s)" % (self.name, self.unit_file(), " ".join(args)))
+        ns.extra = extra
+        ns.default = {a.dest: a.default for a in ap._actions}
+        return ns
+
+    def current(self, pi, src):
+        """(settings, the unit's text, the script it runs) as installed now,
+        or (None, None, None)"""
+        text = pi.read(self.unit_file())
+        if text is None:
+            return None, None, None
+        script, args = exec_args(text, self.script)
+        if script is None:
+            raise Failed("%s doesn't run %s: not touching it" % (self.unit_file(), self.script))
+        return self.parse(src, args), text, script
+
+    def options(self, ap):
+        ap.add_argument("--allow", action="append", metavar="ATARI_IP",
+                        help="only the Atari at this address may use it (more: repeat, or IP1,IP2; "
+                             "'any' for the whole home network again)")
+        ap.add_argument("--remove", action="store_true", help=argparse.SUPPRESS)
+
+    def apply(self, ns, o):
+        if o.allow is not None:
+            ns.allow = allow_list(o.allow)
+
+    def check(self, ns):
+        pass
+
+    def args(self, ns):
+        out = []
+        if ns.bind != ns.default["bind"]:
+            out += ["--bind", ns.bind]
+        for a in ns.allow or []:
+            out += ["--allow", a]
+        return out
+
+    def ports(self, ns):
+        """the ports it listens on"""
+        return []
+
+    def open_ports(self, ns):
+        """the ports the firewall must open"""
+        return self.ports(ns)
+
+    def unit(self, ns, keep):
+        low = any(int(p) < 1024 for p in self.ports(ns))
+        lines = ["[Unit]",
+                 "Description=" + self.title,
+                 "After=network-online.target",
+                 "Wants=network-online.target",
+                 "",
+                 "[Service]",
+                 "User=" + self.name,
+                 "ExecStart=/usr/bin/python3 %s/%s %s" % (OPT, self.script,
+                                                         " ".join(unit_word(w) for w in self.args(ns)))]
+        lines += keep
+        if self.state:
+            lines.append("StateDirectory=" + self.name)
+        lines += ["Restart=always", "RestartSec=5"]
+        if low:
+            lines += ["# ports below 1024: that one privilege, and no other",
+                      "AmbientCapabilities=CAP_NET_BIND_SERVICE",
+                      "CapabilityBoundingSet=CAP_NET_BIND_SERVICE"]
+        lines += ["NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes",
+                  "", "[Install]", "WantedBy=multi-user.target", ""]
+        return "\n".join(lines)
+
+    def tell(self, ns, ip):
+        return ""
+
+    def describe(self, ns):
+        return ""
+
+    def before_start(self, pi):
+        pass
+
+    def after_remove(self, pi):
+        pass
+
+
+class Mail(Gateway):
+    key, name, script = "mail", "emailgate", "emailgate.py"
+    title = "EMail gateway for the Atari (TLS to the mail provider)"
+    removed = "emailgate removed."
+    STUNNEL = "/etc/stunnel/atari-mail.conf"
+
+    def options(self, ap):
+        ap.add_argument("servers", nargs="*", metavar="SERVER",
+                        help="IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]: your provider's (needed the first time)")
+        super().options(ap)
+        ap.add_argument("--ports", metavar="IMAP,SMTP,POP3",
+                        help="the ports on the Pi when the usual ones (143,587,110) are taken")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.servers:
+            if len(o.servers) not in (2, 3):
+                raise Usage("name the IMAP and SMTP servers, and the POP3 server if you want it")
+            ns.imap, ns.smtp = o.servers[:2]
+            ns.pop3 = o.servers[2] if len(o.servers) == 3 else None
+        if o.ports:
+            p = o.ports.split(",")
+            if not 2 <= len(p) <= 3 or not all(x.isdigit() for x in p):
+                raise Usage("--ports wants three port numbers: IMAP,SMTP,POP3 (e.g. 2143,2587,2110)")
+            ns.ports = ",".join(p + ["110"][:3 - len(p)])
+
+    def check(self, ns):
+        if not ns.imap or not ns.smtp:
+            raise Usage("name your provider's servers: aera-gateway install mail IMAP_SERVER SMTP_SERVER[:587] "
+                        "[POP3_SERVER]\n(e.g. imap.gmail.com smtp.gmail.com pop.gmail.com)")
+
+    def args(self, ns):
+        out = ["-v", "--ports", ns.ports] + super().args(ns) + ns.extra + [ns.imap, ns.smtp]
+        return out + ([ns.pop3] if ns.pop3 else [])
+
+    def ports(self, ns):
+        p = (ns.ports.split(",") + ["110", "110"])[:3]
+        return p if ns.pop3 else p[:2]
+
+    def describe(self, ns):
+        return "%s %s%s" % (ns.imap, ns.smtp, " " + ns.pop3 if ns.pop3 else "")
+
+    def tell(self, ns, ip):
+        imap, smtp, pop3 = (ns.ports.split(",") + ["110", "110"])[:3]
+        lines = ["",
+                 "The gateway is running%s. In EMail's account dialog (Options > Accounts):" % (
+                     " for %s only" % ", ".join(ns.allow) if ns.allow else ""),
+                 "",
+                 "  Incoming:  IMAP   Server: %s   Port: %s" % (ip, imap)]
+        if ns.pop3:
+            lines.append("  (or POP3        Server: %s   Port: %s)" % (ip, pop3))
+        lines += ["  Outgoing (SMTP)   Server: %s   Port: %s" % (ip, smtp),
+                  "",
+                  "with your usual mail user name and password (for Gmail: an app password)."]
+        return "\n".join(lines)
+
+    def before_start(self, pi):
+        self.stop_stunnel(pi)
+
+    def after_remove(self, pi):
+        self.stop_stunnel(pi)
+
+    def stop_stunnel(self, pi):
+        """the stunnel set-up of EMail 1.x: gone, and stunnel too unless it
+        has other work"""
+        if not pi.exists(self.STUNNEL):
+            return
+        pi.remove(self.STUNNEL)
+        if glob.glob(pi.path("/etc/stunnel/*.conf")):
+            pi.run("systemctl", "restart", "stunnel4", check=False, errors=False)
+            say("Removed EMail's old stunnel set-up (%s); stunnel keeps running for the others." % self.STUNNEL)
+        else:
+            pi.run("systemctl", "disable", "--now", "stunnel4", check=False, out="hide", errors=False)
+            say("Removed EMail's old stunnel set-up (%s) and stopped stunnel." % self.STUNNEL)
+
+
+class Dav(Gateway):
+    key, name, script = "dav", "ecalgate", "ecalgate.py"
+    title = "ECal and EContact gateway for the Atari (HTTPS for CalDAV, CardDAV and subscriptions)"
+    removed = "ecalgate removed."
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Pi (8180 is the default)")
+        ap.add_argument("--allow-local", action="store_true", default=None,
+                        help="also reach servers on the home network (a Radicale or Nextcloud at home)")
+        ap.add_argument("--no-allow-local", dest="allow_local", action="store_false")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None,
+                        help="log every request (the server, never the address's path)")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.port is not None:
+            ns.port = o.port
+        if o.allow_local is not None:
+            ns.allow_local = o.allow_local
+        if o.verbose is not None:
+            ns.verbose = o.verbose
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        out += ["--allow-local"] if ns.allow_local else []
+        out += ["--insecure"] if ns.insecure else []
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def describe(self, ns):
+        return "servers at home %s" % ("allowed" if ns.allow_local else "refused")
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "ecalgate is running. In ECal and EContact on the Atari, Settings > Connection:",
+            "   Pi gateway:  %s" % ip,
+            "   Port:        %s" % ns.port,
+            "",
+            "Check it from any browser on your network: http://%s:%s/" % (ip, ns.port)])
+
+
+class Ftp(Gateway):
+    key, name, script = "ftp", "eftpgate", "eftpgate.py"
+    title = "EFTP gateway for the Atari (FTPS and SFTP)"
+    packages = ("python3-paramiko",)
+    state = True
+    removed = "eftpgate removed (the SSH keys it remembered stay in /var/lib/eftpgate)."
+    PASV = "30000-30099"            # the data connections' ports
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Pi (2121 is the default)")
+        ap.add_argument("--allow-local", action="store_true", default=None,
+                        help="also reach servers on the home network (a NAS)")
+        ap.add_argument("--no-allow-local", dest="allow_local", action="store_false")
+        ap.add_argument("--cafile", metavar="CA.PEM",
+                        help="check FTPS servers against this CA instead of the Pi's roots (a NAS's own)")
+        ap.add_argument("--no-cafile", dest="cafile", action="store_const", const="")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None,
+                        help="log every command (never the passwords)")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def parse(self, src, args):
+        ns = super().parse(src, args)
+        ns.verbose = ns.v
+        return ns
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.port is not None:
+            ns.port = o.port
+        if o.allow_local is not None:
+            ns.allow_local = o.allow_local
+        if o.cafile is not None:
+            if o.cafile and not os.path.isfile(o.cafile):
+                raise Usage("--cafile: there is no %s" % o.cafile)
+            ns.cafile = os.path.abspath(o.cafile) if o.cafile else None
+        if o.verbose is not None:
+            ns.verbose = o.verbose
+
+    def args(self, ns):
+        out = ["--port", str(ns.port), "--pasv-ports", ns.pasv_ports or self.PASV] + super().args(ns)
+        out += ["--allow-local"] if ns.allow_local else []
+        out += ["--cafile", ns.cafile] if ns.cafile else []
+        out += ["--state", ns.state] if ns.state != "/var/lib/eftpgate" else []
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def open_ports(self, ns):
+        return [str(ns.port), (ns.pasv_ports or self.PASV).replace("-", ":")]
+
+    def describe(self, ns):
+        return "servers at home %s%s" % ("allowed" if ns.allow_local else "refused",
+                                         ", CA " + ns.cafile if ns.cafile else "")
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "eftpgate is running. In EFTP on the Atari, Options > Settings > Secure:",
+            "   Pi gateway:  %s" % ip,
+            "   Port:        %s" % ns.port,
+            "",
+            "Then give your FTPS and SFTP sites their real server names in File > Sites."])
+
+
+GATEWAYS = [Mail(), Dav(), Ftp()]
+
+
+def put_files(pi, src):
+    """This copy's gateways to OPT, the old ones kept aside: returns
+    (undo, done)."""
+    new, old = OPT + ".new", OPT + ".old"
+    pi.rmtree(new)
+    pi.rmtree(old)
+    pi.makedirs(new)
+    for f in FILES:
+        pi.copy(os.path.join(src, f), "%s/%s" % (new, f), 0o644 if f == "aeragate.py" else 0o755)
+    had = pi.exists(OPT)
+    if had:
+        pi.rename(OPT, old)
+    pi.rename(new, OPT)
+
+    def undo():
+        pi.rmtree(OPT)
+        if had:
+            pi.rename(old, OPT)
+
+    def done():
+        pi.rmtree(old)
+    return undo, done
+
+
+def need_packages(pi, gw):
+    need = []
+    if not pi.have("python3"):
+        need.append("python3")
+    if not pi.exists("/etc/ssl/certs/ca-certificates.crt"):     # the roots, for checking the servers
+        need.append("ca-certificates")
+    if "python3-paramiko" in gw.packages and not pi.ok("python3", "-c", "import paramiko"):
+        need.append("python3-paramiko")
+    if need:
+        pi.run("apt-get", "update", "-qq")
+        pi.run("apt-get", "install", "-y", "-qq", *need)
+
+
+def install_gateway(pi, gw, o, src=HERE):
+    ns, old_unit, old_script = gw.current(pi, src)
+    if ns is None:
+        ns = gw.parse(src, ["x", "y"] if gw.key == "mail" else [])
+        if gw.key == "mail":
+            ns.imap = ns.smtp = None
+    gw.apply(ns, o)
+    gw.check(ns)
+    need_packages(pi, gw)
+    if not pi.ok("id", gw.name):
+        pi.run("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", gw.name)
+    undo, done = put_files(pi, src)
+    pi.write(gw.unit_file(), gw.unit(ns, carried(old_unit)))
+    pi.run("systemctl", "daemon-reload")
+    pi.run("systemctl", "enable", gw.name + ".service", out="hide")
+    gw.before_start(pi)
+    pi.run("systemctl", "restart", gw.name + ".service", check=False)
+    if not up(pi, gw.name, gw.ports(ns)):
+        # what was there before comes back
+        undo()
+        if old_unit is not None:
+            pi.write(gw.unit_file(), old_unit)
+            pi.run("systemctl", "daemon-reload")
+            pi.run("systemctl", "restart", gw.name + ".service", check=False)
+            old_ns = gw.parse(src, exec_args(old_unit, gw.script)[1])
+            back = " The one before is running again." if up(pi, gw.name, gw.ports(old_ns)) else \
+                " The one before didn't start again either."
+        else:
+            pi.run("systemctl", "disable", "--now", gw.name + ".service", check=False, out="hide", errors=False)
+            pi.remove(gw.unit_file())
+            pi.run("systemctl", "daemon-reload")
+            back = ""
+        busy = [p for p in gw.ports(ns) if listening(pi, p)] if old_unit is None else []
+        raise Failed("%s didn't start%s.%s See: sudo journalctl -u %s -n 30" % (
+            gw.name, " (port %s is taken by another program)" % ", ".join(busy) if busy else "", back, gw.name))
+    done()
+    if old_script and os.path.dirname(old_script) != OPT:
+        pi.remove(old_script)           # the app's own copy: this one answers now
+    firewall(pi, gw.open_ports(ns), ns.allow)
+    say(gw.tell(ns, pi.ip() or "PI_IP"))
+
+
+def remove_gateway(pi, gw):
+    pi.run("systemctl", "disable", "--now", gw.name + ".service", check=False, out="hide", errors=False)
+    old_script, _ = exec_args(pi.read(gw.unit_file()) or "", gw.script)
+    pi.remove(gw.unit_file())
+    pi.run("systemctl", "daemon-reload")
+    if old_script and os.path.dirname(old_script) != OPT:
+        pi.remove(old_script)
+    gw.after_remove(pi)
+    if not any(g.installed(pi) for g in GATEWAYS):
+        pi.rmtree(OPT)
+    say(gw.removed)
+
+
+# ---------------------------------------------------------------- ClaudeST's bridge
+
+class Claude:
+    """ClaudeST's bridge, from a ClaudeST copy (a checkout or a release):
+    the bridge and its unit stay ClaudeST's, this sets them up as its
+    pi/install.sh did"""
+    key, name = "claude", "claude-st"
+    PREFIX = "/opt/claude-st"
+    CONF_DIR = "/etc/claude-st"
+    CONF = "/etc/claude-st/claude-st.env"
+    DEFAULT_CONF = """\
+# ClaudeST gateway settings. After editing: sudo systemctl restart claude-st
+# Bridge options, see: claude_bridge.py --help
+CLAUDE_ST_ARGS=--backend claudeai --serial auto --baud 19200
+# claude.ai "sessionKey" cookie (for --backend claudeai). Change it with:
+#   sudo ./install.sh --set-key
+CLAUDE_SESSION_KEY=
+# Anthropic API key (for --backend api)
+#ANTHROPIC_API_KEY=
+"""
+
+    def unit_file(self):
+        return unit_path(self.name)
+
+    def installed(self, pi):
+        return pi.exists(self.unit_file())
+
+    def options(self, ap):
+        ap.add_argument("--from", dest="source", metavar="DIR",
+                        help="the ClaudeST copy to take the bridge from (default: the latest release)")
+        ap.add_argument("--tag", help="the ClaudeST release to take it from, e.g. v1.34")
+        ap.add_argument("--backend", help="claudeai (default), api or demo")
+        ap.add_argument("--network", action="store_const", const="tcp", dest="mode",
+                        help="wireless: ClaudeST connects over STinG")
+        ap.add_argument("--atari", metavar="ATARI_IP",
+                        help="the Atari's address (several: IP1,IP2; any address on the home network: any)")
+        ap.add_argument("--listen-port", dest="tcp_port", help="the port for the Atari (2323 is the default)")
+        ap.add_argument("--serial", "--port", dest="port", metavar="DEVICE",
+                        help="a serial cable on this device instead (auto finds a USB adapter)")
+        ap.add_argument("--baud", help="the serial line's speed (19200 is the default)")
+        ap.add_argument("--set-key", action="store_true", help="paste a new claude.ai session key")
+        ap.add_argument("--uninstall", "--remove", action="store_true", dest="remove", help=argparse.SUPPRESS)
+
+    # the settings file, as pi/install.sh kept it
+    def get_var(self, pi, name):
+        found = [line[len(name) + 1:] for line in (pi.read(self.CONF) or "").splitlines()
+                 if line.startswith(name + "=")]
+        return found[-1] if found else ""
+
+    def set_var(self, pi, name, value):
+        """NAME=VALUE in the settings file, in place of any earlier NAME= line"""
+        lines = [line for line in (pi.read(self.CONF) or "").splitlines() if not line.startswith(name + "=")]
+        pi.write(self.CONF, "".join(line + "\n" for line in lines) + "%s=%s\n" % (name, value), 0o640)
+        pi.chown(self.CONF, "root:claude-st")
+
+    def settings(self, pi, o):
+        """what to set up: the options given, and for the rest what the
+        settings file says now (or the defaults)"""
+        args = self.get_var(pi, "CLAUDE_ST_ARGS")
+
+        def found(pattern):
+            m = re.match(pattern, args)
+            return m.group(1) if m else ""
+        cur_backend = found(r".*--backend ([a-z]*)")
+        cur_port = found(r".*--serial ([^ ]*)")
+        cur_baud = found(r".*--baud ([0-9]*)")
+        cur_tcp = found(r".*--tcp [^ ]*:([0-9]*)")
+        cur_atari = ",".join(re.findall(r"--allow ([^ ]*)", args))
+        if not cur_atari and cur_tcp:
+            cur_atari = "any"
+        mode = o.mode or ("serial" if o.port or o.baud else None) or \
+            ("tcp" if o.atari or o.tcp_port else None) or ("tcp" if cur_tcp else "serial")
+        s = argparse.Namespace(
+            backend=o.backend or cur_backend or "claudeai", mode=mode,
+            port=o.port or cur_port or "auto", baud=o.baud or cur_baud or "19200",
+            tcp_port=o.tcp_port or cur_tcp or "2323", atari=o.atari or cur_atari)
+        if s.backend not in ("claudeai", "api", "demo"):
+            raise Usage("backend must be claudeai, api or demo")
+        if s.mode == "tcp":
+            if not s.atari:
+                s.atari = pi.ask("The Atari's IP address (several: IP1,IP2; or 'any'): ")
+            if not s.atari:
+                raise Usage("Network mode needs the Atari's IP address, e.g. --atari 192.168.1.20 (or --atari any)")
+            if s.atari != "any":
+                for ip in s.atari.replace(",", " ").split():
+                    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", ip):
+                        raise Usage("--atari wants IP addresses or 'any', not %s" % ip)
+        return s
+
+    def source(self, o):
+        """(a folder with ClaudeST's bridge/ and pi/, what it is)"""
+        if o.source:
+            d = os.path.abspath(o.source)
+            for f in ("bridge/claude_bridge.py", "bridge/requirements.txt", "pi/claude-st.service"):
+                if not os.path.isfile(os.path.join(d, f)):
+                    raise Failed("%s isn't a ClaudeST copy: there is no %s" % (d, f))
+            # root reading a user's checkout: git would refuse it as "dubious ownership"
+            try:
+                rev = subprocess.run(["git", "-c", "safe.directory=*", "-C", d, "describe", "--tags", "--always",
+                                      "--dirty"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     universal_newlines=True).stdout.strip()
+            except OSError:
+                rev = ""
+            return d, "ClaudeST %sfrom %s" % (rev + " " if rev else "", d)
+        tag = o.tag
+        try:
+            if not tag:
+                with urllib.request.urlopen("https://api.github.com/repos/%s/releases/latest" % CLAUDEST,
+                                            timeout=30) as r:
+                    tag = json.load(r)["tag_name"]
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+                raise Failed("%s isn't a release name" % tag)
+            d = tempfile.mkdtemp(prefix="claudest-")
+            with urllib.request.urlopen("https://github.com/%s/archive/refs/tags/%s.tar.gz" % (CLAUDEST, tag),
+                                        timeout=60) as r:
+                data = r.read()
+        except (OSError, ValueError, KeyError) as e:
+            raise Failed("can't fetch ClaudeST %s from GitHub (%s); or give a copy with --from DIR"
+                         % (tag or "(the latest release)", e))
+        wanted = re.compile(r"(bridge/[A-Za-z0-9_]+\.py|bridge/requirements\.txt|pi/claude-st\.service)")
+        with tarfile.open(fileobj=io.BytesIO(data)) as t:
+            for m in t.getmembers():
+                rest = m.name.split("/", 1)[-1]
+                if m.isfile() and wanted.fullmatch(rest):
+                    os.makedirs(os.path.join(d, os.path.dirname(rest)), exist_ok=True)
+                    with open(os.path.join(d, rest), "wb") as f:
+                        f.write(t.extractfile(m).read())
+        return d, "ClaudeST %s" % tag
+
+    def install(self, pi, o):
+        if o.remove:
+            return self.remove(pi)
+        if o.set_key:
+            return self.set_key(pi)
+        s = self.settings(pi, o)
+        src, what = self.source(o)
+        try:
+            self.set_up(pi, s, src, what)
+        finally:
+            if not o.source:
+                shutil.rmtree(src, ignore_errors=True)        # the release, fetched for this
+
+    def set_up(self, pi, s, src, what):
+
+        heading("Installing packages")
+        pi.run("apt-get", "update", "-qq")
+        pi.run("apt-get", "install", "-y", "-qq", "python3", "python3-venv", out="hide")
+
+        heading("Creating the claude-st service user")
+        if not pi.ok("id", "claude-st"):
+            pi.run("useradd", "--system", "--home-dir", "/var/lib/claude-st", "--shell", "/usr/sbin/nologin",
+                   "claude-st")
+        pi.run("usermod", "-aG", "dialout", "claude-st")
+
+        heading("Copying the bridge to %s" % self.PREFIX)
+        pi.makedirs(self.PREFIX + "/bridge")
+        for f in sorted(glob.glob(os.path.join(src, "bridge", "*.py"))) + [os.path.join(src, "bridge",
+                                                                                         "requirements.txt")]:
+            if os.path.basename(f) != "test_bridge.py":
+                pi.copy(f, "%s/bridge/%s" % (self.PREFIX, os.path.basename(f)))
+        pi.remove(self.PREFIX + "/bridge/test_bridge.py")
+        pi.write(self.PREFIX + "/SOURCE", what + "\n")
+
+        heading("Setting up Python packages (this can take a few minutes on a Pi)")
+        venv = pi.path(self.PREFIX + "/venv")
+        if not os.access(venv + "/bin/python", os.X_OK):
+            pi.run("python3", "-m", "venv", venv)
+        pi.run(venv + "/bin/pip", "install", "-q", "--upgrade", "pip")
+        pi.run(venv + "/bin/pip", "install", "-q", "pyserial", "requests", "anthropic")
+        if not pi.run(venv + "/bin/pip", "install", "-q", "curl_cffi", check=False).returncode == 0:
+            say("Note: curl_cffi isn't available for this Pi; using plain requests instead.")
+
+        heading("Settings in %s" % self.CONF)
+        pi.makedirs(self.CONF_DIR)
+        if not pi.exists(self.CONF):
+            pi.write(self.CONF, self.DEFAULT_CONF, 0o640)
+            pi.chown(self.CONF, "root:claude-st")
+        if s.mode == "tcp":
+            allow = "" if s.atari == "any" else "".join(" --allow " + ip for ip in s.atari.replace(",", " ").split())
+            self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --tcp 0.0.0.0:%s%s" % (s.backend, s.tcp_port, allow))
+            if pi.have("ufw") and "Status: active" in pi.out("ufw", "status"):
+                who = HOME_NETS if s.atari == "any" else s.atari.replace(",", " ").split()
+                firewall(pi, [s.tcp_port], list(who))
+                say("Firewall (ufw): allowed %s to port %s" % (s.atari, s.tcp_port))
+        else:
+            self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --serial %s --baud %s" % (s.backend, s.port, s.baud))
+
+        if s.backend == "claudeai" and not self.get_var(pi, "CLAUDE_SESSION_KEY"):
+            say("claude.ai needs your browser's sessionKey cookie (see README.md).")
+            key = pi.ask("Paste it now, or press Return to add it later with --set-key: ", secret=True)
+            if key:
+                self.set_var(pi, "CLAUDE_SESSION_KEY", key)
+        if s.backend == "api" and not self.get_var(pi, "ANTHROPIC_API_KEY"):
+            key = pi.ask("Anthropic API key (input hidden): ", secret=True)
+            if key:
+                self.set_var(pi, "ANTHROPIC_API_KEY", key)
+
+        heading("Installing the service")
+        pi.copy(os.path.join(src, "pi", "claude-st.service"), self.unit_file(), 0o644)
+        pi.run("systemctl", "daemon-reload")
+        pi.run("systemctl", "enable", "claude-st", out="hide")
+        pi.run("systemctl", "restart", "claude-st")
+
+        if s.mode != "tcp":
+            heading("Serial ports on this Pi")
+            if pi.run("ls", "-l", "/dev/serial/by-id/", check=False, errors=False).returncode:
+                say("(no USB serial adapters plugged in)")
+            if pi.exists("/dev/serial0"):
+                say("Pi UART: /dev/serial0 (needs an RS-232 level shifter, see README)")
+
+        heading("Done")
+        if s.mode == "tcp":
+            say("Backend: %s   wireless: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
+                "On the Atari, CLAUDEST.INF should say:  tcp %s %s" % (pi.ip() or "THIS-PI-IP", s.tcp_port))
+        else:
+            say("Backend: %s   serial port: %s   baud: %s" % (s.backend, s.port, s.baud))
+        say("Status:  systemctl status claude-st", "Log:     journalctl -u claude-st -f")
+
+    def set_key(self, pi):
+        if not pi.exists(self.CONF):
+            raise Failed("Not installed yet: install claude first.")
+        key = pi.ask("Paste the claude.ai sessionKey (input hidden): ", secret=True)
+        if not key:
+            raise Failed("No key given, nothing changed.")
+        self.set_var(pi, "CLAUDE_SESSION_KEY", key)
+        pi.run("systemctl", "restart", "claude-st")
+        say("Key updated and claude-st restarted.")
+
+    def remove(self, pi):
+        heading("Removing ClaudeST")
+        pi.run("systemctl", "disable", "--now", "claude-st", check=False, out="hide", errors=False)
+        pi.remove(self.unit_file())
+        pi.run("systemctl", "daemon-reload")
+        pi.rmtree(self.PREFIX)
+        say("Kept %s and /var/lib/claude-st (your settings and API-mode history)." % self.CONF_DIR,
+            "Delete them by hand if you don't need them; the claude-st user is left too.")
+
+    def describe(self, pi):
+        args = self.get_var(pi, "CLAUDE_ST_ARGS") if os.access(pi.path(self.CONF), os.R_OK) else ""
+        what = (pi.read(self.PREFIX + "/SOURCE") or "").strip()
+        return "; ".join(x for x in (args, what) if x)
+
+
+CLAUDE = Claude()
+SERVICES = {g.key: g for g in GATEWAYS + [CLAUDE]}
+NAMES = {"email": "mail", "emailgate": "mail", "cal": "dav", "ecal": "dav", "econtact": "dav",
+         "contacts": "dav", "ecalgate": "dav", "eftp": "ftp", "eftpgate": "ftp",
+         "claudest": "claude", "claude-st": "claude"}
+
+
+def service(name):
+    key = NAMES.get(name.lower(), name.lower())
+    if key not in SERVICES:
+        raise Usage("%s: there is no such service; there are %s" % (name, ", ".join(SERVICES)))
+    return SERVICES[key]
+
+
+# ---------------------------------------------------------------- the commands
+
+def status(pi, src=HERE):
+    say("AERA gateways on this computer (%s, this copy: %s)" % (pi.ip() or "no address", src))
+    stale = False
+    for svc in GATEWAYS + [CLAUDE]:
+        if not svc.installed(pi):
+            say("  %-7s %-10s not installed" % (svc.key, svc.name))
+            continue
+        state = pi.out("systemctl", "is-active", svc.name).strip() or "stopped"
+        if svc is CLAUDE:
+            say("  %-7s %-10s %-9s %s" % (svc.key, svc.name, state, svc.describe(pi)))
+            continue
+        try:
+            ns, _, script = svc.current(pi, src)
+        except Failed as e:
+            say("  %-7s %-10s %-9s %s" % (svc.key, svc.name, state, e))
+            continue
+        ports = " ".join("%s%s" % (p, "" if listening(pi, p) else " (not listening)") for p in svc.ports(ns))
+        who = "only " + ", ".join(ns.allow) if ns.allow else "home network"
+        say("  %-7s %-10s %-9s port %s; %s; %s" % (svc.key, svc.name, state, ports, who, svc.describe(ns)))
+        if os.path.dirname(script) != OPT:
+            say("          set up by the app's own install.sh: sudo %s update takes it over" % PROG)
+            stale = True
+    if any(svc.installed(pi) for svc in GATEWAYS) and not stale:
+        differ = [f for f in FILES if pi.read("%s/%s" % (OPT, f)) != open(os.path.join(src, f)).read()]
+        if differ:
+            say("This copy's %s differ from the ones running: sudo %s update" % (", ".join(differ), PROG))
+    if pi.exists(Mail.STUNNEL):
+        say("EMail 1.x's stunnel set-up is still there: sudo %s install mail IMAP SMTP replaces it" % PROG)
+
+
+def update(pi, o, src=HERE):
+    todo = [g for g in GATEWAYS if g.installed(pi)]
+    if not todo and not CLAUDE.installed(pi):
+        say("No AERA gateway is installed on this computer: nothing to update.")
+        return
+    for g in todo:
+        heading("Updating %s (%s)" % (g.key, g.name))
+        install_gateway(pi, g, settings_for(g, []), src)
+    if CLAUDE.installed(pi):
+        heading("Updating claude (claude-st)")
+        args = (["--from", o.source] if o.source else []) + (["--tag", o.tag] if o.tag else [])
+        CLAUDE.install(pi, settings_for(CLAUDE, args))
+
+
+def settings_for(svc, argv):
+    ap = argparse.ArgumentParser(prog="aera-gateway install " + svc.key)
+    svc.options(ap)
+    return ap.parse_args(argv)
+
+
+def main(argv=None, pi=None):
+    argv = sys.argv[1:] if argv is None else argv
+    pi = pi or Pi()
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        say(__doc__.strip())
+        return 0 if argv else 2
+    cmd, rest = argv[0], argv[1:]
+    try:
+        if cmd == "status":
+            status(pi)
+            return 0
+        if cmd not in ("install", "update", "remove", "set-key"):
+            raise Usage("%s: the commands are install, update, status, remove and set-key" % cmd)
+        if cmd == "update":
+            ap = argparse.ArgumentParser(prog="aera-gateway update")
+            ap.add_argument("--from", dest="source", metavar="DIR", help="ClaudeST's bridge from this copy")
+            ap.add_argument("--tag", help="ClaudeST's bridge from this release (default: the latest)")
+            o = ap.parse_args(rest)
+        elif cmd == "set-key":
+            o = None
+        else:
+            if not rest or rest[0].startswith("-"):
+                raise Usage("aera-gateway %s SERVICE: one of %s" % (cmd, ", ".join(SERVICES)))
+            svc = service(rest[0])
+            o = settings_for(svc, rest[1:]) if cmd == "install" else None
+            if cmd == "remove" and rest[1:]:
+                raise Usage("aera-gateway remove %s takes nothing more" % svc.key)
+        if not pi.is_root():
+            raise Failed("Please run with sudo.")
+        if cmd == "update":
+            update(pi, o)
+        elif cmd == "set-key":
+            CLAUDE.set_key(pi)
+        elif svc is CLAUDE:
+            CLAUDE.remove(pi) if cmd == "remove" else CLAUDE.install(pi, o)
+        elif cmd == "remove" or o.remove:
+            remove_gateway(pi, svc)
+        else:
+            install_gateway(pi, svc, o)
+        return 0
+    except Usage as e:
+        print("aera-gateway: %s" % e, file=sys.stderr)
+        return 2
+    except Failed as e:
+        print(e, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
