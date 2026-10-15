@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _loader = importlib.machinery.SourceFileLoader("aera_gateway", os.path.join(HERE, "aera-gateway"))
@@ -53,7 +54,7 @@ class FakePi(ag.Pi):
     def sleep(self, s):
         pass
 
-    def chown(self, p, owner):
+    def own(self, fd, p, owner):
         self.cmds.append(("chown", owner, p))
 
     def started(self, name):
@@ -195,6 +196,49 @@ class Base(unittest.TestCase):
 
     def execstart(self, name):
         return [line for line in self.unit(name).splitlines() if line.startswith("ExecStart=")][0]
+
+
+class WriteTest(unittest.TestCase):
+    """A file with keys in it is never open to others, not even while
+    it is being written."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        self.umask = os.umask(0)
+        self.addCleanup(os.umask, self.umask)
+
+    def test_never_wider_than_mode(self):
+        seen = []
+
+        class Watched(ag.Pi):
+            def own(self, fd, p, owner):
+                seen.append(os.fstat(fd).st_mode & 0o777)
+
+        pi = Watched(self.root)
+        full = pi.path("/etc/claude-st/claude-st.env")
+        os.makedirs(os.path.dirname(full))
+        with open(full + ".aera-new", "w") as f:         # left over, open to all
+            f.write("old\n")
+        os.chmod(full + ".aera-new", 0o666)
+        replace = os.replace
+
+        def replacing(a, b):
+            seen.append(os.stat(a).st_mode & 0o777)
+            replace(a, b)
+        with unittest.mock.patch.object(ag.os, "replace", replacing):
+            pi.write("/etc/claude-st/claude-st.env", "CLAUDE_SESSION_KEY=sk\n", 0o640, "root:claude-st")
+        self.assertEqual(seen, [0o600, 0o640])
+        self.assertEqual(os.stat(full).st_mode & 0o777, 0o640)
+        with open(full) as f:
+            self.assertEqual(f.read(), "CLAUDE_SESSION_KEY=sk\n")
+        self.assertFalse(os.path.exists(full + ".aera-new"))
+
+    def test_mode_not_the_umask(self):
+        os.umask(0o077)
+        pi = ag.Pi(self.root)
+        pi.write("/opt/x/run.py", "#\n", 0o755)
+        self.assertEqual(os.stat(pi.path("/opt/x/run.py")).st_mode & 0o777, 0o755)
 
 
 class WordsTest(unittest.TestCase):
