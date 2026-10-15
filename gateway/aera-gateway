@@ -493,11 +493,12 @@ class Mail(Gateway):
             say("EMail 1.x's gateway was on port%s %s; emailgate is on %s: change them in EMail's account "
                 "dialog too." % ("s" if len(was) > 1 else "", ", ".join(was), ", ".join(now)))
         # EMail 1.x's --allow: ufw deny P/tcp after the Atari's allow, which
-        # would win over any rule added after it
+        # would win over any rule added after it; added with ufw off too,
+        # and "show added" lists them either way
         if pi.have("ufw"):
-            rules = pi.out("ufw", "status")
+            rules = pi.out("ufw", "show", "added")
             for port in was:
-                if re.search(r"^%s/tcp\s+DENY\s" % port, rules, re.M):
+                if re.search(r"^ufw deny %s/tcp\s*$" % port, rules, re.M):
                     pi.run("ufw", "delete", "deny", "%s/tcp" % port, check=False, out="hide", errors=False)
                     say("Removed EMail 1.x's ufw rule that kept everyone else out of port %s." % port)
         pi.remove(self.STUNNEL + ".aera-old")
