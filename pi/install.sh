@@ -24,7 +24,7 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 case " $* " in
-  *" -h "*|*" --help "*) sed -n '2,16p' "$0"; exit 0 ;;
+  *" -h "*|*" --help "*) sed -n '4,16p' "$0"; exit 0 ;;
 esac
 [ "$(id -u)" -eq 0 ] || { echo "Run me with sudo." >&2; exit 1; }
 command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq python3; }
