@@ -3,3 +3,7 @@ __pycache__/
 *.o
 *.elf
 .env
+st/build.h
+st/build.h.new
+binary/
+dist/

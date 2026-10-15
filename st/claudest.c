@@ -22,6 +22,7 @@
 #include "av.h"
 #include "alert.h"
 #include "mbar.h"
+#include "build.h"
 #include "grect.h"
 #include "popup.h"
 #include "aboutbox.h"
@@ -42,7 +43,14 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
+/* the last release (tools/bump.py raises it). A release build
+   (RELEASE=1, build.h) shows it as it is; any other "1.34-dev" */
 #define VERSION "1.34"
+#ifdef RELEASE
+#define APP_VERSION VERSION
+#else
+#define APP_VERSION VERSION "-dev"
+#endif
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -486,7 +494,7 @@ static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
 static void send_hello(void)
 {
 	pref_sent = 0;
-	tx_cmd("HELLO", "1", VERSION);
+	tx_cmd("HELLO", "1", APP_VERSION);
 	last_hello = ticks;
 }
 
@@ -3440,7 +3448,7 @@ static void help(void)
 static void about(void)
 {
 	static char conn[64];
-	ABOUT a = { "ClaudeST", VERSION, "Claude.ai for the Atari ST, TT and Falcon", { conn, 0, 0 },
+	ABOUT a = { "ClaudeST", APP_VERSION, "Claude.ai for the Atari ST, TT and Falcon", { conn, 0, 0 },
 		    { "Unofficial client, not affiliated with Anthropic or Atari.",
 		      "Claude is a trademark of Anthropic PBC.",
 		      "Atari is a trademark of Atari Interactive." },
@@ -4542,7 +4550,7 @@ int main(void)
 		if (home_dir[strlen(home_dir) - 1] != '\\')
 			strcat(home_dir, "\\");
 	}
-	crash_install(home_dir, "ClaudeST", VERSION);
+	crash_install(home_dir, "ClaudeST", APP_VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */
 	av_init("CLAUDEST");		/* the desktop's AV server, if there is one */

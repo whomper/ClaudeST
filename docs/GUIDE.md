@@ -424,7 +424,7 @@ colour icon on screens with 16 colours or more.
 ![The About box in colour, on a Falcon](about-colour.png)
 
 The icon is original 32×32 pixel art: an SM124-style monitor with a
-spark and a GEM prompt. The `binary/` folder has it for the desktop:
+spark and a GEM prompt. The release has it for the desktop (in the zip, in `icons/`):
 
 | File | What it is |
 |------|-----------|
@@ -441,10 +441,21 @@ You need an m68k GCC; the stock Debian/Ubuntu cross compiler works.
 
 ```sh
 sudo apt install gcc-m68k-linux-gnu
-cd st && make            # -> ../binary/CLAUDEST.PRG
-make test                # right-to-left layout tests, on the host
-cd ../bridge && python3 -m unittest
+make                     # -> binary/CLAUDEST.PRG (make -C st)
+make test                # the bridge's tests and the right-to-left layout's, on the host
+make help HCP=...        # -> binary/CLAUDEST.HYP (hcp: common/tools/build-hcp.sh)
+make dist                # a release's files in dist/
 ```
+
+`binary/` and `dist/` are what make builds; they are never committed.
+`VERSION` in `st/claudest.c` holds the last release, which a release
+build (`RELEASE=1`) shows; any other build shows `1.34-dev`. To release:
+`tools/bump.py`, commit and push, then run the Release workflow
+(Actions > Release > Run workflow, on main) with what is new:
+`.github/workflows/release.yml` tags the commit `v1.35`, tests, builds
+the program and the help, and publishes them as a GitHub Release with
+those notes. Pushing a tag `v1.35` made with `git tag -a` does the same,
+with the tag's message as the notes.
 
 The program is freestanding C with its own startup code, AES, VDI and
 STinG bindings, and 68000 helpers, so it needs no MiNTLib and no
@@ -498,17 +509,20 @@ running EmuTOS.
 ### Source layout
 
 ```
-help/      CLAUDEST.STG, the ST-Guide help: make -C help (needs HCP) -> binary/CLAUDEST.HYP
-st/        the Atari program: claudest.c (UI and protocol), bidi_test.c
+help/      CLAUDEST.STG, the ST-Guide help: make help (needs HCP) -> binary/CLAUDEST.HYP
+st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
+           CLAUDEST.INF (the example settings file a release carries)
 common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            atari/ (start-up, C library, TOS traps, AES/VDI, STinG client),
            src/bidi.c (right-to-left), tools/elf2tos.py
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
 pi/        install.sh and the systemd service
-tools/     hatari-test.sh, sync-common.sh, fakesting/, icon/
-binary/    what goes on the Atari: CLAUDEST.PRG, an example CLAUDEST.INF
-           and the desktop icon files
+tools/     hatari-test.sh, sync-common.sh, bump.py, check_version.sh,
+           fakesting/, icon/
+icons/     the desktop icon files (from tools/icon)
+binary/    what make builds for the Atari (not committed: the releases
+           have it)
 ```
 
 [PROTOCOL.md](../PROTOCOL.md) describes the line protocol between the

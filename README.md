@@ -84,8 +84,17 @@ If the `ufw` firewall is on, the installer opens port 2323 for them.
 
 1. Load **STinG** and check that the network works, for example by
    pinging the Pi.
-2. Copy `binary/CLAUDEST.PRG`, `binary/CLAUDEST.INF` and `binary/CLAUDEST.HYP`
-   (the ST-Guide help) into one folder.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF` and `CLAUDEST.HYP` (the ST-Guide
+   help) from the [latest release](https://github.com/whomper/ClaudeST/releases/latest)
+   into one folder. The release also has them all in `CLAUDEST-x.y.zip`:
+
+   | File | What it is |
+   |------|-----------|
+   | `CLAUDEST.PRG` | the program |
+   | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for ST-Guide: keep it next to `CLAUDEST.PRG`, and press Help in ClaudeST |
+   | `CLAUDEST.INF` | an example settings file: put your Pi's address on its `tcp` line, and keep it next to `CLAUDEST.PRG` |
+   | `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour (in the zip's `icons/` folder) |
+   | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text
    editor:
    ```
@@ -176,7 +185,7 @@ claude.ai client for the Atari, built by talking to claude.ai.
 - [PROTOCOL.md](PROTOCOL.md): the line protocol between the Atari and the
   bridge
 
-© 2026 Whomper
+© 2026 AERA | Erez Yaary
 
 ## Licence
 

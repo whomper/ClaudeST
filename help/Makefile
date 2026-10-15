@@ -6,9 +6,10 @@
 HCP ?= hcp
 
 ../binary/CLAUDEST.HYP: CLAUDEST.STG
+	mkdir -p ../binary
 	$(HCP) -q -o $@ $<
 
 clean:
-	rm -f ../binary/CLAUDEST.HYP
+	rm -f ../binary/CLAUDEST.HYP ../binary/CLAUDEST.REF
 
 .PHONY: clean

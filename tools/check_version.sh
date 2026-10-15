@@ -1,17 +1,18 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-# Every CLAUDEST.PRG that is committed must carry a new version number.
-# Run before committing a new build: fails if binary/CLAUDEST.PRG differs
-# from the last committed one but VERSION in st/claudest.c is the same.
+# The version in st/claudest.c, and whether a release may carry it: fails
+# when a release (a tag vX.Y) with that number is out already, so a
+# changed program gets a new number (tools/bump.py). The release workflow
+# runs it; run it before releasing.
 cd "$(dirname "$0")/.." || exit 1
 now=$(sed -n 's/^#define VERSION "\(.*\)"/\1/p' st/claudest.c)
-was=$(git show HEAD:st/claudest.c 2>/dev/null | sed -n 's/^#define VERSION "\(.*\)"/\1/p')
-# the last committed program, wherever it was kept then
-old=$(git rev-parse -q --verify HEAD:binary/CLAUDEST.PRG || git rev-parse -q --verify HEAD:st/CLAUDEST.PRG)
-new=$(git hash-object binary/CLAUDEST.PRG)
-if [ "$old" != "$new" ] && [ "$now" = "$was" ]; then
-  echo "CLAUDEST.PRG changed but VERSION is still $now: raise it in st/claudest.c" >&2
+if [ -z "$now" ]; then
+  echo "no #define VERSION in st/claudest.c" >&2
+  exit 1
+fi
+if git ls-remote --exit-code --tags origin "refs/tags/v$now" >/dev/null 2>&1; then
+  echo "v$now is out already: raise VERSION in st/claudest.c (tools/bump.py)" >&2
   exit 1
 fi
 echo "version $now"

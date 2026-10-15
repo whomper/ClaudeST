@@ -1,15 +1,19 @@
 # Notes for working on ClaudeST
 
-- **Every new build gets a new version.** Whenever `binary/CLAUDEST.PRG` is
-  rebuilt with a change, raise `VERSION` in `st/claudest.c` (1.17 -> 1.18),
-  even for a fix or a rebuild that is later reverted: a version number is
-  never reused for a different program. Run `tools/check_version.sh`
-  before committing a build.
-- Commit and push to `main`, and send the user the new `binary/CLAUDEST.PRG`
-  when the Atari side changes; say whether the Pi needs
+- **Releases carry the program.** `binary/` and `dist/` are build output,
+  never committed. `VERSION` in `st/claudest.c` holds the last release
+  (a build shows `x.y-dev`; `RELEASE=1` shows `x.y`). A release:
+  `tools/bump.py` (1.34 -> 1.35), commit, push, then run the Release
+  workflow on main with the notes (or push a tag `vX.Y` made with
+  `git tag -a`); `.github/workflows/release.yml` tags vX.Y, tests, builds
+  `CLAUDEST.PRG` and the help and publishes them, with `st/CLAUDEST.INF`
+  and the icons (`icons/`), as a GitHub Release. A version number is
+  never reused: `tools/check_version.sh` fails when vX.Y is out already.
+- Commit and push to `main`; when the Atari side changes, release it and
+  give the user the release's link; say whether the Pi needs
   `cd ~/atari_claude/pi && git pull && sudo ./install.sh`.
-- Run the bridge tests (`cd bridge && python3 -m unittest test_bridge`)
-  and build (`make -C st`) before pushing.
+- Run `make test` (the bridge's tests and the layout's) and build (`make`)
+  before pushing.
 - `common/` is the AERA programs' shared code (start-up, C library, TOS,
   AES/VDI, STinG, right-to-left layout), a git subtree of
   github.com/whomper/AERA-Atari. Change it there, never here, then

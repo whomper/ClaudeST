@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-# RSCTEST.PRG: loads ../../binary/CLAUDEST.RSC and draws it (a check, not shipped)
+# RSCTEST.PRG: loads CLAUDEST.RSC (../../icons/) and draws it (a check, not shipped)
 CROSS  ?= m68k-linux-gnu-
 CC     := $(CROSS)gcc
 GCCINC := $(shell $(CC) -print-file-name=include 2>/dev/null)

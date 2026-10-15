@@ -3,6 +3,8 @@
 # ClaudeST - builds ../binary/CLAUDEST.PRG with a stock m68k ELF cross compiler
 # (Debian/Ubuntu: apt install gcc-m68k-linux-gnu). No MiNTLib needed:
 # the program is freestanding and elf2tos.py writes the TOS header.
+# ../binary/ is build output, never committed: releases carry the program
+# (../.github/workflows/release.yml, with RELEASE=1).
 #
 # The Atari runtime (start-up, C library, GEM and TOS calls, STinG) and the
 # right-to-left layout are the AERA programs' shared code in ../common/, a
@@ -22,17 +24,27 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/
 
 OBJS := crt0.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o av.o alert.o \
         mbar.o popup.o aboutbox.o iconify.o clip.o dd.o
-HDRS := icon.h icon16.h ui.h grect.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h $(COMMON)/src/bidi.h)
+HDRS := icon.h icon16.h ui.h grect.h $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h \
+        $(COMMON)/ui/*.h $(COMMON)/src/bidi.h)
 
 all: ../binary/CLAUDEST.PRG
 
 ../binary/CLAUDEST.PRG: claudest.elf $(COMMON)/tools/elf2tos.py
+	mkdir -p ../binary
 	python3 $(COMMON)/tools/elf2tos.py $< $@
+
+# a release build (RELEASE=1) or not: build.h says, written again only
+# when that changes, so claudest.o is rebuilt then
+build.h: FORCE
+	@printf '/* written by st/Makefile: do not edit */\n%s\n' \
+	  "$(if $(RELEASE),#define RELEASE 1,/* not a release: the version says -dev */)" > $@.new
+	@if cmp -s $@.new $@; then rm $@.new; else mv $@.new $@; fi
+FORCE:
 
 claudest.elf: $(OBJS) $(COMMON)/atari/link.ld
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) -lgcc
 
-claudest.o: claudest.c $(HDRS)
+claudest.o: claudest.c $(HDRS) build.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 %.o: $(COMMON)/atari/%.c $(HDRS)
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -52,10 +64,10 @@ crash_s.o: $(COMMON)/atari/crash.S
 	$(CC) -m68000 -c -o $@ $<
 
 clean:
-	rm -f *.o claudest.elf ../binary/CLAUDEST.PRG
+	rm -f *.o claudest.elf build.h ../binary/CLAUDEST.PRG
 
 # host-side unit test for the right-to-left layout
 test: bidi_test.c $(COMMON)/src/bidi.c $(COMMON)/src/bidi.h
 	cc -O2 -Wall -I$(COMMON)/src -o /tmp/bidi_test bidi_test.c $(COMMON)/src/bidi.c && /tmp/bidi_test
 
-.PHONY: all clean test
+.PHONY: all clean test FORCE
