@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * net_tos.c - TCP for the AERA programs on the Atari, like the GFA Troll does it:
  *   - STinG / STiK (TOS, MagiC, or MiNT with GlueSTiK) through its TPL,
@@ -15,6 +15,8 @@
 #include "tos.h"
 #include "sting.h"
 #include "../src/plat.h"
+#include "dns.h"
+#include "conn.h"		/* conn_stop: Esc while connecting */
 
 #define MAXCONN 4		/* e.g. FTP: the control connection, one for data */
 
@@ -116,7 +118,7 @@ static int dns_query(const char *name, u32 *ip)
 	struct sockaddr_in_ sa;
 	u32 ns, mask;
 	long fd, n;
-	short len = 12, qd, an, i;
+	short len = 12;
 	const char *p = name;
 
 	if (!nameserver(&ns))
@@ -127,10 +129,11 @@ static int dns_query(const char *name, u32 *ip)
 	q[1] = id[1];
 	q[2] = 0x01;		/* recursion desired */
 	q[5] = 1;		/* one question */
-	while (*p && len < 280) {
+	while (*p) {
 		const char *dot = strchr(p, '.');
-		short l = dot ? dot - p : (short)strlen(p);
-		if (l == 0 || l > 63)
+		long l = dot ? dot - p : (long)strlen(p);
+		/* a label of 1 to 63, and room for it, the end and the type */
+		if (l == 0 || l > 63 || len + 1 + l + 5 > (short)sizeof(q))
 			return 0;
 		q[len++] = (u8)l;
 		memcpy(q + len, p, l);
@@ -163,38 +166,7 @@ static int dns_query(const char *name, u32 *ip)
 	}
 	n = Fread((short)fd, sizeof(r), r);
 	Fclose((short)fd);
-	if (n < 12 || r[0] != id[0] || r[1] != id[1] || !(r[2] & 0x80) || (r[3] & 15))
-		return 0;
-	qd = (r[4] << 8) | r[5];
-	an = (r[6] << 8) | r[7];
-	i = 12;
-	while (qd-- > 0) {			/* skip the questions */
-		while (i < n && r[i] && !(r[i] & 0xc0))
-			i += r[i] + 1;
-		i += (i < n && (r[i] & 0xc0)) ? 2 : 1;
-		i += 4;
-	}
-	while (an-- > 0 && i < n) {
-		short type, rdlen;
-		if (r[i] & 0xc0)
-			i += 2;
-		else {
-			while (i < n && r[i])
-				i += r[i] + 1;
-			i++;
-		}
-		if (i + 10 > n)
-			break;
-		type = (r[i] << 8) | r[i + 1];
-		rdlen = (r[i + 8] << 8) | r[i + 9];
-		i += 10;
-		if (type == 1 && rdlen == 4 && i + 4 <= n) {
-			*ip = ((u32)r[i] << 24) | ((u32)r[i + 1] << 16) | ((u32)r[i + 2] << 8) | r[i + 3];
-			return 1;
-		}
-		i += rdlen;
-	}
-	return 0;
+	return dns_reply(r, n, id, ip);
 }
 
 static int resolve(const char *host, u32 *ip)
@@ -248,12 +220,24 @@ int net_open(const char *host, unsigned short port, char *err, int errlen)
 		conns[slot].mintnet = 1;
 		conns[slot].h = (short)fd;
 	} else {
-		short cn = sting_open(ip, port), r;
+		short cn = sting_open(ip, port), r, s;
 		if (cn < 0) {
 			snprintf(err, errlen, "%s", sting_error(cn));
 			return -1;
 		}
-		r = sting_wait_established(cn, 20);
+		/* up to 20 s, a second at a time, so that it can be stopped */
+		for (s = 0;; s++) {
+			r = sting_wait_established(cn, 1);
+			if (r >= 0 || (r != E_CNTIMEOUT && r != -15) || s >= 19)
+				break;
+			if (pf_idle)
+				pf_idle();
+			if (conn_stop) {
+				sting_close(cn);
+				snprintf(err, errlen, "stopped");
+				return -1;
+			}
+		}
 		if (r < 0) {
 			sting_close(cn);
 			snprintf(err, errlen, "%s:%u: %s", host, port, sting_error(r));

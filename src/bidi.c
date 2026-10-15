@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * bidi.c - a compact subset of the Unicode bidirectional algorithm for
  * Hebrew in the Atari ST character set (letters at 0xC2-0xDC).

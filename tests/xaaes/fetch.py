@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """fetch.py [ZIP]: build/base, the C: drive run.py starts from.
 
 FreeMiNT 1.17.0 (GPL; not kept in this repository) comes from the

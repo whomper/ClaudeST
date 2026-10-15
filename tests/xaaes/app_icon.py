@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """app_icon.py WORK EMUTOS.IMG APP.PRG [--copy FILE ...] [--wait S]
               [--pre "steps"] [--gadget X Y] [--key 0x1c] [--display :96]
 

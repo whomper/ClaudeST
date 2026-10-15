@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """run.py WORK EMUTOS.IMG PRG [--copy FILE ...] [--display :97] [--wait S]
           [--steps "..."] [--size MB]
 
@@ -38,6 +38,8 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
                                 the program says through NatFeats; the
                                 run fails when it doesn't come
 --size MB   the disk (default 32)
+--later S   PRG starts S seconds after XaAES has (build/LATER.PRG, make),
+            once the desk accessories are in, as when someone starts it
 
 Prints the screenshots' names at the end; exits 1 when a step failed.
 """
@@ -64,6 +66,7 @@ def main():
     ap.add_argument("--wait", type=float)
     ap.add_argument("--steps")
     ap.add_argument("--size", type=int, default=32)
+    ap.add_argument("--later", type=int)
     a = ap.parse_args()
     if not os.path.isdir(BASE):
         sys.exit("no %s: make base" % BASE)
@@ -92,8 +95,14 @@ def run(a):
         (shutil.copytree if os.path.isdir(f) else shutil.copy)(f, dst)
     mintdir = os.path.join(hd, "mint")
     ver = [d for d in os.listdir(mintdir) if d[0].isdigit()][0]
+    first = name
+    if a.later:
+        shutil.copy(os.path.join(HERE, "build", "LATER.PRG"), os.path.join(hd, "LATER.PRG"))
+        with open(os.path.join(hd, "LATER.TXT"), "w") as f:
+            f.write("%d C:\\%s\r\n" % (a.later, name))
+        first = "LATER.PRG"
     with open(os.path.join(mintdir, ver, "xaaes", "xaaes.cnf"), "a") as f:
-        f.write("run c:\\%s\n" % name)
+        f.write("run c:\\%s\n" % first)
     img = os.path.join(work, "hd.img")
     fatimg.build(hd, img, a.size)
 

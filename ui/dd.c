@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * dd.c - things dropped on our windows (see dd.h). The receiving side of
  * the drag and drop protocol of MultiTOS (Atari Compendium, appendix H;

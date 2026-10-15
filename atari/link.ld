@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* Flat TOS image: text (+rodata) | data | bss, linked at address 0.
    elf2tos.py turns the --emit-relocs output into a relocatable PRG. */
 ENTRY(_start)

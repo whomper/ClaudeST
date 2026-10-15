@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * util.c - growable strings and small text helpers.
  */
@@ -29,15 +29,20 @@ void sb_reset(SBUF *b)
 		b->s[0] = 0;
 }
 
+/* a size from the network can be anything: none that would overflow */
+#define SB_MAX 0x3FFFFFFFL
+
 static int grow(SBUF *b, long need)
 {
 	long cap;
 	char *n;
+	if (need < 0 || need > SB_MAX - b->len)
+		return 0;
 	if (b->len + need + 1 <= b->cap)
 		return 1;
 	cap = b->cap ? b->cap : 256;
 	while (cap < b->len + need + 1)
-		cap *= 2;
+		cap = cap > SB_MAX / 2 ? b->len + need + 1 : cap * 2;
 	n = realloc(b->s, cap);
 	if (!n)
 		return 0;
@@ -64,6 +69,8 @@ int sb_room(SBUF *b, long n) { return grow(b, n); }
 int sb_reserve(SBUF *b, long n)
 {
 	char *p;
+	if (n < 0 || n > SB_MAX - b->len)
+		return 0;
 	if (b->len + n + 1 <= b->cap)
 		return 1;
 	p = realloc(b->s, b->len + n + 1);

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 | The crash catcher's exception entries (see crash.c). Vectors 2-8 (the
 | 2 to 8 bombs) come here with the vector number pushed. A fault in
 | program's own code (user mode) is turned into a jump to crash_landing,

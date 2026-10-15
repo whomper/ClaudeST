@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * gem.c - minimal AES/VDI bindings.
  * From Claude ST (whomper/ClaudeST), extended for EMail's dialogs, ECal's
@@ -127,6 +127,19 @@ short appl_find(const char *name)
 {
 	addrin[0] = (void *)name;
 	return aes(13, 0, 1, 1, 0);
+}
+
+/* the AES's programs one at a time (AES 4.0, MagiC: appl_getinfo(4)'s
+   third answer says so): mode 0 the first, 1 the next; 0 when no more */
+short appl_search(short mode, char *name, short *type, short *id)
+{
+	short r;
+	aintin[0] = mode;
+	addrin[0] = name;
+	r = aes(18, 1, 3, 1, 0);
+	*type = aintout[1];
+	*id = aintout[2];
+	return r;
 }
 
 short appl_write(short id, short len, const void *buf)

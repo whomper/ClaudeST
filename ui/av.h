@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * av.h - the AV protocol (the AERA guidelines, 4.1): how the AERA
  * programs, the desktop and other programs hand each other work.
@@ -21,7 +21,8 @@
  * av_arg() takes the next file name off a VA_START string, without its
  * quotes ('...' around a name with spaces, '' for a quote in it).
  * av_send() hands another program a string with VA_START, in memory it
- * may read.
+ * may read. av_message() also answers our accessory's question to the
+ * program (twin.h's TWIN_ASK).
  */
 #ifndef AERA_AV_H
 #define AERA_AV_H
@@ -35,6 +36,10 @@ void av_exit(void);
 void av_window(short h, int open);
 int av_message(const short *msg, const char **s);	/* AV_NONE: not the AV protocol's */
 const char *av_arg(const char *p, char *out, long n);	/* 0 when none is left */
+
+/* the command line the program was started with (the desktop's way to
+   open a file with it), as a VA_START string: "" for none */
+const char *av_command(void);
 
 /* text for the program called name, with VA_START. 1 when sent, 0 when it
    isn't running */

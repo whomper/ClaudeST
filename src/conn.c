@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * conn.c - buffered TCP connection on top of plat.h's net_*, with TLS
  * when Falcon mode talks to the server itself: EMail's cipher retries
@@ -194,6 +194,10 @@ static CONN *open_plain(const char *name, const char *host, unsigned short port,
 	char msg[200];
 	if (bufsize <= 0)
 		bufsize = conn_bufsize;
+	if (conn_stop) {		/* Stop meant the whole operation */
+		str_copy(err, "stopped", errlen);
+		return 0;
+	}
 	snprintf(msg, sizeof(msg), "connecting to %s:%u", host, port);
 	conn_log(name, " -- ", msg, strlen(msg));
 	h = net_open(host, port, err, errlen);
@@ -267,7 +271,12 @@ int conn_write(CONN *c, const char *data, long n)
 	/* in pieces, so a long upload can show how far it got */
 	while (n > 0) {
 		long k = n > 4096 ? 4096 : n;
-		if (conn_stop || (c->tls ? tls_write(c->tls, data, k) : net_write(c->h, data, k)) != k) {
+		if (conn_stop) {
+			str_copy(c->err, "stopped", sizeof(c->err));
+			conn_log(c->name, " !! ", "stopped", 7);
+			return 0;
+		}
+		if ((c->tls ? tls_write(c->tls, data, k) : net_write(c->h, data, k)) != k) {
 			str_copy(c->err, "connection lost while sending", sizeof(c->err));
 			return 0;
 		}
@@ -336,6 +345,7 @@ static int fill(CONN *c)
 		}
 		if (conn_stop) {
 			str_copy(c->err, "stopped", sizeof(c->err));
+			conn_log(c->name, " !! ", "stopped", 7);
 			return 0;
 		}
 		if (pf_ms() - start > (unsigned long)c->timeout_ms) {
@@ -402,6 +412,7 @@ long conn_read(CONN *c, char *buf, long max)
 	long k;
 	if (conn_stop) {
 		str_copy(c->err, "stopped", sizeof(c->err));
+		conn_log(c->name, " !! ", "stopped", 7);
 		return -1;
 	}
 	while (c->pos >= c->len) {
@@ -416,6 +427,7 @@ long conn_read(CONN *c, char *buf, long max)
 			return 0;
 		if (conn_stop) {
 			str_copy(c->err, "stopped", sizeof(c->err));
+			conn_log(c->name, " !! ", "stopped", 7);
 			return -1;
 		}
 		if (pf_ms() - start > (unsigned long)c->timeout_ms) {

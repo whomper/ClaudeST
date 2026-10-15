@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * dsprsa.c - the RSA public-key operation on the Falcon's DSP56001
  * (dsp/rsa.a56), for checking signatures in Falcon mode. The 68030

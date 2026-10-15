@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """An app's crash catcher in Hatari (EmuTOS), with a build made with
 -DCRASH_TEST (crash_test() in its keyboard handler):
 

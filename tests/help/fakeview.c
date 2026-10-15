@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * FAKEVIEW.ACC - a stand-in hypertext viewer for the Hatari checks of
  * help.c (from ECal's fakeguide). Installed as EHYPVIEW.ACC, ST-GUIDE.ACC

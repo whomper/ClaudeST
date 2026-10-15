@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # FAKEVIEW.ACC, the stand-in viewer for app_help.py: make, then
 #   python3 app_help.py WORK etos512us.img APP.PRG NAME.HYP
 CROSS   ?= m68k-linux-gnu-

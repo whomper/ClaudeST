@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * THING.ACC - a stand-in AV server for the Hatari checks of av.c (as
  * Thing, the desktop, would be: appl_find("THING   ") finds it). What it

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * iconify.h - iconified windows (the AERA guidelines, 5.1), ECal's: the
  * iconifier on a window where the AES has it (AES 4.1, MagiC, XaAES,

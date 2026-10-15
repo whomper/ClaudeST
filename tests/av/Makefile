@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # the AV protocol (ui/av.c) on the build machine: make test. Not a
 # position-independent program, so the static buffers have the 32-bit
 # addresses a message carries. THING.ACC, the stand-in AV server for

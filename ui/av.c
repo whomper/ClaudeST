@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * av.c - the AV protocol (see av.h). From EHypView's VA_START and
  * EContact's VA_START to EMail.
@@ -8,6 +8,7 @@
 #include "tos.h"
 #include "gem.h"
 #include "av.h"
+#include "twin.h"
 
 #define AV_PROTOKOLL	0x4700
 #define VA_PROTOSTATUS	0x4701
@@ -67,6 +68,19 @@ static void post(short id, short what, short w3, const char *p)
 		msg[7] = (short)(unsigned long)p;
 	}
 	appl_write(id, 16, msg);
+}
+
+const char *av_command(void)
+{
+	static char arg[128];
+	const unsigned char *cmd = (const unsigned char *)_BasePage + 0x80;	/* p_cmdlin */
+	int n = cmd[0] < 127 ? cmd[0] : 126;
+	memcpy(arg, cmd + 1, n);
+	arg[n] = 0;
+	n = (int)strlen(arg);
+	while (n > 0 && (arg[n - 1] == ' ' || arg[n - 1] == '\r' || arg[n - 1] == '\n'))
+		arg[--n] = 0;
+	return arg;
 }
 
 /* NAME=value from our environment, or 0 */
@@ -172,6 +186,15 @@ int av_message(const short *msg, const char **s)
 {
 	if (msg[0] == VA_PROTOSTATUS)
 		return AV_DONE;
+	if (msg[0] == TWIN_ASK) {
+		/* our accessory, under plain TOS: is this its program? */
+		short reply[8];
+		memset(reply, 0, sizeof(reply));
+		reply[0] = TWIN_HERE;
+		reply[1] = appl_id();
+		appl_write(msg[1], 16, reply);
+		return AV_DONE;
+	}
 	if (msg[0] != VA_START)
 		return AV_NONE;
 	{

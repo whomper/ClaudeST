@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-2.0-or-later
-; Copyright (C) 2026 Erez Yaary
+; Copyright (C) 2026 AERA | Erez Yaary
 ; rsa.a56 - RSA public-key operation y = x^e mod n on the Falcon's DSP56001,
 ; for the Falcon mode of the AERA programs (checking the signatures of a TLS handshake).
 ;

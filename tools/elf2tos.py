@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """Convert a statically linked m68k ELF (linked at 0 with --emit-relocs)
 into an Atari TOS executable (.PRG / .APP) with a GEMDOS fixup table.
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * tos.c - cookie jar, timer, debug output and the libgcc helpers a
  * plain 68000 needs (the cross compiler's libgcc is built for 68020+).

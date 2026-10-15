@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * Drops (ui/dd.c) and the clipboard (ui/clip.c) on the build machine.
  * The drag and drop pipe stands in as two buffers: what the sender sends

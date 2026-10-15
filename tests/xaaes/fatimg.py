@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """fatimg.py: make a hard-disk image (MBR + one FAT16 partition) from a host folder,
 and read files back out of one. No mtools needed.
 

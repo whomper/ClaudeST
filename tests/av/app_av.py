@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """An app and the AV protocol (common/ui/av.c) in Hatari (EmuTOS), with
 the stand-in AV server build/THING.ACC (make) installed: the app must
 tell it it takes VA_START (AV_PROTOKOLL, with its name), answer each

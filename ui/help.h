@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * help.h - the Help key (the AERA guidelines, 4.3). help_show() opens
  * the app's hypertext in the viewer that runs: EHypView first, then

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * dsp.c - Falcon mode's arithmetic on the DSP56001: the RSA public-key
  * operation that checks a server's signatures (atari/dsprsa.c running
