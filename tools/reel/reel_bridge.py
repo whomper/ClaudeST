@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """The bridge with a scripted "showcase" account, for recording demo videos.
 
 It has a realistic set of chats and projects, and answers the question

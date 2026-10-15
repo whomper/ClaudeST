@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * ClaudeST - a Claude.ai client for the Atari ST, STE, TT and Falcon.
  *
@@ -42,7 +42,7 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-#define VERSION "1.33"
+#define VERSION "1.34"
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */

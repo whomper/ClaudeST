@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* Host-side test for bidi.c: cc -o bidi_test bidi_test.c bidi.c && ./bidi_test */
 #include <stdio.h>
 #include <string.h>

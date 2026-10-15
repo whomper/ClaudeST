@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * RSCTEST.PRG - loads CLAUDEST.RSC with the AES and draws its icon tree,
  * to check the resource file on a real (or emulated) Atari. Any key quits.

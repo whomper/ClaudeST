@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * FAKESTNG.PRG - a stand-in for the STinG TCP/IP stack, for testing
  * ClaudeST in an emulator without networking. It installs a "STiK"

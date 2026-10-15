@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # Install the ClaudeST bridge on a Raspberry Pi (or any Debian-style Linux)
 # as an always-on systemd service called claude-st.
 #

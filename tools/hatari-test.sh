@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # Try ClaudeST in the Hatari emulator, with the bridge on this computer.
 #
 #   tools/hatari-test.sh                      demo chats, no account needed

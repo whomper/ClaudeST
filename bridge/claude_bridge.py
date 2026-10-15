@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """ClaudeST bridge.
 
 Runs on any modern computer and connects an Atari ST/STE/TT/Falcon running

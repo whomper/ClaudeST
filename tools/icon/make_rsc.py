@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """Write ClaudeST's icons as files for Atari icon and resource editors:
 
   binary/CLAUDEST.RSC    GEM resource, one tree: a monochrome G_ICON and a

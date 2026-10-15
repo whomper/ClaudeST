@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """Record a ClaudeST demo video in Hatari: a Falcon in 640x480, 16
 colours, booting to the EmuTOS desktop with the ClaudeST icon; the icon
 is double-clicked, a chat is opened, and a new question is typed and

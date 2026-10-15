@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # Every CLAUDEST.PRG that is committed must carry a new version number.
 # Run before committing a new build: fails if binary/CLAUDEST.PRG differs
 # from the last committed one but VERSION in st/claudest.c is the same.

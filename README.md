@@ -188,6 +188,6 @@ is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See [COPYING](COPYING).
 
-Copyright (C) 2026 Erez Yaary. ClaudeST is an unofficial client, not
+Copyright (C) 2026 AERA | Erez Yaary. ClaudeST is an unofficial client, not
 affiliated with Anthropic or Atari; Claude is a trademark of Anthropic
 PBC, Atari a trademark of Atari Interactive.

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * ui.h - ClaudeST's drawing under the names the AERA programs' shared GEM
  * building blocks use (common/ui/gemui.h: the popup and the About box).
