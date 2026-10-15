@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * CRASHT.PRG - checks the shared crash catcher (atari/crash.c) in an
  * emulator. C:\CRASHT.INF says what to do:

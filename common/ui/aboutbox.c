@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * aboutbox.c - the About box (see aboutbox.h), ECal's, drawn as EMail's and
  * Claude ST's were; in the same frame, a box of plain text (CRASH.LOG).
@@ -255,9 +255,9 @@ void about_show(const ABOUT *a)
 	y += lh + lh / 2;
 	line(dx + 4 * cw, y - lh / 4, dx + dw - 4 * cw, y - lh / 4);
 	y += lh / 4;
-	center(y, "Created by Erez Yaary", TX_BOLD);
+	center(y, "Created by AERA | Erez Yaary", TX_BOLD);
 	y += lh;
-	center(y, "\xBD 2026 Erez Yaary", 0);
+	center(y, "\xBD 2026 AERA | Erez Yaary", 0);
 	y += lh + lh / 2;
 	for (i = 0; i < nst; i++, y += lh)
 		center(y, a->status[i], 0);

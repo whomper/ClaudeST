@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * clip.h - the GEM clipboard (the AERA guidelines, 4.4): SCRAP.TXT in the
  * folder the AES keeps (scrp_read; X:\CLIPBRD\ on the boot drive when it

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* ICONTEST.PRG - does the AES iconify windows? (FreeMiNT + XaAES check)
  *
  * Opens one window with every gadget including the iconifier (SMALLER),

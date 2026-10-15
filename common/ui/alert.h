@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * alert.h - the AERA programs' alert (the guidelines, 6.2): form_alert
  * with printf formatting, the text wrapped into lines of at most 30

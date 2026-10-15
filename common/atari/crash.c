@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * crash.c - the crash catcher (see crash.h, and crash.S for the
  * exception entries), from EMail. The report gives the bombs, where they

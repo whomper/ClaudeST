@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* AERA freestanding libc: memory and conversions */
 #ifndef _STDLIB_H
 #define _STDLIB_H

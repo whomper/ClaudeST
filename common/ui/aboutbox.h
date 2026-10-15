@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * aboutbox.h - the About box of the AERA programs (the guidelines, 1.3),
  * ECal's with Claude ST's fine print: centred on the screen, in the

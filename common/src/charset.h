@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * charset.h - text conversion between mail charsets and the Atari ST
  * character set (which has Hebrew letters at 0xC2-0xDC), plus the

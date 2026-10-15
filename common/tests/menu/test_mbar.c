@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * The shared menu bar builder (ui/mbar.c) on the build machine, from
  * EHypView's tests/test_menu.c: the AES walks the tree by ob_next,

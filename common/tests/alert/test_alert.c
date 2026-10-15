@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * The shared alert() on the build machine (ui/alert.c, ../../src/bidi.c),
  * with form_alert writing down what it was given. Hebrew is in the

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * conn.h - a buffered, line-oriented TCP connection with timeouts and
  * an optional protocol log (NAME.LOG). IMAP, POP3 and SMTP (EMail), HTTP

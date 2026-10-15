@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 | NatFeats (emulator native features) for debug output under Hatari/ARAnyM.
 | long nf_probe(void)  - supervisor only: NF id of "NF_STDERR", 0 if absent
 | long nf_call2(long id, long arg)

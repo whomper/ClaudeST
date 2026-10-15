@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * tls_none.c - the ST edition (NAMEST.PRG/.ACC) has no TLS of its own: an
  * ST is too slow for it, and leaving out BearSSL's 150 KB leaves room for

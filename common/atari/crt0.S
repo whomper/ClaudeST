@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 | TOS start-up for the AERA programs, for a desk accessory and an
 | application alike (from ECal, EMail and Claude ST).
 |

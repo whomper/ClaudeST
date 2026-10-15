@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * The AV protocol (ui/av.c) on the build machine, with the AES and TOS
  * calls it makes standing in: appl_write writes down the message it was
@@ -194,6 +194,12 @@ int main(void)
 		short msg[8] = { 0x4701, 2, 0, 0, 0, 0, 0, 0 }, other[8] = { 41, 2, 0, 0, 0, 0, 0, 0 };
 		check(av_message(msg, &s) == AV_DONE, "VA_PROTOSTATUS: taken, nothing to do");
 		check(av_message(other, &s) == AV_NONE, "AC_OPEN: not the AV protocol's");
+		memset(msg, 0, sizeof(msg));
+		msg[0] = 0x4145;		/* TWIN_ASK, from our accessory */
+		msg[1] = 2;
+		writes = 0;
+		check(av_message(msg, &s) == AV_DONE && writes == 1 && sent_to == 2 && sent[0] == 0x4146 &&
+		      sent[1] == 1, "TWIN_ASK: answered TWIN_HERE");
 	}
 
 	/* VA_START out */
@@ -203,6 +209,13 @@ int main(void)
 	      !strcmp(ptr(sent[3], sent[4]), text) && ptr(sent[3], sent[4]) != text,
 	      "av_send: VA_START with a copy of the text");
 	check(av_send("EMAIL   ", longer) && strlen(ptr(sent[3], sent[4])) == 1023, "av_send: cut to 1023");
+
+	/* the command line */
+	basepage[0x80] = 10;
+	memcpy(basepage + 0x81, "C:\\A.ICS \r\0", 11);
+	check(!strcmp(av_command(), "C:\\A.ICS"), "av_command: the command line, without the CR");
+	basepage[0x80] = 0;
+	check(!strcmp(av_command(), ""), "av_command: none");
 
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;

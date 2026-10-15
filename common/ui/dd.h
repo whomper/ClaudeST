@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * dd.h - things dropped on our windows (the AERA guidelines, 4.2): files
  * and text by drag and drop (AP_DRAGDROP, under MiNT and MagiC, through

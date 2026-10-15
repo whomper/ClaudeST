@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * mbar.h - the menu bar, built at run time from the app's table (the
  * AERA guidelines, 3.1): no resource file, the system font's size,

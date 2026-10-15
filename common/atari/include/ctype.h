@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* AERA freestanding libc: ASCII character classes */
 #ifndef _CTYPE_H
 #define _CTYPE_H

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * gemui.h - what the shared building blocks that draw (popup.c,
  * aboutbox.c, iconify.c) take from the app's own drawing code. Each

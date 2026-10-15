@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /* OPNWK.PRG - opens the VDI's physical workstation (screen, device 1) and
  * leaves it open, then ends. Runs from AUTO before FreeMiNT. Without it
  * XaAES 1.17 asks EmuTOS for a virtual workstation on a physical one that

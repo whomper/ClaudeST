@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * popup.c - right-click menus (the AERA guidelines, 3.3), ECal's: a
  * GEM-style popup at the mouse, in the system font. Click an item, or

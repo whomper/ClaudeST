@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * clip.c - the GEM clipboard (see clip.h), as cflib's scrap_* and
  * EContact's copy: the folder from scrp_read(), SCRAP.* cleared before

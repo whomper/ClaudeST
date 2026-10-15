@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * crash_none.c - crash.h's calls, doing nothing, for an edition that is
  * only ever a desk accessory (ECal's and EContact's ST editions): an

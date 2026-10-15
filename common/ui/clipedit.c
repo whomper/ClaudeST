@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * clipedit.c - ^C ^X ^V on a dialog's edit field (see clip.h), through
  * objc_edit, so the field's length and what it lets in (a port takes

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """gadget.py SHOT: where XaAES's iconify gadgets are in a screenshot (a red
 square with a small green one in its corner; the closer has no green), as
 "X Y" lines, top to bottom. An iconified window's title bar has one too:

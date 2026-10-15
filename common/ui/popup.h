@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * popup.h - right-click menus (popup.c): the chosen item, or -1.
  *   static const char *const lab[] = { "Open", "-", "~Rename", "\x08Hidden" };

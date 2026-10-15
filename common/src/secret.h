@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * secret.h - passwords in the settings file (NAME.INF), encrypted.
  *
@@ -16,8 +16,14 @@
 
 /* load NAME.KEY, or make one; 0 if there is none and none can be made */
 int  secret_init(const char *keyfile);
-/* "{E}" + hex of nonce and encrypted text, into out */
-void secret_encode(const char *plain, char *out, int size);
+/* "{E}" + hex of nonce and encrypted text, into out: 1. Without a key
+   (or for more than 128 characters, or an out too small) the text as it
+   is: 0, and secret_warn is told */
+int  secret_encode(const char *plain, char *out, int size);
+/* called the first time in a run that a password has to be written as it
+   is, with the key file that couldn't be made: the program tells the user
+   (the AERA guidelines, 7.2: never in plain text silently) */
+extern void (*secret_warn)(const char *keyfile);
 /* plain text of an encoded value, or the value itself when it isn't
    encoded (an older settings file); 0 if it is encoded with another key */
 int  secret_decode(const char *in, char *out, int size);

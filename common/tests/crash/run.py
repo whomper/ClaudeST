@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """The crash catcher's check in Hatari (EmuTOS), on a 68000 ST and a
 68030 Falcon: each kind of crash in CRASHT.PRG, then a crash in
 supervisor mode, a warm reset and the report of it at the next start.

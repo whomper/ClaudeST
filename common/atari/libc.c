@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * libc.c - the subset of the C library the AERA programs use on the Atari:
  * strings, a heap on top of GEMDOS Malloc/Mxalloc, number parsing,

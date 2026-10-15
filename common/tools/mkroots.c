@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * mkroots.c - decodes CACERT.PEM into ROOTS.DAT on this computer, the
  * same file the program writes the first time it connects in Falcon mode. It

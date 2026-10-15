@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # drops (ui/dd.c) and the clipboard (ui/clip.c) on the build machine, the
 # pipe and the files standing in: make test
 CFLAGS := -O2 -Wall -Wextra -no-pie -fsanitize=address,undefined -Istub -I../../ui

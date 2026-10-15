@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * tls.h - TLS 1.2 on the Atari itself (Falcon mode), on BearSSL: ECal's
  * session resumption, table-based AES and fastest GHASH, with EMail's

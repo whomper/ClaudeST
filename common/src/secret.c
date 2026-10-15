@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 Erez Yaary */
+ * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * secret.c - passwords in the settings file (NAME.INF), encrypted (see secret.h).
  */
@@ -9,7 +9,10 @@
 #include "plat.h"
 
 static unsigned long key[4];
-static int have_key;
+static int have_key, warned;
+static char keyname[128];
+
+void (*secret_warn)(const char *keyfile);
 
 /* XTEA, 32 rounds, on one 64-bit block */
 static void xtea(unsigned long v[2])
@@ -46,6 +49,7 @@ int secret_init(const char *keyfile)
 	unsigned char raw[16];
 	int h, i;
 	have_key = 0;
+	snprintf(keyname, sizeof(keyname), "%s", keyfile);
 	h = pf_open(keyfile, PF_READ);
 	if (h >= 0) {
 		have_key = pf_read(h, raw, 16) == 16;
@@ -67,13 +71,21 @@ int secret_init(const char *keyfile)
 
 static const char hexd[] = "0123456789ABCDEF";
 
-void secret_encode(const char *plain, char *out, int size)
+int secret_encode(const char *plain, char *out, int size)
 {
 	unsigned char buf[2 + 4 + 128];
 	int n = (int)strlen(plain), i, o;
-	if (!*plain || !have_key || n > 128 || size < (int)strlen(SECRET_TAG) + 2 * (6 + n) + 1) {
-		snprintf(out, size, "%s", plain);	/* empty, or no key: as it is */
-		return;
+	if (!*plain) {
+		snprintf(out, size, "%s", "");
+		return 1;
+	}
+	if (!have_key || n > 128 || size < (int)strlen(SECRET_TAG) + 2 * (6 + n) + 1) {
+		snprintf(out, size, "%s", plain);	/* as it is, and said so */
+		if (!warned && secret_warn) {
+			warned = 1;
+			secret_warn(keyname);
+		}
+		return 0;
 	}
 	pf_entropy(buf, 4);			/* the nonce */
 	buf[4] = 'P';				/* a check: wrong key or not ours */
@@ -87,6 +99,7 @@ void secret_encode(const char *plain, char *out, int size)
 		out[o++] = hexd[buf[i] & 15];
 	}
 	out[o] = 0;
+	return 1;
 }
 
 static int hexv(char c)

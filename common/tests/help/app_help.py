@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 """An app's Help key (common/ui/help.c) in Hatari (EmuTOS), with the
 stand-in viewer build/FAKEVIEW.ACC (make) installed under viewers' names:
 

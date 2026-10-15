@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026 Erez Yaary
+# Copyright (C) 2026 AERA | Erez Yaary
 # CRASHT.PRG, the crash catcher's check: make, then
 #   python3 run.py etos512us.img
 CROSS   ?= m68k-linux-gnu-
