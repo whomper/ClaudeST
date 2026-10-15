@@ -29,6 +29,11 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   `git tag -a`); it tests, builds with `RELEASE=1`, tags vX.Y and publishes each file and the zip as a
   GitHub Release. A normal build must leave every tracked file unchanged (it shows `x.y-dev`). Don't
   commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
+- **Only formal releases leave the build machine.** Erez gets vX.Y releases made by the Release
+  workflow from `main`, nothing else: no test builds, no `x.y-dev` builds, no CI artifacts, no builds
+  from a branch. Work lands on `main`; to try a fix on real hardware, release it. If a release doesn't
+  work, roll back with a release: revert on `main`, release the next number, and say in the bad
+  release's notes that it is withdrawn and which one to use.
 - **Every new source file starts with the SPDX line and copyright** (see any `.c` file); a generator
   writes them into the files it makes.
 - **The name** reads "AERA | Erez Yaary" wherever it is given: copyright lines
