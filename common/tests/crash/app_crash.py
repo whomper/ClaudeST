@@ -13,6 +13,9 @@
     app_crash.py WORK EMUTOS.IMG APP.PRG NAME [--machine falcon|st] [--memsize MB]
                  [--wait SECONDS] [--log DIR] [--copy FILE ...]
 
+EmuTOS 1.4 or later: 1.3 overwrites TOS's record of the bombs at every
+boot, so step 2 fails there.
+
 NAME is the program's name in the report ("ECal"); --log is the folder
 of CRASH.LOG on drive C:, relative to it (default: the root); --copy
 puts more files (an INF) on drive C:. Screenshots go to WORK/*/shots.
@@ -30,6 +33,13 @@ ap.add_argument("--wait", type=float, default=15)
 ap.add_argument("--log", default="")
 ap.add_argument("--copy", nargs="*", default=[])
 a = ap.parse_args()
+# TOS's record of the bombs ($380) must live through the warm reset, as on
+# a real machine. EmuTOS 1.4 and later keep it on a reset (1.3 overwrote
+# $100-$3FF at every boot), but only when the reset is marked as one:
+# _warm_magic = 'WARM' at $6FC, which EmuTOS writes while it sizes the
+# memory at power-on. Hatari sets the memory up itself, so EmuTOS never
+# writes it and takes every reset for a first boot. Write it, then reset.
+WARM_MAGIC = "hatari-debug w $6fc $57 $41 $52 $4d"
 failed = 0
 
 
@@ -119,6 +129,8 @@ try:
     r.key(0x3c)				# F2: the bombs
     time.sleep(5)
     r.shot()
+    r.cmd(WARM_MAGIC)
+    time.sleep(0.5)
     r.cmd("hatari-shortcut warmreset")
     time.sleep(a.wait + 3)
     r.shot()				# "crashed last time", offering to show it

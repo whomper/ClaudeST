@@ -8,6 +8,11 @@
  *   s  a bus error in supervisor mode (in the program's own code): the
  *      bombs, which TOS records; the run after the next reset finds the
  *      record and, since it was in the program, says so (crash_previous)
+ *   p  no crash: STinG's way into supervisor mode. Code outside the
+ *      program, with a handler of its own on vector 8 put there before
+ *      the catcher, runs "or.w #0,sr" in user mode and catches the
+ *      privilege violation; the catcher must pass it on (STinG's
+ *      protect_exec, in TCP_open: every connection bombed in 1.31)
  * The catcher writes C:\CRASH.LOG; this program notes on the emulator's
  * console (NatFeats) what it saw, and crash_cleanup and crash_report
  * leave C:\CLEANUP.TXT and C:\REPORT.TXT. run.py drives it in Hatari.
@@ -49,6 +54,42 @@ static void sup_bus(void)
 
 static volatile long sink;
 
+/* ---- p: a resident program's privilege violation, as STinG's ----
+   Copied into a Malloc'ed block, outside the program: handler, the old
+   vector, and prot ("or.w #0,sr; rts"). The handler takes the fault
+   when it comes from prot (skips the instruction, d0 = 42), else hands
+   it on to the vector before it. */
+static const unsigned short sting_code[] = {
+	0x2F08,			/*  0 handler: move.l a0,-(sp)      */
+	0x41FA, 0x001E,		/*  2 lea prot(pc),a0              */
+	0xB1EF, 0x0006,		/*  6 cmpa.l 6(sp),a0 (the PC)     */
+	0x660A,			/* 10 bne.s other                  */
+	0x58AF, 0x0006,		/* 12 addq.l #4,6(sp): skip it     */
+	0x702A,			/* 16 moveq #42,d0                 */
+	0x205F,			/* 18 move.l (sp)+,a0              */
+	0x4E73,			/* 20 rte                          */
+	0x205F,			/* 22 other: move.l (sp)+,a0       */
+	0x2F3A, 0x0004,		/* 24 move.l old(pc),-(sp)         */
+	0x4E75,			/* 28 rts: to the old handler      */
+	0x0000, 0x0000,		/* 30 old                          */
+	0x007C, 0x0000,		/* 34 prot: or.w #0,sr             */
+	0x4E75			/* 38 rts                          */
+};
+static unsigned short *sting_block;
+
+static volatile long *volatile v8 = (volatile long *)0x20L;	/* vector 8 */
+
+static void sting_hook(void)		/* supervisor mode */
+{
+	*(long *)(sting_block + 15) = *v8;	/* old */
+	*v8 = (long)sting_block;
+}
+
+static void sting_unhook(void)
+{
+	*v8 = *(long *)(sting_block + 15);
+}
+
 int main(void)
 {
 	char inf[8];
@@ -63,6 +104,15 @@ int main(void)
 	Fclose((short)h);
 	kind = inf[0];
 
+	if (kind == 'p') {		/* STinG is there before the program */
+		sting_block = Malloc(sizeof(sting_code));
+		if ((long)sting_block <= 0) {
+			nf_debug("CRASHT no memory\n");
+			return 1;
+		}
+		memcpy(sting_block, sting_code, sizeof(sting_code));
+		Supexec(sting_hook);
+	}
 	crash_install("C:\\", "CrashTest", "1.0");
 	crash_cleanup = cleanup;
 	crash_report = report;
@@ -104,6 +154,13 @@ int main(void)
 		put("C:\\STAGE1.TXT", "s\r\n", 3);
 		Supexec(sup_bus);
 		break;
+	case 'p': {
+		long r = ((long (*)(void))(sting_block + 17))();
+		crash_remove();
+		Supexec(sting_unhook);
+		nf_debug(r == 42 ? "CRASHT protect ok\n" : "CRASHT protect wrong\n");
+		return 0;
+	}
 	}
 	nf_debug("CRASHT no crash\n");
 	crash_remove();
