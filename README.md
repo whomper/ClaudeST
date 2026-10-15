@@ -145,7 +145,9 @@ Run these in the `ClaudeST/pi` folder (`atari_claude/pi` if you installed before
 | Watch its log | `journalctl -u claude-st -f` |
 | Remove it | `sudo ./install.sh --uninstall` |
 
-The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or the session key has
+`install.sh` hands its options to `aera-gateway`, the installer of all the AERA gateways (in
+`gateway/`, from [AERA-Gateway](https://github.com/whomper/AERA-Gateway)), which can also set up
+EMail's, ECal's and EFTP's gateways on the same Pi. The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or the session key has
 expired, the error appears on the Atari.
 
 ## Keys
@@ -211,10 +213,12 @@ st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
 help/      CLAUDEST.STG, the ST-Guide help (make help)
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai, API, demo),
            atari_text.py (charset and Markdown), test_bridge.py
-pi/        install.sh and the systemd service
+pi/        install.sh (hands on to gateway/aera-gateway) and the systemd service
+gateway/  the AERA gateways for the Pi and aera-gateway, their installer, which sets up the
+          bridge: a copy of AERA-Gateway's (tools/sync-gateway.sh)
 common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up, C library,
            TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
-tools/     hatari-test.sh, fakesting/, sync-common.sh, bump.py, check_version.sh,
+tools/     hatari-test.sh, fakesting/, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
            icon/ (the desktop icon), reel/ (the demo video)
 icons/     the desktop icon files (from tools/icon)
 docs/      the user guide (GUIDE.md), its screenshots and the demo recording

@@ -49,6 +49,12 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   raises it (1.34 -> 1.35), and `tools/check_version.sh` fails when vX.Y is out already (the
   release workflow runs it). A release carries `CLAUDEST.PRG`, `CLAUDEST.HYP` and `.REF`, the
   example `st/CLAUDEST.INF` and the icon (`icons/`).
+- `bridge/` is ClaudeST's; `gateway/` is a read-only copy of
+  [AERA-Gateway](https://github.com/whomper/AERA-Gateway)'s, whose
+  `aera-gateway install claude` sets the bridge up (`pi/install.sh` hands
+  on to it). Change the installer there, with that repository's owner
+  session, and bring it here with `tools/sync-gateway.sh`. ClaudeST says
+  what the `claude` recipe needs (packages, settings, the unit, port 2323).
 - Commit and push to `main`; when the Atari side changes, release it and
   give the user the release's link; say whether the Pi needs
   `cd ~/atari_claude/pi && git pull && sudo ./install.sh`.
