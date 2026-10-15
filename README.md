@@ -2,69 +2,47 @@
 
 <img src="docs/icon16.png" width="96" align="right" alt="ClaudeST icon: an Atari SM124-style monitor showing a spark and a prompt">
 
-A native GEM client for [claude.ai](https://claude.ai) on the Atari ST,
-STE, Mega ST/STE, TT and Falcon.
+A native GEM client for [claude.ai](https://claude.ai) on the Atari ST, STE, Mega ST/STE, TT and
+Falcon, through a Raspberry Pi bridge.
 
-![ClaudeST on a Falcon in 16 colours](docs/falcon-colour.png)
+**Highlights**
 
-It works like the claude.ai website: chats, Search, Code, Projects and
-Artifacts on the left, the open conversation on the right, and replies
-streaming in as Claude writes them.
-
-- Your real claude.ai account: recent and pinned chats, projects, search
-- Claude Code sessions: read them and reply
-- Artifacts: view them and save them to disk, Word documents included
-- Model and effort for each chat, from a chip in the title bar
-- Right-click menus: Pin, Rename, Move to project, Archive, Delete
-- A ring that fills as you use up the current session, and an Account
-  page with your plan and usage
-- Hebrew: right-to-left text and a Hebrew keyboard layout
-- A font selector (Options ▸ Font), as in EMail and ECal: the system
-  font in two sizes, or any fixed-width GDOS font with NVDI
-- Monochrome and colour, any resolution from 640×200
+- **Like the website:** chats, Search, Code, Projects and Artifacts on the left, the open conversation
+  on the right, and replies streaming in as Claude writes them.
+- **Your real claude.ai account:** recent and pinned chats, projects, search.
+- **Claude Code sessions:** read them and reply.
+- **Artifacts:** view them and save them to disk, Word documents included.
+- **Model and effort** for each chat, from a chip in the title bar.
+- **Right-click menus** to pin, rename, move to a project, archive and delete.
+- **Usage at a glance:** a ring that fills as you use up the current session, and an Account page
+  with your plan and usage.
+- **Hebrew:** right-to-left text and a Hebrew keyboard layout.
+- **Fonts:** a font selector (**Options ▸ Font…**), as in EMail and ECal: the system font in two
+  sizes, or any fixed-width GDOS font with NVDI.
+- **Any screen** from 640×200, monochrome or colour.
 
 The [user guide](docs/GUIDE.md) describes every feature.
 
-ClaudeST was first called Claude ST, then EClaude for a few days. To
-upgrade, replace `CLAUDE.PRG` or `ECLAUDE.PRG` with `CLAUDEST.PRG`: your
-settings in `CLAUDE.INF` or `ECLAUDE.INF` are read the first time, then
-saved as `CLAUDEST.INF`. The Raspberry Pi side keeps its service name,
-`claude-st`.
+![ClaudeST on a Falcon in 16 colours](docs/falcon-colour.png)
 
-## How it works
+## Getting started
 
-```
-Atari (CLAUDEST.PRG)  <-- STinG or serial -->  Raspberry Pi (bridge)  <-- HTTPS -->  claude.ai
-```
+ClaudeST has two parts: the bridge, on a Raspberry Pi or any Linux computer on your network, and the
+program on the Atari. Set up the Pi first.
 
-An 8 MHz 68000 can't do modern HTTPS, so a small Python program, the
-bridge, runs on a Raspberry Pi or any Linux computer on your network.
-The Atari reaches it through STinG, over Ethernet or WiFi, or through a
-serial cable. The Atari does all the drawing and word wrapping itself.
-
-## What you need
-
-- An ST, STE, Mega ST/STE, TT or Falcon with TOS 1.0 to 4.x, EmuTOS or
-  MiNT, a 640×200 or larger screen, and about 250 KB of free RAM
-- STinG with a working network, or a null-modem serial cable
-- A Raspberry Pi, or any Linux computer, on the same network
-- A claude.ai account, or an Anthropic API key
-
-## Setup
-
-Give the Atari and the Pi fixed IP addresses, for example with a DHCP
-reservation in your router. The examples below use **192.168.1.10** for
-the Pi and **192.168.1.20** for the Atari. Replace them with your own.
+Give the Atari and the Pi fixed IP addresses, for example with a DHCP reservation in your router. The
+examples below use **192.168.1.10** for the Pi and **192.168.1.20** for the Atari. Replace them with
+your own.
 
 ### 1. Get your claude.ai session key
 
 1. Log in to claude.ai in a desktop browser.
-2. Open the developer tools (`F12`). Go to **Application** (Chrome) or
-   **Storage** (Firefox), then **Cookies**, then `https://claude.ai`.
+2. Open the developer tools (F12). Go to **Application** (Chrome) or **Storage** (Firefox), then
+   **Cookies**, then `https://claude.ai`.
 3. Copy the value of the `sessionKey` cookie. It starts with `sk-ant-sid`.
 
-The key gives full access to your account. It's stored only on the Pi,
-readable only by root and the bridge.
+The key gives full access to your account. It is stored only on the Pi, readable only by root and the
+bridge.
 
 ### 2. Install the bridge on the Pi
 
@@ -74,68 +52,92 @@ cd ClaudeST/pi
 sudo ./install.sh --network --atari 192.168.1.20
 ```
 
-The installer asks for the session key. It then runs the bridge as a
-service called `claude-st`, which starts at every boot and accepts
-connections only from the Atari's address. Use `--atari IP1,IP2` for
-several Ataris, or `--atari any` to accept any address on your network.
-If the `ufw` firewall is on, the installer opens port 2323 for them.
+The installer asks for the session key. It then runs the bridge as a service called `claude-st`, which
+starts at every boot and accepts connections only from the Atari's address. Use `--atari IP1,IP2` for
+several Ataris, or `--atari any` to accept any address on your network. If the `ufw` firewall is on,
+the installer opens port 2323 for them.
 
 ### 3. Set up the Atari
 
-1. Load **STinG** and check that the network works, for example by
-   pinging the Pi.
-2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF` and `CLAUDEST.HYP` (the ST-Guide
-   help) from the [latest release](https://github.com/whomper/ClaudeST/releases/latest)
-   into one folder. The release also has them all in `CLAUDEST-x.y.zip`:
+The [latest release](https://github.com/whomper/ClaudeST/releases/latest) has these files, each on its
+own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folder):
 
-   | File | What it is |
-   |------|-----------|
-   | `CLAUDEST.PRG` | the program |
-   | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for ST-Guide: keep it next to `CLAUDEST.PRG`, and press Help in ClaudeST |
-   | `CLAUDEST.INF` | an example settings file: put your Pi's address on its `tcp` line, and keep it next to `CLAUDEST.PRG` |
-   | `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour (in the zip's `icons/` folder) |
-   | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
-3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text
-   editor:
+| File | What it is |
+|---|---|
+| `CLAUDEST.PRG` | the program |
+| `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
+| `CLAUDEST.INF` | an example settings file: put your Pi's address on its `tcp` line, and keep it next to `CLAUDEST.PRG` |
+| `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour |
+| `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
+
+1. Load **STinG** and check that the network works, for example by pinging the Pi.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder.
+3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text editor:
    ```
    tcp 192.168.1.10 2323
    ```
-4. Run `CLAUDEST.PRG`. The status line at the bottom left shows
-   *Connecting…*, then *Online*, with a green dot.
+4. Run `CLAUDEST.PRG`. The status line at the bottom left shows *Connecting…*, then *Online*, with a
+   green dot.
 
-Instead of step 3 you can type `/connect 192.168.1.10` in ClaudeST's
-reply line; ClaudeST saves the address to `CLAUDEST.INF`. If the Pi
-restarts or the network drops, ClaudeST reconnects by itself.
+Instead of step 3 you can type `/connect 192.168.1.10` in ClaudeST's reply line; ClaudeST saves the
+address to `CLAUDEST.INF`. If the Pi restarts or the network drops, ClaudeST reconnects by itself. The
+guide's [Icons](docs/GUIDE.md#icons) section says how to put the icon on the desktop.
 
 ### Using a serial cable instead
 
-Connect the Atari's Modem port to a USB-to-RS-232 adapter on the Pi with
-a null-modem cable. Don't wire the Atari straight to the Pi's GPIO pins:
-the Atari's ±12 V signals damage the Pi. Then, on the Pi:
+Connect the Atari's Modem port to a USB-to-RS-232 adapter on the Pi with a null-modem cable. Don't wire
+the Atari straight to the Pi's GPIO pins: the Atari's ±12 V signals damage the Pi. Then, on the Pi:
 
 ```sh
 sudo ./install.sh --port auto
 ```
 
-On the Atari, choose **Options ▸ Serial port**, or leave out
-`CLAUDEST.INF`. Both sides use 19200 baud by default.
+On the Atari, choose **Options ▸ Serial port**, or leave out `CLAUDEST.INF`. Both sides use 19200 baud
+by default. The guide's [Serial cables and ports](docs/GUIDE.md#serial-cables-and-ports) says which
+port to use on each Atari.
 
 ### Using the Anthropic API instead of claude.ai
+
+Run the installer again with `--backend api` (or add it in step 2):
 
 ```sh
 sudo ./install.sh --backend api
 ```
 
-The installer asks for an API key. Chats are then stored on the Pi, in
-`/var/lib/claude-st/chats/`, instead of in your claude.ai account. `--backend demo` gives sample chats
-without any account, to test the setup.
+The installer asks for an API key. Chats are then stored on the Pi, in `/var/lib/claude-st/chats/`,
+instead of in your claude.ai account. `--backend demo` gives sample chats without any account, to test
+the setup.
+
+**Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.0 to 4.x, EmuTOS or MiNT; a 640×200 or
+larger screen; about 250 KB of free RAM; STinG with a working network, or a null-modem serial cable; a
+Raspberry Pi, or any Linux computer, on the same network; a claude.ai account, or an Anthropic API key.
+
+## How it reaches the servers
+
+An 8 MHz 68000 can't do modern HTTPS, so a small Python program, the bridge, does it for the Atari. It
+runs on a Raspberry Pi or any Linux computer on your network:
+
+```
+STinG:   Atari (CLAUDEST.PRG) --plain TCP, home LAN, port 2323--> Raspberry Pi (bridge) --HTTPS--> claude.ai
+Serial:  Atari (CLAUDEST.PRG) --null-modem cable, 19200 baud----> Raspberry Pi (bridge) --HTTPS--> claude.ai
+```
+
+- **Through STinG,** over Ethernet or WiFi, the Atari connects to the bridge's port 2323. The bridge
+  accepts only the addresses you gave the installer with `--atari`.
+- **Through a serial cable,** the Atari's Modem port goes to a USB-to-RS-232 adapter on the Pi.
+- **The bridge** talks to claude.ai (or the Anthropic API) and sends the Atari short lines of text in
+  the Atari character set. The Atari does all the drawing and word wrapping itself.
+
+The bridge is in [`bridge/`](bridge/), its installer and service in [`pi/`](pi/). To run it without
+the installer, on macOS or Windows too, see the guide's
+[The bridge on another computer](docs/GUIDE.md#the-bridge-on-another-computer).
 
 ## Looking after the Pi
 
 Run these in the `ClaudeST/pi` folder (`atari_claude/pi` if you installed before the rename):
 
 | Task | Command |
-|------|---------|
+|---|---|
 | Update to the latest version | `git pull && sudo ./install.sh` |
 | Paste a new session key, when claude.ai logs you out | `sudo ./install.sh --set-key` |
 | Change the Atari's address | `sudo ./install.sh --atari 192.168.1.21` |
@@ -143,60 +145,127 @@ Run these in the `ClaudeST/pi` folder (`atari_claude/pi` if you installed before
 | Watch its log | `journalctl -u claude-st -f` |
 | Remove it | `sudo ./install.sh --uninstall` |
 
-The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be
-reached or the session key has expired, the error appears on the Atari.
+The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or the session key has
+expired, the error appears on the Atari.
 
 ## Keys
 
 | Key | Does |
-|-----|------|
-| `F1` / `Ctrl+N` | New chat |
-| `F2`, `F6`, `F3`, `F4` | Chats, Code, Projects, Artifacts |
-| `F5` / `Ctrl+F` | Search chat titles |
-| `Tab`, then `Return` | Pick and open a sidebar item |
-| `Insert`, or right-click | The item's menu |
-| `F8`, or click the status line | Account: plan, usage and details |
-| `F9`, or click the model chip | Model and effort |
-| `F10` | Hebrew keyboard on or off |
-| `Help` | Help in EHypView or ST-Guide, or About |
-| `Ctrl+Q` | Quit |
+|---|---|
+| F1 / ^N | New chat |
+| F2, F6, F3, F4 | Chats, Code, Projects, Artifacts |
+| F5 / ^F | Search chat titles |
+| Tab, then Return | Pick and open a sidebar item |
+| Insert, or right-click | The item's menu |
+| F8, or click the status line | Account: plan, usage and details |
+| F9, or click the model chip | Model and effort |
+| F10 | Hebrew keyboard on or off |
+| Help | Help in EHypView or ST-Guide, or the About box |
+| ^Q | Quit |
+
+The guide has [all the keys](docs/GUIDE.md#all-keys).
 
 ## Good to know
 
-ClaudeST is an unofficial client, not affiliated with Anthropic or
-Atari. claude.ai has no public API for personal accounts, so the bridge
-uses the same private interface as the claude.ai website. If claude.ai
-changes it, parts can stop working until the bridge is updated. The
-[troubleshooting section](docs/GUIDE.md#troubleshooting) has commands
-that check each part from the Pi.
+ClaudeST is an unofficial client, not affiliated with Anthropic or Atari. claude.ai has no public API
+for personal accounts, so the bridge uses the same private interface as the claude.ai website. If
+claude.ai changes it, parts can stop working until the bridge is updated. The guide's
+[Troubleshooting](docs/GUIDE.md#troubleshooting) section has commands that check each part from the Pi.
 
-With claude.ai, your chats stay on claude.ai: the bridge fetches them
-each time and doesn't store them. The Pi keeps only your session key,
-the bridge's settings and the effort you chose for each chat. The guide
-lists [what is stored where](docs/GUIDE.md#what-is-stored-where).
+With claude.ai, your chats stay on claude.ai: the bridge fetches them each time and doesn't store them.
+The Pi keeps only your session key, the bridge's settings and the effort you chose for each chat. The
+guide lists [what is stored where](docs/GUIDE.md#what-is-stored-where).
 
-ClaudeST was written with Claude, in Claude Code on claude.ai: a
-claude.ai client for the Atari, built by talking to claude.ai.
+ClaudeST was first called Claude ST, then EClaude for a few days. To upgrade, replace `CLAUDE.PRG` or
+`ECLAUDE.PRG` with `CLAUDEST.PRG`: your settings in `CLAUDE.INF` or `ECLAUDE.INF` are read the first
+time, then saved as `CLAUDEST.INF`. The Raspberry Pi side keeps its service name, `claude-st`.
 
-## For developers
+ClaudeST was written with Claude, in Claude Code on claude.ai: a claude.ai client for the Atari, built
+by talking to claude.ai.
 
-- [docs/GUIDE.md](docs/GUIDE.md#building): building, running in Hatari,
-  tests and the source layout
-- [PROTOCOL.md](PROTOCOL.md): the line protocol between the Atari and the
-  bridge
+## Building
 
-© 2026 AERA | Erez Yaary
+```sh
+sudo apt install gcc-m68k-linux-gnu python3 zip   # Debian/Ubuntu; no MiNTLib needed
+make                         # binary/CLAUDEST.PRG
+make test                    # the bridge's tests and the right-to-left layout's, on this computer
+make help HCP=/path/to/hcp   # binary/CLAUDEST.HYP and .REF (common/tools/build-hcp.sh DIR builds hcp)
+make dist                    # dist/CLAUDEST-x.y.zip and each file, as on the Releases page
+```
+
+`binary/` and `dist/` are what make builds; they are never committed, and a build changes no tracked
+file. The version is `VERSION` in `st/claudest.c`: the last release, which a release build
+(`RELEASE=1`) shows; other builds show `x.y-dev` in the About box. A release: `tools/bump.py`, commit
+and push, then **Actions > Release > Run workflow** on `main` with what is new. The workflow tests,
+builds with `RELEASE=1`, tags the commit `vX.Y` and publishes each file and the zip on the Releases
+page. Pushing a tag `vX.Y` made with `git tag -a` does the same, with the tag's message as the notes.
+
+The guide's [Building](docs/GUIDE.md#building) section has more: the shared code, other toolchains,
+running ClaudeST in Hatari and recording the demo video.
+
+## Source
+
+```
+st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
+           CLAUDEST.INF (the example settings file a release carries)
+help/      CLAUDEST.STG, the ST-Guide help (make help)
+bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai, API, demo),
+           atari_text.py (charset and Markdown), test_bridge.py
+pi/        install.sh and the systemd service
+common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up, C library,
+           TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
+tools/     hatari-test.sh, fakesting/, sync-common.sh, bump.py, check_version.sh,
+           icon/ (the desktop icon), reel/ (the demo video)
+icons/     the desktop icon files (from tools/icon)
+docs/      the user guide (GUIDE.md), its screenshots and the demo recording
+```
+
+The program is freestanding C with its own start-up code and AES, VDI and STinG bindings, so it needs
+no MiNTLib and no resource file. Change `common/` in [AERA-Atari](https://github.com/whomper/AERA-Atari),
+never here, then bring the copy up to date with `tools/sync-common.sh`.
+[PROTOCOL.md](PROTOCOL.md) describes the line protocol between the Atari and the bridge.
+
+## Tests
+
+`make test` runs, on this computer:
+
+- **the bridge's tests** (`bridge/test_bridge.py`): the Atari character set, Markdown, and the protocol
+  against the demo backend and stubbed claude.ai answers, with no account or network needed;
+- **the right-to-left layout's test** (`st/bidi_test.c`, with `common/src/bidi.c`).
+
+The CI workflow runs them, and builds the program, on every push to `main` and every pull request.
+
+To try ClaudeST itself, `tools/hatari-test.sh` boots [Hatari](https://hatari.tuxfamily.org/) into it,
+with EmuTOS (downloaded the first time) and the bridge on this computer, connected through the emulated
+serial port:
+
+```sh
+tools/hatari-test.sh                 # demo chats, no account needed
+CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
+MACHINE=ste tools/hatari-test.sh     # st (the default), ste or tt
+```
+
+Hatari has no network card: `tools/fakesting/FAKESTNG.PRG` stands in for STinG by tunnelling one TCP
+connection over the serial port, to test the network code. It is for the emulator only; never install
+it on a real Atari. The guide's [Running it in Hatari](docs/GUIDE.md#running-it-in-hatari) has more.
 
 ## Licence
 
-ClaudeST (the Atari program, the bridge and the Pi's setup) is free
-software: you can redistribute it and/or modify it under the terms of the
-GNU General Public License as published by the Free Software Foundation,
-either version 2 of the License, or (at your option) any later version. It
-is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See [COPYING](COPYING).
+ClaudeST (the Atari program, the bridge and the Pi's setup) is free software: you can redistribute it
+and/or modify it under the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 2 of the License, or (at your option) any later version. It is distributed
+in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [COPYING](COPYING).
 
-Copyright (C) 2026 AERA | Erez Yaary. ClaudeST is an unofficial client, not
-affiliated with Anthropic or Atari; Claude is a trademark of Anthropic
-PBC, Atari a trademark of Atari Interactive.
+Copyright (C) 2026 AERA | Erez Yaary.
+
+ClaudeST is an unofficial client, not affiliated with Anthropic or Atari; Claude is a trademark of
+Anthropic PBC, Atari a trademark of Atari Interactive.
+
+The shared `common/` folder also carries, for the other AERA programs, [BearSSL](common/third_party/bearssl)
+by Thomas Pornin (MIT licence) and Mozilla's root certificates (Mozilla Public License 2.0); ClaudeST
+doesn't use them.
+
+---
+
+Part of **AERA** for Atari: [ECal](https://github.com/whomper/ECal) · [EContact](https://github.com/whomper/EContact) · [EMail](https://github.com/whomper/EMail) · [EFTP](https://github.com/whomper/EFTP) · [EHypView](https://github.com/whomper/EHypView) · [ClaudeST](https://github.com/whomper/ClaudeST) · 8-bit: [EDOS](https://github.com/whomper/EDOS) · [EFTP_XL](https://github.com/whomper/EFTP_XL)

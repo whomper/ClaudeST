@@ -13,7 +13,7 @@ screenshots use the bridge's demo backend, so they show sample chats.
 - [Account, plan and usage](#account-plan-and-usage)
 - [Hebrew](#hebrew)
 - [All keys](#all-keys)
-- [Settings (CLAUDEST.INF)](#settings-claudeinf)
+- [Settings (CLAUDEST.INF)](#settings-claudestinf)
 - [What is stored where](#what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [The bridge on another computer](#the-bridge-on-another-computer)
