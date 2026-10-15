@@ -28,10 +28,12 @@ import argparse
 import contextlib
 import getpass
 import glob
+import grp
 import importlib.util
 import io
 import json
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -118,15 +120,27 @@ class Pi:
         except OSError:
             return None
 
-    def write(self, p, text, mode=0o644):
-        """the whole file at once: nobody sees half of it"""
+    def write(self, p, text, mode=0o644, owner=None):
+        """the whole file at once: nobody sees half of it, and nobody but
+        owner ("user:group") and mode let in sees any of it, even while
+        it is being written (a settings file holds keys)"""
         full = self.path(p)
         os.makedirs(os.path.dirname(full), exist_ok=True)
         tmp = full + ".aera-new"
-        with open(tmp, "w") as f:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(tmp)          # one left over keeps its own mode and owner
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode & 0o600)
+        with os.fdopen(fd, "w") as f:
+            if owner:
+                self.own(fd, p, owner)
+            os.fchmod(fd, mode)     # the umask doesn't decide
             f.write(text)
-        os.chmod(tmp, mode)
         os.replace(tmp, full)
+
+    def own(self, fd, p, owner):
+        """the open file fd (for p) to owner, "user:group" """
+        user, _, group = owner.partition(":")
+        os.fchown(fd, pwd.getpwnam(user).pw_uid, grp.getgrnam(group).gr_gid if group else -1)
 
     def copy(self, src, p, mode=None):
         """src to p; without a mode, src's as cp gives it"""
@@ -147,9 +161,6 @@ class Pi:
 
     def rmtree(self, p):
         shutil.rmtree(self.path(p), ignore_errors=True)
-
-    def chown(self, p, owner):
-        self.run("chown", owner, self.path(p))
 
     def ip(self):
         words = self.out("hostname", "-I").split()
@@ -697,8 +708,8 @@ CLAUDE_SESSION_KEY=
     def set_var(self, pi, name, value):
         """NAME=VALUE in the settings file, in place of any earlier NAME= line"""
         lines = [line for line in (pi.read(self.CONF) or "").splitlines() if not line.startswith(name + "=")]
-        pi.write(self.CONF, "".join(line + "\n" for line in lines) + "%s=%s\n" % (name, value), 0o640)
-        pi.chown(self.CONF, "root:claude-st")
+        pi.write(self.CONF, "".join(line + "\n" for line in lines) + "%s=%s\n" % (name, value), 0o640,
+                 "root:claude-st")
 
     def settings(self, pi, o):
         """what to set up: the options given, and for the rest what the
@@ -820,8 +831,7 @@ CLAUDE_SESSION_KEY=
         heading("Settings in %s" % self.CONF)
         pi.makedirs(self.CONF_DIR)
         if not pi.exists(self.CONF):
-            pi.write(self.CONF, self.DEFAULT_CONF, 0o640)
-            pi.chown(self.CONF, "root:claude-st")
+            pi.write(self.CONF, self.DEFAULT_CONF, 0o640, "root:claude-st")
         if s.mode == "tcp":
             allow = "" if s.atari == "any" else "".join(" --allow " + ip for ip in s.atari.replace(",", " ").split())
             self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --tcp 0.0.0.0:%s%s" % (s.backend, s.tcp_port, allow))
