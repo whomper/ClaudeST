@@ -102,9 +102,13 @@ When the usual ports are taken on the Pi, give others and type them into
 EMail instead: `--ports 2143,2587,2110` (IMAP, SMTP, POP3).
 
 **Coming from EMail 1.x?** Its gateway was an stunnel set-up.
-`install mail` removes `/etc/stunnel/atari-mail.conf` and stops stunnel
-unless something else uses it. The ports stay the same, so nothing
-changes in EMail.
+`sudo gateway/aera-gateway install mail` (no servers needed) takes its
+servers and ports from `/etc/stunnel/atari-mail.conf`, so nothing changes
+in EMail, and once emailgate answers it removes that file, stops stunnel
+unless something else uses it, and drops the `ufw deny` rules 1.x's
+`--allow` added. If emailgate doesn't start, the stunnel set-up comes
+back. Name other servers or `--ports` and they win; `install` says if
+EMail's ports must change.
 
 ## dav: ECal's and EContact's gateway
 

@@ -367,7 +367,10 @@ class Gateway:
     def before_start(self, pi):
         pass
 
-    def started(self, pi):
+    def take_over(self, pi, ns):
+        """what an older set-up of this service says, as the defaults"""
+
+    def started(self, pi, ns):
         pass
 
     def not_started(self, pi):
@@ -451,9 +454,52 @@ class Mail(Gateway):
         if glob.glob(pi.path("/etc/stunnel/*.conf")):
             pi.run("systemctl", "start", "stunnel4", check=False, errors=False)
 
-    def started(self, pi):
+    def stunnel_conf(self, text):
+        """EMail 1.x's stunnel set-up: {section: (the port on the Pi, the
+        provider's server as emailgate takes it)}"""
+        found, section = {}, None
+        for line in text.splitlines():
+            line = line.split(";")[0].strip()
+            m = re.fullmatch(r"\[(\w+)\]", line)
+            if m:
+                section = m.group(1)
+                continue
+            key, _, value = (w.strip() for w in line.partition("="))
+            if section in ("imap", "smtp", "pop3") and key in ("accept", "connect"):
+                found.setdefault(section, ["", ""])[key == "connect"] = value
+        out = {}
+        for section, (accept, connect) in found.items():
+            host, _, port = connect.rpartition(":")
+            port_here = accept.rpartition(":")[2]
+            if host and port_here.isdigit():
+                # STARTTLS on 587 says so; 993, 465 and 995 are emailgate's own
+                out[section] = (port_here, host + ":587" if section == "smtp" and port == "587" else host)
+        return out
+
+    def take_over(self, pi, ns):
+        old = self.stunnel_conf(pi.read(self.STUNNEL) or "")
+        if "imap" in old and "smtp" in old:
+            ns.imap, ns.smtp = old["imap"][1], old["smtp"][1]
+            ns.pop3 = old["pop3"][1] if "pop3" in old else None
+            ns.ports = ",".join(old[k][0] if k in old else "110" for k in ("imap", "smtp", "pop3"))
+
+    def started(self, pi, ns):
         if not pi.exists(self.STUNNEL + ".aera-old"):
             return
+        old = self.stunnel_conf(pi.read(self.STUNNEL + ".aera-old") or "")
+        was = [old[k][0] for k in ("imap", "smtp", "pop3") if k in old]
+        now = self.ports(ns)
+        if was and was != now:
+            say("EMail 1.x's gateway was on port%s %s; emailgate is on %s: change them in EMail's account "
+                "dialog too." % ("s" if len(was) > 1 else "", ", ".join(was), ", ".join(now)))
+        # EMail 1.x's --allow: ufw deny P/tcp after the Atari's allow, which
+        # would win over any rule added after it
+        if pi.have("ufw"):
+            rules = pi.out("ufw", "status")
+            for port in was:
+                if re.search(r"^%s/tcp\s+DENY\s" % port, rules, re.M):
+                    pi.run("ufw", "delete", "deny", "%s/tcp" % port, check=False, out="hide", errors=False)
+                    say("Removed EMail 1.x's ufw rule that kept everyone else out of port %s." % port)
         pi.remove(self.STUNNEL + ".aera-old")
         if glob.glob(pi.path("/etc/stunnel/*.conf")):
             say("Removed EMail's old stunnel set-up (%s); stunnel keeps running for the others." % self.STUNNEL)
@@ -470,7 +516,11 @@ class Mail(Gateway):
 
     def after_remove(self, pi):
         self.before_start(pi)
-        self.started(pi)
+        if pi.exists(self.STUNNEL + ".aera-old"):
+            pi.remove(self.STUNNEL + ".aera-old")
+            if not glob.glob(pi.path("/etc/stunnel/*.conf")):
+                pi.run("systemctl", "disable", "--now", "stunnel4", check=False, out="hide", errors=False)
+            say("Removed EMail's old stunnel set-up (%s)." % self.STUNNEL)
 
 
 class Dav(Gateway):
@@ -633,6 +683,7 @@ def install_gateway(pi, gw, o, src=HERE):
         ns = gw.parse(src, ["x", "y"] if gw.key == "mail" else [])
         if gw.key == "mail":
             ns.imap = ns.smtp = None
+        gw.take_over(pi, ns)
     gw.apply(ns, o)
     gw.check(ns)
     need_packages(pi, gw)
@@ -664,7 +715,7 @@ def install_gateway(pi, gw, o, src=HERE):
         raise Failed("%s didn't start%s.%s See: sudo journalctl -u %s -n 30" % (
             gw.name, " (port %s is taken by another program)" % ", ".join(busy) if busy else "", back, gw.name))
     done()
-    gw.started(pi)
+    gw.started(pi, ns)
     if old_script and os.path.dirname(old_script) != OPT:
         pi.remove(old_script)           # the app's own copy: this one answers now
     firewall(pi, gw.open_ports(ns), ns.allow)
@@ -969,7 +1020,8 @@ def status(pi, src=HERE):
         if differ:
             say("This copy's %s differ from the ones running: sudo %s update" % (", ".join(differ), PROG))
     if pi.exists(Mail.STUNNEL):
-        say("EMail 1.x's stunnel set-up is still there: sudo %s install mail IMAP SMTP replaces it" % PROG)
+        say("EMail 1.x's stunnel set-up is still there: sudo %s install mail replaces it, with its servers "
+            "and ports" % PROG)
 
 
 def update(pi, o, src=HERE):

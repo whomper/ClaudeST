@@ -312,6 +312,39 @@ class MailTest(Base):
         self.assertIn(("systemctl", "disable", "--now", "stunnel4"), self.pi.cmds)
         self.assertIn("and stopped stunnel", self.out)
 
+    def test_stunnel_settings_kept(self):
+        # EMail 1.x on its own ports, iCloud's STARTTLS, POP3, and --allow's ufw rules
+        self.pi.write(ag.Mail.STUNNEL, "pid = /run/stunnel-atari-mail.pid\n"
+                      "[imap]\nclient = yes\naccept = 0.0.0.0:1143\nconnect = imap.mail.me.com:993\n"
+                      "[smtp]\nclient = yes\naccept = 0.0.0.0:1025\nconnect = smtp.mail.me.com:587\n"
+                      "protocol = smtp\n"
+                      "[pop3]\nclient = yes\naccept = 0.0.0.0:1110\nconnect = pop.example.com:995\n")
+        self.pi.ufw = True
+        status = self.pi.out
+
+        def out(*cmd):
+            if cmd[:2] == ("ufw", "status"):
+                return "Status: active\n\nTo  Action  From\n1143/tcp  ALLOW  192.168.1.50\n1143/tcp  DENY  " \
+                       "Anywhere\n1025/tcp  DENY  Anywhere\n1110/tcp  DENY  Anywhere\n"
+            return status(*cmd)
+        self.pi.out = out
+        self.assertEqual(self.run_ag("install", "mail", "--allow", "192.168.1.50"), 0, self.err)
+        self.assertEqual(self.execstart("emailgate"),
+                         "ExecStart=/usr/bin/python3 /opt/aera-gateway/emailgate.py -v --ports 1143,1025,1110 "
+                         "--allow 192.168.1.50 imap.mail.me.com smtp.mail.me.com:587 pop.example.com")
+        for port in ("1143", "1025", "1110"):
+            self.assertIn(("ufw", "delete", "deny", port + "/tcp"), self.pi.cmds)
+        self.assertNotIn("change them in EMail", self.out)
+
+        # the same, given other ports: EMail must be told
+        self.setUp()
+        self.pi.write(ag.Mail.STUNNEL, "[imap]\naccept = 0.0.0.0:1143\nconnect = imap.gmail.com:993\n"
+                      "[smtp]\naccept = 0.0.0.0:1025\nconnect = smtp.gmail.com:465\n")
+        self.assertEqual(self.run_ag("install", "mail", "--ports", "143,587"), 0, self.err)
+        self.assertIn("--ports 143,587,110 imap.gmail.com smtp.gmail.com\n",
+                      self.execstart("emailgate") + "\n")
+        self.assertIn("was on ports 1143, 1025; emailgate is on 143, 587", self.out)
+
     def test_stunnel_back(self):
         # emailgate doesn't start: EMail 1.x's set-up is as it was
         self.stunnel()
