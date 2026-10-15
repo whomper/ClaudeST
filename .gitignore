@@ -7,3 +7,11 @@ st/build.h
 st/build.h.new
 binary/
 dist/
+
+# from the AERA repo template
+build/
+.venv/
+*.KEY
+CRASH.LOG
+tests/**/work/
+*.log

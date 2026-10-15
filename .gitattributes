@@ -1,0 +1,13 @@
+# Atari text files keep CR/LF; binaries are never touched
+*.INF  -text
+*.PEM  -text
+*.STG  -text
+*.PRG  binary
+*.ACC  binary
+*.HYP  binary
+*.REF  binary
+*.DAT  binary
+*.RSC  binary
+
+# GitHub language stats: the vendored libraries (BearSSL, TJpgDec) aren't ours
+**/third_party/** linguist-vendored

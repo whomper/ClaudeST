@@ -1,0 +1,34 @@
+name: Something doesn't work
+description: Report a problem with the program on your Atari
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From the About box (first item of the Desk menu or the ≡ menu)
+      placeholder: "1.34"
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Which file
+      options: ["CLAUDEST.PRG", "the Pi bridge (claude_bridge.py)"]
+    validations:
+      required: true
+  - type: input
+    id: machine
+    attributes:
+      label: Atari and setup
+      description: Machine, RAM, TOS or MagiC/MiNT version, AES (N.AES, XaAES...), screen mode, network (STinG, MiNTnet, gateway)
+      placeholder: "Falcon 030, 14 MB, TOS 4.04, NVDI 5, 640×480 256 colours, STinG over Ethernet"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw. A photo of the screen helps; a CRASH.LOG too, if there is one.
+    validations:
+      required: true
