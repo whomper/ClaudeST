@@ -367,6 +367,12 @@ class Gateway:
     def before_start(self, pi):
         pass
 
+    def started(self, pi):
+        pass
+
+    def not_started(self, pi):
+        pass
+
     def after_remove(self, pi):
         pass
 
@@ -428,23 +434,43 @@ class Mail(Gateway):
         return "\n".join(lines)
 
     def before_start(self, pi):
-        self.stop_stunnel(pi)
-
-    def after_remove(self, pi):
-        self.stop_stunnel(pi)
-
-    def stop_stunnel(self, pi):
-        """the stunnel set-up of EMail 1.x: gone, and stunnel too unless it
-        has other work"""
+        """EMail 1.x's stunnel set-up stopped and put aside, so that
+        emailgate gets its ports; it comes back if emailgate doesn't start"""
         if not pi.exists(self.STUNNEL):
             return
-        pi.remove(self.STUNNEL)
+        # while its .conf is still there: Debian's stunnel4 finds what to
+        # stop by the pid files the .conf files name
+        pi.run("systemctl", "stop", "stunnel4", check=False, out="hide", errors=False)
+        for line in (pi.read(self.STUNNEL) or "").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "pid":
+                pid = (pi.read(value.strip()) or "").strip()
+                if pid.isdigit():
+                    pi.run("kill", pid, check=False, out="hide", errors=False)
+        pi.rename(self.STUNNEL, self.STUNNEL + ".aera-old")
         if glob.glob(pi.path("/etc/stunnel/*.conf")):
-            pi.run("systemctl", "restart", "stunnel4", check=False, errors=False)
+            pi.run("systemctl", "start", "stunnel4", check=False, errors=False)
+
+    def started(self, pi):
+        if not pi.exists(self.STUNNEL + ".aera-old"):
+            return
+        pi.remove(self.STUNNEL + ".aera-old")
+        if glob.glob(pi.path("/etc/stunnel/*.conf")):
             say("Removed EMail's old stunnel set-up (%s); stunnel keeps running for the others." % self.STUNNEL)
         else:
             pi.run("systemctl", "disable", "--now", "stunnel4", check=False, out="hide", errors=False)
             say("Removed EMail's old stunnel set-up (%s) and stopped stunnel." % self.STUNNEL)
+
+    def not_started(self, pi):
+        if not pi.exists(self.STUNNEL + ".aera-old"):
+            return
+        pi.rename(self.STUNNEL + ".aera-old", self.STUNNEL)
+        pi.run("systemctl", "restart", "stunnel4", check=False, errors=False)
+        say("EMail's old stunnel set-up (%s) is back." % self.STUNNEL)
+
+    def after_remove(self, pi):
+        self.before_start(pi)
+        self.started(pi)
 
 
 class Dav(Gateway):
@@ -634,9 +660,11 @@ def install_gateway(pi, gw, o, src=HERE):
             pi.run("systemctl", "daemon-reload")
             back = ""
         busy = [p for p in gw.ports(ns) if listening(pi, p)] if old_unit is None else []
+        gw.not_started(pi)
         raise Failed("%s didn't start%s.%s See: sudo journalctl -u %s -n 30" % (
             gw.name, " (port %s is taken by another program)" % ", ".join(busy) if busy else "", back, gw.name))
     done()
+    gw.started(pi)
     if old_script and os.path.dirname(old_script) != OPT:
         pi.remove(old_script)           # the app's own copy: this one answers now
     firewall(pi, gw.open_ports(ns), ns.allow)

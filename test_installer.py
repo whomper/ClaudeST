@@ -64,6 +64,8 @@ class FakePi(ag.Pi):
             self.active.add(name)
             return
         script, args = ag.exec_args(unit, name + ".py")
+        if script is None:                  # not a gateway (stunnel4)
+            return
         if self.broken and script.startswith(ag.OPT) or not os.path.exists(self.path(script)):
             return
         if name == "emailgate":
@@ -287,12 +289,39 @@ class MailTest(Base):
         self.run_ag("install", "mail", "--allow", "any")
         self.assertNotIn("--allow", self.execstart("emailgate"))
 
+    def stunnel(self):
+        """EMail 1.x's set-up, and what systemctl stop stunnel4 could see"""
+        self.pi.write(ag.Mail.STUNNEL, "pid = /run/stunnel4/atari-mail.pid\n[imap]\naccept = 0.0.0.0:143\n")
+        self.pi.write("/run/stunnel4/atari-mail.pid", "4242\n")
+        seen, run = [], self.pi.run
+
+        def watched(*cmd, **kw):
+            if cmd[:3] == ("systemctl", "stop", "stunnel4"):
+                seen.append(self.pi.exists(ag.Mail.STUNNEL))
+            return run(*cmd, **kw)
+        self.pi.run = watched
+        return seen
+
     def test_stunnel_goes(self):
-        self.pi.write(ag.Mail.STUNNEL, "[imap]\n")
-        self.run_ag("install", "mail", "imap.gmail.com", "smtp.gmail.com")
+        seen = self.stunnel()
+        self.assertEqual(self.run_ag("install", "mail", "imap.mail.me.com", "smtp.mail.me.com:587"), 0, self.err)
+        self.assertEqual(seen, [True])          # stopped while its .conf still said how
+        self.assertIn(("kill", "4242"), self.pi.cmds)
         self.assertFalse(self.pi.exists(ag.Mail.STUNNEL))
+        self.assertFalse(self.pi.exists(ag.Mail.STUNNEL + ".aera-old"))
         self.assertIn(("systemctl", "disable", "--now", "stunnel4"), self.pi.cmds)
         self.assertIn("and stopped stunnel", self.out)
+
+    def test_stunnel_back(self):
+        # emailgate doesn't start: EMail 1.x's set-up is as it was
+        self.stunnel()
+        self.pi.broken = True
+        self.assertEqual(self.run_ag("install", "mail", "imap.mail.me.com", "smtp.mail.me.com:587"), 1)
+        self.assertTrue(self.pi.exists(ag.Mail.STUNNEL))
+        self.assertFalse(self.pi.exists(ag.Mail.STUNNEL + ".aera-old"))
+        self.assertIn(("systemctl", "restart", "stunnel4"), self.pi.cmds)
+        self.assertNotIn(("systemctl", "disable", "--now", "stunnel4"), self.pi.cmds)
+        self.assertIn("is back", self.out)
 
     def test_firewall(self):
         self.pi.ufw = True
