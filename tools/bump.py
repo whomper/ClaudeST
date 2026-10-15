@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """Start a release: raise VERSION in st/claudest.c and say what to do next.
 
-A normal build never changes VERSION (it shows "x.y-dev"); only this does.
+A normal build never changes VERSION; only this does.
 The release workflow (.github/workflows/release.yml), run by hand on main
 or started by a tag vX.Y, builds the program and publishes it as a
 GitHub Release.

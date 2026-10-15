@@ -12,15 +12,15 @@
 #
 # binary/ is what make builds, never committed: releases carry the
 # program (.github/workflows/release.yml). The version is VERSION in
-# st/claudest.c: the last release, which a release build (RELEASE=1)
-# shows; others show "x.y-dev". tools/bump.py starts a release.
+# st/claudest.c: the last release, which every build shows as it is.
+# tools/bump.py starts a release.
 
 HCP     ?= hcp
 VERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' st/claudest.c)
-VERSION_STR := $(VERSION)$(if $(RELEASE),,-dev)
+VERSION_STR := $(VERSION)
 
 all:
-	$(MAKE) -C st RELEASE=$(RELEASE)
+	$(MAKE) -C st
 
 help:
 	$(MAKE) -C help HCP=$(HCP)

@@ -48,7 +48,8 @@ bridge.
 
 The Pi side of all the AERA apps is installed by
 [AERA-Gateway](https://github.com/whomper/AERA-Gateway). It always installs the bridge from ClaudeST's
-[latest release](https://github.com/whomper/ClaudeST/releases/latest), never unreleased code:
+[latest release](https://github.com/whomper/ClaudeST/releases/latest), never unreleased code (its
+README's [Getting started](https://github.com/whomper/AERA-Gateway#getting-started) has the details):
 
 ```sh
 git clone https://github.com/whomper/AERA-Gateway.git
@@ -205,10 +206,10 @@ make dist                    # dist/CLAUDEST-x.y.zip and each file, as on the Re
 ```
 
 `binary/` and `dist/` are what make builds; they are never committed, and a build changes no tracked
-file. The version is `VERSION` in `st/claudest.c`: the last release, which a release build
-(`RELEASE=1`) shows; other builds show `x.y-dev` in the About box. A release: `tools/bump.py`, commit
+file. The version is `VERSION` in `st/claudest.c`: the last release, which every build shows in the About
+box. A release: `tools/bump.py`, commit
 and push, then **Actions > Release > Run workflow** on `main` with what is new. The workflow tests,
-builds with `RELEASE=1`, tags the commit `vX.Y` and publishes each file and the zip on the Releases
+builds, tags the commit `vX.Y` and publishes each file and the zip on the Releases
 page. Pushing a tag `vX.Y` made with `git tag -a` does the same, with the tag's message as the notes.
 
 The guide's [Building](docs/GUIDE.md#building) section has more: the shared code, other toolchains,

@@ -22,7 +22,6 @@
 #include "av.h"
 #include "alert.h"
 #include "mbar.h"
-#include "build.h"
 #include "grect.h"
 #include "popup.h"
 #include "aboutbox.h"
@@ -43,14 +42,9 @@ static void strlcpy_(char *d, const char *s, int n)
 	*d = 0;
 }
 
-/* the last release (tools/bump.py raises it). A release build
-   (RELEASE=1, build.h) shows it as it is; any other "1.34-dev" */
+/* the last release (tools/bump.py raises it); every build shows it */
 #define VERSION "1.35"
-#ifdef RELEASE
 #define APP_VERSION VERSION
-#else
-#define APP_VERSION VERSION "-dev"
-#endif
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */

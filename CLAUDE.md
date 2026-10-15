@@ -26,11 +26,11 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   the GEM side changed.
 - **Versions and releases:** `VERSION` changes only in a release commit. A release: `tools/bump.py`,
   commit, push, then run the Release workflow on `main` with the notes (or push a tag `vX.Y` made with
-  `git tag -a`); it tests, builds with `RELEASE=1`, tags vX.Y and publishes each file and the zip as a
-  GitHub Release. A normal build must leave every tracked file unchanged (it shows `x.y-dev`). Don't
-  commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
+  `git tag -a`); it tests, builds, tags vX.Y and publishes each file and the zip as a
+  GitHub Release. A normal build must leave every tracked file unchanged and shows the version as it
+  is (there is no `-dev` label). Don't commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
 - **Only formal releases leave the build machine.** Erez gets vX.Y releases made by the Release
-  workflow from `main`, nothing else: no test builds, no `x.y-dev` builds, no CI artifacts, no builds
+  workflow from `main`, nothing else: no test builds, no CI artifacts, no builds
   from a branch. Work lands on `main`; to try a fix on real hardware, release it. If a release doesn't
   work, roll back with a release: revert on `main`, release the next number, and say in the bad
   release's notes that it is withdrawn and which one to use.

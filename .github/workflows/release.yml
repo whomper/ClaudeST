@@ -55,7 +55,7 @@ jobs:
       - name: Test
         run: make test
       - name: Build
-        run: make dist RELEASE=1 HCP="$RUNNER_TEMP/hcp/hcp"
+        run: make dist HCP="$RUNNER_TEMP/hcp/hcp"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
