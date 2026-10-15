@@ -449,7 +449,7 @@ make dist                # a release's files in dist/
 
 `binary/` and `dist/` are what make builds; they are never committed.
 `VERSION` in `st/claudest.c` holds the last release, which a release
-build (`RELEASE=1`) shows; any other build shows `1.34-dev`. To release:
+build (`RELEASE=1`) shows; any other build shows `1.35-dev`. To release:
 `tools/bump.py`, commit and push, then run the Release workflow
 (Actions > Release > Run workflow, on main) with what is new:
 `.github/workflows/release.yml` tags the commit `v1.35`, tests, builds
