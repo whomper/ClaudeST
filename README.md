@@ -46,10 +46,15 @@ bridge.
 
 ### 2. Install the bridge on the Pi
 
+The Pi side of all the AERA apps is installed by
+[AERA-Gateway](https://github.com/whomper/AERA-Gateway). It always installs the bridge from ClaudeST's
+[latest release](https://github.com/whomper/ClaudeST/releases/latest), never unreleased code:
+
 ```sh
-git clone https://github.com/whomper/ClaudeST.git
-cd ClaudeST/pi
-sudo ./install.sh --network --atari 192.168.1.20
+git clone https://github.com/whomper/AERA-Gateway.git
+cd AERA-Gateway
+./update-pi.sh
+sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
 ```
 
 The installer asks for the session key. It then runs the bridge as a service called `claude-st`, which
@@ -89,7 +94,7 @@ Connect the Atari's Modem port to a USB-to-RS-232 adapter on the Pi with a null-
 the Atari straight to the Pi's GPIO pins: the Atari's ±12 V signals damage the Pi. Then, on the Pi:
 
 ```sh
-sudo ./install.sh --port auto
+sudo gateway/aera-gateway install claude --serial auto
 ```
 
 On the Atari, choose **Options ▸ Serial port**, or leave out `CLAUDEST.INF`. Both sides use 19200 baud
@@ -101,7 +106,7 @@ port to use on each Atari.
 Run the installer again with `--backend api` (or add it in step 2):
 
 ```sh
-sudo ./install.sh --backend api
+sudo gateway/aera-gateway install claude --backend api
 ```
 
 The installer asks for an API key. Chats are then stored on the Pi, in `/var/lib/claude-st/chats/`,
@@ -134,21 +139,25 @@ the installer, on macOS or Windows too, see the guide's
 
 ## Looking after the Pi
 
-Run these in the `ClaudeST/pi` folder (`atari_claude/pi` if you installed before the rename):
+Run these in the `AERA-Gateway` folder:
 
 | Task | Command |
 |---|---|
-| Update to the latest version | `git pull && sudo ./install.sh` |
-| Paste a new session key, when claude.ai logs you out | `sudo ./install.sh --set-key` |
-| Change the Atari's address | `sudo ./install.sh --atari 192.168.1.21` |
-| See whether the bridge is running | `systemctl status claude-st` |
-| Watch its log | `journalctl -u claude-st -f` |
-| Remove it | `sudo ./install.sh --uninstall` |
+| Update to the latest releases | `./update-pi.sh` |
+| Paste a new session key, when claude.ai logs you out | `sudo gateway/aera-gateway set-key` |
+| Change the Atari's address | `sudo gateway/aera-gateway install claude --atari 192.168.1.21` |
+| See what runs, and which ClaudeST release | `gateway/aera-gateway status` |
+| Watch the bridge's log | `journalctl -u claude-st -f` |
+| Remove it | `sudo gateway/aera-gateway remove claude` |
 
-`install.sh` hands its options to `aera-gateway`, the installer of all the AERA gateways (in
-`gateway/`, from [AERA-Gateway](https://github.com/whomper/AERA-Gateway)), which can also set up
-EMail's, ECal's and EFTP's gateways on the same Pi. The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or the session key has
-expired, the error appears on the Atari.
+`update-pi.sh` brings AERA-Gateway to its latest release and the bridge to ClaudeST's latest release,
+keeping every setting. The same installer sets up EMail's, ECal's and EFTP's gateways on the same Pi.
+The settings are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or the session key
+has expired, the error appears on the Atari.
+
+A Pi set up earlier with ClaudeST's `pi/install.sh` is taken over as it is: clone AERA-Gateway and run
+`./update-pi.sh`. `pi/install.sh` still works, and now also installs the bridge from the latest
+release.
 
 ## Keys
 

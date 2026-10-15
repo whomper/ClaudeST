@@ -60,8 +60,8 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   on to it). Change the installer there, with that repository's owner
   session, and bring it here with `tools/sync-gateway.sh`. ClaudeST says
   what the `claude` recipe needs (packages, settings, the unit, port 2323).
-- Commit and push to `main`; when the Atari side changes, release it and
-  give the user the release's link; say whether the Pi needs
-  `cd ~/atari_claude/pi && git pull && sudo ./install.sh`.
+- Commit and push to `main`. When the Atari side or the bridge changes, release it (the Pi takes the
+  bridge from ClaudeST's latest release, never from `main`), give the user the release's link and say
+  whether the Pi needs `./update-pi.sh` in its AERA-Gateway folder.
 - Run `make test` (the bridge's tests and the layout's) and build (`make`)
   before pushing.

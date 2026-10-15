@@ -67,9 +67,11 @@
 
   @{U}On the Pi@{u}
 
-      git clone https://github.com/whomper/ClaudeST.git
-      cd ClaudeST/pi
-      sudo ./install.sh --network --atari 192.168.1.20
+      git clone https://github.com/whomper/AERA-Gateway.git
+      cd AERA-Gateway
+      ./update-pi.sh
+      sudo gateway/aera-gateway install claude --network \
+          --atari 192.168.1.20
 
   The installer asks for your claude.ai @{B}sessionKey@{b} (a cookie from
   the website, starting with sk-ant-sid) and runs the bridge as a
@@ -378,8 +380,8 @@
 
   A @{B}serial cable@{b}: connect the Atari's Modem port to a
   USB-to-RS-232 adapter on the Pi with a null-modem cable (never
-  straight to the Pi's pins), run "sudo ./install.sh --port auto" on the
-  Pi, and choose Options > Serial port on the Atari.
+  straight to the Pi's pins), run "sudo gateway/aera-gateway install claude
+  --serial auto" on the Pi, and choose Options > Serial port on the Atari.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -407,7 +409,7 @@
 
   @{B}An error mentions the session key, or HTTP 401/403@{b}
     claude.ai logged you out: get a new sessionKey from the website and
-    run "sudo ./install.sh --set-key" on the Pi.
+    run "sudo gateway/aera-gateway set-key" on the Pi.
 
   @{B}"Too many requests" (HTTP 429)@{b}
     claude.ai is limiting requests for a while. Wait a few minutes; F8

@@ -351,7 +351,7 @@ All commands run on the Pi.
 |---------|-----------|
 | *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDEST.INF`, and that the Atari's address matches the installer's `--atari` |
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
-| An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo ./install.sh --set-key` |
+| An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo gateway/aera-gateway set-key` in the AERA-Gateway folder |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 | ClaudeST itself crashed (on the Atari) | It says so, writes what happened to `CRASH.LOG` next to `CLAUDEST.PRG` and quits, leaving the Atari running. A crash in the system or a driver still gives the bombs; TOS keeps a record of them, and ClaudeST adds it to `CRASH.LOG` the next time it starts. Send `CRASH.LOG` to the author. Under MiNT or MagiC, which handle crashes themselves, there is none |
 
@@ -517,7 +517,7 @@ common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            src/bidi.c (right-to-left), tools/elf2tos.py
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
-pi/        install.sh and the systemd service
+pi/        install.sh (hands on to aera-gateway) and the systemd service
 tools/     hatari-test.sh, sync-common.sh, bump.py, check_version.sh,
            fakesting/, icon/
 icons/     the desktop icon files (from tools/icon)
