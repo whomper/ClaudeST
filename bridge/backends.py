@@ -288,6 +288,27 @@ def merge_moved(classic, session):
     return classic + session
 
 
+def _event_error(ev):
+    """The error a session event reports, or None. A session that can't
+    answer (the usage limit is reached, the API failed) says so in a result
+    or system event marked as an error, or in an assistant message with an
+    "error" field, instead of in a reply."""
+    t, p = _event_payload(ev)
+    msg = p.get("message") if isinstance(p.get("message"), dict) else {}
+    subtype = str(p.get("subtype") or "")
+    err = p.get("error") or msg.get("error")
+    if not (p.get("is_error") or err or (t in ("result", "system") and "error" in subtype)):
+        return None
+    for v in (p.get("result"), err, msg.get("content"), p.get("message"), subtype):
+        if isinstance(v, dict):
+            v = v.get("message") or v.get("type")
+        if isinstance(v, list):
+            v = " ".join(b.get("text", "") for b in v if isinstance(b, dict))
+        if isinstance(v, str) and v.strip():
+            return " ".join(v.split())[:300]
+    return "claude.ai could not answer"
+
+
 def code_messages(events):
     """Session events -> [(role, text)]: your messages, Claude's text and a
     one-line note per tool call; tool results and system events are left
@@ -755,10 +776,17 @@ class ClaudeAiBackend(Backend):
         self._code_last = {session_id: events[-1].get("id") if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
 
+    # seconds to wait for the first sign of an answer: past it, the session
+    # most likely can't answer (a usage limit), and the bridge, which serves
+    # the Atari one command at a time, must not stay deaf for TIMEOUT
+    NO_ANSWER = 90
+
     def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0, settle=None):
         """SETTLE: stop this many seconds after the last new event once a
         reply has come (moved chats don't end their turn with a "result"
-        event, so without it this would poll until TIMEOUT)."""
+        event, so without it this would poll until TIMEOUT). An error event
+        (the usage limit reached...) ends it at once, and so do NO_ANSWER
+        seconds with nothing from Claude."""
         last = (getattr(self, "_code_last", None) or {}).get(session_id)
         if last is None:
             events = self._code_events(session_id)
@@ -768,13 +796,19 @@ class ClaudeAiBackend(Backend):
             "parent_tool_use_id": None,
             "message": {"role": "user", "content": text}}]})
         start, said, wait = time.time(), 0, poll
-        quiet_since = start
+        quiet_since, heard = start, False
         while time.time() - start < timeout:
             time.sleep(wait)
             new = self._code_events(session_id, after=last)
             if not new:
                 if settle and said and time.time() - quiet_since >= settle:
                     break
+                if not heard and time.time() - start >= self.NO_ANSWER:
+                    self._code_last = {session_id: last}
+                    raise RuntimeError(
+                        "Claude hasn't answered for %d seconds. If your usage limit is reached "
+                        "(F8 shows it), claude.ai can't answer until it resets. Your message "
+                        "is sent; open the chat again later to see the answer." % self.NO_ANSWER)
                 wait = min(wait * 1.5, 10.0)     # ask less often while it works
                 continue
             wait, quiet_since = poll, time.time()
@@ -783,7 +817,13 @@ class ClaudeAiBackend(Backend):
                 if role == "A":
                     on_delta(("\n\n" if said else "") + body)
                     said += 1
-            if any(_event_payload(e)[0] == "result" for e in new):
+            errors = [e for e in map(_event_error, new) if e]
+            if errors and not said:
+                self._code_last = {session_id: last}
+                raise RuntimeError("claude.ai: " + errors[-1])
+            # Claude's own messages (text or tool calls): it is at work
+            heard = heard or said or any(_event_payload(e)[0] in ("assistant", "result") for e in new)
+            if errors or any(_event_payload(e)[0] == "result" for e in new):
                 break
         else:
             on_delta("\n\n(Still working; open the session again later to see the rest.)")

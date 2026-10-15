@@ -250,7 +250,7 @@ static void save_config(void);
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -288,8 +288,14 @@ static const MBAR_ITEM m_opts[] = {
 	{ "Font...", 0, C_FONT },
 	{ 0, 0, 0 }
 };
+static const MBAR_ITEM m_help[] = {
+	{ "ClaudeST help", "Help", C_HELP },
+	{ "Keys...", 0, C_KEYS },
+	{ 0, 0, 0 }
+};
 static const MBAR_TITLE bar[] = {
-	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Options ", m_opts }, { 0, 0 }
+	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Options ", m_opts },
+	{ " Help ", m_help }, { 0, 0 }
 };
 static MBAR mb;
 
@@ -2386,6 +2392,7 @@ static void scroll_list(short delta)
 }
 
 static void about(void);
+static void keys_dialog(void);
 
 static void set_baud(short b)
 {
@@ -2602,6 +2609,97 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	if (res == 1)
 		strlcpy_(buf, edit, max);
 	return res;
+}
+
+/* Help > Keys..., and the Help key's button when no help viewer runs:
+ * ClaudeST's keys, as in ECal and EContact. Any key or click closes it. */
+static void keys_dialog(void)
+{
+	static const char *const k[][2] = {
+		{ "Return", "send what you typed" },
+		{ "F1  ^N", "a new chat" },
+		{ "F2 F6 F3 F4", "Chats, Code, Projects, Artifacts" },
+		{ "F5  ^F", "search the chat titles" },
+		{ "Tab, Return", "pick and open a sidebar item" },
+		{ "Insert", "the item's menu (or right-click)" },
+		{ "F8", "account: plan and usage" },
+		{ "F9", "model and effort" },
+		{ "F10", "Hebrew keyboard on or off" },
+		{ "\x01 \x02", "scroll the chat; Shift: a page" },
+		{ "Clr/Home", "the top; Shift: the end" },
+		{ "Undo", "clear the reply line" },
+		{ "^C ^X ^V", "copy, cut, paste" },
+		{ "^R", "reconnect to the gateway" },
+		{ "Help", "the user guide" },
+		{ "^W  ^Q", "quit" },
+	};
+	enum { N = sizeof(k) / sizeof(k[0]), KEYCOL = 13 };
+	short lh = ch + (ch >= 16 ? 2 : 0), m[8], clipr[4], i, done = 0, cols, x0, y;
+	AEVENT e;
+
+	btn_w = 10 * cw;
+	btn_h = ch + 6;
+	dlg_w = (KEYCOL + 36) * cw;
+	if (dlg_w > ww - 2 * cw)
+		dlg_w = ww - 2 * cw;
+	dlg_h = ch + lh * (N + 2) + btn_h + ch;
+	if (dlg_h > wh - 4) {		/* a low window: no space between rows */
+		lh = ch;
+		dlg_h = ch + lh * (N + 2) + btn_h + ch;
+	}
+	if (dlg_h > wh - 4)
+		dlg_h = wh - 4;
+	dlg_x = wx + (ww - dlg_w) / 2;
+	dlg_y = wy + (wh - dlg_h) / 2;
+	btn_y = dlg_y + dlg_h - btn_h - ch / 2 - 2;
+	ok_x = dlg_x + (dlg_w - btn_w) / 2;
+	cols = dlg_w / cw - 4 - KEYCOL;		/* room for the words */
+	x0 = dlg_x + 2 * cw;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);		/* BEG_MCTRL */
+	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	graf_mouse(M_OFF, 0);
+	vswr_mode(vh, 2);
+	vsf_perimeter(vh, 0);
+	vst_alignment(vh, 0, 5);
+	clipr[0] = 0;
+	clipr[1] = 0;
+	clipr[2] = scr_w - 1;
+	clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, clipr);
+	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
+	y = dlg_y + ch / 2 + 2;
+	text(x0, y, "ClaudeST's keys", 15, 1, 1);
+	y += lh + lh / 2;
+	for (i = 0; i < N && y + lh <= btn_y; i++, y += lh) {
+		short n = strlen(k[i][1]);
+		text(x0, y, k[i][0], strlen(k[i][0]), 1, 1);
+		text(x0 + KEYCOL * cw, y, k[i][1], n < cols ? n : cols, 0, 1);
+	}
+	dlg_button(ok_x, "OK", 1);
+	graf_mouse(M_ON, 0);
+	wait_release();
+
+	while (!done) {
+		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		if (e.which & MU_KEYBD)
+			done = 1;
+		if (e.which & MU_BUTTON) {
+			wait_release();
+			done = 1;
+		}
+	}
+	vs_clip(vh, 0, clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
 }
 
 /* ------------------------------------------------------------------ */
@@ -3433,8 +3531,8 @@ static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 static void help(void)
 {
-	if (help_key(home_dir, "CLAUDEST.HYP", 0, "About"))
-		about();
+	if (help_key(home_dir, "CLAUDEST.HYP", 0, "Keys"))
+		keys_dialog();
 }
 
 /* the About box: the AERA programs' shared one (common/ui/aboutbox.c),
@@ -4366,6 +4464,8 @@ static void handle_msg(short *msg)
 		case C_HEB: toggle_hebrew(); break;
 		case C_ACCT: do_account(); break;
 		case C_FONT: font_menu(); break;
+		case C_HELP: help(); break;
+		case C_KEYS: keys_dialog(); break;
 		case C_CUT: reply_clip(CLIP_CUT); break;
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;

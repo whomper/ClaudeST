@@ -822,6 +822,55 @@ class MovedChats(unittest.TestCase):
         self.assertLess(len(polls), 8)              # not 15 minutes of polling
         self.assertLess(clock[0], 30)
 
+    def _send_moved_with(self, answers):
+        """send_moved against a session whose events are ANSWERS(poll
+        number); returns (what reached the Atari, the error, polls, seconds)"""
+        import backends
+        be = self.backend()
+        del be.send
+        polls, clock = [], [0.0]
+        def events(sid, after=None, cap=2000):
+            polls.append(after)
+            return answers(len(polls))
+        be._code_events = events
+        be._code = lambda method, path, body=None, **kw: {"title": "t"}
+        orig_sleep, orig_time = backends.time.sleep, backends.time.time
+        backends.time.sleep = lambda s: clock.__setitem__(0, clock[0] + s)
+        backends.time.time = lambda: clock[0]
+        got, err = [], None
+        try:
+            be.send_moved("old", "cse_1", "hello", got.append)
+        except RuntimeError as e:
+            err = str(e)
+        finally:
+            backends.time.sleep, backends.time.time = orig_sleep, orig_time
+        return got, err, polls, clock[0]
+
+    def test_no_answer_ends_soon(self):
+        # out of credits: the session takes the message and never answers;
+        # the bridge must not stay deaf to the Atari for ten minutes
+        echo = [{"id": "e1", "type": "user", "message": {"role": "user", "content": "hello"}},
+                {"id": "e2", "type": "system", "subtype": "init"}]
+        got, err, polls, secs = self._send_moved_with(lambda n: echo if n == 2 else [])
+        self.assertEqual(got, [])
+        self.assertIn("usage limit", err)
+        self.assertLess(secs, 120)
+
+    def test_an_error_event_ends_it_at_once(self):
+        limit = [{"id": "e3", "type": "result", "subtype": "error_during_execution", "is_error": True,
+                  "result": "Claude usage limit reached. Your limit will reset at 7pm."}]
+        got, err, polls, secs = self._send_moved_with(lambda n: limit if n == 2 else [])
+        self.assertEqual(got, [])
+        self.assertIn("usage limit reached", err)
+        self.assertLessEqual(len(polls), 3)
+
+    def test_an_answer_after_a_slow_start_still_comes(self):
+        reply = [{"id": "e9", "type": "assistant",
+                  "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi"}]}}]
+        got, err, polls, secs = self._send_moved_with(lambda n: reply if n == 6 else [])
+        self.assertIsNone(err)
+        self.assertEqual(got, ["Hi"])
+
     def test_merge_moved(self):
         from backends import merge_moved
         a, b, c = ("U", "a"), ("A", "b"), ("U", "c")

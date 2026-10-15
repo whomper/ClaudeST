@@ -302,7 +302,7 @@ of them.
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
-| `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the About box) |
+| `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
 | `Ctrl+Q`, `Ctrl+W` | Quit (Ctrl+W closes the window, ClaudeST's only one) |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
@@ -351,6 +351,7 @@ All commands run on the Pi.
 |---------|-----------|
 | *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDEST.INF`, and that the Atari's address matches the installer's `--atari` |
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
+| "Claude hasn't answered for 90 seconds", or a usage-limit message | Your claude.ai usage limit is reached (F8 shows it), so claude.ai can't answer until it resets; reading your chats still works. The message is sent: open the chat again later to see the answer |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo gateway/aera-gateway set-key` in the AERA-Gateway folder |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 | ClaudeST itself crashed (on the Atari) | It says so, writes what happened to `CRASH.LOG` next to `CLAUDEST.PRG` and quits, leaving the Atari running. A crash in the system or a driver still gives the bombs; TOS keeps a record of them, and ClaudeST adds it to `CRASH.LOG` the next time it starts. Send `CRASH.LOG` to the author. Under MiNT or MagiC, which handle crashes themselves, there is none |
@@ -416,7 +417,7 @@ install the Pi with `--network --atari <the modem's IP>`.
 
 ## Icons
 
-**Desk ▸ About ClaudeST…** (or `Help` > About when no hypertext viewer runs) shows the About box, with a
+**Desk ▸ About ClaudeST…** shows the About box, with a
 colour icon on screens with 16 colours or more.
 
 ![The About box](about.png)

@@ -347,8 +347,9 @@
     Control+R         Reconnect to the bridge
     Control+C X V     Copy, cut, paste the reply line
                       (Control+C with it empty: Claude's last answer)
-    Help              This help, in EHypView, ST-Guide or HypView
-                      (without a viewer: how to get one, or About)
+    Help              This help, in EHypView, ST-Guide or HypView;
+                      the Help menu has it too, and Keys...
+                      (without a viewer: how to get one, or the keys)
     Control+Q         Quit
     Control+W         Quit (closes the window, the only one)
 
@@ -410,6 +411,11 @@
   @{B}An error mentions the session key, or HTTP 401/403@{b}
     claude.ai logged you out: get a new sessionKey from the website and
     run "sudo gateway/aera-gateway set-key" on the Pi.
+
+  @{B}"Claude hasn't answered for 90 seconds", or a usage limit@{b}
+    Your claude.ai usage limit is reached (F8 shows it): claude.ai
+    can't answer until it resets, but reading your chats still works.
+    The message is sent; open the chat again later for the answer.
 
   @{B}"Too many requests" (HTTP 429)@{b}
     claude.ai is limiting requests for a while. Wait a few minutes; F8
