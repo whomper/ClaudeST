@@ -6,10 +6,21 @@
 supervisor mode, a warm reset and the report of it at the next start.
 
     make && python3 run.py etos512us.img [work-dir]
+
+EmuTOS 1.4 or later: 1.3 overwrites TOS's record of the bombs at every
+boot, so the reset checks fail there.
 """
 import os, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# TOS's record of the bombs ($380) must live through the warm reset, as on
+# a real machine. EmuTOS 1.4 and later keep it on a reset (1.3 overwrote
+# $100-$3FF at every boot), but only when the reset is marked as one:
+# _warm_magic = 'WARM' at $6FC, which EmuTOS writes while it sizes the
+# memory at power-on. Hatari sets the memory up itself, so EmuTOS never
+# writes it and takes every reset for a first boot. Write it, then reset.
+WARM_MAGIC = "hatari-debug w $6fc $57 $41 $52 $4d"
+
 PRG = os.path.join(HERE, "build", "CRASHT.PRG")
 tos = os.path.abspath(sys.argv[1])
 work = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "build", "work"))
@@ -43,17 +54,21 @@ def run(machine, kind, reset=False):
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     h = subprocess.Popen(args, env=env, stdout=open(log, "w"), stderr=subprocess.STDOUT)
     want = "CRASHT previous" if reset else "CRASHT cleanup"
+    done = ("CRASHT no crash", "CRASHT protect")
     t_end = time.time() + 60
     reset_sent = False
     try:
         while time.time() < t_end and h.poll() is None:
             time.sleep(0.5)
             text = open(log, errors="replace").read()
-            if want in text or "CRASHT no crash" in text:
+            if want in text or any(x in text for x in done):
                 time.sleep(1)
                 break
             if reset and not reset_sent and os.path.exists(os.path.join(d, "STAGE1.TXT")):
                 time.sleep(3)			# the bombs, then back at the desktop
+                with open(fifo, "w") as f:
+                    f.write(WARM_MAGIC + "\n")
+                time.sleep(0.5)
                 with open(fifo, "w") as f:
                     f.write("hatari-shortcut warmreset\n")
                 reset_sent = True
@@ -86,6 +101,12 @@ for machine in ("st", "falcon"):
         rp = os.path.join(d, "REPORT.TXT")
         check(os.path.exists(rp) and open(rp, "rb").read().decode("latin-1") == rep,
               tag + " crash_report got the report")
+    # STinG's way into supervisor mode: its own privilege violation,
+    # caught by its own handler, must not be taken for a crash
+    d, con, rep = run(machine, "p")
+    tag = "%s a resident program's privilege violation:" % machine
+    check("CRASHT protect ok" in con, tag + " passed on to its handler")
+    check(not rep, tag + " no CRASH.LOG")
     d, con, rep = run(machine, "s", reset=True)
     tag = "%s supervisor bus error:" % machine
     check("CRASHT previous" in con, tag + " the program ran again after a reset")

@@ -103,9 +103,17 @@ long crash_take(unsigned short *f, long vec)
 {
 	const unsigned short *s = !crash_cpu && vec <= 3 ? f + 4 : f;
 	long size;
+	u32 pc = (u32)s[1] << 16 | s[2], old = (u32)crash_old[vec];
 	crash_jump = crash_old[vec];
 	if (s[0] & 0x2000)
 		return 0;			/* supervisor mode: not ours */
+	/* in someone else's code, with a handler of theirs before ours: theirs.
+	   STinG gets into supervisor mode by running "or.w #0,sr" in user mode
+	   and catching the privilege violation (protect_exec, in TCP_open and
+	   others); taking it for a crash bombed every connection. TOS's own
+	   handler (in ROM) still leaves a wild jump outside the program to us. */
+	if ((pc < text_lo || pc >= prog_hi) && !(old >= 0xE00000UL && old < 0x1000000UL))
+		return 0;
 	if (!(size = frame(f, vec, &c_addr, &c_has_addr)))
 		return 0;
 	c_vec = vec;
