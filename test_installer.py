@@ -40,7 +40,7 @@ class FakePi(ag.Pi):
         self.busy = set()           # ports another program has
 
     def have(self, prog):
-        return prog == "python3" or (prog == "ufw" and self.ufw)
+        return prog == "python3" or (prog == "ufw" and self.ufw is not None)
 
     def is_root(self):
         return True
@@ -319,13 +319,13 @@ class MailTest(Base):
                       "[smtp]\nclient = yes\naccept = 0.0.0.0:1025\nconnect = smtp.mail.me.com:587\n"
                       "protocol = smtp\n"
                       "[pop3]\nclient = yes\naccept = 0.0.0.0:1110\nconnect = pop.example.com:995\n")
-        self.pi.ufw = True
         status = self.pi.out
 
         def out(*cmd):
-            if cmd[:2] == ("ufw", "status"):
-                return "Status: active\n\nTo  Action  From\n1143/tcp  ALLOW  192.168.1.50\n1143/tcp  DENY  " \
-                       "Anywhere\n1025/tcp  DENY  Anywhere\n1110/tcp  DENY  Anywhere\n"
+            if cmd[:3] == ("ufw", "show", "added"):         # whether ufw is on or not
+                return "Added user rules (see 'ufw status' for running firewall):\n" \
+                       "ufw allow from 192.168.1.50 to any port 1143 proto tcp\nufw deny 1143/tcp\n" \
+                       "ufw deny 1025/tcp\nufw deny 1110/tcp\n"
             return status(*cmd)
         self.pi.out = out
         self.assertEqual(self.run_ag("install", "mail", "--allow", "192.168.1.50"), 0, self.err)
