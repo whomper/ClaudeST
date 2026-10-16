@@ -34,6 +34,7 @@
     @{"Code: Claude Code sessions" link "Code sessions"}
     @{"Artifacts" link "Artifacts"}
     @{"Account, plan and usage" link "Account, plan and usage"}
+    @{"Attaching files" link "Attaching files"}
     @{"From other programs" link "From other programs"}
     @{"Hebrew" link "Hebrew"}
     @{"Font" link "Font"}
@@ -263,16 +264,44 @@
 @endnode
 
 ## ------------------------------------------------------------------------
+@node "Attaching files"
+@{U}Attaching files@{u}
+
+  @{B}File > Attach file...@{b} (Control+O) picks a file in the file
+  selector and attaches it to your next message, as the paperclip does
+  on claude.ai. ClaudeST sends it to the gateway straight away
+  ("Attaching 40%" in the title bar), and the reply line shows it:
+  [NOTES.TXT], or [2 files]. Type your message and press Return, or
+  press Return on the empty line to send the files alone. The message
+  shows a grey "Attached" line for each file, and so do messages with
+  files in chats you open.
+
+  @{B}What can go@{b}: text files (in the Atari character set), and
+  PNG, JPEG and GIF pictures and PDFs, up to 1 MB each and four to a
+  message. Other files (programs, archives) are turned down with a
+  note saying so.
+
+  Over a serial cable a file takes a while: about a minute for every
+  50 KB at 19200 baud. The network is much quicker.
+
+  @{B}To change your mind@{b}, press Esc on the empty reply line: the
+  attached files are removed.
+
+  In chats, text files go in as claude.ai's website sends them, and
+  pictures and PDFs are uploaded first. In Claude Code sessions, a text
+  file goes into the message itself, under its name.
+@endnode
+
+## ------------------------------------------------------------------------
 @node "From other programs"
 @{U}From other programs@{u}
 
-  A text file handed to ClaudeST while it runs, by a desktop such as
-  Thing, jinnee or Gemini (or any program, with the AV protocol's
-  VA_START), goes into the reply line at the cursor, its lines joined
-  by spaces, as much as fits (1000 characters). Other files are
-  refused. Under MultiTOS, MagiC or XaAES you can drag a text file onto
-  the window too, or text from another program: it goes into the reply
-  line the same way.
+  A file handed to ClaudeST while it runs, by a desktop such as Thing,
+  jinnee or Gemini (or any program, with the AV protocol's VA_START),
+  is attached to your next message, as with
+  @{"Attach file..." link "Attaching files"}. Under MultiTOS, MagiC or
+  XaAES you can drag files onto the window too; text dragged from
+  another program goes into the reply line at the cursor.
 
   @{B}Copy and paste@{b}: Edit > Cut, Copy and Paste (Control+X,
   Control+C, Control+V) use the GEM clipboard. Control+V puts its text
@@ -346,7 +375,9 @@
     Insert            The picked item's menu
     Left, Right       Move in the reply line (Shift: to the start or
                       end; Control: by word)
-    Esc, Undo         Clear the reply line
+    Esc, Undo         Clear the reply line (Esc with it empty:
+                      remove the attached files)
+    Control+O         Attach a file to the next message
     Control+R         Reconnect to the bridge
     Control+,         Settings: the gateway's address, or serial
     Control+C X V     Copy, cut, paste the reply line

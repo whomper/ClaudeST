@@ -11,6 +11,7 @@ screenshots use the bridge's demo backend, so they show sample chats.
 - [Code: Claude Code sessions](#code-claude-code-sessions)
 - [Artifacts](#artifacts)
 - [Account, plan and usage](#account-plan-and-usage)
+- [Attaching files](#attaching-files)
 - [Hebrew](#hebrew)
 - [All keys](#all-keys)
 - [Settings (CLAUDEST.INF)](#settings-claudestinf)
@@ -200,15 +201,33 @@ Press `F8`, click the status line, or choose **Options ▸ Account…**.
 With the API backend, the page shows the tokens used since the bridge
 started instead.
 
+## Attaching files
+
+**File ▸ Attach file…** (`Ctrl+O`) picks a file in the file selector and
+attaches it to your next message, as the paperclip does on claude.ai.
+ClaudeST sends it to the gateway straight away ("Attaching 40%" in the
+title bar), and the reply line shows it: `[NOTES.TXT]`, or `[2 files]`.
+Type your message and press `Return`, or press `Return` on the empty
+line to send the files alone. The message shows a grey **Attached**
+line for each file, and so do messages with files in chats you open.
+
+- **What can go:** text files (in the Atari character set), and PNG, JPEG and GIF pictures and PDFs, up to 1 MB each and four to a message.
+  Other files (programs, archives) are turned down with a note saying so.
+- **Over a serial cable** a file takes a while: about a minute for
+  every 50 KB at 19200 baud. The network is much quicker.
+- **To change your mind,** press `Esc` on the empty reply line: the
+  attached files are removed.
+- **In chats,** text files go in as claude.ai's website sends them, and
+  pictures and PDFs are uploaded first. **In Claude Code sessions,** a
+  text file goes into the message itself, under its name.
+
 ## From other programs
 
-A text file handed to ClaudeST while it runs, by a desktop such as
-Thing, jinnee or Gemini (or any program, with the AV protocol's
-VA_START), goes into the reply line at the cursor, its lines joined by
-spaces, as much as fits (1000 characters). Other files are refused.
-Under MultiTOS, MagiC or XaAES you can drag a text file onto the window
-too, or text from another program: it goes into the reply line the same
-way.
+A file handed to ClaudeST while it runs, by a desktop such as Thing,
+jinnee or Gemini (or any program, with the AV protocol's VA_START), is
+attached to your next message, as with **Attach file…**. Under
+MultiTOS, MagiC or XaAES you can drag files onto the window too; text
+dragged from another program goes into the reply line at the cursor.
 
 ## Copy and paste
 
@@ -305,7 +324,8 @@ of them.
 | `Tab` / `Shift+Tab`, `Return` | Pick and open a sidebar item |
 | `Insert` | The picked item's menu |
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
-| `Esc` / `Undo` | Clear the reply line |
+| `Esc` / `Undo` | Clear the reply line (`Esc` with it empty: remove the attached files) |
+| `Ctrl+O` | File ▸ Attach file…: attach a file to the next message |
 | `Ctrl+R` | Reconnect to the bridge |
 | `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |

@@ -8,6 +8,7 @@ claudeai  - your claude.ai account (chats, projects, artifacts) through the
 api       - the official Anthropic API; chats and projects are stored locally.
 demo      - canned data, no network. For trying the Atari side out.
 """
+import base64
 import json
 import logging
 import os
@@ -414,6 +415,26 @@ def code_messages(events):
     return out
 
 
+def _attached(m):
+    """a claude.ai message's attached files, a grey line each"""
+    names = []
+    for key in ("attachments", "files", "files_v2"):
+        for f in m.get(key) or []:
+            name = isinstance(f, dict) and (f.get("file_name") or f.get("name"))
+            if name and name not in names:
+                names.append(name)
+    return "".join("\n\n" + GREY + "Attached " + n for n in names)
+
+
+def _plain(content):
+    """A stored message's content as text: its text blocks, and a note for
+    each attached picture or PDF"""
+    if isinstance(content, str):
+        return content
+    return "\n\n".join(b.get("text", "") if b.get("type") == "text" else GREY + "(an attached %s)" % b.get("type")
+                         for b in content if isinstance(b, dict))
+
+
 class ChoiceMemory:
     """The effort chosen for each chat or Code session, which claude.ai
     doesn't store. Kept in a small JSON file so it survives restarts;
@@ -447,6 +468,57 @@ class ChoiceMemory:
                 os.replace(tmp, self.path)
             except OSError as e:
                 log.info("could not save chat efforts: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# files attached on the Atari
+# ---------------------------------------------------------------------------
+
+class Attachment:
+    """A file from the Atari: text (in the Atari character set, turned into
+    Unicode), or a PNG, JPEG, GIF or PDF, known by its first bytes."""
+    KINDS = ((b"\x89PNG", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF8", "image/gif"),
+             (b"%PDF", "application/pdf"))
+
+    def __init__(self, name, data):
+        self.name = name
+        self.data = bytes(data)
+        self.mime = next((m for sig, m in self.KINDS if self.data.startswith(sig)), None)
+        self.text = None
+        if not self.mime and self.is_text(self.data):
+            from atari_text import from_atari
+            self.text = from_atari(self.data).replace("\r\n", "\n").replace("\r", "\n")
+            self.mime = "text/plain"
+
+    @staticmethod
+    def is_text(data):
+        if b"\0" in data:
+            return False
+        control = sum(1 for b in data if b < 32 and b not in (9, 10, 12, 13, 26, 27))
+        return control <= len(data) // 100
+
+    def check(self):
+        if not self.mime:
+            raise RuntimeError("%s isn't a text file or a PNG, JPEG, GIF or PDF, the kinds "
+                               "ClaudeST can attach." % self.name)
+
+    def block(self):
+        """The file as an API content block (images and PDFs)."""
+        data = base64.b64encode(self.data).decode()
+        kind = "document" if self.mime == "application/pdf" else "image"
+        return {"type": kind, "source": {"type": "base64", "media_type": self.mime, "data": data}}
+
+
+def with_text_files(text, files):
+    """TEXT with the text files written into it, as a fenced block each;
+    returns (text, the other files)"""
+    rest = []
+    for f in files or []:
+        if f.text is not None:
+            text += "\n\n%s:\n```\n%s\n```" % (f.name, f.text.rstrip("\n"))
+        else:
+            rest.append(f)
+    return text.strip(), rest
 
 
 class Backend:
@@ -483,7 +555,7 @@ class Backend:
         """-> (title, [(role, text)])"""
         raise NotImplementedError("Claude Code sessions need the claude.ai backend")
 
-    def send_code(self, session_id, text, on_delta):
+    def send_code(self, session_id, text, on_delta, files=None):
         """Send a message to a session and pass on its replies; -> title"""
         raise NotImplementedError("Claude Code sessions need the claude.ai backend")
 
@@ -537,8 +609,9 @@ class Backend:
         """-> (title, [(role, text)]) with role 'U' or 'A'"""
         raise NotImplementedError
 
-    def send(self, chat_id, project_id, text, on_delta):
-        """Stream a reply. Returns (chat_id, title)."""
+    def send(self, chat_id, project_id, text, on_delta, files=None):
+        """Stream a reply. FILES: Attachments sent with it. Returns
+        (chat_id, title)."""
         raise NotImplementedError
 
     def list_artifacts(self, progress=None):
@@ -853,7 +926,7 @@ class ClaudeAiBackend(Backend):
     # the Atari one command at a time, must not stay deaf for TIMEOUT
     NO_ANSWER = 90
 
-    def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0, settle=None):
+    def send_code(self, session_id, text, on_delta, timeout=900, poll=2.0, settle=None, files=None):
         """SETTLE: stop this many seconds after the last new event once a
         reply has come (moved chats don't end their turn with a "result"
         event, so without it this would poll until TIMEOUT). An error event
@@ -863,10 +936,14 @@ class ClaudeAiBackend(Backend):
         if last is None:
             events = self._code_events(session_id)
             last = events[-1].get("id") if events else None
+        for f in files or []:
+            f.check()
+        text, rest = with_text_files(text, files)
+        content = text if not rest else [{"type": "text", "text": text or "(attached)"}] + [f.block() for f in rest]
         self._code("post", "/sessions/%s/events" % session_id, {"events": [{
             "type": "user", "uuid": str(uuid.uuid4()), "session_id": session_id,
             "parent_tool_use_id": None,
-            "message": {"role": "user", "content": text}}]})
+            "message": {"role": "user", "content": content}}]})
         start, said, wait = time.time(), 0, poll
         quiet_since, heard = start, False
         while time.time() - start < timeout:
@@ -1148,7 +1225,7 @@ class ClaudeAiBackend(Backend):
         out = []
         for m in self._current_branch(conv):
             role = "U" if m.get("sender") == "human" else "A"
-            out.append((role, _text_of(m)))
+            out.append((role, _text_of(m) + _attached(m)))
         self._harvest_artifacts(conv)
         if conv.get("workspace_upgraded"):
             out = self._moved_messages(chat_id, conv, out)
@@ -1209,17 +1286,45 @@ class ClaudeAiBackend(Backend):
         self._code_last = {sid: events[-1].get("id") if events else None}
         return merge_moved(classic, code_messages(events))
 
-    def send_moved(self, chat_id, sid, text, on_delta):
+    def send_moved(self, chat_id, sid, text, on_delta, files=None):
         try:
-            title = self.send_code(sid, text, on_delta, timeout=600, settle=8)
+            title = self.send_code(sid, text, on_delta, timeout=600, settle=8, files=files)
         except RuntimeError as e:
             raise RuntimeError("ClaudeST could not continue this moved chat: %s. You can "
                                "start a new chat, or continue this one on claude.ai." % e)
         return chat_id, title
 
-    def send(self, chat_id, project_id, text, on_delta):
+    def _upload(self, f):
+        """A picture or PDF up to claude.ai, as its website does: -> the
+        file's uuid for the message's "files"."""
+        url = "%s/%s/upload" % (self.BASE, self.org)
+        if self.impersonating:          # curl_cffi has its own multipart form
+            from curl_cffi import CurlMime
+            form = CurlMime()
+            form.addpart(name="file", content_type=f.mime, filename=f.name, data=f.data)
+            try:
+                r = self.http.post(url, multipart=form, timeout=120)
+            finally:
+                form.close()
+        else:
+            r = self.http.post(url, files={"file": (f.name, f.data, f.mime)}, timeout=120)
+        if r.status_code >= 400:
+            raise RuntimeError("claude.ai didn't take %s (HTTP %d)%s" % (
+                f.name, r.status_code, ": " + _error_text(r) if r.content else ""))
+        got = r.json()
+        fid = got.get("file_uuid") or got.get("uuid") or got.get("id")
+        if not fid:
+            raise RuntimeError("claude.ai didn't say where it put %s." % f.name)
+        return fid
+
+    def send(self, chat_id, project_id, text, on_delta, files=None):
         title = None
+        for f in files or []:
+            f.check()
+        # pictures and PDFs go up first, as on claude.ai's website
+        upload = lambda: [self._upload(f) for f in files or [] if f.text is None]  # noqa: E731
         if not chat_id:
+            uploaded = upload()         # before the chat, so a refusal leaves none
             chat_id = str(uuid.uuid4())
             body = {"uuid": chat_id, "name": ""}
             if project_id:
@@ -1232,8 +1337,9 @@ class ClaudeAiBackend(Backend):
             conv = self._conversation(chat_id)
             sid = self._moved_session(conv)
             if sid:
-                cid, stitle = self.send_moved(chat_id, sid, text, on_delta)
+                cid, stitle = self.send_moved(chat_id, sid, text, on_delta, files)
                 return cid, conv.get("name") or stitle or text[:40]
+            uploaded = upload()
             parent = conv.get("current_leaf_message_uuid") or self.ROOT_PARENT
             title = conv.get("name")
             new = False
@@ -1242,8 +1348,10 @@ class ClaudeAiBackend(Backend):
             "prompt": text,
             "parent_message_uuid": parent,
             "timezone": _local_tz(),
-            "attachments": [],
-            "files": [],
+            # text files with their text, as claude.ai's website sends them
+            "attachments": [{"file_name": f.name, "file_type": "text/plain", "file_size": len(f.data),
+                             "extracted_content": f.text} for f in files or [] if f.text is not None],
+            "files": uploaded,
             "rendering_mode": "messages",
         }
         if self.model and self.model != "default":
@@ -1703,19 +1811,23 @@ class ApiBackend(Backend):
     def get_chat(self, chat_id):
         c = self._load(chat_id)
         self.chat_choice = (c["model"], c.get("effort", "")) if c.get("model") else None
-        return c["title"], [("U" if m["role"] == "user" else "A", m["content"]) for m in c["messages"]]
+        return c["title"], [("U" if m["role"] == "user" else "A", _plain(m["content"])) for m in c["messages"]]
 
-    def send(self, chat_id, project_id, text, on_delta):
+    def send(self, chat_id, project_id, text, on_delta, files=None):
+        for f in files or []:
+            f.check()
         if chat_id:
             chat = self._load(chat_id)
         else:
-            chat = {"id": uuid.uuid4().hex, "title": text.strip()[:40] or "New chat",
+            chat = {"id": uuid.uuid4().hex, "title": text.strip()[:40] or (files[0].name if files else "New chat"),
                     "project": project_id, "messages": []}
         system = ST_SYSTEM
         proj = next((p for p in self._projects() if p["id"] == chat.get("project")), None)
         if proj and proj.get("instructions"):
             system += "\n\nProject instructions:\n" + proj["instructions"]
-        chat["messages"].append({"role": "user", "content": text})
+        text, rest = with_text_files(text, files)
+        chat["messages"].append({"role": "user", "content": text if not rest else
+                                 [{"type": "text", "text": text or "(attached)"}] + [f.block() for f in rest]})
 
         reply = []
         extra = {}
@@ -1897,16 +2009,20 @@ class DemoBackend(Backend):
         self.chat_choice = c.get("model")
         return c["title"], list(c["messages"])
 
-    def send(self, chat_id, project_id, text, on_delta):
+    def send(self, chat_id, project_id, text, on_delta, files=None):
+        for f in files or []:
+            f.check()
+        names = ", ".join(f.name for f in files or [])
         if not chat_id:
             chat_id = "d%d" % (len(self.chats) + 1)
             self.chats = {chat_id: {"title": text[:40], "project": project_id, "messages": []},
                           **self.chats}
         reply = ("You said: \"%s\".\n\nThis is the **demo** backend, so no real model "
                  "is answering (you picked %s%s). Run the bridge with `--backend claudeai` "
-                 "to talk to your account.\n\n- Streaming works\n- Word wrap works\n"
+                 "to talk to your account.\n\n- Streaming works\n- Word wrap works\n%s"
                  % (text, dict(self.models()).get(self.model, self.model),
-                    ", effort " + self.effort if self.effort else ""))
+                    ", effort " + self.effort if self.effort else "",
+                    "- Got %s\n" % names if names else ""))
         for i in range(0, len(reply), 7):
             on_delta(reply[i:i + 7])
             time.sleep(0.03)
@@ -1941,7 +2057,7 @@ class DemoBackend(Backend):
     def set_code_model(self, session_id, model, effort):
         self.code[session_id]["model"] = model
 
-    def send_code(self, session_id, text, on_delta):
+    def send_code(self, session_id, text, on_delta, files=None):
         reply = GREY + "Ran echo working\n\nDone. (This is the demo backend: no session ran.)"
         on_delta(reply)
         self.code[session_id]["messages"] += [("U", text), ("A", reply)]

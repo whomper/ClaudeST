@@ -43,7 +43,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "1.38"
+#define VERSION "1.39"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -227,6 +227,11 @@ static long opening_until;
 static char txbuf[1200];
 static short txlen;
 
+/* files attached to the next message (the bridge holds their data) */
+#define MAXATT 4
+static char att_name[MAXATT][14];
+static short natt;
+
 static char rxline[1200];
 static short rxlen;
 static long ticks, last_hello;
@@ -248,6 +253,7 @@ static void choose_save_file(const char *name);
 static void save_chunk(const char *hex);
 static void finish_save(void);
 static void save_config(void);
+static void say_notice(const char *s);
 static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +263,7 @@ static char home_dir[128];		/* where CLAUDEST.PRG was started */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -269,6 +275,8 @@ static const MBAR_ITEM m_desk[] = {
 static const MBAR_ITEM m_file[] = {
 	{ "New chat", "^N", C_NEW },
 	{ "Search chats", "^F", C_FIND },
+	{ "Attach file...", "^O", C_ATTACH },
+	{ "-", 0, 0 },
 	{ "Reconnect", "^R", C_REF },
 	{ "-", 0, 0 },
 	{ "Quit", "^Q", C_QUIT },
@@ -503,6 +511,10 @@ static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
 static void send_hello(void)
 {
 	pref_sent = 0;
+	if (natt) {		/* a new start: the bridge has no files now */
+		natt = 0;
+		dirty |= D_INPUT;
+	}
 	tx_cmd("HELLO", "1", APP_VERSION);
 	last_hello = ticks;
 }
@@ -1558,8 +1570,27 @@ static void draw_input(void)
 	line(x2, y2, x1, y2, 1);
 	line(x1, y2, x1, y1, 1);
 	text(tx0, tyy, prompt, pl, 1, 1);
+	if (natt && !search_mode) {
+		/* what is attached: [NAME.TXT] or [3 files], before the text */
+		char a[20];
+		short n;
+		if (natt == 1) {
+			strcpy(a, "[");
+			strcat(a, att_name[0]);
+			strcat(a, "] ");
+		} else {
+			strcpy(a, "[0 files] ");
+			a[1] = '0' + natt;
+		}
+		n = strlen(a);
+		if (n < avail - 8) {
+			text(tx0 + pl * cw, tyy, a, n, 1, 1);
+			tx0 += n * cw;
+			avail -= n;
+		}
+	}
 	if (inlen == 0 && !search_mode) {
-		const char *ph = busy ? "Claude is replying..." : "Reply to Claude...";
+		const char *ph = busy ? "Claude is replying..." : natt ? "Return sends it" : "Reply to Claude...";
 		short n = strlen(ph);
 		if (n > avail)
 			n = avail;
@@ -1943,6 +1974,19 @@ static void handle_line(char *s)
 			if (pref_model[0] && (strcmp(pref_model, cur_model) ||
 					      strcmp(pref_effort, cur_effort)))
 				tx_cmd("CHOOSE", pref_model, pref_effort);
+		}
+		break;
+	case 'a':			/* a <name> : the bridge turned this attachment down */
+		if (n > 1) {
+			short i;
+			for (i = 0; i < natt; i++)
+				if (!strcmp(att_name[i], f[1])) {
+					for (; i < natt - 1; i++)
+						strcpy(att_name[i], att_name[i + 1]);
+					natt--;
+					dirty |= D_INPUT;
+					break;
+				}
 		}
 		break;
 	case 'Y':			/* Y 0|1 : busy */
@@ -2527,6 +2571,124 @@ static void do_list(const char *kind)
 			      "to start a new one.");
 }
 
+/* a file attached to the next message: its data goes to the bridge now,
+ * in hex lines (ATTACH <name> <size>, ADATA <hex>..., AEND), and the
+ * bridge sends it with the message */
+#define ATT_MAX (1024L * 1024L)
+static void attach_file(const char *path)
+{
+	static char buf[480];
+	char hex[2 * sizeof(buf) + 1], size[12];
+	const char *name = path, *p;
+	long fd, len, sent = 0, n;
+	short i, pct = -1;
+
+	for (p = path; *p; p++)
+		if (*p == '\\' || *p == ':')
+			name = p + 1;
+	if (!online) {
+		alert(1, "[1][ClaudeST isn't connected|to its gateway, so it can't|attach a file now.][ OK ]");
+		return;
+	}
+	if (busy) {
+		alert(1, "[1][Claude is answering: attach|the file when it's done.][ OK ]");
+		return;
+	}
+	if (natt >= MAXATT) {
+		alert(1, "[1][Up to 4 files go with|one message.][ OK ]");
+		return;
+	}
+	fd = Fopen(path, 0);
+	if (fd < 0) {
+		alert(1, "[1][Can't read %s.][ OK ]", name);
+		return;
+	}
+	len = Fseek(0, (short)fd, 2);
+	Fseek(0, (short)fd, 0);
+	if (len <= 0 || len > ATT_MAX) {
+		Fclose((short)fd);
+		alert(1, len <= 0 ? "[1][%s is empty.][ OK ]" : "[1][%s is bigger than 1 MB.][ OK ]", name);
+		return;
+	}
+	{				/* the size in decimal (put_num takes 16 bits) */
+		long v = len;
+		short k = 0, j;
+		char t[12];
+		while (v) {
+			t[k++] = '0' + (char)(v % 10);
+			v /= 10;
+		}
+		for (j = 0; j < k; j++)
+			size[j] = t[k - 1 - j];
+		size[k] = 0;
+	}
+	tx_cmd("ATTACH", name, size);
+	graf_mouse(BUSYBEE, 0);
+	while ((n = Fread((short)fd, sizeof(buf), buf)) > 0) {
+		static const char hx[] = "0123456789ABCDEF";
+		for (i = 0; i < n; i++) {
+			hex[2 * i] = hx[((u8)buf[i]) >> 4];
+			hex[2 * i + 1] = hx[buf[i] & 15];
+		}
+		hex[2 * n] = 0;
+		tx_cmd("ADATA", hex, 0);
+		sent += n;
+		if (sent * 10 / len != pct) {		/* "Attaching 40%" */
+			pct = (short)(sent * 10 / len);
+			strcpy(notice, "Attaching ");
+			*put_num(notice + 10, pct * 10) = 0;
+			strcat(notice, "%");
+			notice_until = ticks + 250;
+			dirty |= D_TITLE;
+			flush_dirty();
+		}
+		if (link == LINK_TCP && tcp_cn < 0)
+			break;			/* the connection went */
+	}
+	Fclose((short)fd);
+	graf_mouse(ARROW, 0);
+	if (sent != len) {
+		tx_cmd("UNATTACH", 0, 0);
+		natt = 0;
+		alert(1, "[1][%s couldn't be sent|to the gateway.][ OK ]", name);
+		dirty |= D_INPUT;
+		return;
+	}
+	tx_cmd("AEND", 0, 0);
+	strlcpy_(att_name[natt++], name, sizeof(att_name[0]));
+	dirty |= D_INPUT;
+}
+
+/* File > Attach file...: the GEM file selector, in the current folder */
+static void choose_attach(void)
+{
+	static char path[160], file[16];
+	short drv = (short)Dgetdrv(), button = 0, i;
+	char full[180], *p;
+	if (!path[0]) {
+		path[0] = 'A' + drv;
+		path[1] = ':';
+		Dgetpath(path + 2, 0);
+		p = path + strlen(path);
+		if (p[-1] != '\\')
+			*p++ = '\\';
+		strcpy(p, "*.*");
+	}
+	file[0] = 0;
+	flush_dirty();
+	fsel_exinput(path, file, &button, "Attach a file");
+	dirty |= D_ALL;		/* the selector covered the window */
+	if (!button || !file[0])
+		return;
+	strcpy(full, path);
+	p = full;
+	for (i = 0; full[i]; i++)
+		if (full[i] == '\\')
+			p = full + i + 1;
+	strcpy(p, file);
+	attach_file(full);
+}
+
 static void submit(void)
 {
 	input[inlen] = 0;
@@ -2547,12 +2709,13 @@ static void submit(void)
 		tx_cmd("FIND", input, 0);
 		search_mode = 0;
 		dirty |= D_SIDEBAR;
-	} else if (inlen > 0) {
+	} else if (inlen > 0 || natt) {
 		if (fresh) {		/* not into the chat from our last run */
 			tx_cmd("NEW", "QUIET", 0);
 			fresh = 0;
 		}
 		tx_cmd("SEND", input, 0);
+		natt = 0;		/* the bridge sends them with this message */
 	} else {
 		return;
 	}
@@ -2852,12 +3015,12 @@ static void keys_dialog(void)
 		{ "F5  ^F", "search the chat titles" },
 		{ "Tab, Return", "pick and open a sidebar item" },
 		{ "Insert", "the item's menu (or right-click)" },
-		{ "F8", "account: plan and usage" },
-		{ "F9", "model and effort" },
+		{ "F8  F9", "account; model and effort" },
 		{ "F10", "Hebrew keyboard on or off" },
 		{ "\x01 \x02", "scroll the chat; Shift: a page" },
 		{ "Clr/Home", "the top; Shift: the end" },
 		{ "Undo", "clear the reply line" },
+		{ "^O", "attach a file (Esc: remove it)" },
 		{ "^C ^X ^V", "copy, cut, paste" },
 		{ "^R", "reconnect to the gateway" },
 		{ "^,", "settings: the gateway, serial" },
@@ -4653,6 +4816,7 @@ static void handle_key(short kstate, short kr)
 	switch (ascii) {
 	case 0x0e: do_new_chat(); return;	/* ^N */
 	case 0x06: do_search(); return;		/* ^F */
+	case 0x0f: choose_attach(); return;	/* ^O */
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
 	case 0x17: quit = 1; return;		/* ^W: closes the one window */
@@ -4667,6 +4831,13 @@ static void handle_key(short kstate, short kr)
 		}
 		return;
 	case 0x1b:				/* Esc */
+		if (!inlen && natt && lcur < 0) {	/* the attachments go */
+			tx_cmd("UNATTACH", 0, 0);
+			natt = 0;
+			say_notice("Attachments removed");
+			dirty |= D_INPUT;
+			return;
+		}
 		if (lcur >= 0) {
 			lcur = -1;
 			dirty |= D_LIST;
@@ -4716,21 +4887,9 @@ static void set_curr(short x, short y, short w, short h)
 	on_resize();
 }
 
-/* a character into the reply line at the cursor; 0 when it is full */
-static int input_put(char c)
-{
-	if (inlen >= INMAX)
-		return 0;
-	memmove(input + in_cur + 1, input + in_cur, inlen - in_cur);
-	input[in_cur++] = c;
-	inlen++;
-	return 1;
-}
-
-/* VA_START (common/ui/av.c), from the desktop or another program:
-   nothing brings the window to the front; a text file goes into the
-   reply line at the cursor, its lines joined by spaces, as much as
-   fits */
+/* VA_START (common/ui/av.c), from the desktop or another program, and
+   files dropped on the window: attached to the next message, as on
+   claude.ai */
 /* ---- the clipboard (common/ui/clip.c) ---- */
 
 static void say_notice(const char *s)
@@ -4818,43 +4977,11 @@ static void reply_clip(int what)
 
 static void av_start(const char *s)
 {
-	char path[200], buf[256];
+	char path[200];
 	const char *p = s;
 	wind_set(win, WF_TOP, 0, 0, 0, 0);
-	while ((p = av_arg(p, path, sizeof(path))) != 0) {
-		long fd = Fopen(path, 0), n, i, first = 1;
-		int full = 0, space = in_cur > 0 && input[in_cur - 1] != ' ';
-		if (fd < 0) {
-			alert(1, "[1][Can't read %s.][ OK ]", path);
-			continue;
-		}
-		while (!full && (n = Fread((short)fd, sizeof(buf), buf)) > 0) {
-			for (i = 0; i < n && !full; i++) {
-				unsigned char c = (unsigned char)buf[i];
-				/* only text: a control character other than these
-				   in the first block, and it isn't */
-				if (first && c < 32 && c != '\r' && c != '\n' && c != '\t' && c != 27) {
-					alert(1, "[1][%s isn't a text file.][ OK ]", path);
-					full = -1;
-					break;
-				}
-				if (c == '\r' || c == '\n' || c == '\t' || c == ' ') {
-					space = in_cur > 0;
-					continue;
-				}
-				if (c < 32)
-					continue;
-				if ((space && !input_put(' ')) || !input_put((char)c))
-					full = 1;
-				space = 0;
-			}
-			first = 0;
-		}
-		Fclose((short)fd);
-		if (full > 0)
-			alert(1, "[1][Only the start of %s|fits in the reply line|(%d characters).][ OK ]", path, INMAX);
-	}
-	dirty |= D_INPUT;
+	while ((p = av_arg(p, path, sizeof(path))) != 0)
+		attach_file(path);
 }
 
 /* the iconified window (common/ui/iconify.c): the icon, and under it
@@ -4892,6 +5019,7 @@ static void handle_msg(short *msg)
 		case C_HELP: help(); break;
 		case C_KEYS: keys_dialog(); break;
 		case C_SET: settings_dialog(); break;
+		case C_ATTACH: choose_attach(); break;
 		case C_CUT: reply_clip(CLIP_CUT); break;
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
@@ -4986,7 +5114,7 @@ static void handle_msg(short *msg)
 	default: {
 		const char *va;
 		DROP d;
-		/* dropped: a text file as VA_START's, text into the reply line */
+		/* dropped: files are attached, text goes into the reply line */
 		switch (dd_message(msg, DD_WANT_FILES | DD_WANT_TEXT, &d)) {
 		case DD_FILES:
 			av_start(d.data);

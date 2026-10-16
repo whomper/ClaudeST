@@ -1527,3 +1527,102 @@ class ClaudeAiParsing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Attachments(unittest.TestCase):
+    """Files attached on the Atari: ATTACH <name> <size>, ADATA <hex>...,
+    AEND, then the next SEND carries them."""
+    PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(40))
+
+    def attach(self, s, name, data, size=None):
+        s.handle(b"ATTACH\t" + name + b"\t" + str(len(data) if size is None else size).encode())
+        for i in range(0, len(data), 7):
+            s.handle(b"ADATA\t" + data[i:i + 7].hex().upper().encode())
+        s.handle(b"AEND")
+
+    def test_kinds(self):
+        from backends import Attachment
+        self.assertEqual(Attachment("A.PNG", self.PNG).mime, "image/png")
+        self.assertEqual(Attachment("A.JPG", b"\xff\xd8\xff\xe0rest").mime, "image/jpeg")
+        self.assertEqual(Attachment("A.PDF", b"%PDF-1.4\n\x00\x01").mime, "application/pdf")
+        t = Attachment("READ.ME", b"Line one\r\nZ\x81rich\r\n")
+        self.assertEqual((t.mime, t.text), ("text/plain", "Line one\nZ\u00fcrich\n"))
+        bad = Attachment("GAME.PRG", b"\x60\x1a\x00\x00\x01\x02")
+        self.assertIsNone(bad.mime)
+        self.assertRaises(RuntimeError, bad.check)
+
+    def test_text_files_go_into_the_message(self):
+        from backends import Attachment, with_text_files
+        text, rest = with_text_files("look", [Attachment("A.C", b"int x;\n"), Attachment("A.PNG", self.PNG)])
+        self.assertEqual(text, "look\n\nA.C:\n```\nint x;\n```")
+        self.assertEqual([f.name for f in rest], ["A.PNG"])
+        self.assertEqual(rest[0].block()["source"]["media_type"], "image/png")
+
+    def test_over_the_protocol(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        self.attach(s, b"NOTES.TXT", b"remember the milk\r\n")
+        self.attach(s, b"PIC.PNG", self.PNG)
+        self.assertIn([b"N", b"Attached PIC.PNG"], link.lines())
+        link.sent = b""
+        s.handle(b"SEND")                       # files alone are a message
+        lines = link.lines()
+        self.assertIn([b"g", b"Attached NOTES.TXT"], lines)
+        said = b"".join(l[1] for l in lines if l[0] == b"P")
+        self.assertIn(b"Got NOTES.TXT, PIC.PNG", said)
+        self.assertEqual(s.files, [])           # gone with the message
+        link.sent = b""
+        s.handle(b"SEND\thello")
+        self.assertNotIn(b"Got", link.sent)
+
+    def test_turned_down(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        self.attach(s, b"GAME.PRG", b"\x60\x1a\x00\x00\x01\x02")
+        self.attach(s, b"NOTES.TXT", b"short", size=99)
+        lines = link.lines()
+        self.assertIn([b"a", b"GAME.PRG"], lines)
+        self.assertIn([b"a", b"NOTES.TXT"], lines)
+        self.assertEqual(sum(1 for l in lines if l[0] == b"A"), 2)
+        self.assertEqual(s.files, [])
+
+    def test_unattach(self):
+        s = Session(FakeLink(), DemoBackend())
+        self.attach(s, b"NOTES.TXT", b"text")
+        s.handle(b"UNATTACH")
+        self.assertEqual(s.files, [])
+
+    def test_claude_ai_body(self):
+        from backends import Attachment, ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org, be.model, be.effort = "o1", "default", ""
+        be._conversation = lambda cid: {"current_leaf_message_uuid": "m1", "name": "Chat"}
+        be._upload = lambda f: "file-" + f.name
+        sent = []
+
+        class R:
+            status_code = 200
+
+            def iter_lines(self):
+                return iter([b'data: {"type": "completion", "completion": "Hi"}'])
+
+        be._post = lambda path, body, **kw: (sent.append(body), R())[1]
+        be.send("c1", None, "see", lambda d: None,
+                files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG)])
+        self.assertEqual(sent[0]["attachments"], [{"file_name": "A.TXT", "file_type": "text/plain",
+                                                   "file_size": 3, "extracted_content": "abc"}])
+        self.assertEqual(sent[0]["files"], ["file-P.PNG"])
+
+    def test_code_session_blocks(self):
+        from backends import Attachment
+        be, calls = CodeSessions().backend()
+        be.send_code("session_b", "what is this?", lambda d: None, poll=0,
+                     files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG)])
+        content = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]["message"]["content"]
+        self.assertEqual(content[0], {"type": "text", "text": "what is this?\n\nA.TXT:\n```\nabc\n```"})
+        self.assertEqual(content[1]["type"], "image")
+
+    def test_history_shows_files(self):
+        from backends import _attached
+        self.assertEqual(_attached({"attachments": [{"file_name": "A.TXT"}], "files": [{"file_name": "P.PNG"}]}),
+                         "\n\n\x01Attached A.TXT\n\n\x01Attached P.PNG")

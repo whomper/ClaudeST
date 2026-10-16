@@ -18,7 +18,11 @@ flow control). The protocol is the same on both.
 | `LIST` `CHATS`\|`CODE`\|`PROJECTS`\|`ARTIFACTS` | Fill the sidebar with that list (`CODE`: Claude Code sessions). |
 | `OPEN` `CHAT`\|`CODE`\|`PROJECT`\|`ARTIFACT` `<id>` | Show a conversation or Claude Code session, list a project's chats, or show an artifact. After `OPEN CODE`, `SEND` goes to that session until `NEW` or another `OPEN`. |
 | `NEW` [`QUIET`] | Start a new chat (created on the first `SEND`; inside the open project, if any). `QUIET`: the Atari switched area and keeps its own title. |
-| `SEND` `<text>` | Send a message to the current chat and stream the reply. |
+| `SEND` `<text>` | Send a message to the current chat and stream the reply, with the files attached since the last `SEND` (since 1.39; the text may then be empty). |
+| `ATTACH` `<name>` `<size>` | A file attached to the next message follows (since 1.39): `<size>` bytes in `ADATA` lines, then `AEND`. |
+| `ADATA` `<hex>` | A piece of it, in hex (up to 480 bytes a line). |
+| `AEND` | The file is complete. The bridge keeps it for the next `SEND`, or answers `a` and `A` if it can't take it (cut short, or not a text file, PNG, JPEG, GIF or PDF). |
+| `UNATTACH` | Drop the files attached so far (`HELLO` drops them too). |
 | `FIND` `<query>` | Search chat titles. |
 | `RENAME` `CHAT`\|`CODE`\|`PROJECT` `<id>` `<name>` | Rename a chat, Claude Code session or project. |
 | `PIN` `CHAT`\|`PROJECT` `<id>` `1`\|`0` | Pin (star) or unpin. |
@@ -44,6 +48,7 @@ All commands are one letter.
 | `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `CODE`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
 | `I` `<id>` `<label>` [`<flags>`] | List item. Flags: `P` pinned, `U` unread (updated since last read; since 1.17); for example `PU`. Code sessions also (since 1.38): `W` Claude is working on it, `A` it waits for you (a question, a permission), as claude.ai's dots. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
+| `a` `<name>` | The bridge turned this attachment down (since 1.39); an `A` alert says why. |
 | `d` `<id>` `<flags>` | An item's flags changed (since 1.38): the bridge sends it unasked while the Code list shows a session at work, about every 20 seconds, so its dot follows without the list being sent again. |
 | `X` `<label>` | A heading in the list ("Pinned", "Today", "Yesterday", "Oct 4", "Older"); the items after it belong to it. Headings can't be selected. |
 | `E` | End of list. |

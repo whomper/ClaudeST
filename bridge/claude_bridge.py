@@ -33,6 +33,7 @@ import backends  # noqa: E402
 log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
+ATTACH_MAX = 1024 * 1024  # the biggest file the Atari attaches
 MAX_ID = 39              # ClaudeST keeps item ids up to this many characters
 MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and ClaudeST "
               "could not open its new part. It shows what it can, but can't add to it: "
@@ -219,6 +220,8 @@ class Session:
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
         self.flags_sent = {}    # list item id -> the flags the Atari shows
         self._active_at = 0.0   # when the Code sessions' activity was last checked
+        self.files = []         # attachments for the next message
+        self._file = None       # the one coming in: [name, size, bytearray]
         link.idle = self.idle
 
     # -- output --------------------------------------------------------
@@ -400,6 +403,7 @@ class Session:
         self.out("K", self.be.model, self.be.effort or "")
 
     def cmd_hello(self, *_):
+        self.files, self._file = [], None   # the Atari starts afresh
         self.notice("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
         self.out("C", self.chat_id or "")
@@ -507,9 +511,46 @@ class Session:
         if quiet != "QUIET":
             self.out("T", "New chat")
 
+    # -- attachments: ATTACH <name> <size>, ADATA <hex>..., AEND ---------
+
+    def cmd_attach(self, name="", size="0", *_):
+        self._file = [name or "FILE", int(size) if size.isdigit() else 0, bytearray()]
+
+    def cmd_adata(self, hexdata="", *_):
+        if self._file is not None:
+            self._file[2] += bytes.fromhex(hexdata)
+            if len(self._file[2]) > ATTACH_MAX:
+                self._file = None
+                self.out("A", "That file is too big to attach.")
+
+    def cmd_aend(self, *_):
+        if self._file is None:
+            return
+        name, size, data = self._file
+        self._file = None
+        f = backends.Attachment(name, data)
+        why = None
+        if len(data) != size:
+            why = "%s didn't arrive whole, so it wasn't attached." % name
+        elif not f.mime:
+            why = ("%s isn't a text file or a PNG, JPEG, GIF or PDF, so it wasn't attached."
+                   % name)
+        if why:
+            self.out("a", name)
+            self.out("A", why)
+            return
+        self.files.append(f)
+        log.info("attached %s (%d bytes, %s)", name, len(data), f.mime)
+        self.notice("Attached " + name)
+
+    def cmd_unattach(self, *_):
+        self.files = []
+        self._file = None
+
     def cmd_send(self, text="", *_):
         text = text.strip()
-        if not text:
+        files, self.files = self.files, []
+        if not text and not files:
             return
         new = self.chat_id is None
         if self.chat_kind == "CHAT" and not new and self.readonly:
@@ -517,7 +558,8 @@ class Session:
             return
         if new:
             self.out("R")
-        self.message("U", text)
+        self.message("U", text + ("\n\n" if text else "") + "".join(
+            backends.GREY + "Attached " + f.name + "\n" for f in files))
         self.out("Y", "1")
         self.notice("Claude is thinking...")
         self.out("M", "A")
@@ -525,7 +567,8 @@ class Session:
         if self.chat_kind == "CODE":
             self.notice("Claude Code is working...")
             try:
-                title = self.be.send_code(self.chat_id, text, lambda d: self.ops(fmt.feed(d)))
+                title = self.be.send_code(self.chat_id, text, lambda d: self.ops(fmt.feed(d)),
+                                          **({"files": files} if files else {}))
             finally:
                 self.ops(fmt.finish())
                 self.out("Z")
@@ -537,7 +580,8 @@ class Session:
             return
         try:
             chat_id, title = self.be.send(self.chat_id, self.project_id, text,
-                                          lambda d: self.ops(fmt.feed(d)))
+                                          lambda d: self.ops(fmt.feed(d)),
+                                          **({"files": files} if files else {}))
         finally:
             self.ops(fmt.finish())
             self.out("Z")
