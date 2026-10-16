@@ -14,6 +14,8 @@
 #include <ctype.h>
 #include "tos.h"
 
+#ifndef HEAP_TEST	/* tests/heap builds only the heap, on the build machine */
+
 /* ---------------- memory and strings ---------------- */
 
 int mem_unaligned_ok;		/* a 68020 or later: longs at any address */
@@ -241,36 +243,213 @@ char *strdup(const char *s)
 	return d;
 }
 
+#endif
+
 /* ---------------- heap ----------------
- * A first-fit free list (K&R) over blocks taken from GEMDOS. Mxalloc
- * mode 3 prefers TT/Fast RAM on a TT or accelerated Falcon; plain
- * TOS 1.x lacks Mxalloc and gets Malloc. */
+ * Blocks carry their size at both ends (boundary tags), so free() finds
+ * and joins its neighbours at once, and free blocks are kept in lists by
+ * size, so malloc() looks in one or two lists, never the whole heap. (The
+ * K&R list before it walked the free blocks on every free(): 14% of
+ * ECal's calendar reading.) A block is cut from the end of a free one,
+ * which stays where it is; and one free block, dv, is kept out of the
+ * lists to cut from, so a run of mallocs and frees costs a few moves
+ * each. On an 8 MHz ST in Hatari (tests/heap) a calendar's worth of
+ * blocks took a fifth of K&R's time, and a fixed heap (an accessory's)
+ * lasted many times as long before it was too cut up to use.
+ *
+ * A block starts with a word: its size in bytes, a multiple of ALIGN; bit
+ * 0 is set while it is in use, bit 1 while the block before it is. A free
+ * block also has its size in its last word and two list links after the
+ * first, so an allocated block costs one word (K&R's cost two). Each area
+ * of memory ends in a word marked in use, the fence, so nothing is ever
+ * joined across the end of an area.
+ *
+ * The memory comes from GEMDOS: Mxalloc mode 3 prefers TT/Fast RAM on a
+ * TT or accelerated Falcon; plain TOS 1.x lacks Mxalloc and gets Malloc.
+ */
 
-typedef union hdr {
-	struct {
-		union hdr *next;
-		size_t units;
-	} s;
-	long align[2];
-} HDR;
+typedef struct blk {
+	size_t head;			/* size, INUSE, PINUSE */
+	struct blk *next, *prev;	/* a free block's list links */
+} BLK;
 
-static HDR base;
-static HDR *freep;
+#define INUSE	1UL
+#define PINUSE	2UL
+#define FLAGS	3UL
+#define WORD	sizeof(size_t)
+#define ALIGN	WORD				/* 4 on the Atari */
+#define MINBLK	(2 * WORD + 2 * sizeof(BLK *))	/* head, links, foot */
+#define MAXREQ	((size_t)1 << 30)
+#define SIZE(b)	((b)->head & ~FLAGS)
+#define AT(b, n) ((BLK *)((char *)(b) + (n)))
+#define FOOT(b, s) (*(size_t *)((char *)(b) + (s) - WORD))
+
+/* one list per size below SMALL; above it four per power of two, each
+   list holding blocks within a quarter of each other */
+#define SMALL	512
+#define SMALL_LG 9
+#define NSMALL	(SMALL / ALIGN)
+#define NBINS	(NSMALL + (30 - SMALL_LG + 1) * 4)
+#define NMAP	((NBINS + 31) / 32)
+
+static BLK *bins[NBINS];
+static u32 binmap[NMAP];		/* which lists have blocks */
+/* the free block new ones are cut from, in no list: cutting from it and
+   giving back to it cost a few moves (one after another, as a program
+   reads a file, is the common case) */
+static BLK *dv;
 
 /* an accessory can't take memory from GEMDOS once it runs: under plain
    TOS it would belong to whatever program is in front, and go when that
    one quits. So it takes one block at start-up and lives in it. */
 static int heap_fixed;
 
+static unsigned bin_of(size_t s)
+{
+	size_t x = s;
+	unsigned lg = 0;
+	if (s < SMALL)
+		return (unsigned)(s / ALIGN);
+	if (s >> 30 >> 1)
+		return NBINS - 1;	/* 2 GB and up */
+	/* the top bit, in shifts the 68000 does quickly (by a register it
+	   takes two cycles a bit) */
+	if (x >> 16) {
+		x >>= 16;
+		lg = 16;
+	}
+	if (x >> 8) {
+		x >>= 8;
+		lg += 8;
+	}
+	if (x >> 4) {
+		x >>= 4;
+		lg += 4;
+	}
+	if (x >> 2) {
+		x >>= 2;
+		lg += 2;
+	}
+	lg += (unsigned)(x >> 1);
+	return NSMALL + (lg - SMALL_LG) * 4 + (unsigned)((s >> (lg - 2)) & 3);
+}
+
+/* the first list from i on that has a block, or -1 */
+static int bin_next(unsigned i)
+{
+	unsigned w = i >> 5;
+	u32 m;
+	if (i >= NBINS)
+		return -1;
+	m = binmap[w] & (~(u32)0 << (i & 31));
+	while (!m) {
+		if (++w >= NMAP)
+			return -1;
+		m = binmap[w];
+	}
+	i = w << 5;
+	if (!(m & 0xFFFF)) {
+		m >>= 16;
+		i += 16;
+	}
+	if (!(m & 0xFF)) {
+		m >>= 8;
+		i += 8;
+	}
+	if (!(m & 0xF)) {
+		m >>= 4;
+		i += 4;
+	}
+	if (!(m & 3)) {
+		m >>= 2;
+		i += 2;
+	}
+	return (int)(i + !(m & 1));
+}
+
+#define INLINE static inline __attribute__((always_inline))
+
+INLINE void bin_put(BLK *b, unsigned i)
+{
+	b->prev = 0;
+	if ((b->next = bins[i]))
+		b->next->prev = b;
+	bins[i] = b;
+	binmap[i >> 5] |= (u32)1 << (i & 31);
+}
+
+/* b out of list i */
+INLINE void bin_take(BLK *b, unsigned i)
+{
+	if (b->next)
+		b->next->prev = b->prev;
+	if (b->prev)
+		b->prev->next = b->next;
+	else if (!(bins[i] = b->next))
+		binmap[i >> 5] &= ~((u32)1 << (i & 31));
+}
+
+/* nb in o's place in list i */
+INLINE void bin_swap(BLK *o, BLK *nb, unsigned i)
+{
+	BLK *nx = o->next, *pv = o->prev;
+	nb->next = nx;
+	nb->prev = pv;
+	if (nx)
+		nx->prev = nb;
+	if (pv)
+		pv->next = nb;
+	else
+		bins[i] = nb;
+}
+
+/* b, free and in list i, is now s bytes: it says so at both ends, and
+   changes lists only when its size belongs in another */
+INLINE void resize(BLK *b, unsigned i, size_t s)
+{
+	unsigned j = bin_of(s);
+	b->head = s | PINUSE;
+	FOOT(b, s) = s;
+	if (j != i) {
+		bin_take(b, i);
+		bin_put(b, j);
+	}
+}
+
+/* b, of s bytes, becomes a free block (the one before it is in use) */
+static void make_free(BLK *b, size_t s)
+{
+	b->head = s | PINUSE;
+	FOOT(b, s) = s;
+	AT(b, s)->head &= ~PINUSE;
+	bin_put(b, bin_of(s));
+}
+
+#ifdef HEAP_TEST
+static char *area_lo[64], *area_hi[64];
+static int areas;
+#endif
+
+/* a new area: one free block, and the fence */
+static int add_area(void *p, size_t bytes)
+{
+	char *lo = (char *)(((unsigned long)p + ALIGN - 1) & ~(unsigned long)(ALIGN - 1));
+	char *hi = (char *)(((unsigned long)p + bytes) & ~(unsigned long)(ALIGN - 1));
+	if (hi < lo + MINBLK + WORD)
+		return 0;
+	hi -= WORD;
+	((BLK *)hi)->head = INUSE;
+	make_free((BLK *)lo, (size_t)(hi - lo));
+#ifdef HEAP_TEST
+	area_lo[areas] = lo;
+	area_hi[areas++] = hi;
+#endif
+	return 1;
+}
+
 void heap_add(void *p, size_t bytes)
 {
-	HDR *h = p;
-	if (!freep) {
-		base.s.next = freep = &base;
-		base.s.units = 0;
-	}
-	h->s.units = bytes / sizeof(HDR);
-	free(h + 1);
+	add_area(p, bytes);
 	heap_fixed = 1;
 }
 
@@ -278,12 +457,14 @@ void heap_add(void *p, size_t bytes)
 
 long heap_tt, heap_st;		/* bytes the heap took from TT/Fast and ST RAM (About) */
 
-static HDR *more_core(size_t units)
+/* more memory from GEMDOS for a block of need bytes (kept out of malloc,
+   whose registers it would cost) */
+static __attribute__((noinline)) int more_core(size_t need)
 {
 	static short blocks;		/* GEMDOS blocks taken, a pool entry each */
-	static size_t taken;		/* units taken from GEMDOS so far */
-	size_t want = units, bytes;
-	HDR *h = 0;
+	static size_t taken;		/* bytes taken from GEMDOS so far */
+	size_t least = need + WORD + 2 * ALIGN, want;	/* the block, the fence, alignment */
+	void *h = 0;
 	if (heap_fixed)
 		return 0;
 	/* Every GEMDOS block takes an entry in TOS's small internal pool, and
@@ -291,112 +472,315 @@ static HDR *more_core(size_t units)
 	   So few blocks: 512 KB at first, then each as big as all before it,
 	   so the heap doubles and 16 MB takes six. Less if that much isn't
 	   free; at worst exactly what is needed. */
-	if (want < 65536L)
-		want = 65536L;
+	want = least < 512L * 1024 ? 512L * 1024 : least;
 	if (want < taken)
 		want = taken;
 	if (blocks >= MAX_BLOCKS)
 		return 0;		/* "out of memory" beats a halted machine */
 	while (!h) {
-		bytes = want * sizeof(HDR);
-		h = Mxalloc(bytes, 3);
+		h = Mxalloc(want, 3);
 		if ((long)h == -32 || (long)h <= 0)
-			h = Malloc(bytes);
+			h = Malloc(want);
 		if ((long)h <= 0) {
 			h = 0;
-			if (want == units)
+			if (want == least)
 				return 0;
-			want = want / 2 > units ? want / 2 : units;
+			want = want / 2 > least ? want / 2 : least;
 		}
 	}
 	taken += want;
 	blocks++;
 	if ((unsigned long)h >= 0x01000000UL)	/* above the ST's 16 MB */
-		heap_tt += bytes;
+		heap_tt += want;
 	else
-		heap_st += bytes;
-	h->s.units = want;
-	free(h + 1);
-	return freep;
+		heap_st += want;
+	return add_area(h, want);
 }
 
+static size_t block_for(size_t n)
+{
+	size_t need = (n + WORD + ALIGN - 1) & ~(ALIGN - 1);
+	return need < MINBLK ? MINBLK : need;
+}
+
+static void *malloc_more(size_t need);
+
+/* the common cases first, in few registers: a small block of a size that
+   is free, or one cut from the end of dv */
 void *malloc(size_t n)
 {
-	HDR *p, *prev;
-	size_t units = (n + sizeof(HDR) - 1) / sizeof(HDR) + 1;
-
-	if (!freep) {
-		base.s.next = freep = &base;
-		base.s.units = 0;
+	size_t need, s;
+	BLK *b;
+	if (n >= SMALL - WORD - ALIGN)
+		return n > MAXREQ ? 0 : malloc_more(block_for(n));
+	need = block_for(n);
+	if ((b = bins[need / ALIGN])) {
+		bin_take(b, need / ALIGN);
+		b->head |= INUSE;
+		AT(b, need)->head |= PINUSE;
+		return (char *)b + WORD;
 	}
-	prev = freep;
-	for (p = prev->s.next;; prev = p, p = p->s.next) {
-		if (p->s.units >= units) {
-			if (p->s.units == units) {
-				prev->s.next = p->s.next;
-			} else {
-				p->s.units -= units;
-				p += p->s.units;
-				p->s.units = units;
-			}
-			freep = prev;
-			return p + 1;
-		}
-		if (p == freep && !(p = more_core(units)))
-			return 0;
+	if (dv && (s = SIZE(dv)) >= need + MINBLK) {
+		b = AT(dv, s - need);
+		dv->head = (s - need) | PINUSE;
+		FOOT(dv, s - need) = s - need;
+		b->head = need | INUSE;
+		AT(b, need)->head |= PINUSE;
+		return (char *)b + WORD;
 	}
+	return malloc_more(need);
 }
 
+/* the rest: the lists, dv, more from GEMDOS */
+static __attribute__((noinline)) void *malloc_more(size_t need)
+{
+	size_t s;
+	BLK *b;
+	int i;
+	for (;;) {
+		i = (int)bin_of(need);
+		if (need < SMALL) {
+			if ((b = bins[i]))	/* one of its size */
+				break;
+		} else {
+			/* its own list: sizes near it, the first that fits */
+			for (b = bins[i]; b && SIZE(b) < need; b = b->next)
+				;
+			if (b)
+				break;
+		}
+		if (dv && SIZE(dv) >= need)
+			goto cut;
+		/* any block in a later list is big enough */
+		if ((i = bin_next((unsigned)i + 1)) >= 0) {
+			b = bins[i];
+			if (SIZE(b) - need < MINBLK)
+				break;
+			bin_take(b, (unsigned)i);	/* it is cut from now on */
+			if (dv)
+				bin_put(dv, bin_of(SIZE(dv)));
+			dv = b;
+			goto cut;
+		}
+		if (!more_core(need))
+			return 0;
+	}
+	/* b, in list i */
+	s = SIZE(b);
+	if (s - need >= MINBLK) {
+		/* its end: the rest stays where it is, in its list as a rule */
+		BLK *a = AT(b, s - need);
+		resize(b, (unsigned)i, s - need);
+		a->head = need | INUSE;		/* (the one before it is free) */
+		AT(a, need)->head |= PINUSE;
+		return (char *)a + WORD;
+	}
+	bin_take(b, (unsigned)i);
+	b->head |= INUSE;
+	AT(b, s)->head |= PINUSE;
+	return (char *)b + WORD;
+cut:
+	s = SIZE(dv);
+	if (s - need >= MINBLK) {
+		BLK *a = AT(dv, s - need);
+		dv->head = (s - need) | PINUSE;
+		FOOT(dv, s - need) = s - need;
+		a->head = need | INUSE;
+		AT(a, need)->head |= PINUSE;
+		return (char *)a + WORD;
+	}
+	b = dv;
+	dv = 0;
+	b->head |= INUSE;
+	AT(b, s)->head |= PINUSE;
+	return (char *)b + WORD;
+}
+
+static void free_more(BLK *b);
+
+/* the common case first, in few registers: back into dv, just before it */
 void free(void *ptr)
 {
-	HDR *b, *p;
+	BLK *b, *n;
+	size_t s, ps;
 	if (!ptr)
 		return;
-	b = (HDR *)ptr - 1;
-	for (p = freep; !(b > p && b < p->s.next); p = p->s.next)
-		if (p >= p->s.next && (b > p || b < p->s.next))
-			break;
-	if (b + b->s.units == p->s.next) {
-		b->s.units += p->s.next->s.units;
-		b->s.next = p->s.next->s.next;
-	} else {
-		b->s.next = p->s.next;
+	b = (BLK *)((char *)ptr - WORD);
+	if (!(b->head & INUSE))
+		return;			/* freed twice: left alone */
+	b->head &= ~INUSE;		/* (so it shows, even once joined) */
+	s = SIZE(b);
+	n = AT(b, s);
+	if (!(b->head & PINUSE) && (n->head & INUSE) && dv &&
+	    (BLK *)((char *)b - (ps = *((size_t *)b - 1))) == dv) {
+		s += ps;
+		dv->head = s | PINUSE;
+		FOOT(dv, s) = s;
+		n->head &= ~PINUSE;
+		return;
 	}
-	if (p + p->s.units == b) {
-		p->s.units += b->s.units;
-		p->s.next = b->s.next;
-	} else {
-		p->s.next = b;
+	free_more(b);
+}
+
+/* the rest: b (no longer in use) joined with free neighbours */
+static __attribute__((noinline)) void free_more(BLK *b)
+{
+	BLK *n;
+	size_t s, ns = 0;
+	s = SIZE(b);
+	n = AT(b, s);
+	if (!(n->head & INUSE))
+		ns = SIZE(n);		/* the one after is free: joined */
+	if (!(b->head & PINUSE)) {
+		/* the one before is free: it grows where it is */
+		size_t ps = *((size_t *)b - 1);
+		BLK *p = (BLK *)((char *)b - ps);
+		if (ns) {
+			if (n == dv) {
+				bin_take(p, bin_of(ps));
+				dv = p;
+			} else
+				bin_take(n, bin_of(ns));
+			n = AT(n, ns);
+		}
+		s += ps + ns;
+		if (p == dv) {
+			p->head = s | PINUSE;
+			FOOT(p, s) = s;
+		} else
+			resize(p, bin_of(ps), s);
+		n->head &= ~PINUSE;
+		return;
 	}
-	freep = p;
+	if (ns) {			/* b takes the place of the one after */
+		unsigned ni, j;
+		s += ns;
+		b->head = s | PINUSE;
+		FOOT(b, s) = s;
+		if (n == dv)
+			dv = b;
+		else if ((j = bin_of(s)) == (ni = bin_of(ns)))
+			bin_swap(n, b, ni);
+		else {
+			bin_take(n, ni);
+			bin_put(b, j);
+		}
+		return;
+	}
+	make_free(b, s);
 }
 
 void *calloc(size_t n, size_t m)
 {
-	void *p = malloc(n * m);
-	if (p)
+	void *p;
+	if ((n | m) >= 0x10000 && m && n > (size_t)-1 / m)
+		return 0;
+	if ((p = malloc(n * m)))
 		memset(p, 0, n * m);
 	return p;
 }
 
 void *realloc(void *ptr, size_t n)
 {
-	HDR *h;
-	size_t have;
+	BLK *b, *nx;
+	size_t s, t, need;
 	void *np;
 	if (!ptr)
 		return malloc(n);
-	h = (HDR *)ptr - 1;
-	have = (h->s.units - 1) * sizeof(HDR);
-	if (have >= n)
-		return ptr;
-	np = malloc(n);
-	if (!np)
+	if (n > MAXREQ)
 		return 0;
-	memcpy(np, ptr, have);
+	b = (BLK *)((char *)ptr - WORD);
+	s = SIZE(b);
+	if (s - WORD >= n)
+		return ptr;		/* it fits (a block never shrinks) */
+	need = block_for(n);
+	nx = AT(b, s);
+	if (!(nx->head & INUSE) && (t = s + SIZE(nx)) >= need) {
+		/* grow into the free block after it */
+		int was_dv = nx == dv;
+		if (was_dv)
+			dv = 0;
+		else
+			bin_take(nx, bin_of(SIZE(nx)));
+		if (t - need >= MINBLK) {
+			b->head = need | (b->head & FLAGS);
+			make_free(AT(b, need), t - need);
+			if (was_dv) {		/* (the rest is still the one cut from) */
+				dv = AT(b, need);
+				bin_take(dv, bin_of(t - need));
+			}
+		} else {
+			b->head = t | (b->head & FLAGS);
+			AT(b, t)->head |= PINUSE;
+		}
+		return ptr;
+	}
+	if (!(np = malloc(n)))
+		return 0;
+	memcpy(np, ptr, s - WORD);
 	free(ptr);
 	return np;
 }
+
+#ifdef HEAP_TEST
+unsigned heap_bin(size_t s)
+{
+	return bin_of(s);
+}
+
+/* walks every area: sizes and flags agree, no two free blocks side by
+   side, every free block in its list and every list's blocks free and of
+   its size. The free bytes, and the free blocks in *nfree; -1 if wrong. */
+long heap_check(long *nfree)
+{
+	long bytes = 0, blocks = 0, listed = 0;
+	int a, dv_seen = 0;
+	unsigned i;
+	for (a = 0; a < areas; a++) {
+		BLK *b = (BLK *)area_lo[a];
+		int prev_used = 1;
+		while ((char *)b < area_hi[a]) {
+			size_t s = SIZE(b);
+			if (s < MINBLK || s % ALIGN || (char *)b + s > area_hi[a])
+				return -1;
+			if (!!(b->head & PINUSE) != prev_used)
+				return -1;
+			if (b == dv)
+				dv_seen = 1;
+			if (!(b->head & INUSE)) {
+				if (!prev_used || FOOT(b, s) != s)
+					return -1;
+				bytes += (long)s;
+				blocks++;
+			}
+			prev_used = !!(b->head & INUSE);
+			b = AT(b, s);
+		}
+		if ((char *)b != area_hi[a] || SIZE(b) || !(b->head & INUSE) ||
+		    !!(b->head & PINUSE) != prev_used)
+			return -1;
+	}
+	for (i = 0; i < NBINS; i++) {
+		BLK *b, *p = 0;
+		if (!bins[i] != !(binmap[i >> 5] & ((u32)1 << (i & 31))))
+			return -1;
+		for (b = bins[i]; b; p = b, b = b->next) {
+			if ((b->head & INUSE) || bin_of(SIZE(b)) != i || b->prev != p || b == dv)
+				return -1;
+			listed++;
+		}
+	}
+	if (dv && ((dv->head & INUSE) || !dv_seen))
+		return -1;
+	if (listed + (dv != 0) != blocks)
+		return -1;
+	if (nfree)
+		*nfree = blocks;
+	return bytes;
+}
+#endif
+
+#ifndef HEAP_TEST
 
 /* ---------------- numbers ---------------- */
 
@@ -695,3 +1079,5 @@ int sprintf(char *buf, const char *fmt, ...)
 	va_end(ap);
 	return r;
 }
+
+#endif
