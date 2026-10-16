@@ -135,7 +135,7 @@ def main():
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "icon", "add_to_emuicon.py"),
                     args.emuicon, os.path.join(hd, "EMUICON.RSC")], check=True)
     with open(os.path.join(hd, "CLAUDEST.INF"), "w", newline="") as f:
-        f.write("serial\r\nport 6\r\n")     # Hatari's Falcon: the MFP serial port
+        f.write("[OPTIONS]\r\nLINK=serial\r\nSERIALPORT=6\r\n")     # Hatari's Falcon: the MFP serial port
     with open(os.path.join(hd, "EMUDESK.INF"), "w", newline="") as f:
         f.write(DESKTOP_INF)
     for name in ("st_out", "st_in"):        # Hatari makes cmd.fifo itself

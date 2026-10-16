@@ -91,7 +91,8 @@ def _inline(s: str) -> str:
 
 class Formatter:
     """Turns (possibly streamed) Markdown into protocol ops:
-    ("P", text) append text, ("B",) line break, ("H", text) heading line."""
+    ("P", text) append text, ("B",) line break, ("H", text) heading line,
+    ("g", text) a grey line (a line starting with \\x01: a tool step)."""
 
     def __init__(self):
         self.pending = ""
@@ -100,6 +101,8 @@ class Formatter:
 
     def _line(self, line: str):
         """A complete line (without newline)."""
+        if line.startswith("\x01") and not self.in_code:
+            return [("g", _inline(line[1:]))]      # a grey line (a tool step)
         m = _FENCE.match(line)
         if m:
             self.in_code = not self.in_code
@@ -139,7 +142,7 @@ class Formatter:
                     self.at_line_start = False
                 else:
                     s = p.lstrip()
-                    if not s or s[0] in "#-*+`_>" or len(p) < 4 and s[0].isdigit():
+                    if not s or s[0] in "#-*+`_>\x01" or len(p) < 4 and s[0].isdigit():
                         return ops
             cut = len(p)
             while cut > 0 and p[cut - 1] in "*_`[":

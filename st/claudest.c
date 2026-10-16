@@ -101,6 +101,7 @@ static short status_y;
  * "\x10R" starts a message header line (R = role), "\x11" a bold line. */
 #define MK_HEADER 0x10
 #define MK_BOLD   0x11
+#define MK_GREY   0x12		/* a tool step, in grey as on claude.ai */
 
 static char *tb;
 static long tlen, tcap;
@@ -115,6 +116,7 @@ typedef struct {
 #define L_TEXT   0
 #define L_HEADER 1
 #define L_BOLD   2
+#define L_GREY   3
 #define L_TYPE   0x0f
 #define L_RTL    0x40		/* line of a right-to-left (Hebrew) paragraph */
 
@@ -129,10 +131,12 @@ typedef struct {
 	char label[72];
 	char pinned;
 	char unread;		/* updated since last read: a dot in the margin */
+	char state;		/* Code sessions: 'W' Claude works, 'A' it waits for you */
 	char heading;		/* a date heading ("Today"), not an item */
 } ITEM;
 
 #define MAXITEMS 300
+static short dot_pulse = 1;	/* the working dot's on or off half */
 static ITEM items[MAXITEMS];
 static short nitems, list_top;
 static short lcur = -1;			/* keyboard cursor in the list */
@@ -218,6 +222,8 @@ static u32 tcp_ip;
 static u16 tcp_port = 2323;
 static short tcp_cn = -1;
 static long next_connect;
+static short tcp_opening = -1;		/* a connection being opened */
+static long opening_until;
 static char txbuf[1200];
 static short txlen;
 
@@ -242,6 +248,7 @@ static void choose_save_file(const char *name);
 static void save_chunk(const char *hex);
 static void finish_save(void);
 static void save_config(void);
+static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 /* ------------------------------------------------------------------ */
 /* menu bar (built in code, so no .RSC file is needed)                 */
@@ -250,7 +257,7 @@ static void save_config(void);
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -276,6 +283,8 @@ static const MBAR_ITEM m_edit[] = {
 	{ 0, 0, 0 }
 };
 static const MBAR_ITEM m_opts[] = {
+	{ "Settings...", "^,", C_SET },
+	{ "-", 0, 0 },
 	{ "4800 baud", 0, C_B48 },
 	{ "9600 baud", 0, C_B96 },
 	{ "19200 baud", 0, C_B192 },
@@ -539,6 +548,9 @@ static void wrap_from(long p, u8 role)
 			if (tb[s] == MK_BOLD) {
 				kind = L_BOLD;
 				s++;
+			} else if (tb[s] == MK_GREY) {
+				kind = L_GREY;
+				s++;
 			}
 			/* the paragraph's direction comes from its first strong letter */
 			if (bidi_is_rtl(tb + s, e - s > 2000 ? 2000 : (short)(e - s)))
@@ -569,7 +581,7 @@ static void wrap_from(long p, u8 role)
 
 static short is_para_start(long off)
 {
-	return off == 0 || tb[off - 1] == '\n' || tb[off - 1] == MK_BOLD;
+	return off == 0 || tb[off - 1] == '\n' || tb[off - 1] == MK_BOLD || tb[off - 1] == MK_GREY;
 }
 
 /* rewrap the last paragraph after text was appended; returns first changed line */
@@ -586,7 +598,8 @@ static short wrap_tail(void)
 	}
 	if (nlines) {
 		p = lines[li].off;
-		if (li < nlines && (lines[li].kind & L_TYPE) == L_BOLD && p > 0 && tb[p - 1] == MK_BOLD)
+		if (li < nlines && p > 0 && (((lines[li].kind & L_TYPE) == L_BOLD && tb[p - 1] == MK_BOLD) ||
+					     ((lines[li].kind & L_TYPE) == L_GREY && tb[p - 1] == MK_GREY)))
 			p--;
 		role = li > 0 ? lines[li - 1].role : 0;
 	}
@@ -1034,18 +1047,29 @@ static void draw_status(short full)
 	short sq = sys_ch >= 16 ? 1 : 2;
 	short dry = ch / 3 / sq, drx = ch / 3;
 	short colour = ncolors >= 16;
+	/* the usage ring: two thirds of a line high, between the two lines */
+	short rry = row_h * 2 / 3 > 4 ? row_h * 2 / 3 : 4, rrx = rry * sq;
 	char t[80];
 
 	if (dry < 1)
 		dry = 1;
 	if (usage_pct >= 0)
-		tx = x + 2 * ((row_h - 3) * sq) + cw;
+		tx = x + 2 * rrx + cw;
 	if (!full && (tx != last_tx || sb_w != last_sb))	/* the layout moved */
 		fill(wx, status_y - 1, wx + sb_w - 1, wy + wh - 1, 0);
 	last_tx = tx;
 	last_sb = sb_w;
+	if (!full) {
+		/* the strips the drawing below doesn't paint: between the ring
+		   and the dot, and around the dot. A redraw of the list alone
+		   doesn't reach them, so they could keep old text */
+		short bottom = wy + wh - 1, gx = usage_pct >= 0 ? x + 2 * rrx + 1 : wx + 1;
+		if (gx < tx)
+			fill(gx, status_y - 1, tx - 1, bottom, 0);
+		fill(tx, status_y - 1, tx + 2 * drx + cw / 2 - 1, status_y + row_h - 1, 0);
+	}
 	if (usage_pct >= 0) {
-		short ry = row_h - 3, rx = ry * sq;
+		short ry = rry, rx = rrx;
 		short fc = usage_pct >= 90 ? accent() : colour ? 4 : 1;
 		ring(x + rx, status_y + row_h - 1, rx, ry, rx / 6 + 1, usage_pct,
 		     fc, colour ? 8 : 1, !colour, 1);
@@ -1166,11 +1190,19 @@ static void draw_sidebar(void)
 			}
 			text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
 				  wx + sb_w - 6 - (it->pinned ? cw + 4 : 0));
-			if (it->unread) {
-				/* a small dot in the left margin: updated since last read */
-				short ry = sys_ch >= 16 ? 2 : 1;
-				ring(wx + (cw + 2) / 2, y + row_h / 2 - 1, 2, ry, 2, 100,
-				     sel ? 0 : ncolors >= 16 ? 4 : accent(), 0, 0, 0);
+			/* a dot in the left margin, as claude.ai's: working (grey,
+			   pulsing), waiting for you (yellow, a little bigger), or
+			   updated since last read (blue) */
+			if (it->state == 'W' || it->state == 'A' || it->unread) {
+				short ry = sys_ch >= 16 ? 2 : 1, dx = wx + (cw + 2) / 2, dy = y + row_h / 2 - 1;
+				short colour = ncolors >= 16;
+				if (it->state == 'W') {
+					if (dot_pulse)
+						ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? 9 : 1, 0, 0, 0);
+				} else if (it->state == 'A')
+					ring(dx, dy, 3, ry + 1, 3, 100, sel ? 0 : colour ? 6 : 1, 0, 0, 0);
+				else
+					ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? 4 : accent(), 0, 0, 0);
 			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
@@ -1328,7 +1360,7 @@ static void draw_text(short from_row)
 			line(x + cw / 2, y, x + cw / 2, y + ch - 1, 1);
 		}
 		{
-			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : 0;
+			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : (l->kind & L_TYPE) == L_GREY ? 2 : 0;
 			short rtl = (l->kind & L_RTL) != 0;
 			if (rtl || bidi_has_rtl(tb + l->off, l->len)) {
 				static char vis[BIDI_MAX];
@@ -1699,6 +1731,20 @@ static short split(char *s, char **f, short max)
 	return n;
 }
 
+static void item_flags(ITEM *it, const char *q)
+{
+	for (; *q; q++) {
+		if (*q == 'P')
+			it->pinned = 1;
+		else if (*q == 'U')
+			it->unread = 1;
+		else if (*q == 'W' || *q == 'A')
+			it->state = *q;
+	}
+}
+
+static void redraw_dot(short i);
+
 static void handle_line(char *s)
 {
 	char *f[4];
@@ -1762,25 +1808,30 @@ static void handle_line(char *s)
 		if (!drop_list && nitems < MAXITEMS && n > 2) {
 			strlcpy_(items[nitems].id, f[1], sizeof(items[0].id));
 			strlcpy_(items[nitems].label, f[2], sizeof(items[0].label));
-			items[nitems].pinned = items[nitems].unread = 0;
-			if (n > 3) {		/* flags: P pinned, U unread */
-				const char *q;
-				for (q = f[3]; *q; q++) {
-					if (*q == 'P')
-						items[nitems].pinned = 1;
-					else if (*q == 'U')
-						items[nitems].unread = 1;
-				}
-			}
+			items[nitems].pinned = items[nitems].unread = items[nitems].state = 0;
+			if (n > 3)		/* flags: P pinned, U unread, W working, A waits */
+				item_flags(&items[nitems], f[3]);
 			items[nitems].heading = 0;
 			nitems++;
+		}
+		break;
+	case 'd':			/* d <id> <flags> : an item's dot changed */
+		if (n > 1) {
+			short i;
+			for (i = 0; i < nitems; i++)
+				if (!items[i].heading && !strcmp(items[i].id, f[1])) {
+					items[i].pinned = items[i].unread = items[i].state = 0;
+					item_flags(&items[i], n > 2 ? f[2] : "");
+					redraw_dot(i);
+					break;
+				}
 		}
 		break;
 	case 'X':			/* X <label> : a heading in the list ("Today") */
 		if (!drop_list && nitems < MAXITEMS && n > 1) {
 			items[nitems].id[0] = 0;
 			strlcpy_(items[nitems].label, f[1], sizeof(items[0].label));
-			items[nitems].pinned = items[nitems].unread = 0;
+			items[nitems].pinned = items[nitems].unread = items[nitems].state = 0;
 			items[nitems].heading = 1;
 			nitems++;
 		}
@@ -1840,6 +1891,16 @@ static void handle_line(char *s)
 		break;
 	case 'H': {			/* H <text> : bold heading paragraph */
 		char m = MK_BOLD;
+		if (tlen > 0 && tb[tlen - 1] != '\n')
+			append("\n", 1);
+		append(&m, 1);
+		if (n > 1)
+			append(f[1], strlen(f[1]));
+		append("\n", 1);
+		break;
+	}
+	case 'g': {			/* g <text> : a grey line (a tool step) */
+		char m = MK_GREY;
 		if (tlen > 0 && tb[tlen - 1] != '\n')
 			append("\n", 1);
 		append(&m, 1);
@@ -1926,6 +1987,14 @@ static void ip_to_str(u32 ip, char *p)
 	*p = 0;
 }
 
+static void tcp_failed(short code)
+{
+	char msg[64];
+	strcpy(msg, "Offline: ");
+	strlcpy_(msg + 9, sting_error(code), sizeof(msg) - 9);
+	set_status(msg);
+}
+
 static void tcp_connect(void)
 {
 	char msg[64];
@@ -1943,27 +2012,37 @@ static void tcp_connect(void)
 	strcpy(msg, "Connecting to ");
 	ip_to_str(tcp_ip, msg + 14);
 	set_status(msg);
-	flush_dirty();
-	graf_mouse(BUSYBEE, 0);
 	cn = sting_open(tcp_ip, tcp_port);
-	if (cn >= 0) {
-		r = sting_wait_established(cn, 8);
-		if (r < 0) {
-			sting_close(cn);
-			cn = r;
-		}
-	}
-	graf_mouse(ARROW, 0);
+	(void)r;
 	if (cn < 0) {
-		strcpy(msg, "Offline: ");
-		strlcpy_(msg + 9, sting_error(cn), sizeof(msg) - 9);
-		set_status(msg);
+		tcp_failed(cn);
 		return;
 	}
-	tcp_cn = cn;
-	rxlen = 0;
-	set_status("Connected, loading...");
-	send_hello();
+	/* the connection opens in the background: poll_link() asks STinG
+	   (without waiting) each time round, so menus, the About box and
+	   everything else keep working meanwhile */
+	tcp_opening = cn;
+	opening_until = ticks + 8 * 25;		/* ~8 s */
+}
+
+/* is the connection being opened established yet? */
+static void tcp_check_open(void)
+{
+	short cn = tcp_opening, r = sting_wait_established(cn, 0);
+	if (r == E_NORMAL) {
+		tcp_opening = -1;
+		tcp_cn = cn;
+		rxlen = 0;
+		set_status("Connected, loading...");
+		send_hello();
+		return;
+	}
+	/* refused or reset: at once; otherwise until the time is up */
+	if (r == E_REFUSE || r == E_RRESET || r == E_EOF || ticks >= opening_until) {
+		tcp_opening = -1;
+		sting_close(cn);
+		tcp_failed(r == E_NORMAL ? E_CNTIMEOUT : r);
+	}
 }
 
 static void poll_link(void)
@@ -1978,7 +2057,9 @@ static void poll_link(void)
 		return;
 	}
 	if (tcp_cn < 0) {
-		if (ticks >= next_connect)
+		if (tcp_opening >= 0)
+			tcp_check_open();
+		else if (ticks >= next_connect)
 			tcp_connect();
 		return;
 	}
@@ -2086,15 +2167,135 @@ static void parse_config_line(const char *l)
 	}
 }
 
-static void load_config(void)
+/* the AERA INF format (the guidelines, 6.1): "; notes", [SECTION] lines
+ * and NAME=value, names in capitals but read in any case. Lines it
+ * doesn't know are kept and written back as they were. */
+#define INF_KEEP 1024
+static char inf_keep[INF_KEEP];
+static short inf_keep_len;
+
+static void inf_path(char *out, short size, const char *name)
 {
-	char buf[256], *p, *l;
-	long fd = Fopen("CLAUDEST.INF", 0);
-	long n;
+	strlcpy_(out, home_dir, size);
+	strlcpy_(out + strlen(out), name, size - strlen(out));
+}
+
+/* NAME=... in l: 1, with *v at the value */
+static short inf_key(const char *l, const char *name, const char **v)
+{
+	while (*name) {
+		char c = *l++;
+		if (c >= 'a' && c <= 'z')
+			c -= 32;
+		if (c != *name++)
+			return 0;
+	}
+	while (*l == ' ' || *l == '\t')
+		l++;
+	if (*l++ != '=')
+		return 0;
+	while (*l == ' ' || *l == '\t')
+		l++;
+	*v = l;
+	return 1;
+}
+
+static u16 inf_num(const char **v)
+{
+	u16 n = 0;
+	while (**v == ' ' || **v == ',')
+		(*v)++;
+	while (**v >= '0' && **v <= '9')
+		n = n * 10 + (*(*v)++ - '0');
+	return n;
+}
+
+/* one NAME=value line: 1 if ClaudeST knows the name */
+static short inf_setting(const char *l)
+{
+	const char *v;
+	if (inf_key(l, "LINK", &v))
+		link = (*v == 's' || *v == 'S') ? LINK_SERIAL : LINK_TCP;
+	else if (inf_key(l, "HOST", &v)) {
+		if (!parse_ip(v, &tcp_ip, 0))
+			tcp_ip = 0;
+	} else if (inf_key(l, "PORT", &v)) {
+		u16 n = inf_num(&v);
+		if (n)
+			tcp_port = n;
+	} else if (inf_key(l, "BAUD", &v)) {
+		u16 n = inf_num(&v);
+		baud = n == 4800 ? BAUD_4800 : n == 9600 ? BAUD_9600 : BAUD_19200;
+	} else if (inf_key(l, "SERIALPORT", &v)) {
+		u16 n = inf_num(&v);
+		aux_port = n >= 6 && n <= 9 ? n : 0;
+	} else if (inf_key(l, "HEBREW", &v))
+		hebrew_kbd = *v == '1';
+	else if (inf_key(l, "FONT", &v)) {
+		u16 id = inf_num(&v);
+		font_id = id ? id : 1;
+		font_pt = inf_num(&v);
+	} else if (inf_key(l, "HEBFONT", &v)) {
+		u16 n = inf_num(&v);
+		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
+	} else if (inf_key(l, "SIDEBAR", &v))
+		sb_user = inf_num(&v);
+	else if (inf_key(l, "MODEL", &v)) {
+		short k = 0;
+		while (*v && *v != ' ' && k < (short)sizeof(pref_model) - 1)
+			pref_model[k++] = *v++;
+		pref_model[k] = 0;
+	} else if (inf_key(l, "EFFORT", &v))
+		strlcpy_(pref_effort, v, sizeof(pref_effort));
+	else
+		return 0;
+	return 1;
+}
+
+static void inf_line(const char *l)
+{
+	short n;
+	if (*l == ';' || *l == '[')
+		return;			/* notes and sections are written afresh */
+	if (inf_setting(l))
+		return;
+	if (strchr(l, '=')) {		/* someone else's setting: keep it */
+		n = strlen(l);
+		if (inf_keep_len + n + 2 < INF_KEEP) {
+			memcpy(inf_keep + inf_keep_len, l, n);
+			inf_keep_len += n;
+			inf_keep[inf_keep_len++] = '\r';
+			inf_keep[inf_keep_len++] = '\n';
+		}
+		return;
+	}
+	parse_config_line(l);		/* the format before 1.38: "tcp 1.2.3.4 2323" */
+}
+
+static long inf_open(void)
+{
+	char path[160];
+	long fd;
+	inf_path(path, sizeof(path), "CLAUDEST.INF");
+	fd = Fopen(path, 0);
+	if (fd < 0) {			/* a save cut short after the old file went */
+		inf_path(path, sizeof(path), "CLAUDEST.IN$");
+		fd = Fopen(path, 0);
+	}
+	if (fd < 0)			/* the current folder, as before 1.38 */
+		fd = Fopen("CLAUDEST.INF", 0);
 	if (fd < 0)
 		fd = Fopen("ECLAUDE.INF", 0);	/* settings from before the renames: */
 	if (fd < 0)
 		fd = Fopen("CLAUDE.INF", 0);	/* EClaude's, then Claude ST's */
+	return fd;
+}
+
+static void load_config(void)
+{
+	char buf[2048], *p, *l;
+	long fd = inf_open();
+	long n;
 	if (fd < 0)
 		return;
 	n = Fread((short)fd, sizeof(buf) - 1, buf);
@@ -2102,12 +2303,15 @@ static void load_config(void)
 	if (n <= 0)
 		return;
 	buf[n] = 0;
+	inf_keep_len = 0;
 	for (l = p = buf; ; p++) {
 		if (*p == '\r' || *p == '\n' || *p == 0) {
 			char end = *p;
 			*p = 0;
-			if (p > l)
-				parse_config_line(l);
+			while (*l == ' ' || *l == '\t')
+				l++;
+			if (*l)
+				inf_line(l);
 			if (!end)
 				break;
 			l = p + 1;
@@ -2128,72 +2332,96 @@ static char *put_num(char *p, u16 v)
 	return p;
 }
 
+static char *inf_put(char *p, const char *note, const char *name, const char *val)
+{
+	strcpy(p, "; ");
+	strcat(p, note);
+	strcat(p, "\r\n");
+	strcat(p, name);
+	strcat(p, "=");
+	strcat(p, val);
+	strcat(p, "\r\n\r\n");
+	return p + strlen(p);
+}
+
+static char *inf_put_num(char *p, const char *note, const char *name, u16 v)
+{
+	char n[8];
+	*put_num(n, v) = 0;
+	return inf_put(p, note, name, n);
+}
+
 static void save_config(void)
 {
-	char text[240], *p = text;
-	long fd = Fcreate("CLAUDEST.INF", 0);
-	if (fd < 0)
-		return;
-	if (link == LINK_TCP && tcp_ip) {
-		strcpy(p, "tcp ");
-		ip_to_str(tcp_ip, p + 4);
-		p += strlen(p);
-		*p++ = ' ';
-		p = put_num(p, tcp_port);
-	} else {
-		strcpy(p, "serial");
-		p += 6;
-	}
-	*p++ = '\r';
-	*p++ = '\n';
-	if (sb_user) {
-		strcpy(p, "sidebar ");
-		p = put_num(p + 8, sb_user);
-		*p++ = '\r';
-		*p++ = '\n';
-	}
-	strcpy(p, baud == BAUD_4800 ? "baud 4800\r\n" : baud == BAUD_9600 ? "baud 9600\r\n" : "baud 19200\r\n");
+	static char text[2048 + INF_KEEP];
+	char path[160], tmp[160], v[24], *p = text;
+	long fd;
+
+	strcpy(p, "; ClaudeST settings, written by CLAUDEST.PRG. Lines starting with ; are notes.\r\n"
+		  "; Most of these are set in Options > Settings; see the guide.\r\n"
+		  "; 1 means on, 0 means off.\r\n\r\n[OPTIONS]\r\n\r\n");
 	p += strlen(p);
-	if (hebrew_kbd) {
-		strcpy(p, "keyboard hebrew\r\n");
-		p += strlen(p);
+	p = inf_put(p, "how ClaudeST reaches its gateway: network (STinG) or serial", "LINK",
+		    link == LINK_TCP ? "network" : "serial");
+	v[0] = 0;
+	if (tcp_ip)
+		ip_to_str(tcp_ip, v);
+	p = inf_put(p, "network: the gateway's IP address (the Pi running the ClaudeST bridge)", "HOST", v);
+	p = inf_put_num(p, "network: the gateway's port, 2323 unless you changed it on the Pi", "PORT", tcp_port);
+	p = inf_put_num(p, "serial: the speed, 4800, 9600 or 19200 (the bridge's --baud)", "BAUD",
+			baud == BAUD_4800 ? 4800 : baud == BAUD_9600 ? 9600 : 19200);
+	p = inf_put_num(p, "serial: 0 = the Modem port TOS picks; 6-9 = that serial device (Bconmap)",
+			"SERIALPORT", aux_port);
+	p = inf_put_num(p, "1 = start with the Hebrew keyboard (F10 switches)", "HEBREW", hebrew_kbd);
+	{
+		char *q = put_num(v, font_id);
+		*q++ = ',';
+		*put_num(q, font_pt) = 0;
 	}
-	if (font_id != 1 || font_pt || hebfont) {
-		strcpy(p, "font ");
-		p = put_num(p + 5, font_id);
-		*p++ = ' ';
-		p = put_num(p, font_pt);
-		*p++ = ' ';
-		p = put_num(p, hebfont);
-		*p++ = '\r';
-		*p++ = '\n';
-		*p = 0;
-	}
-	if (aux_port) {
-		strcpy(p, "port 6\r\n");
-		p[5] = '0' + aux_port;
+	p = inf_put(p, "text font: GDOS font id (1 = system font), size (system font: 0, 8 small, 16 large)",
+		    "FONT", v);
+	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
+			"HEBFONT", hebfont);
+	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
+	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
+	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
+	if (inf_keep_len) {
+		strcpy(p, "; settings this version of ClaudeST doesn't use, kept as they were\r\n");
 		p += strlen(p);
-	}
-	if (pref_model[0]) {
-		strcpy(p, "model ");
-		strcat(p, pref_model);
-		if (pref_effort[0]) {
-			strcat(p, " ");
-			strcat(p, pref_effort);
-		}
-		strcat(p, "\r\n");
-		p += strlen(p);
+		memcpy(p, inf_keep, inf_keep_len);
+		p += inf_keep_len;
 	}
 	*p = 0;
-	Fwrite((short)fd, strlen(text), text);
-	Fclose((short)fd);
+
+	/* CLAUDEST.IN$ first, then renamed: a reset in between never leaves
+	   half a file (the guidelines, 2.3) */
+	inf_path(path, sizeof(path), "CLAUDEST.INF");
+	inf_path(tmp, sizeof(tmp), "CLAUDEST.IN$");
+	fd = Fcreate(tmp, 0);
+	if (fd >= 0) {
+		long n = Fwrite((short)fd, p - text, text);
+		Fclose((short)fd);
+		if (n == p - text) {
+			Fdelete(path);
+			if (Frename(tmp, path) == 0)
+				return;
+		}
+		Fdelete(tmp);
+	}
+	fd = Fcreate(path, 0);		/* no room for both: as before */
+	if (fd >= 0) {
+		Fwrite((short)fd, p - text, text);
+		Fclose((short)fd);
+	}
 }
 
 static void use_link(short l)
 {
 	if (link == LINK_TCP && tcp_cn >= 0)
 		sting_close(tcp_cn);
-	tcp_cn = -1;
+	if (tcp_opening >= 0)
+		sting_close(tcp_opening);
+	tcp_cn = tcp_opening = -1;
 	link = l;
 	online = 0;
 	rxlen = 0;
@@ -2410,7 +2638,9 @@ static void reconnect(void)
 	if (link == LINK_TCP) {
 		if (tcp_cn >= 0)
 			sting_close(tcp_cn);
-		tcp_cn = -1;
+		if (tcp_opening >= 0)
+			sting_close(tcp_opening);
+		tcp_cn = tcp_opening = -1;
 		online = 0;
 		next_connect = 0;
 	} else {
@@ -2630,6 +2860,7 @@ static void keys_dialog(void)
 		{ "Undo", "clear the reply line" },
 		{ "^C ^X ^V", "copy, cut, paste" },
 		{ "^R", "reconnect to the gateway" },
+		{ "^,", "settings: the gateway, serial" },
 		{ "Help", "the user guide" },
 		{ "^W  ^Q", "quit" },
 	};
@@ -3527,7 +3758,6 @@ static void font_menu(void)
 /* The help: EHypView or ST-Guide (as an accessory or a program) shows
  * CLAUDEST.HYP from ClaudeST's own folder (common/ui/help.c). Without a
  * viewer, an alert says how to get one and offers the About box. */
-static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 static void help(void)
 {
@@ -3582,6 +3812,13 @@ static void open_item(short i);
 static short item_row_y(short i)
 {
 	return list_y + (i - list_top + 1) * row_h - 2;
+}
+
+/* only the margin of row i, where its dot is: no flicker */
+static void redraw_dot(short i)
+{
+	if (i >= list_top && i < list_top + list_rows && i < nitems)
+		redraw(D_SIDEBAR, wx + 1, item_row_y(i), cw + 3, row_h);
 }
 
 static void redraw_item_row(short i)
@@ -4186,6 +4423,190 @@ static void move_cursor(short d)
 	dirty |= D_LIST;
 }
 
+/* Options > Settings... (^,), as in the other AERA programs: how
+ * ClaudeST reaches its gateway. Network: the gateway's address and port;
+ * serial: the speed. Tab moves between the two fields, Return is OK, Esc
+ * or Undo Cancel. */
+static void settings_dialog(void)
+{
+	static const char *const sp_label[3] = { "4800", "9600", "19200" };
+	static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
+	char f[2][24];
+	short len[2], cur[2], start[2] = { 0, 0 }, cols[2] = { 17, 7 }, fx[2], fy[2];
+	short nl = link, nb = baud, focus = 0, res = -1, clipr[4], m[8], i;
+	short lh, cx, ly[4], chw, ch_x[2], sp_w, sp_x[3];
+	AEVENT e;
+
+	f[0][0] = 0;
+	if (tcp_ip)
+		ip_to_str(tcp_ip, f[0]);
+	*put_num(f[1], tcp_port) = 0;
+	for (i = 0; i < 2; i++)
+		len[i] = cur[i] = strlen(f[i]);
+
+	lh = ch + 8;
+	btn_w = 10 * cw;
+	btn_h = ch + 6;
+	dlg_w = 50 * cw;
+	if (dlg_w > ww - 2 * cw)
+		dlg_w = ww - 2 * cw;
+	dlg_h = ch + lh * 6 + btn_h + ch;
+	if (dlg_h > wh - 4)
+		dlg_h = wh - 4;
+	dlg_x = wx + (ww - dlg_w) / 2;
+	dlg_y = wy + (wh - dlg_h) / 2;
+	cx = dlg_x + 20 * cw;			/* where the controls start */
+	for (i = 0; i < 4; i++)
+		ly[i] = dlg_y + ch + lh * (i + 1) + lh / 2;
+	chw = 11 * cw;				/* Network | Serial */
+	ch_x[0] = cx;
+	ch_x[1] = cx + chw + cw;
+	for (i = 0; i < 2; i++) {
+		fx[i] = cx;
+		fy[i] = ly[i + 1] - 3;
+	}
+	sp_w = 7 * cw;
+	for (i = 0; i < 3; i++)
+		sp_x[i] = cx + i * (sp_w + cw);
+	btn_y = dlg_y + dlg_h - btn_h - ch;
+	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
+	cancel_x = ok_x - btn_w - 2 * cw;
+
+	wind_update(BEG_UPDATE);
+	wind_update(3);		/* BEG_MCTRL */
+	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	graf_mouse(M_OFF, 0);
+	vswr_mode(vh, 2);
+	vsf_perimeter(vh, 0);
+	vst_alignment(vh, 0, 5);
+	clipr[0] = 0;
+	clipr[1] = 0;
+	clipr[2] = scr_w - 1;
+	clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, clipr);
+	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
+	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
+	text(dlg_x + 2 * cw, ly[0], "Connect through", 15, 0, 1);
+	text(dlg_x + 2 * cw, ly[1], "Gateway address", 15, 0, 1);
+	text(dlg_x + 2 * cw, ly[2], "Gateway port", 12, 0, 1);
+	text(dlg_x + 2 * cw, ly[3], "Serial speed", 12, 0, 1);
+	dlg_button(cancel_x, "Cancel", 0);
+	dlg_button(ok_x, "OK", 1);
+
+	for (;;) {
+		/* the choices: the chosen one drawn inverted */
+		for (i = 0; i < 5; i++) {
+			short x = i < 2 ? ch_x[i] : sp_x[i - 2], w = i < 2 ? chw : sp_w, y = ly[i < 2 ? 0 : 3] - 3;
+			const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : sp_label[i - 2];
+			short on = i < 2 ? (i == 0) == (nl == LINK_TCP) : sp_baud[i - 2] == nb, n = strlen(l);
+			fill(x, y, x + w - 1, y + ch + 5, on ? 1 : 0);
+			line(x, y, x + w - 1, y, 1);
+			line(x + w - 1, y, x + w - 1, y + ch + 5, 1);
+			line(x + w - 1, y + ch + 5, x, y + ch + 5, 1);
+			line(x, y + ch + 5, x, y, 1);
+			text(x + (w - n * cw) / 2, y + 3, l, n, 0, on ? 0 : 1);
+		}
+		/* the fields: the one with the cursor is edited */
+		for (i = 0; i < 2; i++) {
+			fld_x = fx[i];
+			fld_y = fy[i];
+			fld_cols = cols[i];
+			fld_w = cols[i] * cw;
+			line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
+			line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
+			line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
+			line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
+			if (i == focus)
+				dlg_field(f[i], len[i], cur[i], &start[i]);
+			else {
+				fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
+				text(fld_x + cw / 2, fld_y + 3, f[i], len[i] < cols[i] - 1 ? len[i] : cols[i] - 1, 0, 1);
+			}
+		}
+		graf_mouse(M_ON, 0);
+		if (res >= 0)
+			break;
+		wait_release();
+		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		graf_mouse(M_OFF, 0);
+		if (e.which & MU_KEYBD) {
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			if (as == 0x0d)
+				res = 1;
+			else if (as == 0x1b || sc == 0x61)
+				res = 0;
+			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
+				focus ^= 1;
+			else if (clip_key(e.kreturn))
+				field_clip(clip_key(e.kreturn), f[focus], &len[focus], &cur[focus],
+					   (focus ? 5 : 15));
+			else if (sc != 0x44)		/* no Hebrew in an address */
+				edit_key(f[focus], &len[focus], &cur[focus], focus ? 5 : 15, e.kstate, e.kreturn);
+			f[focus][len[focus]] = 0;
+		}
+		if (e.which & MU_BUTTON) {
+			short mx = e.mx, my = e.my;
+			for (i = 0; i < 2; i++) {
+				if (mx >= ch_x[i] && mx < ch_x[i] + chw && my >= ly[0] - 3 && my < ly[0] + ch + 3)
+					nl = i == 0 ? LINK_TCP : LINK_SERIAL;
+				if (mx >= fx[i] && mx < fx[i] + cols[i] * cw && my >= fy[i] && my < fy[i] + ch + 6)
+					focus = i;
+			}
+			for (i = 0; i < 3; i++)
+				if (mx >= sp_x[i] && mx < sp_x[i] + sp_w && my >= ly[3] - 3 && my < ly[3] + ch + 3)
+					nb = sp_baud[i];
+			if (my >= btn_y && my < btn_y + btn_h) {
+				if (mx >= ok_x && mx < ok_x + btn_w)
+					res = 1;
+				else if (mx >= cancel_x && mx < cancel_x + btn_w)
+					res = 0;
+			}
+		}
+		/* an address that doesn't read as one: back to it */
+		if (res == 1 && nl == LINK_TCP) {
+			u32 ip;
+			if (!parse_ip(f[0], &ip, 0) || !ip) {
+				res = -1;
+				focus = 0;
+				form_alert(1, "[1][Please type the gateway's|IP address, for example|192.168.1.10.][ OK ]");
+			}
+		}
+	}
+	vs_clip(vh, 0, clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	if (res != 1)
+		return;
+	{
+		u32 ip = 0;
+		u16 port = 0;
+		const char *q = f[1];
+		short changed;
+		parse_ip(f[0], &ip, 0);
+		while (*q >= '0' && *q <= '9')
+			port = port * 10 + (*q++ - '0');
+		if (!port)
+			port = 2323;
+		changed = nl != link || (nl == LINK_TCP && (ip != tcp_ip || port != tcp_port));
+		if (ip)
+			tcp_ip = ip;
+		tcp_port = port;
+		if (nb != baud)
+			set_baud(nb);
+		if (changed)
+			use_link(nl);		/* connects again, saves */
+		else
+			save_config();
+	}
+}
+
 static void handle_key(short kstate, short kr)
 {
 	u8 ascii = kr & 0xff;
@@ -4220,6 +4641,10 @@ static void handle_key(short kstate, short kr)
 	case 0x42: do_account(); return;				/* F8 */
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
+	}
+	if ((kstate & K_CTRL) && scan == 0x33) {	/* ^, */
+		settings_dialog();
+		return;
 	}
 	if (clip_key(kr)) {
 		reply_clip(clip_key(kr));
@@ -4368,7 +4793,7 @@ static void copy_answer(void)
 	if (!(t = malloc(e - s + 1)))
 		return;
 	for (p = s; p < e; p++)
-		if (tb[p] != MK_BOLD)
+		if (tb[p] != MK_BOLD && tb[p] != MK_GREY)
 			t[k++] = tb[p];
 	while (k > 0 && t[k - 1] == '\n')
 		k--;
@@ -4466,6 +4891,7 @@ static void handle_msg(short *msg)
 		case C_FONT: font_menu(); break;
 		case C_HELP: help(); break;
 		case C_KEYS: keys_dialog(); break;
+		case C_SET: settings_dialog(); break;
 		case C_CUT: reply_clip(CLIP_CUT); break;
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
@@ -4766,6 +5192,18 @@ int main(void)
 		if (dirty && tip_on)
 			hide_tip();	/* keep the tip from being drawn over */
 		/* keep saying hello until the bridge answers (~every 5s) */
+		{
+			/* the working dots pulse, about twice a second */
+			static long pulse_at;
+			if (ticks - pulse_at >= 12) {
+				short i;
+				pulse_at = ticks;
+				dot_pulse ^= 1;
+				for (i = list_top; i < nitems && i < list_top + list_rows; i++)
+					if (items[i].state == 'W')
+						redraw_dot(i);
+			}
+		}
 		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
 			send_hello();
 		flush_dirty();
@@ -4774,6 +5212,8 @@ int main(void)
 	tx_cmd("BYE", 0, 0);
 	if (tcp_cn >= 0)
 		sting_close(tcp_cn);
+	if (tcp_opening >= 0)
+		sting_close(tcp_opening);
 	serial_close();
 	wind_close(win);
 	wind_delete(win);

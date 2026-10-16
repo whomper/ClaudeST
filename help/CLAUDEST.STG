@@ -82,9 +82,9 @@
     1. Load STinG and check that the network works.
     2. Copy CLAUDEST.PRG, CLAUDEST.INF and CLAUDEST.HYP into one
        folder.
-    3. Put the Pi's address on the tcp line of CLAUDEST.INF:
-           tcp 192.168.1.10 2323
-       or type @{B}/connect 192.168.1.10@{b} in the reply line instead.
+    3. Choose Options > Settings... (Control+,), pick Network and type
+       the Pi's address, or type @{B}/connect 192.168.1.10@{b} in the
+       reply line.
     4. Run CLAUDEST.PRG. The status line shows Connecting..., then
        Online, with a green dot.
 
@@ -213,11 +213,14 @@
 @{U}Code: Claude Code sessions@{u}
 
   @{B}Code@{b} (F6) lists your Claude Code sessions from claude.ai/code,
-  newest first.
+  newest first. As on claude.ai, a dot to the left of a session says
+  how it is doing: grey and pulsing while Claude works on it, yellow
+  when it waits for you, blue when it has news you haven't read (on a
+  monochrome screen black; the waiting one a little bigger).
 
-  - @{B}Reading:@{b} your messages and Claude's replies, with each tool
-    call as a one-line note such as [Bash: make -C st]. Tool output is
-    left out.
+  - @{B}Reading:@{b} your messages and Claude's replies. Each run of tool
+    calls is one grey line, as on claude.ai: the step's description, or
+    what was done ("Ran 2 commands"). Tool output is left out.
   - @{B}Replying:@{b} what you type goes to the open session, and Claude
     Code's replies appear as it works. If it's still working after 15
     minutes, ClaudeST stops waiting; open the session again later to see
@@ -345,6 +348,7 @@
                       end; Control: by word)
     Esc, Undo         Clear the reply line
     Control+R         Reconnect to the bridge
+    Control+,         Settings: the gateway's address, or serial
     Control+C X V     Copy, cut, paste the reply line
                       (Control+C with it empty: Claude's last answer)
     Help              This help, in EHypView, ST-Guide or HypView;
@@ -362,27 +366,33 @@
 @node "Settings" "Settings (CLAUDEST.INF)"
 @{U}Settings (CLAUDEST.INF)@{u}
 
-  ClaudeST saves its settings to CLAUDEST.INF, next to CLAUDEST.PRG, as
-  soon as you change them. You can also edit it with any text editor.
-  Lines starting with ; are comments.
+  @{B}Options > Settings...@{b} (Control+,) sets how ClaudeST reaches
+  its gateway: Network (STinG) with the gateway's address and port, or
+  Serial with the speed.
 
-    tcp 192.168.1.10 2323   the bridge over STinG (/connect, Options)
-    serial                  the bridge over the serial port
-    baud 19200              4800, 9600 or 19200 (Options)
-    sidebar 240             the sidebar's width, by dragging the divider
-    keyboard hebrew         F10 / Options > Hebrew keys
-    port 7                  on a TT or Falcon, which serial port to use:
+  ClaudeST saves its settings to CLAUDEST.INF, next to CLAUDEST.PRG, as
+  soon as you change them, as the other AERA programs do: an [OPTIONS]
+  part, NAME=value lines and a ; note above each. You can edit it with
+  any text editor; lines ClaudeST doesn't know are kept.
+
+    LINK=network            or serial (Settings, /connect, /serial)
+    HOST=192.168.1.10       the gateway's address (Settings, /connect)
+    PORT=2323               the gateway's port
+    BAUD=19200              4800, 9600 or 19200 (Settings)
+    SERIALPORT=7            on a TT or Falcon, which serial port to use:
                             6 MFP, 7 SCC B (the Falcon's Modem port),
-                            8 TT-MFP, 9 SCC A
-    model <id> <effort>     the model chip / F9
-    font 1 8 0              Options > Font: the font's id (1 = system
-                            font), its size, and where it keeps Hebrew
+                            8 TT-MFP, 9 SCC A; 0 the one TOS chose
+    HEBREW=1                F10 / Options > Hebrew keys
+    FONT=1,8  HEBFONT=0     Options > Font: the font's id (1 = system
+                            font) and size; where it keeps Hebrew
                             (0 Atari, 1 ISO-8859-8, 2 DOS 862)
+    SIDEBAR=240             the sidebar's width, by dragging the divider
+    MODEL=...  EFFORT=...   the model chip / F9
 
   A @{B}serial cable@{b}: connect the Atari's Modem port to a
   USB-to-RS-232 adapter on the Pi with a null-modem cable (never
   straight to the Pi's pins), run "sudo gateway/aera-gateway install claude
-  --serial auto" on the Pi, and choose Options > Serial port on the Atari.
+  --serial auto" on the Pi, and choose Options > Settings > Serial on the Atari.
 @endnode
 
 ## ------------------------------------------------------------------------

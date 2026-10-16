@@ -1031,6 +1031,94 @@ class LongRunningBridge(unittest.TestCase):
         self.assertEqual(list(m.efforts), ["c2", "c3", "c4"])
 
 
+class ToolSteps(unittest.TestCase):
+    """Tool calls in Code sessions read as claude.ai shows them"""
+
+    def test_one_step_uses_its_description(self):
+        from backends import tool_summary
+        self.assertEqual(tool_summary([{"name": "Bash", "input": {
+            "command": "sleep 150", "description": "Waiting for the Release workflow"}}]),
+            "Waiting for the Release workflow")
+        self.assertEqual(tool_summary([{"name": "mcp__github__actions_list", "input": {}}]),
+                         "Used github: actions list")
+        self.assertEqual(tool_summary([{"name": "Read", "input": {"file_path": "/a/st/claudest.c"}}]),
+                         "Read claudest.c")
+
+    def test_a_run_is_counted(self):
+        from backends import tool_summary
+        bash = {"name": "Bash", "input": {"command": "make"}}
+        task = {"name": "TaskUpdate", "input": {}}
+        self.assertEqual(tool_summary([bash, bash]), "Ran 2 commands")
+        self.assertEqual(tool_summary([bash, task, bash, task]), "Ran 2 commands, used 2 tools")
+
+    def test_steps_fold_across_events_and_results(self):
+        from backends import code_messages
+        ev = [
+            {"id": "1", "type": "assistant", "message": {"content": [{"type": "text", "text": "Checking."}]}},
+            {"id": "2", "type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "TaskUpdate", "input": {}}]}},
+            {"id": "3", "type": "user", "message": {"content": [{"type": "tool_result", "content": "ok"}]}},
+            {"id": "4", "type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": "sleep 90"}}]}},
+            {"id": "5", "type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}]}},
+        ]
+        self.assertEqual(code_messages(ev), [("A", "Checking.\n\n\x01Ran 1 command, used 1 tool\n\nDone.")])
+
+    def test_a_grey_line_goes_out_as_g(self):
+        link = FakeLink()
+        Session(link, DemoBackend()).message("A", "Looking.\n\n\x01Ran 2 commands\n\nDone.")
+        self.assertIn([b"g", b"Ran 2 commands"], link.lines())
+
+    def test_grey_lines_reach_the_atari(self):
+        from atari_text import format_text
+        self.assertEqual(format_text("Hi\n\x01Ran 2 commands\nBye"),
+                         [("P", "Hi"), ("B",), ("g", "Ran 2 commands"), ("P", "Bye")])
+        # streamed in pieces, the grey line still comes whole
+        from atari_text import Formatter
+        f = Formatter()
+        ops = f.feed("\x01Ran 2 ") + f.feed("commands\nNext")
+        self.assertEqual(ops[0], ("g", "Ran 2 commands"))
+
+
+class CodeActivity(unittest.TestCase):
+    """claude.ai's dots on Code sessions: W working, A waiting for you"""
+
+    def test_state_from_the_session(self):
+        from backends import code_state
+        self.assertEqual(code_state({"session_status": "SESSION_STATUS_RUNNING"}), "W")
+        self.assertEqual(code_state({"session_status": "running"}), "W")
+        self.assertEqual(code_state({"session_status": "idle",
+                                     "post_turn_summary": {"status_category": "need_input"}}), "A")
+        self.assertEqual(code_state({"session_status": "idle", "external_metadata": {
+            "post_turn_summary": {"status_category": "need_input"}}}), "A")
+        self.assertEqual(code_state({"session_status": "idle",
+                                     "post_turn_summary": {"status_category": "review_ready"}}), "")
+
+    def test_flags_go_out_and_changes_follow(self):
+        import time as _t
+        link = FakeLink()
+        be = DemoBackend()
+        state = {"a": "W", "b": ""}
+        be.list_code_sessions = lambda: [("a", "Busy", False, None, False, state["a"]),
+                                         ("b", "Done", False, None, True, state["b"])]
+        s = Session(link, be)
+        s.handle(b"LIST\tCODE")
+        items = [l for l in link.lines() if l[0] == b"I"]
+        self.assertEqual(items[0][3:], [b"W"])
+        self.assertEqual(items[1][3:], [b"U"])
+        link.sent = b""
+        s.idle()                                   # too soon: nothing asked
+        self.assertEqual(link.sent, b"")
+        s._active_at = _t.time() - 60
+        state["a"] = "A"                           # it finished and asks something
+        s.idle()
+        self.assertEqual(link.lines(), [[b"d", b"a", b"A"]])
+        link.sent = b""
+        s._active_at = 0
+        s.idle()                                   # nothing works any more: no checks
+        self.assertEqual(link.sent, b"")
+
+
 class CodeSessions(unittest.TestCase):
     EVENTS = [
         {"id": "e1", "data": {"type": "system", "subtype": "init"}},
@@ -1049,7 +1137,7 @@ class CodeSessions(unittest.TestCase):
         from backends import code_messages
         self.assertEqual(code_messages(self.EVENTS), [
             ("U", "fix the build"),
-            ("A", "Looking.\n\n[Bash: make -C st]\n\nIt builds now.")])
+            ("A", "Looking.\n\n\x01Ran make -C st\n\nIt builds now.")])
 
     def backend(self):
         from backends import ClaudeAiBackend
@@ -1099,7 +1187,7 @@ class CodeSessions(unittest.TestCase):
         self.assertEqual(be.chat_choice, ("claude-opus-5-5", ""))
         got = []
         be.send_code("session_b", "and the tests?", got.append, poll=0)
-        self.assertEqual(got, ["Looking.\n\n[Bash: make -C st]\n\nIt builds now."])
+        self.assertEqual(got, ["Looking.\n\n\x01Ran make -C st\n\nIt builds now."])
         sent = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]
         self.assertEqual(sent["message"], {"role": "user", "content": "and the tests?"})
 
@@ -1109,7 +1197,7 @@ class CodeSessions(unittest.TestCase):
         s.handle(b"LIST\tCODE")
         lines = link.lines()
         self.assertIn([b"L", b"CODE", b"Code"], lines)
-        self.assertIn([b"I", b"session_d1", b"Port the bridge to MicroPython"], lines)
+        self.assertIn([b"I", b"session_d1", b"Port the bridge to MicroPython", b"W"], lines)
         link.sent = b""
         s.handle(b"HELLO\t1\t1.8")                     # new chats: Opus 5.5, medium
         s.handle(b"OPEN\tCODE\tsession_d1")             # runs on Sonnet 5.5

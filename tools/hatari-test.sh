@@ -49,7 +49,7 @@ echo "Using Hatari: $HATARI_BIN"
 mkdir -p "$WORK/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$WORK/drive/"
 # serial mode: the drive must not carry the network CLAUDEST.INF
-printf "serial\r\n${EXTRA_INF:-}" > "$WORK/drive/CLAUDEST.INF"
+printf "[OPTIONS]\r\nLINK=serial\r\n${EXTRA_INF:-}" > "$WORK/drive/CLAUDEST.INF"
 
 if [ -z "${TOS:-}" ]; then
   TOS="$WORK/etos512us.img"

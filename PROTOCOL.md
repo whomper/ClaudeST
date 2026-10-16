@@ -43,7 +43,8 @@ All commands are one letter.
 | `u` [`<percent>` `<reset>`] | Session usage for the ring in the status area: percent of the current session limit used (0-100), and the time until it resets, such as `2h 10m`. A bare `u` hides the ring (no such limit). Sent after `S` when due: after each reply, otherwise at most every 2 minutes. |
 | `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `CODE`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
-| `I` `<id>` `<label>` [`<flags>`] | List item. Flags: `P` pinned, `U` unread (updated since last read; since 1.17); for example `PU`. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
+| `I` `<id>` `<label>` [`<flags>`] | List item. Flags: `P` pinned, `U` unread (updated since last read; since 1.17); for example `PU`. Code sessions also (since 1.38): `W` Claude is working on it, `A` it waits for you (a question, a permission), as claude.ai's dots. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
+| `d` `<id>` `<flags>` | An item's flags changed (since 1.38): the bridge sends it unasked while the Code list shows a session at work, about every 20 seconds, so its dot follows without the list being sent again. |
 | `X` `<label>` | A heading in the list ("Pinned", "Today", "Yesterday", "Oct 4", "Older"); the items after it belong to it. Headings can't be selected. |
 | `E` | End of list. |
 | `Q` | Start a picker list (for "Move to project"). |
@@ -56,6 +57,7 @@ All commands are one letter.
 | `P` `<text>` | Append text to the current paragraph (streamed replies arrive as many `P`s). |
 | `B` | Line break / new paragraph. |
 | `H` `<text>` | A bold heading line. |
+| `g` `<text>` | A grey line (since 1.38): a run of tool calls in a Code session, folded into one line as claude.ai shows it ("Ran 2 commands", or the step's own description). |
 | `Z` | End of message. |
 | `Y` `0`\|`1` | Claude is (not) replying. |
 | `A` `<text>` | Show an alert box. |

@@ -263,15 +263,63 @@ def _event_payload(ev):
     return t, p
 
 
-def _tool_line(block):
-    """[Bash: ls -la] -- a short note for a tool call in a Code session."""
-    inp = block.get("input") or {}
-    arg = (inp.get("command") or inp.get("file_path") or inp.get("path") or
-           inp.get("pattern") or inp.get("url") or inp.get("description") or "")
-    arg = " ".join(str(arg).split())
-    if len(arg) > 60:
-        arg = arg[:57] + "..."
-    return "[%s%s]" % (block.get("name") or "tool", ": " + arg if arg else "")
+GREY = "\x01"       # starts a line the Atari shows in grey (atari_text.Formatter)
+
+
+def _plural(n, word):
+    return "%d %s%s" % (n, word, "" if n == 1 else "s")
+
+
+def _short_path(p):
+    return str(p).replace("\\", "/").rstrip("/").split("/")[-1] or str(p)
+
+
+def tool_summary(blocks):
+    """One line for a run of tool calls, as claude.ai shows them: the step's
+    own description ("Waiting for the Release workflow"), or what was done
+    ("Ran 2 commands, used 2 tools", "Read claudest.c", "Used github:
+    actions list")."""
+    if len(blocks) == 1:
+        b = blocks[0]
+        name = b.get("name") or "tool"
+        inp = b.get("input") or {}
+        desc = " ".join(str(inp.get("description") or "").split())
+        if desc:
+            return desc
+        if name.startswith("mcp__"):
+            parts = name.split("__")
+            server = parts[1] if len(parts) > 2 else "a connector"
+            return "Used %s: %s" % (server, (parts[-1] or "tool").replace("_", " "))
+        if name == "Bash":
+            cmd = " ".join(str(inp.get("command") or "").split())
+            return "Ran " + (cmd[:57] + "..." if len(cmd) > 60 else cmd) if cmd else "Ran a command"
+        path = inp.get("file_path") or inp.get("path") or inp.get("notebook_path")
+        if name == "Read" and path:
+            return "Read " + _short_path(path)
+        if name in ("Edit", "Write", "MultiEdit", "NotebookEdit") and path:
+            return ("Created " if name == "Write" else "Edited ") + _short_path(path)
+        if name in ("Grep", "Glob") and inp.get("pattern"):
+            return "Searched for " + str(inp["pattern"])[:50]
+        if name in ("WebSearch",) and inp.get("query"):
+            return "Searched the web for " + str(inp["query"])[:50]
+        if name == "WebFetch" and inp.get("url"):
+            return "Fetched " + str(inp["url"])[:60]
+        return "Used " + name
+    commands = sum(1 for b in blocks if b.get("name") == "Bash")
+    files = sum(1 for b in blocks if b.get("name") in ("Read",))
+    edits = sum(1 for b in blocks if b.get("name") in ("Edit", "Write", "MultiEdit", "NotebookEdit"))
+    other = len(blocks) - commands - files - edits
+    parts = []
+    if commands:
+        parts.append("ran " + _plural(commands, "command"))
+    if files:
+        parts.append("read " + _plural(files, "file"))
+    if edits:
+        parts.append("edited " + _plural(edits, "file"))
+    if other:
+        parts.append("used " + _plural(other, "tool"))
+    text = ", ".join(parts)
+    return text[:1].upper() + text[1:]
 
 
 def merge_moved(classic, session):
@@ -286,6 +334,21 @@ def merge_moved(classic, session):
         i = [key(m) for m in classic].index(key(session[0]))
         return classic[:i] + session
     return classic + session
+
+
+def code_state(s):
+    """A Code session's dot on claude.ai: W while Claude works on it, A when
+    it waits for you (a question, a permission); "" otherwise."""
+    status = str(s.get("session_status") or "").lower()
+    bucket = str(s.get("status_bucket") or "").lower()
+    if "running" in status or "working" in bucket:
+        return "W"
+    summary = (s.get("post_turn_summary") or
+               (s.get("external_metadata") or {}).get("post_turn_summary") or {})
+    if (str(summary.get("status_category") or "").lower() in ("need_input", "blocked")
+            or "blocked" in bucket or "requires_action" in status):
+        return "A"
+    return ""
 
 
 def _event_error(ev):
@@ -310,10 +373,23 @@ def _event_error(ev):
 
 
 def code_messages(events):
-    """Session events -> [(role, text)]: your messages, Claude's text and a
-    one-line note per tool call; tool results and system events are left
-    out, and Claude's consecutive events are joined into one message."""
-    out = []
+    """Session events -> [(role, text)]: your messages, and Claude's text
+    with each run of tool calls folded into one grey line, as claude.ai
+    shows them (tool_summary); tool results and system events are left out,
+    and Claude's consecutive events are joined into one message."""
+    out, tools = [], []
+
+    def add_a(text):
+        if out and out[-1][0] == "A":
+            out[-1] = ("A", out[-1][1] + "\n\n" + text)
+        else:
+            out.append(("A", text))
+
+    def flush():
+        if tools:
+            add_a(GREY + tool_summary(tools))
+            del tools[:]
+
     for ev in events:
         t, p = _event_payload(ev)
         msg = p.get("message") if isinstance(p.get("message"), dict) else p
@@ -325,21 +401,16 @@ def code_messages(events):
                 text = "\n".join(b.get("text", "") for b in content or []
                                  if isinstance(b, dict) and b.get("type") == "text")
             if text.strip():
+                flush()
                 out.append(("U", text.strip()))
         elif t == "assistant":
-            parts = []
             for b in content if isinstance(content, list) else [{"type": "text", "text": content or ""}]:
                 if b.get("type") == "text" and b.get("text", "").strip():
-                    parts.append(b["text"].strip())
+                    flush()
+                    add_a(b["text"].strip())
                 elif b.get("type") == "tool_use":
-                    parts.append(_tool_line(b))
-            if not parts:
-                continue
-            text = "\n\n".join(parts)
-            if out and out[-1][0] == "A":
-                out[-1] = ("A", out[-1][1] + "\n\n" + text)
-            else:
-                out.append(("A", text))
+                    tools.append(b)
+    flush()
     return out
 
 
@@ -744,7 +815,8 @@ class ClaudeAiBackend(Backend):
                     and s.get("session_status") != "archived"]
         sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at") or "", reverse=True)
         return [(s["id"], s.get("title") or "Untitled session", False,
-                 s.get("updated_at") or s.get("created_at")) for s in sessions]
+                 s.get("updated_at") or s.get("created_at"), bool(s.get("unread")),
+                 code_state(s)) for s in sessions]
 
     def _code_events(self, session_id, after=None, cap=2000):
         events, params = [], {"limit": 200}
@@ -1755,12 +1827,12 @@ class DemoBackend(Backend):
             "session_d1": {"title": "Port the bridge to MicroPython", "model": "claude-sonnet-5-5",
                            "messages": [
                 ("U", "Can claude_bridge.py run on a Pico W?"),
-                ("A", "Mostly. I'll check what it imports.\n\n[Bash: grep -n ^import bridge/*.py]"
+                ("A", "Mostly. I'll check what it imports.\n\n" + GREY + "Ran grep -n ^import bridge/*.py"
                       "\n\nIt needs sockets and hashlib, both in MicroPython; serial would "
                       "use machine.UART instead of pyserial.")]},
             "session_d2": {"title": "Fix the 68000 store-merging crash", "messages": [
                 ("U", "CLAUDEST.PRG crashes on /connect"),
-                ("A", "[Read: st/claudest.c]\n\nGCC merged two byte stores into one word write "
+                ("A", GREY + "Read claudest.c\n\nGCC merged two byte stores into one word write "
                       "at an odd address. Building with -fno-store-merging fixes it.")]},
         }
 
@@ -1856,7 +1928,10 @@ class DemoBackend(Backend):
         ])
 
     def list_code_sessions(self):
-        return [(k, v["title"]) for k, v in self.code.items()]
+        # the first works, the second waits for you, as claude.ai's dots show
+        states = {"session_d1": ("W", False), "session_d2": ("A", False)}
+        return [(k, v["title"], False, None, states.get(k, ("", False))[1], states.get(k, ("", False))[0])
+                for k, v in self.code.items()]
 
     def get_code_session(self, session_id):
         s = self.code[session_id]
@@ -1867,7 +1942,7 @@ class DemoBackend(Backend):
         self.code[session_id]["model"] = model
 
     def send_code(self, session_id, text, on_delta):
-        reply = "[Bash: echo working]\n\nDone. (This is the demo backend: no session ran.)"
+        reply = GREY + "Ran echo working\n\nDone. (This is the demo backend: no session ran.)"
         on_delta(reply)
         self.code[session_id]["messages"] += [("U", text), ("A", reply)]
         return self.code[session_id]["title"]

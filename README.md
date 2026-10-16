@@ -72,15 +72,16 @@ own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folde
 |---|---|
 | `CLAUDEST.PRG` | the program |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
-| `CLAUDEST.INF` | an example settings file: put your Pi's address on its `tcp` line, and keep it next to `CLAUDEST.PRG` |
+| `CLAUDEST.INF` | an example settings file: keep it next to `CLAUDEST.PRG` (or leave it out and use Options ▸ Settings) |
 | `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 
 1. Load **STinG** and check that the network works, for example by pinging the Pi.
 2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder.
-3. Put the Pi's address on the `tcp` line of `CLAUDEST.INF`, with any text editor:
+3. Start ClaudeST, choose **Options ▸ Settings…** (`Ctrl+,`), pick **Network** and type the Pi's
+   address (port 2323). Or put it on the `HOST=` line of `CLAUDEST.INF` with any text editor:
    ```
-   tcp 192.168.1.10 2323
+   HOST=192.168.1.10
    ```
 4. Run `CLAUDEST.PRG`. The status line at the bottom left shows *Connecting…*, then *Online*, with a
    green dot.
@@ -98,7 +99,7 @@ the Atari straight to the Pi's GPIO pins: the Atari's ±12 V signals damage the 
 sudo gateway/aera-gateway install claude --serial auto
 ```
 
-On the Atari, choose **Options ▸ Serial port**, or leave out `CLAUDEST.INF`. Both sides use 19200 baud
+On the Atari, choose **Options ▸ Settings…** and pick **Serial**, or leave out `CLAUDEST.INF`. Both sides use 19200 baud
 by default. The guide's [Serial cables and ports](docs/GUIDE.md#serial-cables-and-ports) says which
 port to use on each Atari.
 
@@ -172,6 +173,7 @@ release.
 | F8, or click the status line | Account: plan, usage and details |
 | F9, or click the model chip | Model and effort |
 | F10 | Hebrew keyboard on or off |
+| ^, | Settings: the gateway's address and port, or the serial port |
 | Help | Help in EHypView or ST-Guide, or the keys (also in the Help menu) |
 | ^Q | Quit |
 

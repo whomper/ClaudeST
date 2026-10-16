@@ -45,8 +45,12 @@ HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
 # ---------------------------------------------------------------------------
 
 class Link:
+    """_read() returns some bytes, b"" when nothing came for a while (the
+    bridge then gets its idle() call), or None when the link is gone."""
+
     def __init__(self):
         self.buf = b""
+        self.idle = None
 
     def _read(self) -> bytes:
         raise NotImplementedError
@@ -59,6 +63,8 @@ class Link:
             chunk = self._read()
             if chunk is None:
                 raise EOFError
+            if not chunk and self.idle:
+                self.idle()
             self.buf += chunk
         line, self.buf = self.buf.split(b"\n", 1)
         return line.rstrip(b"\r")
@@ -142,7 +148,9 @@ class TcpLink(Link):
         import select
         while True:
             socks = [self.srv] + ([self.conn] if self.conn else [])
-            ready, _, _ = select.select(socks, [], [], 60)
+            ready, _, _ = select.select(socks, [], [], 5)
+            if not ready:
+                return b""
             if self.srv in ready:
                 self._accept()
                 continue
@@ -182,6 +190,9 @@ class PipeLink(Link):
         self.inp = os.open(in_path, os.O_RDWR)
 
     def _read(self):
+        import select
+        if not select.select([self.inp], [], [], 5)[0]:
+            return b""
         return os.read(self.inp, 1024)
 
     def write(self, data):
@@ -206,6 +217,9 @@ class Session:
         self.list_kind = "CHATS"
         self.query = ""
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
+        self.flags_sent = {}    # list item id -> the flags the Atari shows
+        self._active_at = 0.0   # when the Code sessions' activity was last checked
+        link.idle = self.idle
 
     # -- output --------------------------------------------------------
 
@@ -228,6 +242,8 @@ class Session:
                 self.out("B")
             elif op[0] == "H":
                 self.out("H", op[1])
+            elif op[0] == "g":
+                self.out("g", op[1])
 
     def message(self, role, body):
         self.out("M", role)
@@ -240,6 +256,8 @@ class Session:
         date headings (X lines) as on claude.ai: Pinned, Today, Yesterday,
         a date for the rest of the week, then Older."""
         self.list_kind = kind
+        self.flags_sent = {}
+        self._active_at = time.time()
         items = sorted(items, key=lambda it: not (len(it) > 2 and it[2]))
         dated = any(len(it) > 3 and it[3] for it in items)
         self.out("L", kind, title)
@@ -260,13 +278,43 @@ class Session:
                 break
             rows += 1
             iid = self.short_id(it[0])
-            # flags: P pinned, U unread (updated since last read)
-            flags = ("P" if len(it) > 2 and it[2] else "") + ("U" if len(it) > 4 and it[4] else "")
+            flags = self.item_flags(it)
+            self.flags_sent[it[0]] = flags
             if flags:
                 self.out("I", iid, it[1] or "Untitled", flags)
             else:
                 self.out("I", iid, it[1] or "Untitled")
         self.out("E")
+
+    @staticmethod
+    def item_flags(it):
+        """P pinned, U unread (updated since last read); for Code sessions
+        W Claude is working, A it waits for you (as claude.ai's dots)"""
+        return (("P" if len(it) > 2 and it[2] else "") + ("U" if len(it) > 4 and it[4] else "") +
+                (it[5] if len(it) > 5 and it[5] else ""))
+
+    ACTIVE_EVERY = 20       # seconds between checks while a Code session works
+
+    def idle(self):
+        """Nothing from the Atari for a while: while the Code list shows a
+        session at work, ask claude.ai how the sessions are doing and send
+        a d line for each one whose dot changed (the list stays as it is)."""
+        if self.list_kind != "CODE" or not any("W" in f for f in self.flags_sent.values()):
+            return
+        now = time.time()
+        if now - self._active_at < self.ACTIVE_EVERY:
+            return
+        self._active_at = now
+        try:
+            sessions = self.be.list_code_sessions()
+        except Exception as e:
+            log.info("Code sessions: could not check them: %s", e)
+            return
+        for it in sessions:
+            flags = self.item_flags(it)
+            if it[0] in self.flags_sent and self.flags_sent[it[0]] != flags:
+                self.flags_sent[it[0]] = flags
+                self.out("d", self.short_id(it[0]), flags)
 
     def short_id(self, real):
         """Ids longer than the Atari keeps (artifact file paths, say) are

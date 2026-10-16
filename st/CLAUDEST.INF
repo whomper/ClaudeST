@@ -1,3 +1,13 @@
-; ClaudeST settings. Put the IP address of your gateway (the Pi) on the
-; tcp line, or type /connect <address> in ClaudeST's reply line.
-tcp 192.168.1.10 2323
+; ClaudeST settings. Lines starting with ; are notes.
+; Set them in ClaudeST with Options > Settings (Control+,), or here.
+
+[OPTIONS]
+
+; how ClaudeST reaches its gateway: network (STinG) or serial
+LINK=network
+
+; network: the gateway's IP address (the Pi running the ClaudeST bridge)
+HOST=192.168.1.10
+
+; network: the gateway's port, 2323 unless you changed it on the Pi
+PORT=2323

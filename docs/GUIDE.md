@@ -137,13 +137,19 @@ menu: the models, then the effort levels that model supports.
 ## Code: Claude Code sessions
 
 **Code** (`F6`) lists your Claude Code sessions from claude.ai/code,
-newest first.
+newest first. As on claude.ai, a dot to the left of a session says how
+it is doing: **grey and pulsing** while Claude works on it, **yellow**
+when it waits for you (a question, a permission), **blue** when it has
+news you haven't read. On a monochrome screen the dots are black; the
+waiting one is a little bigger. While a session works, ClaudeST checks
+about every 20 seconds and its dot follows.
 
 ![A Claude Code session](code.png)
 
-- **Reading:** your messages and Claude's replies, with each tool call
-  as a one-line note such as `[Bash: make -C st]`. Tool output is left
-  out.
+- **Reading:** your messages and Claude's replies. As on claude.ai, each
+  run of tool calls is one grey line: the step's own description
+  ("Waiting for the Release workflow"), or what was done ("Ran 2
+  commands, used 2 tools", "Read claudest.c"). Tool output is left out.
 - **Replying:** what you type goes to the open session, and Claude
   Code's replies appear as it works. If it's still working after 15
   minutes, ClaudeST stops waiting; open the session again later to see
@@ -301,6 +307,7 @@ of them.
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Esc` / `Undo` | Clear the reply line |
 | `Ctrl+R` | Reconnect to the bridge |
+| `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
 | `Ctrl+Q`, `Ctrl+W` | Quit (Ctrl+W closes the window, ClaudeST's only one) |
@@ -310,21 +317,29 @@ sets the gateway address, and `/serial` switches to the serial port.
 
 ## Settings (CLAUDEST.INF)
 
+**Options ▸ Settings…** (`Ctrl+,`) sets how ClaudeST reaches its gateway:
+**Network** (through STinG) with the gateway's address and port, or
+**Serial** with the speed. Tab moves between the two fields; Return is OK.
+
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`, as
-soon as you change them. You can also edit it in any text editor.
+soon as you change them, in the format of the other AERA programs: a
+`[OPTIONS]` part, one `NAME=value` per line, and a `;` note above each.
+You can also edit it in any text editor; lines ClaudeST doesn't know are
+kept. A `CLAUDEST.INF` from before 1.38 (`tcp 192.168.1.10 2323` and so
+on) is still read, and written in the new form the next time.
 
-| Line | Set by |
+| Setting | Set by |
 |------|--------|
-| `tcp 192.168.1.10 2323`, or `serial` | `/connect`, `/serial`, Options ▸ Network / Serial port |
-| `baud 19200` (or 9600, 4800) | Options ▸ baud rate |
-| `sidebar 240` | dragging the divider (width in pixels) |
-| `keyboard hebrew` | `F10` / Options ▸ Hebrew keys |
-| `port 7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). Without it, ClaudeST uses the port TOS has chosen. |
-| `model claude-sonnet-5-5 max` | the model chip / `F9` |
-| `font 1 8 0` | Options ▸ Font: the font's id (1 = the system font), its size in points (8 or 16 for the system font's two sizes) and where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `LINK=network` or `serial` | Options ▸ Settings, `/connect`, `/serial` |
+| `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
+| `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, Options ▸ baud rate |
+| `SERIALPORT=7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). 0: the port TOS has chosen. |
+| `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
+| `FONT=1,8`, `HEBFONT=0` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes); where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `SIDEBAR=240` | dragging the divider (width in pixels) |
+| `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` |
 
-Lines starting with `;` are comments. The window always opens full
-screen with a new chat.
+The window always opens full screen with a new chat.
 
 ## What is stored where
 
@@ -484,7 +499,7 @@ connection over the serial port, to test the network code. It's for the
 emulator only; never install it on a real Atari.
 
 Hatari only connects the ST-style MFP serial port to the bridge. To run
-an emulated Falcon, put `serial` and `port 6` in its `CLAUDEST.INF`; a
+an emulated Falcon, put `LINK=serial` and `SERIALPORT=6` in its `CLAUDEST.INF`; a
 real Falcon uses its Modem port, which needs no `port` line.
 
 ### Recording a demo video
