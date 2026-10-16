@@ -43,7 +43,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "1.40"
+#define VERSION "1.41"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -102,6 +102,8 @@ static short status_y;
 #define MK_HEADER 0x10
 #define MK_BOLD   0x11
 #define MK_GREY   0x12		/* a tool step, in grey as on claude.ai */
+#define MK_CODE   0x13		/* a line of a code block, in blue */
+#define MK_INL    0x14		/* starts or ends inline code, in red */
 
 static char *tb;
 static long tlen, tcap;
@@ -117,7 +119,9 @@ typedef struct {
 #define L_HEADER 1
 #define L_BOLD   2
 #define L_GREY   3
+#define L_CODE   4
 #define L_TYPE   0x0f
+#define L_INL    0x20		/* the line starts inside inline code */
 #define L_RTL    0x40		/* line of a right-to-left (Hebrew) paragraph */
 
 static LINE *lines;
@@ -565,26 +569,34 @@ static void wrap_from(long p, u8 role)
 			} else if (tb[s] == MK_GREY) {
 				kind = L_GREY;
 				s++;
+			} else if (tb[s] == MK_CODE) {
+				kind = L_CODE;
+				s++;
 			}
 			/* the paragraph's direction comes from its first strong letter */
 			if (bidi_is_rtl(tb + s, e - s > 2000 ? 2000 : (short)(e - s)))
 				kind |= L_RTL;
 			w = wrap_width(role);
 			while (s < e) {
-				long b;
-				if (e - s <= w) {
+				long b, m;
+				short k;
+				/* w characters on, not counting inline code marks */
+				for (m = s, k = 0; m < e && (k < w || tb[m] == MK_INL); m++)
+					if (tb[m] != MK_INL)
+						k++;
+				if (m >= e) {
 					add_line(s, (short)(e - s), kind, role);
 					break;
 				}
-				for (b = s + w; b > s && tb[b] != ' '; b--)
+				for (b = m; b > s && tb[b] != ' '; b--)
 					;
-				if (b == s) {
-					add_line(s, w, kind, role);
-					s += w;
-				} else {
-					add_line(s, (short)(b - s), kind, role);
-					s = b + 1;
-				}
+				if (b == s)
+					b = m;
+				add_line(s, (short)(b - s), kind, role);
+				for (m = s; m < b; m++)	/* inline code going on */
+					if (tb[m] == MK_INL)
+						kind ^= L_INL;
+				s = tb[b] == ' ' ? b + 1 : b;	/* a space breaks the line */
 			}
 		}
 		if (e >= tlen)
@@ -595,7 +607,8 @@ static void wrap_from(long p, u8 role)
 
 static short is_para_start(long off)
 {
-	return off == 0 || tb[off - 1] == '\n' || tb[off - 1] == MK_BOLD || tb[off - 1] == MK_GREY;
+	return off == 0 || tb[off - 1] == '\n' || tb[off - 1] == MK_BOLD || tb[off - 1] == MK_GREY ||
+	       tb[off - 1] == MK_CODE;
 }
 
 /* rewrap the last paragraph after text was appended; returns first changed line */
@@ -613,7 +626,8 @@ static short wrap_tail(void)
 	if (nlines) {
 		p = lines[li].off;
 		if (li < nlines && p > 0 && (((lines[li].kind & L_TYPE) == L_BOLD && tb[p - 1] == MK_BOLD) ||
-					     ((lines[li].kind & L_TYPE) == L_GREY && tb[p - 1] == MK_GREY)))
+					     ((lines[li].kind & L_TYPE) == L_GREY && tb[p - 1] == MK_GREY) ||
+					     ((lines[li].kind & L_TYPE) == L_CODE && tb[p - 1] == MK_CODE)))
 			p--;
 		role = li > 0 ? lines[li - 1].role : 0;
 	}
@@ -867,6 +881,24 @@ static short text_bidi(short x, short y, const char *s, short n, short fx, short
 static short accent(void)
 {
 	return ncolors >= 4 ? 2 : 1;	/* red where we have colour, else black */
+}
+
+/* code blocks in blue, as on claude.ai; four colours have no blue */
+static short code_colour(void)
+{
+	return ncolors >= 16 ? 4 : ncolors >= 4 ? 3 : 1;
+}
+
+/* inline code: red, the standard colours' nearest to claude.ai's
+   burgundy, or underlined in black and white */
+static short inl_colour(void)
+{
+	return ncolors >= 4 ? 2 : 1;
+}
+
+static short inl_fx(void)
+{
+	return ncolors >= 4 ? 0 : 8;
 }
 
 /* degrees clockwise from 12 o'clock to the point (x, y), y pointing up;
@@ -1376,15 +1408,44 @@ static void draw_text(short from_row)
 		{
 			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : (l->kind & L_TYPE) == L_GREY ? 2 : 0;
 			short rtl = (l->kind & L_RTL) != 0;
-			if (rtl || bidi_has_rtl(tb + l->off, l->len)) {
+			short colour = (l->kind & L_TYPE) == L_CODE ? code_colour() : 1;
+			const char *t = tb + l->off;
+			short n = l->len, i, k, inl = (l->kind & L_INL) != 0;
+			static char plain[BIDI_MAX];
+			if (inl || memchr(t, MK_INL, n)) {
+				if (rtl || bidi_has_rtl(t, n)) {	/* Hebrew: no marks */
+					for (i = k = 0; i < n && k < BIDI_MAX; i++)
+						if (t[i] != MK_INL)
+							plain[k++] = t[i];
+					t = plain;
+					n = k;
+				} else {			/* runs, inline code in red */
+					for (i = 0; i <= n; i++) {
+						if (i < n && t[i] != MK_INL)
+							continue;
+						if (i > 0)
+							text(x, y, t, i, inl ? inl_fx() : fx, inl ? inl_colour() : colour);
+						x += i * cw;
+						if (i < n) {
+							inl = !inl;
+							t += i + 1;
+							n -= i + 1;
+							i = -1;
+						}
+					}
+					continue;
+				}
+			}
+			if (rtl || bidi_has_rtl(t, n)) {
 				static char vis[BIDI_MAX];
-				short n = l->len > BIDI_MAX ? BIDI_MAX : l->len;
-				bidi_visual(tb + l->off, n, rtl, vis);
+				if (n > BIDI_MAX)
+					n = BIDI_MAX;
+				bidi_visual(t, n, rtl, vis);
 				if (rtl)	/* right-aligned, like dir="rtl" */
 					x = tx + cols * cw - n * cw;
-				text(x, y, vis, n, fx, 1);
+				text(x, y, vis, n, fx, colour);
 			} else {
-				text(x, y, tb + l->off, l->len, fx, 1);
+				text(x, y, t, n, fx, colour);
 			}
 		}
 	}
@@ -1935,6 +1996,16 @@ static void handle_line(char *s)
 	}
 	case 'g': {			/* g <text> : a grey line (a tool step) */
 		char m = MK_GREY;
+		if (tlen > 0 && tb[tlen - 1] != '\n')
+			append("\n", 1);
+		append(&m, 1);
+		if (n > 1)
+			append(f[1], strlen(f[1]));
+		append("\n", 1);
+		break;
+	}
+	case 'c': {			/* c <text> : a line of a code block */
+		char m = MK_CODE;
 		if (tlen > 0 && tb[tlen - 1] != '\n')
 			append("\n", 1);
 		append(&m, 1);
@@ -4956,7 +5027,9 @@ static void copy_answer(void)
 	if (!(t = malloc(e - s + 1)))
 		return;
 	for (p = s; p < e; p++)
-		if (tb[p] != MK_BOLD && tb[p] != MK_GREY)
+		if (tb[p] == MK_INL)
+			t[k++] = '`';		/* inline code as in Markdown */
+		else if (tb[p] != MK_BOLD && tb[p] != MK_GREY && tb[p] != MK_CODE)
 			t[k++] = tb[p];
 	while (k > 0 && t[k - 1] == '\n')
 		k--;

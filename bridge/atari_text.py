@@ -48,7 +48,7 @@ def to_atari(text: str) -> bytes:
             o = ord(c)
             if o == 9:
                 out += b"    "
-            elif 32 <= o < 127:
+            elif 32 <= o < 127 or o == 0x14:   # 0x14: inline code starts or ends
                 out.append(o)
             elif o < 32 or o == 127:
                 continue
@@ -82,7 +82,19 @@ _FENCE = re.compile(r"^\s*```\s*([\w+-]*)\s*$")
 _HR = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
 
 
-def _inline(s: str) -> str:
+_CODE_SPAN = re.compile(r"`([^`\n]+)`")
+INL = "\x14"      # starts or ends inline code: ClaudeST 1.41 shows it in red
+
+
+def _inline(s: str, styles=False) -> str:
+    s = s.replace(INL, "")
+    out, at = [], 0
+    for m in _CODE_SPAN.finditer(s) if styles else ():
+        out.append(_inline(s[at:m.start()]))
+        out.append(INL + m.group(1) + INL)      # as it is: no ** or links in code
+        at = m.end()
+    if out:
+        return "".join(out) + _inline(s[at:])
     s = _LINK.sub(r"\1 <\2>", s)
     s = _BOLD.sub("", s)
     s = _ITALIC.sub(r"\1", s)
@@ -92,17 +104,23 @@ def _inline(s: str) -> str:
 class Formatter:
     """Turns (possibly streamed) Markdown into protocol ops:
     ("P", text) append text, ("B",) line break, ("H", text) heading line,
-    ("g", text) a grey line (a line starting with \\x01: a tool step)."""
+    ("g", text) a grey line (a line starting with \\x01: a tool step).
+    STYLES (ClaudeST 1.41 on): ("c", text) a line of a code block, and
+    inline code between INL marks."""
 
-    def __init__(self):
+    def __init__(self, styles=False):
         self.pending = ""
         self.at_line_start = True
         self.in_code = False
+        self.styles = styles
+
+    def _in(self, s):
+        return _inline(s, self.styles)
 
     def _line(self, line: str):
         """A complete line (without newline)."""
         if line.startswith("\x01") and not self.in_code:
-            return [("g", _inline(line[1:]))]      # a grey line (a tool step)
+            return [("g", self._in(line[1:]))]      # a grey line (a tool step)
         m = _FENCE.match(line)
         if m:
             self.in_code = not self.in_code
@@ -110,16 +128,16 @@ class Formatter:
                 return [("P", "[" + (m.group(1) or "code") + "]"), ("B",)]
             return [("P", "[end]"), ("B",)]
         if self.in_code:
-            return [("P", "  " + line), ("B",)]
+            return [("c", "  " + line)] if self.styles else [("P", "  " + line), ("B",)]
         m = _HEADING.match(line)
         if m:
-            return [("H", _inline(m.group(2)))]
+            return [("H", self._in(m.group(2)))]
         if _HR.match(line):
             return [("P", "-" * 20), ("B",)]
         m = _BULLET.match(line)
         if m:
-            return [("P", m.group(1) + "- " + _inline(m.group(2))), ("B",)]
-        return [("P", _inline(line)), ("B",)]
+            return [("P", m.group(1) + "- " + self._in(m.group(2))), ("B",)]
+        return [("P", self._in(line)), ("B",)]
 
     def feed(self, text: str):
         ops = []
@@ -129,7 +147,7 @@ class Formatter:
             if self.at_line_start:
                 ops += self._line(line)
             else:
-                ops += [("P", _inline(line)), ("B",)]
+                ops += [("P", self._in(line)), ("B",)]
             self.at_line_start = True
         # stream the unfinished line once we know it isn't special markup
         p = self.pending
@@ -150,8 +168,11 @@ class Formatter:
             i = p.rfind("[", 0, cut)
             if i >= 0 and cut - i < 300 and not re.match(r"\[[^\]]*\]\([^)]*\)", p[i:cut]):
                 cut = i  # possibly a link: wait for the rest of it
+            i = p.rfind("`", 0, cut)
+            if self.styles and p.count("`", 0, cut) % 2 and cut - i < 300:
+                cut = i  # inline code begun: wait for its end
             if cut > 0:
-                ops.append(("P", _inline(p[:cut])))
+                ops.append(("P", self._in(p[:cut])))
                 self.pending = p[cut:]
                 self.at_line_start = False
         return ops
@@ -162,6 +183,6 @@ class Formatter:
         return ops
 
 
-def format_text(text: str):
-    f = Formatter()
+def format_text(text: str, styles=False):
+    f = Formatter(styles)
     return f.feed(text) + f.finish()

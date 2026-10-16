@@ -1658,3 +1658,39 @@ class Attachments(unittest.TestCase):
         from backends import _attached
         self.assertEqual(_attached({"attachments": [{"file_name": "A.TXT"}], "files": [{"file_name": "P.PNG"}]}),
                          "\n\n\x01Attached A.TXT\n\n\x01Attached P.PNG")
+
+
+class CodeColours(unittest.TestCase):
+    """ClaudeST 1.41 on shows code blocks (c lines) in blue and inline
+    code (between \\x14 marks) in red; older ones get plain text."""
+
+    def test_inline_code(self):
+        ops = format_text("Run `pure-pw mkdb` and **save** `a*b*c`.\n", styles=True)
+        self.assertEqual(ops[0], ("P", "Run \x14pure-pw mkdb\x14 and save \x14a*b*c\x14."))
+        self.assertEqual(to_atari("\x14x\x14"), b"\x14x\x14")
+        self.assertEqual(format_text("Run `x`.\n")[0], ("P", "Run `x`."))     # older ClaudeST
+
+    def test_code_block(self):
+        ops = format_text("Start it\n```bash\nlsof -i UDP:16384\n```\nDone\n", styles=True)
+        self.assertEqual(ops, [("P", "Start it"), ("B",), ("P", "[bash]"), ("B",),
+                               ("c", "  lsof -i UDP:16384"), ("P", "[end]"), ("B",),
+                               ("P", "Done"), ("B",)])
+
+    def test_streamed_inline_code_waits_for_its_end(self):
+        f = Formatter(styles=True)
+        got = f.feed("Use the `pure-")
+        self.assertEqual(got, [("P", "Use the ")])
+        got = f.feed("ftpd` server\n")
+        self.assertEqual(got[0], ("P", "\x14pure-ftpd\x14 server"))
+
+    def test_by_version(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"HELLO\t1\t1.40")
+        self.assertFalse(s.styles)
+        s.handle(b"HELLO\t1\t1.41")
+        self.assertTrue(s.styles)
+        link.sent = b""
+        s.message("A", "see `x`\n```\ny\n```")
+        self.assertIn(b"P\tsee \x14x\x14\n", link.sent)
+        self.assertIn(b"c\t  y\n", link.sent)

@@ -204,6 +204,14 @@ class PipeLink(Link):
 # protocol
 # ---------------------------------------------------------------------------
 
+def version_at_least(version, want):
+    """'1.41' -> whether it is WANT, (1, 41), or later"""
+    try:
+        return tuple(int(p) for p in version.split(".")[:2]) >= want
+    except ValueError:
+        return False
+
+
 class Session:
     def __init__(self, link, backend):
         self.link = link
@@ -220,6 +228,7 @@ class Session:
         self.long_ids = {}   # short stand-in -> real id, for ids the Atari can't hold
         self.flags_sent = {}    # list item id -> the flags the Atari shows
         self._active_at = 0.0   # when the Code sessions' activity was last checked
+        self.styles = False     # the Atari shows code in colour (ClaudeST 1.41 on)
         self.files = []         # attachments for the next message
         self._file = None       # the one coming in: [name, size, bytearray]
         link.idle = self.idle
@@ -247,10 +256,12 @@ class Session:
                 self.out("H", op[1])
             elif op[0] == "g":
                 self.out("g", op[1])
+            elif op[0] == "c":
+                self.out("c", op[1])
 
     def message(self, role, body):
         self.out("M", role)
-        self.ops(format_text(body))
+        self.ops(format_text(body, self.styles))
         self.out("Z")
 
     def send_list(self, kind, title, items, back=False):
@@ -402,8 +413,9 @@ class Session:
             self.out("U", eid, label)
         self.out("K", self.be.model, self.be.effort or "")
 
-    def cmd_hello(self, *_):
+    def cmd_hello(self, proto="", version="", *_):
         self.files, self._file = [], None   # the Atari starts afresh
+        self.styles = version_at_least(version, (1, 41))
         self.notice("Loading chats...")
         self.send_list("CHATS", "Recents", self.be.list_chats())
         self.out("C", self.chat_id or "")
@@ -559,7 +571,7 @@ class Session:
         self.out("Y", "1")
         self.notice("Claude is thinking...")
         self.out("M", "A")
-        fmt = Formatter()
+        fmt = Formatter(self.styles)
         if self.chat_kind == "CODE":
             self.notice("Claude Code is working...")
             try:

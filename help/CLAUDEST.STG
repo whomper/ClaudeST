@@ -115,6 +115,12 @@
     "Renamed" appear in grey in the title bar for a few seconds.
   - @{B}Tooltips:@{b} rest the mouse on a name that's cut off, in the
     sidebar or the title bar, and a tooltip shows all of it.
+  - @{B}Code:@{b} as on claude.ai, a code block (between [bash] or
+    [code] and [end]) is shown in blue, and code within a sentence,
+    such as a command or a file name, in red. With four colours, which
+    have no blue, code blocks are green; in black and white, code within
+    a sentence is underlined. Edit > Copy Claude's answer puts its
+    backticks back.
   - @{B}Switching area@{b} empties the list at once, showing
     "Loading..." until the new list arrives. It also clears the
     conversation, so what you type next starts a new chat.

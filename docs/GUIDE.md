@@ -50,6 +50,11 @@ Replies still come in while it is iconified.
   appear in grey at the right of the title bar for a few seconds.
 - **Tooltips:** rest the mouse on a name that's cut off, in the sidebar
   or the title bar, and a tooltip shows all of it.
+- **Code:** as on claude.ai, a code block (between `[bash]` or `[code]`
+  and `[end]`) is shown in blue, and code within a sentence, such as a
+  command or a file name, in red. With four colours, which have no blue,
+  code blocks are green; in black and white, code within a sentence is
+  underlined. **Edit ▸ Copy Claude's answer** puts its backticks back.
 
 ![A tooltip](tooltip.png)
 

@@ -62,6 +62,7 @@ All commands are one letter.
 | `P` `<text>` | Append text to the current paragraph (streamed replies arrive as many `P`s). |
 | `B` | Line break / new paragraph. |
 | `H` `<text>` | A bold heading line. |
+| `c` `<text>` | A line of a code block (since 1.41), shown in blue; the bridge sends it only to ClaudeST 1.41 and later (by `HELLO`'s version), and `P` lines to older ones. |
 | `g` `<text>` | A grey line (since 1.38): a run of tool calls in a Code session, folded into one line as claude.ai shows it ("Ran 2 commands", or the step's own description). |
 | `Z` | End of message. |
 | `Y` `0`\|`1` | Claude is (not) replying. |
@@ -76,5 +77,9 @@ All commands are one letter.
 
 Markdown is simplified by the bridge: headings become `H`, `**bold**` and
 `*italic*` markers are dropped, `[text](url)` becomes `text <url>`, and
-code fences become `[lang]` … `[end]` with the code indented. The Atari
-does all word wrapping, so the text reflows when the window is resized.
+code fences become `[lang]` … `[end]` with the code indented (in `c`
+lines for 1.41 on). For 1.41 on, inline code is sent between `0x14`
+bytes in `P` text, the only control character the bridge sends there:
+the Atari shows it in red (underlined in monochrome) and doesn't
+count the marks when wrapping. Older ClaudeST gets the backticks. The
+Atari does all word wrapping, so the text reflows when the window is resized.
