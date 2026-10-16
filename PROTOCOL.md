@@ -21,7 +21,7 @@ flow control). The protocol is the same on both.
 | `SEND` `<text>` | Send a message to the current chat and stream the reply, with the files attached since the last `SEND` (since 1.39; the text may then be empty). |
 | `ATTACH` `<name>` `<size>` | A file attached to the next message follows (since 1.39): `<size>` bytes in `ADATA` lines, then `AEND`. |
 | `ADATA` `<hex>` | A piece of it, in hex (up to 480 bytes a line). |
-| `AEND` | The file is complete. The bridge keeps it for the next `SEND`, or answers `a` and `A` if it can't take it (cut short, or not a text file, PNG, JPEG, GIF or PDF). |
+| `AEND` | The file is complete. The bridge keeps it for the next `SEND`, or answers `a` and `A` if it arrived cut short. Any kind of file goes. |
 | `UNATTACH` | Drop the files attached so far (`HELLO` drops them too). |
 | `FIND` `<query>` | Search chat titles. |
 | `RENAME` `CHAT`\|`CODE`\|`PROJECT` `<id>` `<name>` | Rename a chat, Claude Code session or project. |

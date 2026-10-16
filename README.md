@@ -12,8 +12,8 @@ Falcon, through a Raspberry Pi bridge.
 - **Your real claude.ai account:** recent and pinned chats, projects, search.
 - **Claude Code sessions:** read them and reply.
 - **Artifacts:** view them and save them to disk, Word documents included.
-- **Attach files** to a message: text files, pictures and PDFs, from the file selector or dropped
-  on the window.
+- **Attach files** of any kind to a message, as on the website: from the file selector or dropped on
+  the window.
 - **Model and effort** for each chat, from a chip in the title bar.
 - **Right-click menus** to pin, rename, move to a project, archive and delete.
 - **Usage at a glance:** a ring that fills as you use up the current session, and an Account page

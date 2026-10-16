@@ -1547,9 +1547,12 @@ class Attachments(unittest.TestCase):
         self.assertEqual(Attachment("A.PDF", b"%PDF-1.4\n\x00\x01").mime, "application/pdf")
         t = Attachment("READ.ME", b"Line one\r\nZ\x81rich\r\n")
         self.assertEqual((t.mime, t.text), ("text/plain", "Line one\nZ\u00fcrich\n"))
-        bad = Attachment("GAME.PRG", b"\x60\x1a\x00\x00\x01\x02")
-        self.assertIsNone(bad.mime)
-        self.assertRaises(RuntimeError, bad.check)
+        self.assertEqual(Attachment("A.WEB", b"RIFF\0\0\0\0WEBPVP8 ").mime, "image/webp")
+        prg = Attachment("GAME.PRG", b"\x60\x1a\x00\x00\x01\x02")     # any file goes
+        self.assertEqual((prg.mime, prg.native, prg.text), ("application/octet-stream", False, None))
+        self.assertEqual(Attachment("A.ZIP", b"PK\x03\x04\x00\x00").mime, "application/zip")
+        self.assertIn("GAME.PRG (6 bytes, application/octet-stream), in base64:\n```\nYBoAAAEC\n```",
+                      prg.as_text())
 
     def test_text_files_go_into_the_message(self):
         from backends import Attachment, with_text_files
@@ -1575,15 +1578,20 @@ class Attachments(unittest.TestCase):
         s.handle(b"SEND\thello")
         self.assertNotIn(b"Got", link.sent)
 
-    def test_turned_down(self):
+    def test_any_file_goes(self):
         link = FakeLink()
         s = Session(link, DemoBackend())
         self.attach(s, b"GAME.PRG", b"\x60\x1a\x00\x00\x01\x02")
+        self.assertEqual([f.name for f in s.files], ["GAME.PRG"])
+        self.assertNotIn(b"\na\t", b"\n" + link.sent)
+
+    def test_cut_short(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
         self.attach(s, b"NOTES.TXT", b"short", size=99)
         lines = link.lines()
-        self.assertIn([b"a", b"GAME.PRG"], lines)
         self.assertIn([b"a", b"NOTES.TXT"], lines)
-        self.assertEqual(sum(1 for l in lines if l[0] == b"A"), 2)
+        self.assertEqual(sum(1 for l in lines if l[0] == b"A"), 1)
         self.assertEqual(s.files, [])
 
     def test_unattach(self):
@@ -1597,7 +1605,7 @@ class Attachments(unittest.TestCase):
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)
         be.org, be.model, be.effort = "o1", "default", ""
         be._conversation = lambda cid: {"current_leaf_message_uuid": "m1", "name": "Chat"}
-        be._upload = lambda f: "file-" + f.name
+        be._upload = lambda f, chat: "file-" + f.name
         sent = []
 
         class R:
@@ -1608,18 +1616,42 @@ class Attachments(unittest.TestCase):
 
         be._post = lambda path, body, **kw: (sent.append(body), R())[1]
         be.send("c1", None, "see", lambda d: None,
-                files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG)])
+                files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG),
+                       Attachment("G.PRG", b"\x60\x1a\0")])
+        self.assertEqual(sent[0]["files"], ["file-P.PNG", "file-G.PRG"])
         self.assertEqual(sent[0]["attachments"], [{"file_name": "A.TXT", "file_type": "text/plain",
                                                    "file_size": 3, "extracted_content": "abc"}])
-        self.assertEqual(sent[0]["files"], ["file-P.PNG"])
+
+    def test_upload_falls_back_to_the_chats_computer(self):
+        from backends import Attachment, ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.org, be.impersonating = "o1", False
+        urls = []
+
+        class R:
+            def __init__(self, code, data):
+                self.status_code, self._d, self.content, self.text = code, data, b"x", "{}"
+
+            def json(self):
+                return self._d
+
+        def post(url, **kw):
+            urls.append(url)
+            return R(415, {}) if url.endswith("/upload") else R(200, {"file_uuid": "f1"})
+        be.http = type("H", (), {"post": staticmethod(post)})()
+        self.assertEqual(be._upload(Attachment("G.PRG", b"\x60\x1a\0"), "c1"), "f1")
+        self.assertEqual(urls, ["https://claude.ai/api/o1/upload",
+                                "https://claude.ai/api/organizations/o1/conversations/c1/wiggle/upload-file"])
 
     def test_code_session_blocks(self):
         from backends import Attachment
         be, calls = CodeSessions().backend()
         be.send_code("session_b", "what is this?", lambda d: None, poll=0,
-                     files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG)])
+                     files=[Attachment("A.TXT", b"abc"), Attachment("P.PNG", self.PNG),
+                            Attachment("G.PRG", b"\x60\x1a\0")])
         content = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]["message"]["content"]
-        self.assertEqual(content[0], {"type": "text", "text": "what is this?\n\nA.TXT:\n```\nabc\n```"})
+        self.assertEqual(content[0], {"type": "text", "text": "what is this?\n\nA.TXT:\n```\nabc\n```\n\n"
+                                      "G.PRG (3 bytes, application/octet-stream), in base64:\n```\nYBoA\n```"})
         self.assertEqual(content[1]["type"], "image")
 
     def test_history_shows_files(self):

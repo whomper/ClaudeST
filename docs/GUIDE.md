@@ -211,15 +211,21 @@ Type your message and press `Return`, or press `Return` on the empty
 line to send the files alone. The message shows a grey **Attached**
 line for each file, and so do messages with files in chats you open.
 
-- **What can go:** text files (in the Atari character set), and PNG, JPEG and GIF pictures and PDFs, up to 1 MB each and four to a message.
-  Other files (programs, archives) are turned down with a note saying so.
+- **What can go:** any file, as on the website: text, pictures, PDFs,
+  programs, archives. The limits are claude.ai's: up to 20 files in a
+  chat, 500 MB each.
 - **Over a serial cable** a file takes a while: about a minute for
   every 50 KB at 19200 baud. The network is much quicker.
 - **To change your mind,** press `Esc` on the empty reply line: the
   attached files are removed.
-- **In chats,** text files go in as claude.ai's website sends them, and
-  pictures and PDFs are uploaded first. **In Claude Code sessions,** a
-  text file goes into the message itself, under its name.
+- **In chats,** text files go in with their text, as the website sends
+  them; other files are uploaded first. Pictures and PDFs Claude reads
+  directly. Other kinds, such as a .PRG or a .ZIP, go to the chat's own
+  computer, so turn on **code execution and file creation** in
+  claude.ai's settings, as the website needs for them.
+- **In Claude Code sessions,** a file goes into the message itself: a
+  text file as it is, a picture or PDF as one, and any other file in
+  base64, which Claude can decode into a file in the session.
 
 ## From other programs
 

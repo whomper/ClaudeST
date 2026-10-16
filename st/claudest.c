@@ -43,7 +43,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "1.39"
+#define VERSION "1.40"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -227,8 +227,9 @@ static long opening_until;
 static char txbuf[1200];
 static short txlen;
 
-/* files attached to the next message (the bridge holds their data) */
-#define MAXATT 4
+/* files attached to the next message (the bridge holds their data);
+   as many as claude.ai takes in a chat */
+#define MAXATT 20
 static char att_name[MAXATT][14];
 static short natt;
 
@@ -254,6 +255,7 @@ static void save_chunk(const char *hex);
 static void finish_save(void);
 static void save_config(void);
 static void say_notice(const char *s);
+static char *put_num(char *p, u16 v);
 static char home_dir[128];		/* where CLAUDEST.PRG was started */
 
 /* ------------------------------------------------------------------ */
@@ -1579,8 +1581,9 @@ static void draw_input(void)
 			strcat(a, att_name[0]);
 			strcat(a, "] ");
 		} else {
-			strcpy(a, "[0 files] ");
-			a[1] = '0' + natt;
+			*put_num(a + 1, natt) = 0;
+			a[0] = '[';
+			strcat(a, " files] ");
 		}
 		n = strlen(a);
 		if (n < avail - 8) {
@@ -2574,7 +2577,7 @@ static void do_list(const char *kind)
 /* a file attached to the next message: its data goes to the bridge now,
  * in hex lines (ATTACH <name> <size>, ADATA <hex>..., AEND), and the
  * bridge sends it with the message */
-#define ATT_MAX (1024L * 1024L)
+#define ATT_MAX (500L << 20)		/* claude.ai's limit for a file */
 static void attach_file(const char *path)
 {
 	static char buf[480];
@@ -2595,7 +2598,7 @@ static void attach_file(const char *path)
 		return;
 	}
 	if (natt >= MAXATT) {
-		alert(1, "[1][Up to 4 files go with|one message.][ OK ]");
+		alert(1, "[1][claude.ai takes up to 20|files in a chat.][ OK ]");
 		return;
 	}
 	fd = Fopen(path, 0);
@@ -2607,7 +2610,7 @@ static void attach_file(const char *path)
 	Fseek(0, (short)fd, 0);
 	if (len <= 0 || len > ATT_MAX) {
 		Fclose((short)fd);
-		alert(1, len <= 0 ? "[1][%s is empty.][ OK ]" : "[1][%s is bigger than 1 MB.][ OK ]", name);
+		alert(1, len <= 0 ? "[1][%s is empty.][ OK ]" : "[1][%s is bigger than|claude.ai takes (500 MB).][ OK ]", name);
 		return;
 	}
 	{				/* the size in decimal (put_num takes 16 bits) */
@@ -2633,8 +2636,9 @@ static void attach_file(const char *path)
 		hex[2 * n] = 0;
 		tx_cmd("ADATA", hex, 0);
 		sent += n;
-		if (sent * 10 / len != pct) {		/* "Attaching 40%" */
-			pct = (short)(sent * 10 / len);
+		/* "Attaching 40%" (in tenths, without overflowing a long) */
+		if ((sent == len ? 10 : sent / (len / 10 + 1)) != pct) {
+			pct = (short)(sent == len ? 10 : sent / (len / 10 + 1));
 			strcpy(notice, "Attaching ");
 			*put_num(notice + 10, pct * 10) = 0;
 			strcat(notice, "%");

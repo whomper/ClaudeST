@@ -33,7 +33,7 @@ import backends  # noqa: E402
 log = logging.getLogger("claude-st")
 
 CHUNK = 160              # max text bytes per P line
-ATTACH_MAX = 1024 * 1024  # the biggest file the Atari attaches
+ATTACH_MAX = 500 << 20    # the biggest file claude.ai takes
 MAX_ID = 39              # ClaudeST keeps item ids up to this many characters
 MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and ClaudeST "
               "could not open its new part. It shows what it can, but can't add to it: "
@@ -515,13 +515,15 @@ class Session:
 
     def cmd_attach(self, name="", size="0", *_):
         self._file = [name or "FILE", int(size) if size.isdigit() else 0, bytearray()]
+        self._file_name = self._file[0]
 
     def cmd_adata(self, hexdata="", *_):
         if self._file is not None:
             self._file[2] += bytes.fromhex(hexdata)
             if len(self._file[2]) > ATTACH_MAX:
                 self._file = None
-                self.out("A", "That file is too big to attach.")
+                self.out("a", self._file_name)
+                self.out("A", "That file is bigger than claude.ai takes (500 MB).")
 
     def cmd_aend(self, *_):
         if self._file is None:
@@ -529,15 +531,9 @@ class Session:
         name, size, data = self._file
         self._file = None
         f = backends.Attachment(name, data)
-        why = None
         if len(data) != size:
-            why = "%s didn't arrive whole, so it wasn't attached." % name
-        elif not f.mime:
-            why = ("%s isn't a text file or a PNG, JPEG, GIF or PDF, so it wasn't attached."
-                   % name)
-        if why:
             self.out("a", name)
-            self.out("A", why)
+            self.out("A", "%s didn't arrive whole, so it wasn't attached." % name)
             return
         self.files.append(f)
         log.info("attached %s (%d bytes, %s)", name, len(data), f.mime)

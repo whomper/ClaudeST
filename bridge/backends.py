@@ -475,8 +475,9 @@ class ChoiceMemory:
 # ---------------------------------------------------------------------------
 
 class Attachment:
-    """A file from the Atari: text (in the Atari character set, turned into
-    Unicode), or a PNG, JPEG, GIF or PDF, known by its first bytes."""
+    """A file from the Atari, of any kind. Text (in the Atari character
+    set) is turned into Unicode; pictures and PDFs are known by their
+    first bytes, as models read those directly."""
     KINDS = ((b"\x89PNG", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF8", "image/gif"),
              (b"%PDF", "application/pdf"))
 
@@ -484,11 +485,17 @@ class Attachment:
         self.name = name
         self.data = bytes(data)
         self.mime = next((m for sig, m in self.KINDS if self.data.startswith(sig)), None)
+        if not self.mime and self.data[:4] == b"RIFF" and self.data[8:12] == b"WEBP":
+            self.mime = "image/webp"
+        self.native = self.mime is not None     # a picture or PDF
         self.text = None
         if not self.mime and self.is_text(self.data):
             from atari_text import from_atari
             self.text = from_atari(self.data).replace("\r\n", "\n").replace("\r", "\n")
             self.mime = "text/plain"
+        if not self.mime:
+            import mimetypes
+            self.mime = mimetypes.guess_type(name.lower())[0] or "application/octet-stream"
 
     @staticmethod
     def is_text(data):
@@ -497,27 +504,30 @@ class Attachment:
         control = sum(1 for b in data if b < 32 and b not in (9, 10, 12, 13, 26, 27))
         return control <= len(data) // 100
 
-    def check(self):
-        if not self.mime:
-            raise RuntimeError("%s isn't a text file or a PNG, JPEG, GIF or PDF, the kinds "
-                               "ClaudeST can attach." % self.name)
-
     def block(self):
-        """The file as an API content block (images and PDFs)."""
+        """A picture or PDF as an API content block."""
         data = base64.b64encode(self.data).decode()
         kind = "document" if self.mime == "application/pdf" else "image"
         return {"type": kind, "source": {"type": "base64", "media_type": self.mime, "data": data}}
 
+    def as_text(self):
+        """The file written into a message: text as it is, anything else
+        (a program, an archive) in base64"""
+        if self.text is not None:
+            return "%s:\n```\n%s\n```" % (self.name, self.text.rstrip("\n"))
+        return "%s (%d bytes, %s), in base64:\n```\n%s\n```" % (
+            self.name, len(self.data), self.mime, base64.encodebytes(self.data).decode().rstrip("\n"))
+
 
 def with_text_files(text, files):
-    """TEXT with the text files written into it, as a fenced block each;
-    returns (text, the other files)"""
+    """TEXT with the files that can't go as content blocks written into
+    it; returns (text, the pictures and PDFs)"""
     rest = []
     for f in files or []:
-        if f.text is not None:
-            text += "\n\n%s:\n```\n%s\n```" % (f.name, f.text.rstrip("\n"))
-        else:
+        if f.native:
             rest.append(f)
+        else:
+            text += "\n\n" + f.as_text()
     return text.strip(), rest
 
 
@@ -936,8 +946,6 @@ class ClaudeAiBackend(Backend):
         if last is None:
             events = self._code_events(session_id)
             last = events[-1].get("id") if events else None
-        for f in files or []:
-            f.check()
         text, rest = with_text_files(text, files)
         content = text if not rest else [{"type": "text", "text": text or "(attached)"}] + [f.block() for f in rest]
         self._code("post", "/sessions/%s/events" % session_id, {"events": [{
@@ -1294,37 +1302,42 @@ class ClaudeAiBackend(Backend):
                                "start a new chat, or continue this one on claude.ai." % e)
         return chat_id, title
 
-    def _upload(self, f):
-        """A picture or PDF up to claude.ai, as its website does: -> the
-        file's uuid for the message's "files"."""
-        url = "%s/%s/upload" % (self.BASE, self.org)
+    def _post_file(self, url, f):
         if self.impersonating:          # curl_cffi has its own multipart form
             from curl_cffi import CurlMime
             form = CurlMime()
             form.addpart(name="file", content_type=f.mime, filename=f.name, data=f.data)
             try:
-                r = self.http.post(url, multipart=form, timeout=120)
+                return self.http.post(url, multipart=form, timeout=600)
             finally:
                 form.close()
-        else:
-            r = self.http.post(url, files={"file": (f.name, f.data, f.mime)}, timeout=120)
-        if r.status_code >= 400:
-            raise RuntimeError("claude.ai didn't take %s (HTTP %d)%s" % (
-                f.name, r.status_code, ": " + _error_text(r) if r.content else ""))
-        got = r.json()
-        fid = got.get("file_uuid") or got.get("uuid") or got.get("id")
-        if not fid:
-            raise RuntimeError("claude.ai didn't say where it put %s." % f.name)
-        return fid
+        return self.http.post(url, files={"file": (f.name, f.data, f.mime)}, timeout=600)
+
+    def _upload(self, f, chat_id):
+        """A file up to claude.ai, as its website does: -> its uuid for the
+        message's "files". Pictures and PDFs go to the uploader; a kind it
+        doesn't take goes to the chat's own computer (code execution)."""
+        tried = []
+        for url in ("%s/%s/upload" % (self.BASE, self.org),
+                    "%s/organizations/%s/conversations/%s/wiggle/upload-file" % (self.BASE, self.org, chat_id)):
+            r = self._post_file(url, f)
+            if r.status_code < 400:
+                got = r.json()
+                fid = got.get("file_uuid") or got.get("uuid") or got.get("id")
+                if fid:
+                    return fid
+                log.info("upload of %s: no file id in %s", f.name, str(got)[:300])
+                tried.append("no file id")
+                continue
+            detail = _error_text(r) if r.content else ""
+            log.info("upload of %s refused: HTTP %d %s", f.name, r.status_code, detail)
+            tried.append("HTTP %d%s" % (r.status_code, ": " + detail[:150] if detail else ""))
+        raise RuntimeError("claude.ai didn't take %s (%s). If it's not a picture or PDF, turn on "
+                           "code execution and file creation in claude.ai's settings." % (f.name, "; ".join(tried)))
 
     def send(self, chat_id, project_id, text, on_delta, files=None):
         title = None
-        for f in files or []:
-            f.check()
-        # pictures and PDFs go up first, as on claude.ai's website
-        upload = lambda: [self._upload(f) for f in files or [] if f.text is None]  # noqa: E731
         if not chat_id:
-            uploaded = upload()         # before the chat, so a refusal leaves none
             chat_id = str(uuid.uuid4())
             body = {"uuid": chat_id, "name": ""}
             if project_id:
@@ -1333,13 +1346,21 @@ class ClaudeAiBackend(Backend):
             r.raise_for_status()
             parent = self.ROOT_PARENT
             new = True
+            try:                        # files go up first, as on the website
+                uploaded = [self._upload(f, chat_id) for f in files or [] if f.text is None]
+            except Exception:
+                try:                    # leave no empty chat behind
+                    self.delete("CHAT", chat_id)
+                except Exception as e:
+                    log.info("could not delete the empty chat: %s", e)
+                raise
         else:
             conv = self._conversation(chat_id)
             sid = self._moved_session(conv)
             if sid:
                 cid, stitle = self.send_moved(chat_id, sid, text, on_delta, files)
                 return cid, conv.get("name") or stitle or text[:40]
-            uploaded = upload()
+            uploaded = [self._upload(f, chat_id) for f in files or [] if f.text is None]
             parent = conv.get("current_leaf_message_uuid") or self.ROOT_PARENT
             title = conv.get("name")
             new = False
@@ -1814,8 +1835,6 @@ class ApiBackend(Backend):
         return c["title"], [("U" if m["role"] == "user" else "A", _plain(m["content"])) for m in c["messages"]]
 
     def send(self, chat_id, project_id, text, on_delta, files=None):
-        for f in files or []:
-            f.check()
         if chat_id:
             chat = self._load(chat_id)
         else:
@@ -2010,8 +2029,6 @@ class DemoBackend(Backend):
         return c["title"], list(c["messages"])
 
     def send(self, chat_id, project_id, text, on_delta, files=None):
-        for f in files or []:
-            f.check()
         names = ", ".join(f.name for f in files or [])
         if not chat_id:
             chat_id = "d%d" % (len(self.chats) + 1)
