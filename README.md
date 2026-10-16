@@ -8,6 +8,11 @@ branch, which holds just this folder and is kept up to date by a workflow.
 
     tools/sync-common.sh        # git subtree pull --prefix=common <AERA-Atari> common --squash
 
+git subtree makes its squash commit with `git commit-tree`, which doesn't sign it, so GitHub shows it
+as Unverified. `tools/sync-common.sh` (and `tools/sync-gateway.sh`) end with
+`sh common/tools/sign-subtree.sh BEFORE`, which makes that commit again, signed, with the merge on top
+(the template's `tools/sync-common.sh` has it).
+
 ## Who uses it
 
 | App | Since | Check when it moved |
