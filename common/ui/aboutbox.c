@@ -292,10 +292,14 @@ void about_show(const ABOUT *a)
 
 void text_box(const char *title, const char *text)
 {
-	static char buf[TB_LINES][82];
+	char (*buf)[82] = malloc(TB_LINES * sizeof(*buf));	/* only while it shows */
 	short n = 0, cols, widest, lh, i, bw, bh, y;
 	const char *p = text;
 
+	if (!buf) {
+		alert(1, "[1][Not enough memory to show|%s.][ OK ]", title);
+		return;
+	}
 	font_sys_push();
 	cols = desk_w / cw - 6;
 	if (cols > 80)
@@ -356,29 +360,37 @@ void text_box(const char *title, const char *text)
 	wind_update(END_UPDATE);
 	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
 	font_sys_pop();
+	free(buf);
 }
 
 /* ---------------- after a crash ---------------- */
 
+#define CRASH_TAIL 4096		/* the end of CRASH.LOG that is read */
+
 void crash_offer(const char *app, const char *where)
 {
-	static char text[4096];
+	char *text, *last, *q;
 	long h, n, size;
-	char *last, *q;
 	if (!crash_previous())
 		return;
 	if (alert(1, "[1][%s crashed last time|(%s).|What happened is in|CRASH.LOG, %s.][Show|OK]",
 		  app, crash_previous(), where) != 1)
 		return;
-	/* the end of CRASH.LOG, and in it the last report */
+	/* the end of CRASH.LOG, and in it the last report; the memory only
+	   while it shows (it was 4 KB of every app's BSS, and the box's 3 KB) */
 	h = Fopen(crash_log(), 0);
 	if (h < 0) {
 		alert(1, "[1][Can't read CRASH.LOG.][ OK ]");
 		return;
 	}
+	if (!(text = malloc(CRASH_TAIL))) {
+		Fclose((short)h);
+		alert(1, "[1][Not enough memory to show|CRASH.LOG.][ OK ]");
+		return;
+	}
 	size = Fseek(0, (short)h, 2);
-	Fseek(size > (long)sizeof(text) - 1 ? size - ((long)sizeof(text) - 1) : 0, (short)h, 0);
-	n = Fread((short)h, sizeof(text) - 1, text);
+	Fseek(size > CRASH_TAIL - 1 ? size - (CRASH_TAIL - 1) : 0, (short)h, 0);
+	n = Fread((short)h, CRASH_TAIL - 1, text);
 	Fclose((short)h);
 	if (n < 0)
 		n = 0;
@@ -388,4 +400,5 @@ void crash_offer(const char *app, const char *where)
 		if (q == text || q[-1] == '\n')
 			last = q;
 	text_box("CRASH.LOG", last);
+	free(text);
 }
