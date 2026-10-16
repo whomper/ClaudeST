@@ -171,6 +171,26 @@ little memory, TOS 1.x, the 40-block limit, and millions of mixed calls with eve
 the heap's structure checked. `make prg` and `run.py etos512us.img` run `HEAPT.PRG` in Hatari on a
 68000 ST (where an odd address bombs) and a 68030 Falcon.
 
+## The clock (16 Oct 2026)
+
+`tos_ms()` in `atari/tos.c` is milliseconds by TOS's 200 Hz counter (`_hz_200`), right even when
+something has set MFP timer C faster and still calls TOS's handler each time. On Erez's Falcon the
+counter runs at 312 Hz, so EFTP showed a 16-second transfer as 25 and its speeds 1.56 times too low.
+At its first call `tos_ms()` measures the counter against timer C's own count-down, which runs off the
+MFP's crystal however the timer is set, for 20 of the counter's steps (100 ms when all is well); more
+than 3% off, it scales its times. `tos_clock()` is `""` on a true clock, else the line for an app's log
+("the 200 Hz clock runs at 312.5 Hz: times corrected"). The code is EFTP's (whomper/EFTP a1e3b44).
+An app's `pf_ms()` becomes `return tos_ms();`.
+
+`Supexec` now goes through `tos_supexec()`, a function GCC can't see into. Called straight through
+`trap14_wl()`, GCC took a static that the supervisor routine wrote as unchanged when nothing else took
+its address (the trap's "memory" clobber doesn't cover it): `nf_debug()` dropped its first line in
+every app, and `tos_ms()` dropped its correction.
+
+`tests/clock`: `make prg` and `run.py etos512us.img` run `CLOCKT.PRG` in Hatari on an ST and a Falcon,
+once with timer C at 312 Hz (a file `C:\FASTCLK`) and once at 200 Hz, and time the 8 seconds it counts
+by `tos_ms()` with the build machine's clock: 8.04 and 8.00 s on the ST, 8.00 and 7.94 s on the Falcon.
+
 ## Coming next
 
 | Area | Files | Plan |
