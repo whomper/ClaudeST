@@ -220,7 +220,14 @@ static inline long trap14_wl(short fn, long a)
 #define BAUD_9600  1
 #define BAUD_4800  2
 #define BAUD_2400  4
-#define Supexec(f)         trap14_wl(38, (long)(f))
+/* Supexec goes through a function GCC can't see into (tos.c). The
+   routine runs from inside the trap, where GCC doesn't look: called
+   straight from trap14_wl, a static the routine wrote was taken as
+   unchanged when its address was never taken ("memory" doesn't cover
+   it), so nf_debug() dropped its first line and tos_ms() its
+   correction. */
+long tos_supexec(void *f);
+#define Supexec(f)         tos_supexec((void *)(f))
 
 typedef struct {
 	char *ibuf;
@@ -245,6 +252,12 @@ extern void *_BasePage;
 /* tos.c */
 long get_cookie(long id);	/* 0 when missing */
 u32 tos_hz200(void);		/* 200 Hz system timer */
+/* milliseconds by the 200 Hz timer (5 ms steps), right even when
+   something has set MFP timer C faster: measured at the first call */
+u32 tos_ms(void);
+/* "" when that timer runs true, else what was measured and done about
+   it ("the 200 Hz clock runs at 312.5 Hz: times corrected"), for a log */
+const char *tos_clock(void);
 short boot_drive(void);		/* 0 = A: */
 void nf_debug(const char *s);	/* emulator console (NatFeats); no-op on hardware */
 

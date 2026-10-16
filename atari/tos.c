@@ -8,6 +8,13 @@
 #include <string.h>
 #include "tos.h"
 
+/* noipa: GCC must take this as any call, which may call back each
+   function whose address it was given (tos.h, Supexec) */
+__attribute__((noipa)) long tos_supexec(void *f)
+{
+	return trap14_wl(38, (long)f);
+}
+
 static long cookie_id, cookie_val;
 
 static void sup_cookie(void)
@@ -56,6 +63,107 @@ u32 tos_hz200(void)
 {
 	Supexec(sup_hz200);
 	return hz;
+}
+
+/* ---------------- milliseconds ----------------
+ * _hz_200 goes up once per interrupt of the MFP's timer C. A driver that
+ * sets timer C faster and still calls TOS's handler each time makes it
+ * run fast: on Erez's Falcon at 312 Hz, so a transfer of 16 real seconds
+ * showed as 25 (EFTP, whomper/EFTP a1e3b44). So the first time tos_ms()
+ * is asked, the counter is measured against timer C's own count-down,
+ * which runs off the MFP's 2.4576 MHz crystal however the timer is set,
+ * for 20 of the counter's steps (100 ms when all is well); more than 3%
+ * off, tos_ms() is scaled. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed hardware addresses */
+static long clock_hz10;			/* the counter's rate in tenths of Hz; 0 not measured, -1 can't */
+static u32 ms256 = 5 * 256;		/* milliseconds per step, times 256 */
+
+static void sup_clock(void)
+{
+	static const unsigned short pre[8] = { 0, 4, 10, 16, 50, 64, 100, 200 };
+	volatile unsigned char *tcdcr = (volatile unsigned char *)0xfffffa1dL;
+	volatile unsigned char *tcdr = (volatile unsigned char *)0xfffffa23L;
+	volatile u32 *hz = (volatile u32 *)0x4baL;
+	u32 p = pre[(*tcdcr >> 4) & 7], acc = 0, h, n = 0, top = 0, r, limit;
+	unsigned char prev, cur;
+	clock_hz10 = -1;
+	if (!p)
+		return;				/* timer C stopped */
+	limit = 2457600UL / p;			/* a second of count-down: give up after it */
+	/* the value the timer starts each round from: the largest seen in
+	   two steps of the counter (a round is one step when all is well) */
+	h = *hz;
+	prev = *tcdr;
+	while (*hz < h + 2 && acc < limit) {
+		cur = *tcdr;
+		if (cur > top)
+			top = cur;
+		acc += cur <= prev ? prev - cur : 1;	/* only to give up in time */
+		prev = cur;
+	}
+	if (acc >= limit)
+		return;				/* the counter doesn't move */
+	r = top ? top : 256;
+	/* 20 steps of the counter, in count-down ticks */
+	h = *hz;
+	while (*hz == h && n < 1000000UL)
+		n++;
+	h = *hz;
+	acc = 0;
+	prev = *tcdr;
+	while (*hz < h + 20 && acc < limit) {
+		cur = *tcdr;
+		acc += cur <= prev ? prev - cur : prev + r - cur;
+		prev = cur;
+	}
+	if (acc >= limit || !acc)
+		return;
+	clock_hz10 = (long)(200UL * 2457600UL / (acc * p));
+}
+#pragma GCC diagnostic pop
+
+u32 tos_ms(void)
+{
+	u32 t;
+	if (!clock_hz10) {
+		Supexec(sup_clock);
+		if (clock_hz10 > 0 && (clock_hz10 < 1940 || clock_hz10 > 2060))
+			ms256 = 2560000UL / (u32)clock_hz10;
+	}
+	t = tos_hz200();
+	if (ms256 == 5 * 256)
+		return t * 5;
+	return (t >> 8) * ms256 + ((t & 255) * ms256 >> 8);
+}
+
+static char *put_num(char *d, u32 v)
+{
+	char b[12];
+	int n = 0;
+	do
+		b[n++] = (char)('0' + v % 10);
+	while (v /= 10);
+	while (n)
+		*d++ = b[--n];
+	return d;
+}
+
+const char *tos_clock(void)
+{
+	static char s[64];
+	char *d;
+	tos_ms();
+	if (clock_hz10 < 0)
+		return "the 200 Hz clock couldn't be measured";
+	if (ms256 == 5 * 256)
+		return "";
+	d = s + strlen(strcpy(s, "the 200 Hz clock runs at "));
+	d = put_num(d, (u32)clock_hz10 / 10);
+	*d++ = '.';
+	d = put_num(d, (u32)clock_hz10 % 10);
+	strcpy(d, " Hz: times corrected");
+	return s;
 }
 
 long nf_probe(void);
