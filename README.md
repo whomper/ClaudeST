@@ -143,6 +143,29 @@ Each networked app has `make fuzz` (clang with libFuzzer, `FUZZTIME` seconds per
 | EMail | `imap`, `pop3`, `smtp`, `mime` | an IMAP literal of minus five bytes (memmove of -1) or of gigabytes; a POP3 `STAT` count sizing three arrays past 32 bits; EHLO extensions one byte past their buffer |
 | EFTP | `ftp`, `list` | nothing; a multi-line reply is now kept to 8 KB |
 
+## The heap (16 Oct 2026)
+
+`atari/libc.c`'s `malloc`, `free`, `calloc` and `realloc` no longer walk a list of every free block
+(K&R's, 14% of ECal's calendar reading in its profile). Blocks carry their size at both ends, so a
+freed block joins its free neighbours at once; free blocks are in lists by size (one per size up to
+508 bytes, then four per power of two), and the block that new ones are cut from is kept out of the
+lists. An allocated block costs 4 bytes instead of 8. `heap_add`, the GEMDOS block sizes (512 KB, then
+doubling, at most 40 blocks), `heap_st` and `heap_tt` are as they were; `realloc` now grows a block in
+place when the one after it is free, and `calloc` refuses a size that overflows.
+
+| In Hatari (EmuTOS) | K&R | now |
+|---|---|---|
+| 3000 calendar events' blocks, 8 MHz ST | 56.8 s | 11.2 s |
+| the same, 16 MHz Falcon | 8.5 s | 4.6 s |
+| 33000 `malloc`/`free` pairs, ST / Falcon | 4.9 s / 1.3 s | 4.2 s / 1.4 s |
+| the same mixed calls on a 600 KB fixed heap (an accessory's), until one fails | 7000-11000 | 43000-850000 |
+
+`tests/heap`: `make test` runs the heap on the build machine with ASan and UBSan, and as 68000 code
+under QEMU (four-byte sizes and pointers): an accessory's heap filled and emptied, the GEMDOS growth,
+little memory, TOS 1.x, the 40-block limit, and millions of mixed calls with every block's bytes and
+the heap's structure checked. `make prg` and `run.py etos512us.img` run `HEAPT.PRG` in Hatari on a
+68000 ST (where an odd address bombs) and a 68030 Falcon.
+
 ## Coming next
 
 | Area | Files | Plan |
