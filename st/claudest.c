@@ -4192,7 +4192,7 @@ static void context_menu(short i, short x, short y)
 		case 2: rename_item("PROJECT", it); break;
 		case 3: tx_cmd("ARCHIVE", "PROJECT", it->id); break;
 		case 5:
-			if (alert(1, "[3][Delete this project?|This can't be undone.][Cancel|Delete]") == 2)
+			if (alert(2, "[3][Delete this project?|This can't be undone.][Delete|Cancel]") == 1)
 				tx_cmd("DELETE", "PROJECT", it->id);
 			break;
 		}
@@ -4216,7 +4216,7 @@ static void context_menu(short i, short x, short y)
 		tx_cmd("PICKPROJ", it->id, 0);
 		break;
 	case 5:
-		if (alert(1, "[3][Delete this chat?|This can't be undone.][Cancel|Delete]") == 2)
+		if (alert(2, "[3][Delete this chat?|This can't be undone.][Delete|Cancel]") == 1)
 			tx_cmd("DELETE", "CHAT", it->id);
 		break;
 	}
