@@ -96,7 +96,9 @@ def window(w, d, pics):
     pw, ph = gemimg.img_size(img)
     name = "WINDOW.IMG"
     pics.append((img, name))
-    col = WIDTH - (pw + CW - 1) // CW + 1          # its first column (from 1)
+    # its first column (from 1): a column short of the page's edge, which
+    # a full-width window on a 640-pixel screen cuts off
+    col = WIDTH - (pw + CW - 1) // CW
     left = col - 3                                  # the text's width beside it
     o = heading(w.get("title", "The main window"))
     o.append("@image %s %d %s" % (name, col, gemimg.mask(gemimg.MONO_SCREEN)))
