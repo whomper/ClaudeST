@@ -1,0 +1,9 @@
+{
+ "name": "ClaudeST",
+ "banner": "CLAUDEST",
+ "address": "github.com/whomper/ClaudeST",
+ "welcome": ["Welcome to **ClaudeST**, a GEM client for claude.ai on the Atari ST, STE, TT and Falcon. It works like the claude.ai website: your chats, Search, Code, Projects and Artifacts on the left, the conversation on the right, and replies streaming in as Claude writes them.", "ClaudeST is an unofficial client, not affiliated with Anthropic or Atari. Claude is a trademark of Anthropic PBC."],
+ "window": {"title": "The window", "picture": "docs/help/WINDOW.IMG", "intro": "One window:", "items": ["New chat, Search, Chats, Code, Projects and Artifacts, then your recent chats.", "The conversation: replies stream in as Claude writes.", "The reply line: type, and Return sends.", "[[The status area]]: online or not, and the session used."], "more": "More in [[The window]] and [[Keys]]."},
+ "diagram": {"title": "How ClaudeST reaches claude.ai", "boxes": [["Your Atari", "ClaudeST"], ["Raspberry Pi", "the bridge"], ["claude.ai", "Anthropic"]], "arrows": ["net/serial", "HTTPS"], "after": ["An 8 MHz 68000 can't do the encryption claude.ai needs, so a small program, the bridge, does it for the Atari on a Raspberry Pi or any Linux computer, over your network or a serial cable. See [[Getting started]]."]},
+ "contents": [["Getting started", ["Getting started", "The window", "The status area", "Keys"]], ["Working with Claude", ["Chats, projects and search", "Model and effort", "[[Code: Claude Code sessions|Code sessions]]", "Artifacts", "Attaching files"]], ["Settings and more", ["Settings", "Font", "Hebrew", "From other programs", "Right-click menus"]], ["When things go wrong", ["Troubleshooting", "What is stored where", "Account, plan and usage", "About ClaudeST"]]]
+}

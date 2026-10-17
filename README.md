@@ -236,7 +236,8 @@ common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
            icon/ (the desktop icon), reel/ (the demo video)
 icons/     the desktop icon files (from tools/icon)
-docs/      the user guide (GUIDE.md), its screenshots and the demo recording
+docs/      the user guide (GUIDE.md), its screenshots, the demo recording and the help's front
+           page (front.json, help/WINDOW.IMG: help/Makefile adds it with common/tools/helpfront.py)
 ```
 
 The program is freestanding C with its own start-up code and AES, VDI and STinG bindings, so it needs

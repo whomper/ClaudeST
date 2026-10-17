@@ -7,12 +7,15 @@
 @charset "atarist"
 @subject "Communication"
 @author "AERA | Erez Yaary"
-@$VER: CLAUDEST.HYP 1.23 (14.10.2026)
+## the version and date: help/Makefile sets them from st/claudest.c
+@$VER: CLAUDEST.HYP x.y (set by make)
 @options "+z -s"
 @width 75
 @help "Help on help"
 
 ## ------------------------------------------------------------------------
+## help/Makefile replaces this page with the AERA front page, made from
+## docs/front.json (common/tools/helpfront.py); it stays for HCP alone.
 @node "Main" "ClaudeST"
 @symbol "ClaudeST"
 
