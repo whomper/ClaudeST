@@ -38,7 +38,7 @@ CROSS   ?= m68k-linux-gnu-
 GCCINC  := $(shell $(CROSS)gcc -print-file-name=include 2>/dev/null)
 A       := ../../atari
 TCFLAGS := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
-           -fno-tree-loop-distribute-patterns -fno-store-merging -fno-expensive-optimizations -fno-asynchronous-unwind-tables \
+           -fno-tree-loop-distribute-patterns -fno-store-merging -fdisable-tree-bswap -fno-asynchronous-unwind-tables \
            -Wall -nostdinc -isystem $(GCCINC) -I$(A)/include -I$(A)
 TLDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.ld \
             -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments

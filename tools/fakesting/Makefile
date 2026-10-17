@@ -7,7 +7,7 @@ CROSS  ?= m68k-linux-gnu-
 CC     := $(CROSS)gcc
 GCCINC := $(shell $(CC) -print-file-name=include)
 CFLAGS := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
-          -fno-tree-loop-distribute-patterns -fno-store-merging -fno-expensive-optimizations -fno-asynchronous-unwind-tables -Wall \
+          -fno-tree-loop-distribute-patterns -fno-store-merging -fdisable-tree-bswap -fno-asynchronous-unwind-tables -Wall \
           -nostdinc -isystem $(GCCINC) -I../../atari/include
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,link.ld \
           -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
