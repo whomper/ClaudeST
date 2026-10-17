@@ -35,6 +35,7 @@ flow control). The protocol is the same on both.
 | `FETCH` `ARTIFACT` `<id>` | Send the artifact's data (`D` lines, then `G`). |
 | `CHOOSE` `<model id>` `<effort>` | Use this model and effort for the open chat and for new chats. The bridge answers with the model lists and `K`; an unknown model is ignored and an effort the model doesn't take becomes its default. Sent after connecting if `CLAUDEST.INF` holds a choice. |
 | `ACCOUNT` | Show the Account page: the bridge answers `T Account`, `R` and an `X` message with Plan, Usage and Account sections. |
+| `PING` | Is the bridge still there? (since 1.42) Sent when nothing has passed either way for 30 s and Claude isn't answering, only to a bridge that has sent `p`; the bridge answers `p`. No line within 20 s and the Atari shows *Gateway silent* and connects again (`HELLO`). |
 | `BYE` | ClaudeST is quitting. |
 
 ## Bridge → Atari
@@ -48,6 +49,7 @@ All commands are one letter.
 | `N` `<text>` | A passing notice ("Loading chat...", "Scanning chat 3/40", "Renamed"), shown in the title bar, or in an empty list while it loads, for up to ~5 s. An empty `N` clears it; the bridge sends one when a command is done. |
 | `L` `<kind>` `<title>` | Start a sidebar list (`CHATS`, `CODE`, `PROJECTS`, `PROJECT`, `ARTIFACTS`, `SEARCH`). |
 | `I` `<id>` `<label>` [`<flags>`] | List item. Flags: `P` pinned, `U` unread (updated since last read; since 1.17); for example `PU`. Code sessions also (since 1.38): `W` Claude is working on it, `A` it waits for you (a question, a permission), as claude.ai's dots. The id `..` means "back to all projects". Ids are at most 39 characters; the bridge sends longer ones (such as artifact file paths) as a `~` stand-in and maps them back. |
+| `p` | The bridge answers `PING` (since 1.42). It also sends one first thing after `HELLO`, which tells the Atari that this bridge answers pings. While idle the bridge also checks the session usage and claude.ai every 5 minutes, sending `u`, and `S` when the status changed (*claude.ai silent*, *Not signed in to claude.ai*, *Online*). |
 | `a` `<name>` | The bridge turned this attachment down (since 1.39); an `A` alert says why. |
 | `d` `<id>` `<flags>` | An item's flags changed (since 1.38): the bridge sends it unasked while the Code list shows a session at work, about every 20 seconds, so its dot follows without the list being sent again. |
 | `X` `<label>` | A heading in the list ("Pinned", "Today", "Yesterday", "Oct 4", "Older"); the items after it belong to it. Headings can't be selected. |

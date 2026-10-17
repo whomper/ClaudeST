@@ -1694,3 +1694,73 @@ class CodeColours(unittest.TestCase):
         s.message("A", "see `x`\n```\ny\n```")
         self.assertIn(b"P\tsee \x14x\x14\n", link.sent)
         self.assertIn(b"c\t  y\n", link.sent)
+
+
+class KeepingUpToDate(unittest.TestCase):
+    """With the window left open: PING is answered, and every 5 minutes the
+    usage and whether claude.ai answers are checked."""
+
+    def session(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.handle(b"HELLO\t1\t1.42")
+        return link, s
+
+    def test_hello_says_it_answers_pings(self):
+        link, s = self.session()
+        self.assertEqual(link.lines()[0], [b"p"])
+        link.sent = b""
+        s.handle(b"PING")
+        self.assertEqual(link.lines(), [[b"p"]])
+
+    def test_idle_checks_usage_every_5_minutes(self):
+        link, s = self.session()
+        link.sent = b""
+        s.idle()
+        self.assertEqual(link.sent, b"")           # just checked at HELLO
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        s.idle()
+        self.assertEqual([l[0] for l in link.lines()], [b"u"])      # status unchanged: no S
+
+    def test_idle_reports_claude_ai_gone_and_back(self):
+        link, s = self.session()
+        asked = []
+
+        def down(timeout=60):
+            asked.append(timeout)
+            raise RuntimeError("timed out")
+        s.be.session_usage, up = down, s.be.session_usage
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        link.sent = b""
+        s.idle()
+        self.assertEqual(link.lines(), [[b"S", b"claude.ai silent"]])
+        self.assertEqual(asked, [Session.IDLE_TIMEOUT])
+        s.be.session_usage = lambda timeout=60: (_ for _ in ()).throw(
+            RuntimeError("claude.ai refused the session (HTTP 401)."))
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        link.sent = b""
+        s.idle()
+        self.assertEqual(link.lines(), [[b"S", b"Not signed in to claude.ai"]])
+        s.be.session_usage = up
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        link.sent = b""
+        s.idle()
+        self.assertEqual([l[:2] for l in link.lines()], [[b"S", b"Online: demo"], [b"u", link.lines()[1][1]]])
+
+    def test_no_checks_before_hello(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        s.idle()
+        self.assertEqual(link.sent, b"")
+
+    def test_no_checks_for_a_quiet_or_closed_atari(self):
+        link, s = self.session()
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        s._heard_at -= Session.IDLE_LISTENING        # switched off without BYE
+        link.sent = b""
+        s.idle()
+        self.assertEqual(link.sent, b"")
+        s.handle(b"BYE")
+        s._usage_at -= Session.IDLE_CHECK_EVERY
+        s.idle()
+        self.assertEqual(link.sent, b"")

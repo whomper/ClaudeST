@@ -43,7 +43,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "1.41"
+#define VERSION "1.42"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -240,6 +240,13 @@ static short natt;
 static char rxline[1200];
 static short rxlen;
 static long ticks, last_hello;
+/* the heartbeat: with the gateway quiet for a while, PING; no answer
+   in time and it is taken as gone. Only with a bridge that answers
+   (it says so with a p line after HELLO) */
+#define PING_QUIET 30000L		/* ms without a line either way */
+#define PING_WAIT  20000L		/* ms for the answer */
+static char can_ping;
+static u32 last_rx, last_tx, ping_at;
 
 /* Claude model and effort, offered by the bridge (O/V/U/K lines) */
 #define NMODEL 12
@@ -498,6 +505,7 @@ static void tx_cmd(const char *a, const char *b, const char *c)
 	}
 	tx_byte('\n');
 	link_flush();
+	last_tx = tos_ms();
 }
 
 /* send "A\tB\tC\tD\n" */
@@ -512,11 +520,14 @@ static void tx_cmd4(const char *a, const char *b, const char *c, const char *d)
 	tx_str(d);
 	tx_byte('\n');
 	link_flush();
+	last_tx = tos_ms();
 }
 
 static void send_hello(void)
 {
 	pref_sent = 0;
+	can_ping = 0;			/* until this bridge says it answers */
+	ping_at = 0;
 	if (natt) {		/* a new start: the bridge has no files now */
 		natt = 0;
 		dirty |= D_INPUT;
@@ -1850,6 +1861,8 @@ static void handle_line(char *s)
 		online = 1;
 		dirty |= D_STATUS;
 	}
+	last_rx = tos_ms();
+	ping_at = 0;		/* the gateway is there */
 	if (f[0][1] != 0)
 		return;		/* all bridge commands are one letter */
 
@@ -2049,6 +2062,9 @@ static void handle_line(char *s)
 					      strcmp(pref_effort, cur_effort)))
 				tx_cmd("CHOOSE", pref_model, pref_effort);
 		}
+		break;
+	case 'p':			/* p : the bridge answers PING */
+		can_ping = 1;
 		break;
 	case 'a':			/* a <name> : the bridge turned this attachment down */
 		if (n > 1) {
@@ -2869,6 +2885,37 @@ static void set_baud(short b)
 	}
 	menu_check_baud();
 	save_config();
+}
+
+/* is the gateway still there? Asked when nothing has passed either way
+   for PING_QUIET and Claude isn't answering; a gateway that doesn't
+   answer within PING_WAIT is taken as gone: offline, and connecting
+   again as when it drops (a serial cable has no other way to tell) */
+static void heartbeat(void)
+{
+	u32 now;
+	if (!online || !can_ping || busy)
+		return;
+	now = tos_ms();
+	if (!ping_at) {
+		if (now - last_rx > PING_QUIET && now - last_tx > PING_QUIET) {
+			tx_cmd("PING", 0, 0);
+			ping_at = now;
+		}
+		return;
+	}
+	if (now - ping_at < PING_WAIT)
+		return;
+	ping_at = 0;
+	can_ping = 0;
+	online = 0;
+	if (link == LINK_TCP) {
+		if (tcp_cn >= 0)
+			sting_close(tcp_cn);
+		tcp_cn = -1;
+		next_connect = ticks + 125;	/* again in ~5 s */
+	}
+	set_status("Gateway silent");	/* short: the sidebar is narrow */
 }
 
 static void reconnect(void)
@@ -5411,6 +5458,7 @@ int main(void)
 		}
 		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
 			send_hello();
+		heartbeat();
 		flush_dirty();
 	}
 

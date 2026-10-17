@@ -578,9 +578,10 @@ class Backend:
     def archive_code(self, session_id):
         raise NotImplementedError("Archiving sessions isn't supported by the %s backend" % self.name)
 
-    def session_usage(self):
+    def session_usage(self, timeout=60):
         """(percent used, resets_at ISO) of the current session limit, or
-        None where the backend has no such limit."""
+        None where the backend has no such limit. TIMEOUT: seconds to wait
+        for the server."""
         return None
 
     def mark_read(self, chat_id):
@@ -823,8 +824,8 @@ class ClaudeAiBackend(Backend):
             os.makedirs(state, exist_ok=True)
         self.memory = ChoiceMemory(os.path.join(state, "chat-effort.json") if state else None)
 
-    def _get(self, path, **params):
-        r = self.http.get(self.BASE + path, params=params or None, timeout=60)
+    def _get(self, path, timeout=60, **params):
+        r = self.http.get(self.BASE + path, params=params or None, timeout=timeout)
         if r.status_code in (401, 403):
             raise RuntimeError("claude.ai refused the session (HTTP %d). "
                                "Is CLAUDE_SESSION_KEY current?" % r.status_code)
@@ -1026,10 +1027,10 @@ class ClaudeAiBackend(Backend):
             except Exception as e:
                 log.info("could not set the chat's model: %s", e)
 
-    def session_usage(self):
+    def session_usage(self, timeout=60):
         # claude.ai always has a session (5-hour) limit; with nothing used
         # yet it may leave the entry out or empty: that is 0%, not "none"
-        u = (self._get("/organizations/%s/usage" % self.org) or {}).get("five_hour")
+        u = (self._get("/organizations/%s/usage" % self.org, timeout=timeout) or {}).get("five_hour")
         if not isinstance(u, dict) or u.get("utilization") is None:
             return 0.0, None
         return float(u["utilization"]), u.get("resets_at")
@@ -1918,7 +1919,7 @@ class ApiBackend(Backend):
 class DemoBackend(Backend):
     name = "demo"
 
-    def session_usage(self):
+    def session_usage(self, timeout=60):
         """A pretend session limit that grows a little with each message."""
         from datetime import datetime, timedelta, timezone
         said = sum(len(c.get("messages", [])) for c in self.chats.values())

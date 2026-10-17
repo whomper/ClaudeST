@@ -222,6 +222,9 @@ class Session:
         self.chat_kind = "CHAT"     # or "CODE": chat_id is a Claude Code session
         self.readonly = False       # the open chat was moved to claude.ai's new system
         self._usage_at = -1e9          # when the session usage was last sent
+        self._status = None            # the status line the Atari shows (S)
+        self.greeted = False           # HELLO came: the Atari is listening
+        self._heard_at = 0.0           # when the Atari last sent a line
         self._usage_last = False       # what it was, to log changes only
         self.list_kind = "CHATS"
         self.query = ""
@@ -236,6 +239,8 @@ class Session:
     # -- output --------------------------------------------------------
 
     def out(self, cmd, *fields):
+        if cmd == "S":
+            self._status = fields[0] if fields else ""
         parts = [cmd.encode()] + [to_atari(str(f)) for f in fields]
         log.debug("-> %r", parts)
         self.link.write(b"\t".join(parts) + b"\n")
@@ -309,10 +314,22 @@ class Session:
 
     ACTIVE_EVERY = 20       # seconds between checks while a Code session works
 
+    IDLE_CHECK_EVERY = 300  # seconds between usage checks while nothing happens
+    IDLE_TIMEOUT = 10       # seconds claude.ai has to answer one: the Atari's PING waits
+    IDLE_LISTENING = 600    # seconds of silence from the Atari before those checks stop
+
     def idle(self):
-        """Nothing from the Atari for a while: while the Code list shows a
-        session at work, ask claude.ai how the sessions are doing and send
-        a d line for each one whose dot changed (the list stays as it is)."""
+        """Nothing from the Atari for a while: every IDLE_CHECK_EVERY, the
+        session usage and whether claude.ai answers (check_claude); while
+        the Code list shows a session at work, ask claude.ai how the
+        sessions are doing and send a d line for each one whose dot
+        changed (the list stays as it is)."""
+        now = time.time()
+        # not for an Atari that has gone quiet (switched off without BYE):
+        # one that is open pings every 30 seconds
+        if self.greeted and now - self._usage_at >= self.IDLE_CHECK_EVERY and \
+                now - self._heard_at < self.IDLE_LISTENING:
+            self.check_claude()
         if self.list_kind != "CODE" or not any("W" in f for f in self.flags_sent.values()):
             return
         now = time.time()
@@ -329,6 +346,24 @@ class Session:
             if it[0] in self.flags_sent and self.flags_sent[it[0]] != flags:
                 self.flags_sent[it[0]] = flags
                 self.out("d", self.short_id(it[0]), flags)
+
+    def check_claude(self):
+        """With the window left open: the usage ring brought up to date, and
+        the status line saying whether claude.ai still answers (and the
+        session key still works). S goes only when it changed."""
+        self._usage_at = time.time()
+        try:
+            got = self.be.session_usage(timeout=self.IDLE_TIMEOUT)
+        except Exception as e:
+            signed_out = getattr(self.be, "real", True) is None or "refused the session" in str(e)
+            text = "Not signed in to claude.ai" if signed_out else "claude.ai silent"
+            log.info("idle check: %s (%s)", text, e)
+            if text != self._status:
+                self.out("S", text)
+            return
+        if self._status != self.online_text():
+            self.out("S", self.online_text())
+        self.usage_out(got)
 
     def short_id(self, real):
         """Ids longer than the Atari keeps (artifact file paths, say) are
@@ -385,6 +420,9 @@ class Session:
         except Exception as e:
             log.info("session usage: could not read it: %s", e)
             return
+        self.usage_out(got)
+
+    def usage_out(self, got):
         if got != self._usage_last:
             log.info("session usage: %s", "none" if got is None else "%.0f%%, resets %s" % (
                 got[0], got[1] or "-"))
@@ -414,6 +452,8 @@ class Session:
         self.out("K", self.be.model, self.be.effort or "")
 
     def cmd_hello(self, proto="", version="", *_):
+        self.out("p")           # this bridge answers PING (ClaudeST 1.42 on)
+        self.greeted = True
         self.files, self._file = [], None   # the Atari starts afresh
         self.styles = version_at_least(version, (1, 41))
         self.notice("Loading chats...")
@@ -746,10 +786,16 @@ class Session:
         self.be.forget_artifact_data(item_id)
         self.online()
 
+    def cmd_ping(self, *_):
+        """The Atari heard nothing for a while: say we're here."""
+        self.out("p")
+
     def cmd_bye(self, *_):
         log.info("Atari closed ClaudeST")
+        self.greeted = False    # no more checks for it
 
     def handle(self, raw: bytes):
+        self._heard_at = time.time()
         fields = from_atari(raw).split("\t")
         cmd, args = fields[0].upper(), [self.long_ids.get(f, f) for f in fields[1:]]
         fn = getattr(self, "cmd_" + cmd.lower(), None)

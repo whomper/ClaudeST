@@ -44,8 +44,18 @@ Replies still come in while it is iconified.
   (claude.ai's 5-hour limit): blue, turning red from 90%, on a grey track
   in 16 colours; black on a dotted grey track with fewer colours. Below, *Session
   30%* and, when the sidebar is wide enough, the time until it resets.
-  The bridge checks after each reply, and at most every two minutes
-  otherwise. Click the area for the full Account page.
+  The bridge checks after each reply, at most every two minutes while
+  you use ClaudeST, and every five minutes while the window is left
+  alone. Click the area for the full Account page.
+- **Left open,** ClaudeST keeps the status true. Every five minutes the
+  bridge also checks that claude.ai still answers: if it doesn't, the
+  status says *claude.ai silent*, or *Not signed in to claude.ai* when
+  the session key has stopped working, and *Online* again once it's
+  back. When nothing has passed for 30 seconds, ClaudeST asks the
+  gateway whether it's still there; with no answer in 20 seconds the dot
+  goes red and the status says *Gateway silent*, and ClaudeST keeps
+  trying until the gateway answers. Over a serial cable this is the only
+  way to tell that the Pi has gone.
 - **Notices:** short messages such as *Loading chat...* or *Renamed*
   appear in grey at the right of the title bar for a few seconds.
 - **Tooltips:** rest the mouse on a name that's cut off, in the sidebar
