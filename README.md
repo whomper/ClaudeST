@@ -37,6 +37,7 @@ On the Pi:
 ```
 git clone https://github.com/whomper/AERA-Gateway
 cd AERA-Gateway
+./update-pi.sh                            the latest release of AERA-Gateway
 sudo gateway/aera-gateway install mail imap.gmail.com smtp.gmail.com pop.gmail.com
 sudo gateway/aera-gateway install dav
 sudo gateway/aera-gateway install ftp
@@ -52,8 +53,7 @@ and `install` prints what to type into the Atari program.
 Afterwards:
 
 ```
-cd AERA-Gateway && git pull
-sudo gateway/aera-gateway update          every gateway on the Pi, its settings kept
+cd AERA-Gateway && ./update-pi.sh        the latest release, every gateway on the Pi updated, settings kept
 gateway/aera-gateway status               what runs, on which ports, with which settings
 sudo gateway/aera-gateway install dav --allow-local     change a setting; the others stay
 sudo gateway/aera-gateway remove ftp
