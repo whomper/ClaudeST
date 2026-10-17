@@ -16,7 +16,7 @@ CC      := $(CROSS)gcc
 GCCINC  := $(shell $(CC) -print-file-name=include 2>/dev/null)
 COMMON  := ../common
 CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
-           -fno-pic -fno-pie -fno-tree-loop-distribute-patterns -fno-store-merging -fno-expensive-optimizations \
+           -fno-pic -fno-pie -fno-tree-loop-distribute-patterns -fno-store-merging -fdisable-tree-bswap \
            -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
            -nostdinc -isystem $(GCCINC) -I$(COMMON)/atari/include -I$(COMMON)/atari -I$(COMMON)/src -I$(COMMON)/ui -I.
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
