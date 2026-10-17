@@ -168,14 +168,21 @@ static void rx_byte(int c)
 	}
 }
 
-/* What has come, as real STinG's interrupts would have filed it (at
-   most 2 KB a call, a few ms on an ST), and a little of what goes */
+/* What has come, as real STinG's interrupts would have filed it, and a
+   little of what goes. At most four ticks of the 200 Hz clock a call
+   (15-20 ms): filing a byte costs about 0.2 ms on an 8 MHz ST, so 2 KB
+   held a Mega ST for 450 ms (ECal's bgsync_test.py); a Falcon files
+   far more in the same time */
 static void pump(void)
 {
+	u32 start = tos_hz200();
 	int n = 0;
 	flush(16);
-	while (n++ < 2048 && in_ready())
+	while (n < 2048 && in_ready()) {
 		rx_byte(in_byte());
+		if ((++n & 63) == 0 && tos_hz200() - start >= 4)
+			break;
+	}
 }
 
 long c_unsupported(const short *a) { (void)a; return -32; }
