@@ -6,9 +6,12 @@ colours, booting to the EmuTOS desktop with the ClaudeST icon; the icon
 is double-clicked, a chat is opened, and a new question is typed and
 answered by the scripted showcase bridge (reel_bridge.py).
 
-Needs Linux with Hatari, EmuTOS (512K), Xvfb, xdotool and ffmpeg.
+Needs Linux with Hatari, Xvfb, xdotool and ffmpeg, and EmuTOS's
+emuicon.rsc. The machine is the family's Falcon:16 with EmuTOS 1.4
+(common/tools/machines.py, which fetches it): the video shows EmuTOS's
+desktop.
 
-    tools/reel/record.py OUT_DIR --tos etos512us.img --emuicon emuicon.rsc
+    tools/reel/record.py OUT_DIR --emuicon emuicon.rsc
 
 Writes OUT_DIR/claude-st-falcon.avi (the raw recording),
 claude-st-falcon.mp4 (1280x960) and claude-st-reel.mp4 (1080x1920).
@@ -22,6 +25,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "common", "tools"))
+import machines  # noqa: E402
 QUESTION = "Why is the Atari ST still loved today?"
 
 # ST scancodes for the characters typed in the video
@@ -45,8 +50,8 @@ DESKTOP_INF = (
 
 
 class Rig:
-    def __init__(self, work, tos, display=":99"):
-        self.work, self.tos, self.display = work, tos, display
+    def __init__(self, work, display=":99"):
+        self.work, self.display = work, display
         self.env = dict(os.environ, DISPLAY=display, SDL_AUDIODRIVER="dummy")
         self.fifo = os.path.join(work, "cmd.fifo")
         self.win = None
@@ -121,7 +126,6 @@ class Rig:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out")
-    ap.add_argument("--tos", required=True, help="EmuTOS 512K image")
     ap.add_argument("--emuicon", required=True, help="EmuTOS's emuicon.rsc")
     ap.add_argument("--shots", action="store_true", help="also save a screenshot after each step")
     args = ap.parse_args()
@@ -144,7 +148,10 @@ def main():
     shots = os.path.join(work, "shots")
     os.makedirs(shots)
 
-    rig = Rig(work, args.tos)
+    rig = Rig(work)
+    os.environ["AERA_TOS"] = "emutos"         # the video shows EmuTOS's desktop
+    falcon = machines.Machine("Falcon:16", hd)
+    print(falcon.describe(), flush=True)
     xvfb = None
     if subprocess.run(["xdpyinfo"], env=rig.env, capture_output=True).returncode:
         xvfb = subprocess.Popen(["Xvfb", rig.display, "-screen", "0", "1024x768x24"],
@@ -154,14 +161,14 @@ def main():
                                os.path.join(work, "st_out"), os.path.join(work, "st_in")],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     hatari = subprocess.Popen(
-        ["hatari", "-w", "--statusbar", "no", "--borders", "no", "--zoom", "1",
-         "--confirm-quit", "no", "--tos", args.tos, "--machine", "falcon", "--monitor", "vga",
-         "--dsp", "none", "--harddrive", hd, "--fast-boot", "yes", "--sound", "off",
+        ["hatari", "-w", "--statusbar", "no", "--borders", "no", "--zoom", "1"] + falcon.args() +
+        ["--fast-boot", "yes",
          "--rs232-out", os.path.join(work, "st_out"), "--rs232-in", os.path.join(work, "st_in"),
          "--cmd-fifo", rig.fifo, "--screenshot-dir", shots,
          "--avirecord", "--avi-vcodec", "png", "--png-level", "1",   # light compression
          "--avi-file", avi, "--log-level", "warn"],
-        env=rig.env, stdout=open(os.path.join(work, "hatari.log"), "w"), stderr=subprocess.STDOUT)
+        env=falcon.env(dict(rig.env, SDL_VIDEODRIVER="x11")),      # a window xdotool can find
+        stdout=open(os.path.join(work, "hatari.log"), "w"), stderr=subprocess.STDOUT)
 
     def step(what):
         print("%5.1f s  %s" % (time.time() - marks["start"], what), flush=True)

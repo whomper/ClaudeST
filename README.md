@@ -262,7 +262,7 @@ serial port:
 ```sh
 tools/hatari-test.sh                 # demo chats, no account needed
 CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
-MACHINE=ste tools/hatari-test.sh     # st (the default), ste or tt
+MACHINE=Falcon tools/hatari-test.sh  # ST (the default), ST-1, TT or Falcon; ST:med for colour
 LINK=network tools/hatari-test.sh    # over STinG instead of the serial cable
 ```
 

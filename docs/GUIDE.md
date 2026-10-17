@@ -531,11 +531,16 @@ TOS program. An `m68k-atari-mint` toolchain also works:
 ```sh
 tools/hatari-test.sh                 # demo chats, no account needed
 CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
-MACHINE=ste tools/hatari-test.sh     # STE in colour (st, ste or tt)
+MACHINE=Falcon tools/hatari-test.sh  # ST (the default), ST-1, TT or Falcon
+MACHINE=ST:med tools/hatari-test.sh  # a machine with another screen
 LINK=network tools/hatari-test.sh    # over STinG, as on the network
 ```
 
-The script downloads EmuTOS the first time, starts the bridge and boots
+The machines are the AERA family's test machines, from
+`common/tools/machines.py` (`machines.py list` shows them and their
+screens): your own TOS images when `~/.aera/tos` has them (`tos104us.img`,
+`tos306.img`, `tos404.img`), else EmuTOS 1.4, which the script downloads
+the first time. It starts the bridge and boots
 [Hatari](https://hatari.tuxfamily.org/) into ClaudeST, with the emulated
 serial port connected to the bridge. Hatari has no network card: with
 `LINK=network`, `FAKESTNG.PRG` from `common/tools/fakesting` (built by the
@@ -544,22 +549,22 @@ TCP connections over the serial port to `serial_bridge.py`, which connects
 to the bridge on TCP port 2323, as ClaudeST does on the Pi. FAKESTNG is for
 the emulator only; never install it on a real Atari.
 
-Hatari only connects the ST-style MFP serial port to the bridge. To run
-an emulated Falcon, put `LINK=serial` and `SERIALPORT=6` in its `CLAUDEST.INF`; a
-real Falcon uses its Modem port, which needs no `port` line.
+Hatari only connects the ST-style MFP serial port to the bridge, so on
+the Falcon the script puts `SERIALPORT=6` in `CLAUDEST.INF`; a real
+Falcon uses its Modem port, which needs no `port` line.
 
 ### Recording a demo video
 
-`tools/reel/record.py` records a demo in Hatari: a Falcon in 640×480, 16
-colours, boots to the EmuTOS desktop with a ClaudeST icon, opens Claude
+`tools/reel/record.py` records a demo in Hatari: the family's Falcon
+(`common/tools/machines.py`) in 640×480, 16 colours, boots to the EmuTOS desktop with a ClaudeST icon, opens Claude
 ST, opens a chat, and types a new question. The answer comes from
 `tools/reel/reel_bridge.py`, a bridge with a scripted showcase account
 and a pre-written reply, so the video needs no account. It needs Linux
-with Hatari, Xvfb, xdotool and ffmpeg, and EmuTOS 512K with its
-`emuicon.rsc`:
+with Hatari, Xvfb, xdotool and ffmpeg, and EmuTOS's `emuicon.rsc`
+(`machines.py` fetches EmuTOS 1.4 itself):
 
 ```sh
-tools/reel/record.py out/ --tos etos512us.img --emuicon emuicon.rsc
+tools/reel/record.py out/ --emuicon emuicon.rsc
 ```
 
 It writes `claude-st-falcon.mp4` (1280×960) and `claude-st-reel.mp4`

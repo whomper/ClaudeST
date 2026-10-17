@@ -6,13 +6,20 @@
 #   tools/hatari-test.sh                      demo chats, no account needed
 #   tools/hatari-test.sh claudeai             your claude.ai account
 #                                             (export CLAUDE_SESSION_KEY first)
-#   TOS=/path/to/tos.img tools/hatari-test.sh use your own TOS/EmuTOS image
-#   MACHINE=ste tools/hatari-test.sh          st (default), ste or tt
+#   MACHINE=Falcon tools/hatari-test.sh       one of the AERA test machines:
+#                                             ST (the default), ST-1, TT, Falcon,
+#                                             with a screen: ST:med, Falcon:256...
+#                                             (common/tools/machines.py list)
 #   LINK=network tools/hatari-test.sh         over STinG instead of the serial cable
 #   HATARI=/path/to/hatari tools/hatari-test.sh   if Hatari isn't found by itself
 #
+# The machine, its TOS and its screen come from common/tools/machines.py:
+# Erez's own TOS when ~/.aera/tos has it (AERA_TOS=folder, or emutos),
+# else EmuTOS 1.4, fetched the first time.
+#
 # The emulated serial port is wired to the bridge through two named pipes.
-# Hatari only connects the ST/STE/TT serial port this way, not the Falcon's.
+# Hatari connects the ST-style MFP serial port this way: on the Falcon,
+# ClaudeST is told to use it (SERIALPORT=6).
 # Hatari has no network card: with LINK=network, common/tools/fakesting's
 # FAKESTNG.PRG stands in for STinG and tunnels its TCP connections over
 # that serial port to serial_bridge.py, which connects to the bridge on
@@ -23,7 +30,7 @@ set -euo pipefail
 BACKEND=${1:-demo}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$HOME/.claude-st-hatari}
-MACHINE=${MACHINE:-st}
+MACHINE=${MACHINE:-ST}
 LINK=${LINK:-serial}
 
 # Find Hatari: $HATARI, a "hatari" command, or the macOS app bundle
@@ -53,6 +60,14 @@ if [ -z "$HATARI_BIN" ]; then
 fi
 echo "Using Hatari: $HATARI_BIN"
 
+# the machine's Hatari arguments, one a line
+ARGS=()
+LINES=$(python3 "$ROOT/common/tools/machines.py" args "$MACHINE" "$WORK/drive") || exit 1
+while IFS= read -r line; do ARGS+=("$line"); done <<< "$LINES"
+case "$MACHINE" in
+  Falcon*) EXTRA_INF="SERIALPORT=6\r\n${EXTRA_INF:-}" ;;
+esac
+
 mkdir -p "$WORK/drive/AUTO"
 cp "$ROOT/binary/CLAUDEST.PRG" "$WORK/drive/"
 rm -f "$WORK/drive/AUTO/FAKESTNG.PRG"
@@ -68,16 +83,6 @@ case "$LINK" in
     echo "LINK must be serial or network" >&2; exit 1 ;;
 esac
 
-if [ -z "${TOS:-}" ]; then
-  TOS="$WORK/etos512us.img"
-  if [ ! -f "$TOS" ]; then
-    echo "Downloading EmuTOS (free TOS replacement)..."
-    curl -fsSL -o "$WORK/emutos.zip" \
-      "https://downloads.sourceforge.net/project/emutos/emutos/1.3/emutos-512k-1.3.zip"
-    unzip -o -q -j "$WORK/emutos.zip" "*/etos512us.img" -d "$WORK"
-  fi
-fi
-
 if [ "$LINK" = network ]; then
   python3 "$ROOT/bridge/claude_bridge.py" --backend "$BACKEND" --tcp 127.0.0.1:2323 &
   BRIDGE=$!
@@ -92,11 +97,6 @@ else
 fi
 sleep 1   # the bridge creates the pipes; Hatari must find them
 
-case "$MACHINE" in
-  st)  DISPLAY_OPTS=(--mono) ;;
-  *)   DISPLAY_OPTS=(--monitor rgb --tos-res med) ;;
-esac
-
-"$HATARI_BIN" --machine "$MACHINE" "${DISPLAY_OPTS[@]}" --tos "$TOS" \
-  --harddrive "$WORK/drive" --auto 'C:\CLAUDEST.PRG' --fast-boot yes \
+# the machine's own HOME, so its NVRAM is its own (machines.py)
+HOME="$WORK/drive.home" "$HATARI_BIN" "${ARGS[@]}" --auto 'C:\CLAUDEST.PRG' --fast-boot yes \
   --rs232-out "$WORK/st_out" --rs232-in "$WORK/st_in" "${@:2}"
