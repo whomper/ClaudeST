@@ -14,9 +14,17 @@
  *   main loop:
  *       conn_stop = 0;                   (a stop is for one operation)
  *       which = busy_key(&ev) ? MU_KEYBD : evnt_multi_(..., msg, &ev);
+ *
+ * With busy_message set to the app's message handler, busy_idle also
+ * reads messages while the network works: a PEOPLE answer (av.c) is
+ * taken at once, everything else goes to the app, which may redraw its
+ * windows and must refuse what can't happen now (menus, drops: "not
+ * now"). Unset, messages wait in the AES's queue as before.
  */
 #ifndef AERA_BUSY_H
 #define AERA_BUSY_H
+
+extern void (*busy_message)(const short *msg);
 
 #include "gem.h"
 

@@ -72,10 +72,12 @@ u32 tos_hz200(void)
  * showed as 25 (EFTP, whomper/EFTP a1e3b44). So the first time tos_ms()
  * is asked, the counter is measured against timer C's own count-down,
  * which runs off the MFP's 2.4576 MHz crystal however the timer is set,
- * for 20 of the counter's steps (100 ms when all is well); more than 3%
+ * for CLOCK_STEPS of the counter's steps (30 ms when all is well; it
+ * busy-waits that long once, so keep it short); more than 3%
  * off, tos_ms() is scaled. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed hardware addresses */
+#define CLOCK_STEPS 6			/* 0.1% resolution at 200 Hz: plenty for a 3% test */
 static long clock_hz10;			/* the counter's rate in tenths of Hz; 0 not measured, -1 can't */
 static u32 ms256 = 5 * 256;		/* milliseconds per step, times 256 */
 
@@ -105,21 +107,21 @@ static void sup_clock(void)
 	if (acc >= limit)
 		return;				/* the counter doesn't move */
 	r = top ? top : 256;
-	/* 20 steps of the counter, in count-down ticks */
+	/* CLOCK_STEPS steps of the counter, in count-down ticks */
 	h = *hz;
 	while (*hz == h && n < 1000000UL)
 		n++;
 	h = *hz;
 	acc = 0;
 	prev = *tcdr;
-	while (*hz < h + 20 && acc < limit) {
+	while (*hz < h + CLOCK_STEPS && acc < limit) {
 		cur = *tcdr;
 		acc += cur <= prev ? prev - cur : prev + r - cur;
 		prev = cur;
 	}
 	if (acc >= limit || !acc)
 		return;
-	clock_hz10 = (long)(200UL * 2457600UL / (acc * p));
+	clock_hz10 = (long)(CLOCK_STEPS * 10UL * 2457600UL / (acc * p));
 }
 #pragma GCC diagnostic pop
 

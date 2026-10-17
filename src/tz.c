@@ -324,7 +324,7 @@ static CTIME change_utc(const TZCHANGE *c, int y, int before)
 	return t;
 }
 
-int tz_offset(const TZONE *z, CTIME utc)
+int tz_offset_rules(const TZONE *z, CTIME utc)
 {
 	DT d;
 	CTIME on, off;
@@ -340,6 +340,66 @@ int tz_offset(const TZONE *z, CTIME utc)
 		in = utc >= on && utc < off;
 	else			/* southern hemisphere: summer spans the new year */
 		in = utc >= on || utc < off;
+	return in ? z->std + z->dst : z->std;
+}
+
+/*
+ * The offset is asked for again and again (a series of events asks for
+ * every occurrence, several times over: in ECal it was 59% of the
+ * reminders' work on a 68000), and working out a year's two changes
+ * from their rules is the slow part. So the last few zone-years are
+ * kept, each with its two moments; an offset is then a comparison or
+ * two. A zone is known by its rules as well as its address, since a zone
+ * learned from a file may be freed and its memory used again. (From
+ * ECal 2.6's tzm_offset.)
+ */
+#define TZ_YEARS 4
+typedef struct {
+	const TZONE *z;
+	short std, dst;
+	TZCHANGE on, off;
+	CTIME y0, y1;		/* the year, in UTC, from the new year of its standard time */
+	CTIME ton, toff;	/* summer time begins, ends */
+} TZYEAR;
+static TZYEAR years[TZ_YEARS];
+static int years_next;
+
+static int same_rules(const TZYEAR *y, const TZONE *z)
+{
+	return y->z == z && y->std == z->std && y->dst == z->dst &&
+	       !memcmp(&y->on, &z->on, sizeof(TZCHANGE)) && !memcmp(&y->off, &z->off, sizeof(TZCHANGE));
+}
+
+int tz_offset(const TZONE *z, CTIME utc)
+{
+	TZYEAR *y;
+	int i, in;
+	if (!z || !z->dst || !z->on.mon || !z->off.mon)
+		return tz_offset_rules(z, utc);
+	for (i = 0; i < TZ_YEARS; i++) {
+		y = &years[i];
+		if (utc >= y->y0 && utc < y->y1 && same_rules(y, z))
+			goto have;
+	}
+	{
+		DT d;
+		y = &years[years_next++ % TZ_YEARS];
+		ct_split(utc + z->std, &d);	/* the year as tz_offset_rules takes it */
+		y->z = z;
+		y->std = z->std;
+		y->dst = z->dst;
+		y->on = z->on;
+		y->off = z->off;
+		y->y0 = ct_make(d.year, 1, 1, 0, 0) - z->std;
+		y->y1 = ct_make(d.year + 1, 1, 1, 0, 0) - z->std;
+		y->ton = change_utc(&z->on, d.year, z->std);
+		y->toff = change_utc(&z->off, d.year, z->std + z->dst);
+	}
+have:
+	if (y->ton < y->toff)
+		in = utc >= y->ton && utc < y->toff;
+	else			/* southern hemisphere: summer spans the new year */
+		in = utc >= y->ton || utc < y->toff;
 	return in ? z->std + z->dst : z->std;
 }
 

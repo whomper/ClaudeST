@@ -19,7 +19,7 @@ static void *addrout[1];
 
 static void *aespb[6] = { control, global, aintin, aintout, addrin, addrout };
 
-static short aes(short op, short nin, short nout, short nain, short naout)
+static short aes_raw(short op, short nin, short nout, short nain, short naout)
 {
 	control[0] = op;
 	control[1] = nin;
@@ -30,6 +30,54 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 		: : "r"((long)aespb) : "d0", "d1", "d2", "a0", "a1", "a2", "memory", "cc");
 	return aintout[0];
 }
+
+#ifdef AES_PROFILE
+/* Built with -DAES_PROFILE (or -DAES_PROFILE=ms): how long the program
+   holds the machine between its event calls (evnt_*): the time the
+   program in front, or for an accessory every other program, can't run
+   (guideline 2.2). Each stretch of AES_PROFILE ms or more (50 when no
+   number is given) goes to the emulator's console (NatFeats) as
+   "AESGAP <ms> ms <tag>"; tests/aesgap.py reads them. */
+#include <stdio.h>
+#if AES_PROFILE < 2
+#undef AES_PROFILE
+#define AES_PROFILE 50
+#endif
+static const char *gap_tag = "start";
+static u32 gap_from, gap_max;
+
+void aes_profile_tag(const char *tag)
+{
+	gap_tag = tag;
+}
+
+unsigned long aes_profile_max(void)
+{
+	return gap_max;
+}
+
+static short aes(short op, short nin, short nout, short nain, short naout)
+{
+	short r;
+	int ev = op >= 20 && op <= 25;		/* evnt_keybd ... evnt_multi */
+	if (ev && gap_from) {
+		u32 g = tos_ms() - gap_from;
+		if (g > gap_max)
+			gap_max = g;
+		if (g >= AES_PROFILE) {
+			char b[96];
+			snprintf(b, sizeof(b), "AESGAP %lu ms %s\n", (unsigned long)g, gap_tag);
+			nf_debug(b);
+		}
+	}
+	r = aes_raw(op, nin, nout, nain, naout);
+	if (ev)
+		gap_from = tos_ms();
+	return r;
+}
+#else
+#define aes aes_raw
+#endif
 
 short appl_init(void) { return aes(10, 0, 1, 0, 0); }
 short appl_exit(void) { return aes(19, 0, 1, 0, 0); }

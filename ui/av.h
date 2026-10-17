@@ -27,7 +27,7 @@
 #ifndef AERA_AV_H
 #define AERA_AV_H
 
-enum { AV_NONE, AV_START, AV_DONE };
+enum { AV_NONE, AV_START, AV_DONE, AV_PEOPLE };
 
 /* our names as the AES may know us, by the file we were started as:
    "ECONTACT|ECONTST" (the one appl_find gives our id is used) */
@@ -44,6 +44,24 @@ const char *av_command(void);
 /* text for the program called name, with VA_START. 1 when sent, 0 when it
    isn't running */
 int av_send(const char *name, const char *text);
+
+/* PEOPLE (0x4E43, guideline 4.1): the family's one message besides the AV
+   protocol's, for asking EContact about people (people.c builds and reads
+   the strings). Laid out as VA_START and answered with AV_STARTED;
+   av_message() hands a PEOPLE string over as AV_PEOPLE (the sender is
+   msg[1]). One goes at a time: av_people() gives 0 while the last isn't
+   answered, -1 for no such program; after 3 s without AV_STARTED the last
+   counts as lost (av_people_lost() counts them) and the next may go. */
+int av_people(short id, const char *text);
+int av_people_ready(void);
+long av_people_lost(void);
+/* in a loop of the shared code's own (busy.c): a PEOPLE goes to
+   av_people_hook (people_init sets it) and our PEOPLE's AV_STARTED is
+   taken; 1 when the message was one of those, 0 for the app's */
+extern void (*av_people_hook)(const char *s, short from);
+int av_modal_message(const short *msg);
+/* the name the AES knows us by, without its padding ("ECAL", "ECALST") */
+const char *av_name(void);
 
 /* memory other programs may read: global under MiNT and MagiC (Mxalloc
    mode 0x2B), else local (static: an accessory has nothing else) */
