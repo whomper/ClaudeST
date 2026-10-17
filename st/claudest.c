@@ -4853,7 +4853,7 @@ static void settings_dialog(void)
 			if (!parse_ip(f[0], &ip, 0) || !ip) {
 				res = -1;
 				focus = 0;
-				form_alert(1, "[1][Please type the gateway's|IP address, for example|192.168.1.10.][ OK ]");
+				alert(1, "[1][Please type the gateway's|IP address, for example|192.168.1.10.][ OK ]");
 			}
 		}
 	}
