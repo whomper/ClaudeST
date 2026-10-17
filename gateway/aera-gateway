@@ -44,6 +44,7 @@ import tempfile
 import time
 import urllib.request
 
+VERSION = "1.0"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -995,7 +996,8 @@ def service(name):
 # ---------------------------------------------------------------- the commands
 
 def status(pi, src=HERE):
-    say("AERA gateways on this computer (%s, this copy: %s)" % (pi.ip() or "no address", src))
+    say("AERA gateways on this computer (%s, this copy: AERA-Gateway %s in %s)" % (pi.ip() or "no address",
+                                                                             VERSION, src))
     stale = False
     for svc in GATEWAYS + [CLAUDE]:
         if not svc.installed(pi):
