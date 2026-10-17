@@ -17,18 +17,14 @@
 #define AV_ACCWINDCLOSED 0x4726
 #define AV_EXIT		0x4736
 #define AV_STARTED	0x4738
-#define PEOPLE		0x4E43	/* the family's one other message (guideline 4.1) */
-#define PEOPLE_WAIT	3000UL	/* ms for AV_STARTED before a PEOPLE counts as lost */
 
 /* what we tell the server we understand: VA_START (bit 1), answering it
    with AV_STARTED (bit 2), quoted file names (bit 4) */
 #define AV_WE_TAKE	0x0016
 
-static char local_name[10], local_out[1024], local_people[1024];
-static char *name_buf = local_name, *out_buf, *people_buf;
-static int people_out;			/* a PEOPLE sent, AV_STARTED not yet back */
-static unsigned long people_at;		/* when it went (tos_ms) */
-static long people_lost;
+static char local_name[10], local_out[1024];
+static char *name_buf = local_name, *out_buf;
+int (*av_people_started)(const char *p);
 static char got[2048];			/* the last VA_START's string, ours */
 static short server = -1;		/* the AV server's id, once told */
 static int registered;
@@ -56,17 +52,16 @@ static void alloc(void)
 		return;
 	out_buf = av_shared(local_out, sizeof(local_out));
 	name_buf = av_shared(local_name, sizeof(local_name));
-	people_buf = av_shared(local_people, sizeof(local_people));
 }
 
-static void post(short id, short what, short w3, const char *p)
+void av_post(short id, short what, short w3, const char *p)
 {
 	short msg[8];
 	memset(msg, 0, sizeof(msg));
 	msg[0] = what;
 	msg[1] = appl_id();
 	msg[3] = w3;
-	if (what == VA_START || what == PEOPLE) {
+	if (what == VA_START || what == AV_PEOPLE_MSG) {
 		msg[3] = (short)((unsigned long)p >> 16);
 		msg[4] = (short)(unsigned long)p;
 	} else if (p) {
@@ -150,7 +145,7 @@ static void tell(void)
 	server = find_server();
 	if (server < 0 || server == appl_id())
 		return;
-	post(server, AV_PROTOKOLL, AV_WE_TAKE, name_buf);
+	av_post(server, AV_PROTOKOLL, AV_WE_TAKE, name_buf);
 	registered = 1;
 }
 
@@ -177,7 +172,7 @@ void av_init(const char *names)
 void av_exit(void)
 {
 	if (registered)
-		post(server, AV_EXIT, appl_id(), 0);
+		av_post(server, AV_EXIT, appl_id(), 0);
 	registered = 0;
 	name_buf[0] = 0;		/* and not again, whatever comes now */
 }
@@ -185,7 +180,7 @@ void av_exit(void)
 void av_window(short h, int open)
 {
 	if (registered && h > 0)
-		post(server, open ? AV_ACCWINDOPEN : AV_ACCWINDCLOSED, h, 0);
+		av_post(server, open ? AV_ACCWINDOPEN : AV_ACCWINDCLOSED, h, 0);
 }
 
 int av_message(const short *msg, const char **s)
@@ -201,12 +196,11 @@ int av_message(const short *msg, const char **s)
 		appl_write(msg[1], 16, reply);
 		return AV_DONE;
 	}
-	if (msg[0] == AV_STARTED && people_buf &&
-	    (char *)(((unsigned long)(unsigned short)msg[3] << 16) | (unsigned short)msg[4]) == people_buf) {
-		people_out = 0;		/* our PEOPLE arrived: the next may go */
-		return AV_DONE;
-	}
-	if (msg[0] != VA_START && msg[0] != PEOPLE)
+	if (msg[0] == AV_STARTED && av_people_started &&
+	    av_people_started((const char *)(((unsigned long)(unsigned short)msg[3] << 16) |
+					     (unsigned short)msg[4])))
+		return AV_DONE;		/* our PEOPLE arrived (av_people.c) */
+	if (msg[0] != VA_START && msg[0] != AV_PEOPLE_MSG)
 		return AV_NONE;
 	{
 		const char *p = (const char *)(((unsigned long)(unsigned short)msg[3] << 16) |
@@ -232,7 +226,7 @@ int av_message(const short *msg, const char **s)
 		appl_write(msg[1], 16, reply);
 	}
 	*s = got;
-	return msg[0] == PEOPLE ? AV_PEOPLE : AV_START;
+	return msg[0] == AV_PEOPLE_MSG ? AV_PEOPLE : AV_START;
 }
 
 void (*av_people_hook)(const char *s, short from);
@@ -241,45 +235,12 @@ int av_modal_message(const short *msg)
 {
 	const char *s;
 	int r;
-	if (msg[0] != PEOPLE && msg[0] != AV_STARTED)
+	if (msg[0] != AV_PEOPLE_MSG && msg[0] != AV_STARTED)
 		return 0;
 	r = av_message(msg, &s);
 	if (r == AV_PEOPLE && av_people_hook)
 		av_people_hook(s, msg[1]);
 	return r == AV_PEOPLE || r == AV_DONE;
-}
-
-int av_people_ready(void)
-{
-	if (people_out && tos_ms() - people_at >= PEOPLE_WAIT) {
-		people_out = 0;		/* no answer in time: lost */
-		people_lost++;
-	}
-	return !people_out;
-}
-
-long av_people_lost(void)
-{
-	return people_lost;
-}
-
-int av_people(short id, const char *text)
-{
-	long l;
-	if (id < 0)
-		return -1;
-	if (!av_people_ready())
-		return 0;
-	alloc();
-	l = (long)strlen(text);
-	if (l > (long)sizeof(local_people) - 1)
-		l = sizeof(local_people) - 1;
-	memcpy(people_buf, text, l);
-	people_buf[l] = 0;
-	post(id, PEOPLE, 0, people_buf);
-	people_out = 1;
-	people_at = tos_ms();
-	return 1;
 }
 
 const char *av_name(void)
@@ -339,6 +300,6 @@ int av_send(const char *name, const char *text)
 		l = sizeof(local_out) - 1;
 	memcpy(out_buf, text, l);
 	out_buf[l] = 0;
-	post(id, VA_START, 0, out_buf);
+	av_post(id, VA_START, 0, out_buf);
 	return 1;
 }

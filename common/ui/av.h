@@ -51,10 +51,17 @@ int av_send(const char *name, const char *text);
    av_message() hands a PEOPLE string over as AV_PEOPLE (the sender is
    msg[1]). One goes at a time: av_people() gives 0 while the last isn't
    answered, -1 for no such program; after 3 s without AV_STARTED the last
-   counts as lost (av_people_lost() counts them) and the next may go. */
+   counts as lost (av_people_lost() counts them) and the next may go.
+   Sending is in av_people.c, linked only by the apps that ask (people_ask.c)
+   or answer (EContact), so the others don't carry its 1K buffer. */
+#define AV_PEOPLE_MSG	0x4E43
 int av_people(short id, const char *text);
 int av_people_ready(void);
 long av_people_lost(void);
+/* between av.c and av_people.c: a message out, and our PEOPLE's
+   AV_STARTED back (1 when p was ours) */
+void av_post(short id, short what, short w3, const char *p);
+extern int (*av_people_started)(const char *p);
 /* in a loop of the shared code's own (busy.c): a PEOPLE goes to
    av_people_hook (people_init sets it) and our PEOPLE's AV_STARTED is
    taken; 1 when the message was one of those, 0 for the app's */

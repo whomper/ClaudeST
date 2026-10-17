@@ -30,8 +30,8 @@ $(B)/crt0.o: $(A)/crt0.S | $(B)
 	$(CC) -m68000 -DSTACK_SIZE=4096 -c -o $@ $<
 $(B)/nf.o: $(A)/nf.S | $(B)
 	$(CC) -m68000 -c -o $@ $<
-$(B)/test_av: test_av.c ../../ui/av.c ../../ui/av.h | $(B)
-	cc $(CFLAGS) -o $@ test_av.c ../../ui/av.c
+$(B)/test_av: test_av.c ../../ui/av.c ../../ui/av_people.c ../../ui/av.h | $(B)
+	cc $(CFLAGS) -o $@ test_av.c ../../ui/av.c ../../ui/av_people.c
 $(B):
 	mkdir -p $@
 test: $(B)/test_av
