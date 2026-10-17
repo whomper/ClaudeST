@@ -71,7 +71,7 @@ These had drifted between the apps; each is now the most complete copy, with eve
 | `atari/include/tos.h` | EFTP + ECal | `Dfree`, `Fattrib`, `Fdatime`, `Drvmap`, `boot_drive` |
 | `atari/include/stdlib.h` | ECal | `heap_add()` (the accessories' fixed heap) |
 | `src/util.c/.h` | ECal | `sb_room()` |
-| `src/tz.c/.h` | ECal | a small cache of the last zones looked up |
+| `src/tz.c/.h` | ECal | a small cache of the last zones looked up; `tz_offset()` keeps the last four zone-years with their two changes (ECal 2.6's `tzm_offset`), so a series of events no longer works out summer time from the rules each time; `tz_offset_rules()` is the slow way, for tests |
 | `src/charset.c/.h`, `charset_tab.h` | EMail | ECal and EContact lose the Troll-proxy guesswork EMail dropped (it could take real text for already-converted Atari text) |
 
 ## Layer 2b: TLS and connections (14 Oct 2026)
@@ -116,7 +116,8 @@ same as before.
 | `tools/crashaddr.py` | EMail | turns the offsets in a `CRASH.LOG` into function names, from the ELF file of the same build |
 | `ui/help.c/.h` | ECal + EContact | the Help key: `help_show(dir, "ECAL.HYP", page)` sends `VA_START "C:\ECAL\ECAL.HYP page"` (or `"*:\ECAL.HYP page"`) to the viewer that runs, EHypView first, then ST-Guide and HypView; 0 when none runs. The string is in memory the viewer may read (`av_shared()`); `help_init()` takes it at start-up. `tests/help/app_help.py` checks an app's Help key in Hatari with a stand-in viewer. `help_key(dir, hyp, page, "Keys")` is the Help key: the viewer, else an alert saying to install EHypView or ST-Guide, with a button for what the app shows itself (guidelines 4.3) |
 | `ui/av.c/.h` | EHypView + EContact | the AV protocol (guidelines 4.1): `av_init("ECONTACT\|ECONTST")` tells the desktop's AV server (`AVSERVER`, else Thing, jinnee or Gemini) that we take VA_START, under the name the AES knows us by; `av_message()` takes a VA_START, keeps its own copy and answers AV_STARTED; `av_arg()` takes the next (quoted) file name off it; `av_exit()` says AV_EXIT when a program quits; `av_send(name, text)` hands another program a string (EContact's `mailto:` to EMail), in memory it may read (`av_shared()`: Mxalloc 0x2B under MiNT and MagiC, static on plain TOS). `av_window(h, 1)` tells the desktop an accessory opened a window (AV_ACCWINDOPEN), so files dropped on it come as VA_DRAGACCWIND. `av_command()` is the command line a program was started with (the desktop's way to open a file with it), as a VA_START string. `tests/av` checks it on the build machine, and `app_av.py` checks an app in Hatari with a stand-in AV server, `THING.ACC`, which also drops files (`dropfiles`) and text (`drop`, AP_DRAGDROP under MiNT), puts text on the clipboard (`clip`) and writes down what is there (`clipshow`) |
-| `ui/alert.c/.h` | ECal + EContact | `alert(def, "[3][Can't reach %s.|...][ OK ]", host)`: form_alert with printf formatting, words wrapped into lines of 30 characters, at most 5 lines, brackets in the text made parentheses, an empty line kept (EmuTOS reads `||` as `|`), Hebrew put into display order; `alert_hebrew` lets an app map the letters for its font. `tests/alert` checks it on the build machine. `screen_check(app, width)`: on a screen narrower than 640 pixels an alert says so (guidelines 5.2) |
+| `ui/alert.c/.h` | ECal + EContact | `alert(def, "[3][Can't reach %s.|...][ OK ]", host)`: form_alert's string with printf formatting, words wrapped into lines of 30 characters, at most 5 lines, brackets in the text made parentheses, an empty line kept (EmuTOS reads `||` as `|`), Hebrew put into display order; `alert_hebrew` lets an app map the letters for its font. Since 17 Oct 2026 the box is our own, built as EmuTOS's `fm_alert` builds it (the icon, our own 32 by 32 drawings of `!`, `?` and stop; the lines; up to 3 buttons, the default one marked) in the system font's cells, and run by `ui/dialog.c` with the screen under it saved and put back: Return gives the default button, **Esc and Undo the last one** (guidelines 3.5, 6.2), on every AES. What it can't show that way (4 buttons, one over 20 characters, a screen too small) goes to form_alert. It returns 1 to 3 as before; an app links `dialog.o` too. `tests/alert` checks the text and the tree's layout in five screen modes on the build machine. `screen_check(app, width)`: on a screen narrower than 640 pixels an alert says so (guidelines 5.2) |
+| `ui/dialog.c/.h` | | the dialog loop (guidelines 3.5): `dlg_do(tree, start, cancel)` is form_do written out with `evnt_multi`, `form_keybd`, `form_button` and `objc_edit` (Return, Tab and the arrows, clicks, the double-click bit as form_do), where **Esc and Undo end it at once with `cancel`**, the text field as it was (form_do hands Esc to the field, which clears it); `cancel` -1 for a dialog with no button that does nothing (EFTP's Skip\|Resume\|Replace during a transfer): Esc then gives -1. `dlg_modal(tree, start, cancel)` does the rest of the modal dance (`wind_update`, `form_center`, `form_dial`, drawing, the exit object deselected) and returns the object; `dlg_modal_save` puts the screen back itself, as form_alert does. (Not `dlg_run`: ECal's and EContact's FIELD engine has one.) An app moves over by `form_do(tree, 0)` becoming `dlg_do(tree, 0, CANCEL)`, or its whole dialog function `dlg_modal(tree, 0, CANCEL)`. `tests/dialog`: `make test` against a stand-in AES that clears a field on Esc as TOS's does; `make prg` and `run.py etos512us.img` run DLGT.PRG in Hatari with EmuTOS in ST high, medium, low and the Falcon's VGA mode, and `--xaaes` under FreeMiNT and XaAES (`../xaaes`): alerts answered with Return, Esc, Undo and a click, a dialog's field typed into, then Esc, Undo, Return and a click. Built with `-DDLG_TRACE`, `dlg_modal` says where each exit button is on the emulator's console, for a rig to click |
 | `ui/mbar.c/.h` | EHypView | the menu bar, built at run time from the app's table of titles and items (`{ "Open...", "^O", C_OPEN }`): no resource file, the system font's size, shortcuts right-aligned, the Desk menu's separator and accessory slots added. `mbar_object()` and `mbar_command()` map between commands and objects. `tests/menu` walks the tree as the AES does, with AddressSanitizer |
 | `ui/gemui.h` | | what `popup.c`, `aboutbox.c` and `iconify.c` take from the app's own drawing code (its `ui.h`): the screen's sizes, `fill`, `frame`, `hline`, `line_col`, `text_at` with `TX_BOLD`, `TX_INVERSE`, `TX_LTR`, `TX_DIM`, `clip_on`, `clip_off`, `font_sys_push/pop`, `st_ram`; the compiler checks the app keeps to it |
 | `ui/popup.c/.h` | ECal + EContact | right-click menus: at the mouse, in the system font, click or press-drag-release, arrows, Return and Esc; `-` separators, `~` disabled, the check mark; `popup_area` for the app's repaint; `popup_alt()` opens above the row it is for when there is no room below |
@@ -177,7 +178,7 @@ the heap's structure checked. `make prg` and `run.py etos512us.img` run `HEAPT.P
 something has set MFP timer C faster and still calls TOS's handler each time. On Erez's Falcon the
 counter runs at 312 Hz, so EFTP showed a 16-second transfer as 25 and its speeds 1.56 times too low.
 At its first call `tos_ms()` measures the counter against timer C's own count-down, which runs off the
-MFP's crystal however the timer is set, for 20 of the counter's steps (100 ms when all is well); more
+MFP's crystal however the timer is set, for 6 of the counter's steps (30 ms when all is well, busy, once per run); more
 than 3% off, it scales its times. `tos_clock()` is `""` on a true clock, else the line for an app's log
 ("the 200 Hz clock runs at 312.5 Hz: times corrected"). The code is EFTP's (whomper/EFTP a1e3b44).
 An app's `pf_ms()` becomes `return tos_ms();`.
@@ -190,6 +191,42 @@ every app, and `tos_ms()` dropped its correction.
 `tests/clock`: `make prg` and `run.py etos512us.img` run `CLOCKT.PRG` in Hatari on an ST and a Falcon,
 once with timer C at 312 Hz (a file `C:\FASTCLK`) and once at 200 Hz, and time the 8 seconds it counts
 by `tos_ms()` with the build machine's clock: 8.04 and 8.00 s on the ST, 8.00 and 7.94 s on the Falcon.
+
+## Background work (16 Oct 2026)
+
+`ui/bgwork.c` lets an accessory, or a program, do background work without making the machine feel
+slow (guideline 2.2, "A quiet start"). Work waits for its start (`START=` in the INF: `now`,
+`opened`, or seconds after boot; the family's default is 60 s), runs in slices of 40 ms (80 ms on a
+68000) with an event call between them, rests for 2 s after the mouse moves or a key or button is
+pressed or when the program in front keeps the machine, and stops while the app's program edition
+runs. It allocates nothing, so an accessory may use it at any time. Built with `-DAES_PROFILE`,
+`atari/gem.c` reports every stretch between event calls over 50 ms to the emulator's console
+(`AESGAP <ms> ms <tag>`).
+
+`tests/bgwork`: `make test` checks the rules on the build machine (four planted bugs, all caught);
+`make prg` and `run.py etos512us.img` run `BGT.PRG` in Hatari: 300 ms of work in one go shows as
+300 ms, and 3 s of work through bgwork never held the machine longer than 85 ms on an ST (80 ms
+slices) and 40 ms on a Falcon (40 ms slices).
+
+## People from EContact (17 Oct 2026)
+
+EMail and ECal show people by name and let the user pick them in EContact by asking EContact, with
+the family's one message besides the AV protocol's, PEOPLE (0x4E43, guideline 4.1). CONTACTS.TXT
+and EContact's integration patches go; nothing reads another app's files.
+- `ui/av.c`: `av_people(id, text)` sends a PEOPLE string (laid out as VA_START, answered with
+  AV_STARTED, one at a time, lost after 3 s); `av_message()` hands PEOPLE strings over as
+  `AV_PEOPLE`; `av_name()` is the name the AES knows us by.
+- `ui/people_ask.c`: the asker's side (`people_name(addr)` gives the name at once, or 0 while it is
+  being asked; `people_pick()`; `people_message()`; `people_poll()` each turn; a callback when names
+  come or change) and EContact's (`people_question()`, `people_next()`, `people_answer()`, which cuts
+  answers into whole commands of at most 1 KB). Memory is taken once, in `people_init()`.
+
+`tests/people`: `make test`, the asker against a pretend EContact and EContact's side (seven planted
+bugs, all caught); `tests/av` checks PEOPLE in and out.
+
+`tests/tz`: `make test`, 83 million offsets from the kept zone-years against the rules: every built-in
+zone around each change from 1990 to 2040, random moments, a zone whose rules change at the same
+address, and one that changes on new year's day (four planted bugs, all caught).
 
 ## Coming next
 

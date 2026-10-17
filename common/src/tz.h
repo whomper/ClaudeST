@@ -43,8 +43,11 @@ int tz_count(void);
    events naming it work; returns the stored zone */
 const TZONE *tz_learn(const TZONE *z);
 
-/* minutes east of UTC in zone z at the moment utc */
+/* minutes east of UTC in zone z at the moment utc; the last few
+   zone-years are kept, so asking again is quick */
 int   tz_offset(const TZONE *z, CTIME utc);
+/* the same, worked out from the rules every time (for tests) */
+int   tz_offset_rules(const TZONE *z, CTIME utc);
 CTIME tz_to_local(const TZONE *z, CTIME utc);
 /* wall clock -> UTC; a time skipped in spring counts as after the
    change, one that happens twice in autumn as the first */

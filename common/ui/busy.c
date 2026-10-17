@@ -6,6 +6,9 @@
 #include "gem.h"
 #include "conn.h"
 #include "busy.h"
+#include "av.h"
+
+void (*busy_message)(const short *msg);
 
 #define KEPT 16
 
@@ -21,11 +24,14 @@ void busy_idle(void)
 {
 	short msg[8], which, i;
 	AEVENT ev;
-	if (!on) {
+	short flags = (short)((on ? MU_KEYBD : 0) | MU_TIMER | (busy_message ? MU_MESAG : 0));
+	if (!on && !busy_message) {
 		evnt_timer_(5);
 		return;
 	}
-	which = evnt_multi_(MU_KEYBD | MU_TIMER, 0, 0, 0, 5, msg, &ev);
+	which = evnt_multi_(flags, 0, 0, 0, 5, msg, &ev);
+	if ((which & MU_MESAG) && !av_modal_message(msg))
+		busy_message(msg);	/* the app's: redraws, a refused menu, ... */
 	if (!(which & MU_KEYBD))
 		return;
 	i = (short)((ev.kreturn >> 8) & 0xff);

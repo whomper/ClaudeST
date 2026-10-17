@@ -263,4 +263,13 @@ void v_rfbox(short h, const short *pxy);
 void vsl_ends(short h, short beg, short end);	/* 0 square, 1 arrow, 2 round */
 void vr_trnfm(short h, MFDB *src, MFDB *dst);
 
+/* built with -DAES_PROFILE (gem.c): name what runs now, for the console's
+   AESGAP lines, and the longest stretch between event calls so far */
+#ifdef AES_PROFILE
+void aes_profile_tag(const char *tag);
+unsigned long aes_profile_max(void);
+#else
+#define aes_profile_tag(tag) ((void)0)
+#endif
+
 #endif
