@@ -233,7 +233,7 @@ gateway/   the AERA gateways for the Pi and aera-gateway, their installer, which
            bridge: a copy of AERA-Gateway's (tools/sync-gateway.sh)
 common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up, C library,
            TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
-tools/     hatari-test.sh, fakesting/, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
+tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
            icon/ (the desktop icon), reel/ (the demo video)
 icons/     the desktop icon files (from tools/icon)
 docs/      the user guide (GUIDE.md), its screenshots and the demo recording
@@ -262,11 +262,13 @@ serial port:
 tools/hatari-test.sh                 # demo chats, no account needed
 CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
 MACHINE=ste tools/hatari-test.sh     # st (the default), ste or tt
+LINK=network tools/hatari-test.sh    # over STinG instead of the serial cable
 ```
 
-Hatari has no network card: `tools/fakesting/FAKESTNG.PRG` stands in for STinG by tunnelling one TCP
-connection over the serial port, to test the network code. It is for the emulator only; never install
-it on a real Atari. The guide's [Running it in Hatari](docs/GUIDE.md#running-it-in-hatari) has more.
+Hatari has no network card: with `LINK=network`, the shared `FAKESTNG.PRG` (`common/tools/fakesting`,
+built by the script) stands in for STinG by tunnelling its TCP connections over the serial port to the
+bridge on TCP port 2323, as on the Pi, to test the network code. It is for the emulator only; never
+install it on a real Atari. The guide's [Running it in Hatari](docs/GUIDE.md#running-it-in-hatari) has more.
 
 ## Licence
 

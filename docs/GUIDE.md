@@ -532,14 +532,17 @@ TOS program. An `m68k-atari-mint` toolchain also works:
 tools/hatari-test.sh                 # demo chats, no account needed
 CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
 MACHINE=ste tools/hatari-test.sh     # STE in colour (st, ste or tt)
+LINK=network tools/hatari-test.sh    # over STinG, as on the network
 ```
 
 The script downloads EmuTOS the first time, starts the bridge and boots
 [Hatari](https://hatari.tuxfamily.org/) into ClaudeST, with the emulated
-serial port connected to the bridge. Hatari has no network card;
-`tools/fakesting/FAKESTNG.PRG` stands in for STinG by tunnelling one TCP
-connection over the serial port, to test the network code. It's for the
-emulator only; never install it on a real Atari.
+serial port connected to the bridge. Hatari has no network card: with
+`LINK=network`, `FAKESTNG.PRG` from `common/tools/fakesting` (built by the
+script, with the same cross-compiler) stands in for STinG. It tunnels its
+TCP connections over the serial port to `serial_bridge.py`, which connects
+to the bridge on TCP port 2323, as ClaudeST does on the Pi. FAKESTNG is for
+the emulator only; never install it on a real Atari.
 
 Hatari only connects the ST-style MFP serial port to the bridge. To run
 an emulated Falcon, put `LINK=serial` and `SERIALPORT=6` in its `CLAUDEST.INF`; a
@@ -578,7 +581,7 @@ bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
 pi/        install.sh (hands on to aera-gateway) and the systemd service
 tools/     hatari-test.sh, sync-common.sh, bump.py, check_version.sh,
-           fakesting/, icon/
+           icon/
 icons/     the desktop icon files (from tools/icon)
 binary/    what make builds for the Atari (not committed: the releases
            have it)
