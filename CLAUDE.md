@@ -34,6 +34,10 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   from a branch. Work lands on `main`; to try a fix on real hardware, release it. If a release doesn't
   work, roll back with a release: revert on `main`, release the next number, and say in the bad
   release's notes that it is withdrawn and which one to use.
+- **Testing with another AERA program uses its latest release**, what Erez runs, never a build of its
+  `main`: `common/tools/getrelease.py APP DIR FILE...` fetches it. Only for a change both programs are
+  still making, test against the other's `main` at a named commit, say so, and test again against its
+  release when it is out.
 - **Every new source file starts with the SPDX line and copyright** (see any `.c` file); a generator
   writes them into the files it makes.
 - **The name** reads "AERA | Erez Yaary" wherever it is given: copyright lines
