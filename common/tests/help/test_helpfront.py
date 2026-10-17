@@ -80,7 +80,7 @@ def main():
         check(links and links <= nodes, "links go to pages there are: %s" % sorted(links))
         check(all(os.path.exists(os.path.join(d, n)) for n in ("BANNER.IMG", "WINDOW.IMG")),
               "the pictures next to the page")
-        check("@image WINDOW.IMG 64 " in main_, "the picture on the right")
+        check("@image WINDOW.IMG 63 " in main_, "the picture on the right")
         i = main_.split("\n").index("Two panes:")
         check(main_.split("\n")[i:i + 5].count("") >= 1 and "@{B}How Test" in main_, "the diagram after it")
         hcp = os.environ.get("HCP") or shutil.which("hcp")

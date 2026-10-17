@@ -568,6 +568,33 @@ void vq_extnd(short h, short owflag, short *work_out)
 		work_out[i] = vintout[i];
 }
 
+/* NVDI's vq_scrninfo (vq_extnd, sub-function 1, mode 2): how pixels are
+ * kept, in work_out[0..271] (format, planes, colours, where each colour's
+ * bits go, the pen of each VDI colour); 0 when the VDI hasn't got it (TOS
+ * and EmuTOS answer as vq_extnd does, with 45 words) */
+static short scrninfo_out[272];
+
+short vq_scrninfo(short h, short *work_out)
+{
+	short i;
+	vdipb[3] = scrninfo_out;
+	vintin[0] = 2;
+	contrl[0] = 102;
+	contrl[1] = 0;
+	contrl[3] = 1;
+	contrl[4] = 0;
+	contrl[5] = 1;
+	contrl[6] = h;
+	__asm__ volatile("move.l %0,%%d1\n\tmove.w #115,%%d0\n\ttrap #2"
+		: : "r"((long)vdipb) : "d0", "d1", "d2", "a0", "a1", "a2", "memory", "cc");
+	vdipb[3] = vintout;
+	if (contrl[4] < 272)
+		return 0;
+	for (i = 0; i < 272; i++)
+		work_out[i] = scrninfo_out[i];
+	return 1;
+}
+
 void vs_clip(short h, short on, const short *pxy)
 {
 	vintin[0] = on;
