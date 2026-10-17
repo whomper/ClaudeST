@@ -300,8 +300,8 @@
   Over a serial cable a file takes a while: about a minute for every
   50 KB at 19200 baud. The network is much quicker.
 
-  @{B}To change your mind@{b}, press Esc on the empty reply line: the
-  attached files are removed.
+  @{B}To change your mind@{b}, press Backspace on the empty reply line:
+  the last attached file is removed.
 
   In chats, text files go in with their text, as the website sends
   them; other files are uploaded first. Pictures and PDFs Claude reads
@@ -397,8 +397,12 @@
     Insert            The picked item's menu
     Left, Right       Move in the reply line (Shift: to the start or
                       end; Control: by word)
-    Esc, Undo         Clear the reply line (Esc with it empty:
-                      remove the attached files)
+    Shift+Delete      Clear the reply line (Control+X cuts it)
+    Esc, Undo         Leave Search (keeping what you typed) and let
+                      go of the picked sidebar item; they never throw
+                      typing away. In a box or alert they cancel.
+    Backspace         On the empty reply line: remove the last
+                      attached file
     Control+O         Attach a file to the next message
     Control+R         Reconnect to the bridge
     Control+,         Settings: the gateway's address, or serial

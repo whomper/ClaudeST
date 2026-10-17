@@ -43,7 +43,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "1.42"
+#define VERSION "1.43"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -3141,8 +3141,8 @@ static void keys_dialog(void)
 		{ "F10", "Hebrew keyboard on or off" },
 		{ "\x01 \x02", "scroll the chat; Shift: a page" },
 		{ "Clr/Home", "the top; Shift: the end" },
-		{ "Undo", "clear the reply line" },
-		{ "^O", "attach a file (Esc: remove it)" },
+		{ "Shift+Del", "clear the reply line" },
+		{ "^O", "attach a file; Bksp removes it" },
 		{ "^C ^X ^V", "copy, cut, paste" },
 		{ "^R", "reconnect to the gateway" },
 		{ "^,", "settings: the gateway, serial" },
@@ -4892,6 +4892,21 @@ static void settings_dialog(void)
 	}
 }
 
+static void do_list(const char *kind);
+
+/* Esc and Undo in the window (AERA guideline 3.5): they never throw
+   away what was typed or attached; they leave Search for Chats, keeping
+   its text, and let go of the item picked in the sidebar */
+static void esc_key(void)
+{
+	if (lcur >= 0) {
+		lcur = -1;
+		dirty |= D_LIST;
+	}
+	if (search_mode)	/* back to Chats, the typing kept in the line */
+		do_list("CHATS");
+}
+
 static void handle_key(short kstate, short kr)
 {
 	u8 ascii = kr & 0xff;
@@ -4905,7 +4920,7 @@ static void handle_key(short kstate, short kr)
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
 	case 0x62: help(); return;					/* Help */
-	case 0x61: inlen = in_cur = in_start = 0; search_mode = 0; dirty |= D_INPUT | D_SIDEBAR; return; /* Undo */
+	case 0x61: esc_key(); return;					/* Undo */
 	case 0x52:						/* Insert: item menu */
 		{
 			short i = lcur;
@@ -4931,6 +4946,17 @@ static void handle_key(short kstate, short kr)
 		settings_dialog();
 		return;
 	}
+	if (scan == 0x53 && shift) {		/* Shift+Delete clears the reply line */
+		inlen = in_cur = in_start = 0;
+		dirty |= D_INPUT;
+		return;
+	}
+	if (ascii == 0x08 && !inlen && natt && !search_mode) {
+		/* Backspace on an empty line: the last attached file goes; the
+		   bridge says so with an a line, which takes it off the list */
+		tx_cmd("DETACH", att_name[natt - 1], 0);
+		return;
+	}
 	if (clip_key(kr)) {
 		reply_clip(clip_key(kr));
 		return;
@@ -4953,20 +4979,7 @@ static void handle_key(short kstate, short kr)
 		}
 		return;
 	case 0x1b:				/* Esc */
-		if (!inlen && natt && lcur < 0) {	/* the attachments go */
-			tx_cmd("UNATTACH", 0, 0);
-			natt = 0;
-			say_notice("Attachments removed");
-			dirty |= D_INPUT;
-			return;
-		}
-		if (lcur >= 0) {
-			lcur = -1;
-			dirty |= D_LIST;
-		}
-		inlen = in_cur = in_start = 0;
-		search_mode = 0;
-		dirty |= D_INPUT | D_SIDEBAR;
+		esc_key();
 		return;
 	}
 	/* editing keys and typing (key_char handles the Hebrew layout) */

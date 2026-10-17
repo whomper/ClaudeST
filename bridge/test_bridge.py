@@ -1594,6 +1594,16 @@ class Attachments(unittest.TestCase):
         self.assertEqual(sum(1 for l in lines if l[0] == b"A"), 1)
         self.assertEqual(s.files, [])
 
+    def test_detach(self):
+        link = FakeLink()
+        s = Session(link, DemoBackend())
+        self.attach(s, b"A.TXT", b"one")
+        self.attach(s, b"B.TXT", b"two")
+        link.sent = b""
+        s.handle(b"DETACH\tB.TXT")
+        self.assertEqual([f.name for f in s.files], ["A.TXT"])
+        self.assertIn([b"a", b"B.TXT"], link.lines())
+
     def test_unattach(self):
         s = Session(FakeLink(), DemoBackend())
         self.attach(s, b"NOTES.TXT", b"text")

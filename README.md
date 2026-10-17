@@ -175,7 +175,7 @@ release.
 | F8, or click the status line | Account: plan, usage and details |
 | F9, or click the model chip | Model and effort |
 | F10 | Hebrew keyboard on or off |
-| ^O | Attach a file to the next message (Esc removes the attached files) |
+| ^O | Attach a file to the next message (Backspace on the empty reply line removes the last one) |
 | ^, | Settings: the gateway's address and port, or the serial port |
 | Help | Help in EHypView or ST-Guide, or the keys (also in the Help menu) |
 | ^Q | Quit |

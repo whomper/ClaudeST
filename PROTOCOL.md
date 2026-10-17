@@ -22,6 +22,7 @@ flow control). The protocol is the same on both.
 | `ATTACH` `<name>` `<size>` | A file attached to the next message follows (since 1.39): `<size>` bytes in `ADATA` lines, then `AEND`. |
 | `ADATA` `<hex>` | A piece of it, in hex (up to 480 bytes a line). |
 | `AEND` | The file is complete. The bridge keeps it for the next `SEND`, or answers `a` and `A` if it arrived cut short. Any kind of file goes. |
+| `DETACH` `<name>` | Drop the last attached file of that name (since 1.43: Backspace on the empty reply line). The bridge answers `a` `<name>`, which takes it off the Atari's list. |
 | `UNATTACH` | Drop the files attached so far (`HELLO` drops them too). |
 | `FIND` `<query>` | Search chat titles. |
 | `RENAME` `CHAT`\|`CODE`\|`PROJECT` `<id>` `<name>` | Rename a chat, Claude Code session or project. |

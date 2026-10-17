@@ -591,6 +591,17 @@ class Session:
         log.info("attached %s (%d bytes, %s)", name, len(data), f.mime)
         self.notice("Attached " + name)
 
+    def cmd_detach(self, name="", *_):
+        """Backspace on the Atari's empty reply line: the last file of that
+        name goes. a takes it off the Atari's list (sent even if it was
+        already gone here, so the two agree again)."""
+        for i in range(len(self.files) - 1, -1, -1):
+            if self.files[i].name == name:
+                del self.files[i]
+                break
+        self.out("a", name)
+        self.notice("Removed " + name)
+
     def cmd_unattach(self, *_):
         self.files = []
         self._file = None

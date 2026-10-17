@@ -231,8 +231,8 @@ line for each file, and so do messages with files in chats you open.
   chat, 500 MB each.
 - **Over a serial cable** a file takes a while: about a minute for
   every 50 KB at 19200 baud. The network is much quicker.
-- **To change your mind,** press `Esc` on the empty reply line: the
-  attached files are removed.
+- **To change your mind,** press `Backspace` on the empty reply line:
+  the last attached file is removed.
 - **In chats,** text files go in with their text, as the website sends
   them; other files are uploaded first. Pictures and PDFs Claude reads
   directly. Other kinds, such as a .PRG or a .ZIP, go to the chat's own
@@ -345,7 +345,9 @@ of them.
 | `Tab` / `Shift+Tab`, `Return` | Pick and open a sidebar item |
 | `Insert` | The picked item's menu |
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
-| `Esc` / `Undo` | Clear the reply line (`Esc` with it empty: remove the attached files) |
+| `Shift+Delete` | Clear the reply line (`^X` cuts it to the clipboard) |
+| `Esc` / `Undo` | Leave Search, keeping what you typed, and let go of the item picked in the sidebar. They never throw away typing or attached files; in any box or alert they cancel |
+| `Backspace` on the empty reply line | Remove the last attached file |
 | `Ctrl+O` | File ▸ Attach file…: attach a file to the next message |
 | `Ctrl+R` | Reconnect to the bridge |
 | `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
