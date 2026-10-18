@@ -771,7 +771,7 @@ CLAUDE_SESSION_KEY=
         ap.add_argument("--tag", help="the ClaudeST release to take it from, e.g. v1.34")
         ap.add_argument("--backend", help="claudeai (default), api or demo")
         ap.add_argument("--network", action="store_const", const="tcp", dest="mode",
-                        help="wireless: ClaudeST connects over STinG")
+                        help="network: ClaudeST connects over STinG (Ethernet or WiFi)")
         ap.add_argument("--atari", metavar="ATARI_IP",
                         help="the Atari's address (several: IP1,IP2; any address on the home network: any)")
         ap.add_argument("--listen-port", dest="tcp_port", help="the port for the Atari (2323 is the default)")
@@ -949,7 +949,7 @@ CLAUDE_SESSION_KEY=
 
         heading("Done")
         if s.mode == "tcp":
-            say("Backend: %s   wireless: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
+            say("Backend: %s   network: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
                 "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "PI_IP",
                                                                                          s.tcp_port))
         else:
