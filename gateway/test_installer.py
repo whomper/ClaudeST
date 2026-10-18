@@ -500,7 +500,7 @@ class ClaudeTest(Base):
         self.assertIn(("usermod", "-aG", "dialout", "claude-st"), self.pi.cmds)
         self.assertIn(("useradd", "--system", "--home-dir", "/var/lib/claude-st", "--shell", "/usr/sbin/nologin",
                        "claude-st"), self.pi.cmds)
-        self.assertIn("CLAUDEST.INF should say:  tcp 192.168.1.10 2323", self.out)
+        self.assertIn("Options > Settings > Network:  192.168.1.10, port 2323", self.out)
 
         # again: what isn't given stays
         self.run_ag("install", "claude", "--from", self.src, "--listen-port", "2424")
@@ -524,6 +524,8 @@ class ClaudeTest(Base):
         self.assertEqual(self.pi.read(self.conf).count("CLAUDE_SESSION_KEY="), 1)
         self.assertIn("CLAUDE_SESSION_KEY=sk-ant-sid01-new\n", self.pi.read(self.conf))
         self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--set-key"), 1)   # nothing typed
+        self.assertEqual(self.run_ag("set-key", "--help"), 2)                  # never asks for a key
+        self.assertIn("it takes nothing more", self.err)
 
     def test_bad_settings(self):
         self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--network"), 2)

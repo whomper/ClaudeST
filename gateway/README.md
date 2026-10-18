@@ -15,8 +15,9 @@ Atari (ClaudeST) --STinG or a serial cable-> Pi  claude-st --HTTPS--> claude.ai
 ```
 
 One program, `aera-gateway`, sets them all up, brings them up to date and
-says how they are. Any computer with Debian, Ubuntu or Raspberry Pi OS
-will do, and one Pi can run all of them.
+says how they are. Any computer with Raspberry Pi OS (bullseye or newer),
+Debian or Ubuntu and Python 3.9 or newer will do, and one Pi can run all
+of them.
 
 | Service  | For                 | Program on the Pi          | Port(s) on the Pi                        |
 |----------|---------------------|----------------------------|------------------------------------------|
@@ -32,9 +33,10 @@ ECal, EContact, EFTP and ClaudeST carry a copy of it, as they carry
 
 ## Setting it up
 
-On the Pi:
+On the Pi, in your home folder:
 
 ```
+sudo apt install -y git                   Raspberry Pi OS Lite comes without it
 git clone https://github.com/whomper/AERA-Gateway
 cd AERA-Gateway
 ./update-pi.sh                            the latest release of AERA-Gateway
@@ -44,11 +46,13 @@ sudo gateway/aera-gateway install ftp
 sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
 ```
 
-(only the ones you need). The same commands work in the `gateway/` folder
-of an app's own copy. Each gateway runs as a service of its own
-(`emailgate`, `ecalgate`, `eftpgate`, `claude-st`) under a user of its
-own with no access to the rest of the Pi, starts now and at every boot,
-and `install` prints what to type into the Atari program.
+(only the ones you need). Set the Pi up from AERA-Gateway's own copy, as
+here: `./update-pi.sh` keeps it at the latest release; the copies of this
+folder inside the apps are for their tests. Each gateway runs as a
+service of its own (`emailgate`, `ecalgate`, `eftpgate`, `claude-st`)
+under a user of its own with no access to the rest of the Pi, starts now
+and at every boot, and `install` prints what to type into the Atari
+program.
 
 Afterwards:
 
@@ -86,10 +90,12 @@ gateway says EHLO and STARTTLS itself, and hands EMail the server's
 greeting as if nothing had happened. The others use the TLS ports (993,
 995, 465).
 
-Gmail, iCloud and Yahoo need an **app password** for programs like EMail:
-create one in your account's security settings and use it as EMail's
-password. Outlook.com and Microsoft 365 accept only OAuth sign-in, which
-EMail can't do.
+Gmail, iCloud, Yahoo and Fastmail need an **app password** for programs
+like EMail: create one in your account's security settings (iCloud:
+account.apple.com, Sign-In and Security) and use it as EMail's password.
+GMX lets programs in only once POP3 and IMAP access is switched on in
+its settings. Outlook.com and Microsoft 365 accept only OAuth sign-in,
+which EMail can't do.
 
 In EMail, Options > Accounts: the Pi's IP address as the server (plain
 TOS with STinG can't always look up names on the home network), port 143
@@ -136,7 +142,7 @@ request in proxy form, `GET https://host/path HTTP/1.1`, and ecalgate:
 In ECal and EContact, ≡ menu > Settings > Connection: Pi gateway = the
 Pi's IP address, port 8180. Then add your accounts with their real
 `https://` addresses: ecalgate does the rest. Check it from any browser on
-your network: `http://PI_IP:8180/` answers "ecalgate is running".
+your network: `http://PI_IP:8180/` answers "ecalgate X.Y is running".
 
 `--allow-local` lets it reach servers on your home network too (a
 Radicale or Nextcloud at home); `--port N` gives it another port; `-v`
@@ -202,8 +208,56 @@ sudo gateway/aera-gateway set-key        paste a new claude.ai session key
 
 Its settings stay in `/etc/claude-st/claude-st.env` and its chats in
 `/var/lib/claude-st`; `remove claude` keeps both. ClaudeST's README says
-what the settings mean. In a ClaudeST copy, `pi/install.sh` still works:
-it hands its options to `aera-gateway install claude --from` that copy.
+what the settings mean, and how to find the session key. In ClaudeST,
+Options > Settings > Network: the Pi's IP address, port 2323. In a
+ClaudeST copy, `pi/install.sh` still works: it hands its options to
+`aera-gateway install claude`, which takes the bridge from ClaudeST's
+latest release, never from that copy.
+
+## When something doesn't work
+
+Start with
+
+```
+gateway/aera-gateway status
+```
+
+Each gateway should be `active`, with no `(not listening)` after its
+ports. Then its journal, which says who connected, where to, and why it
+ended:
+
+```
+sudo journalctl -u emailgate -n 30        or ecalgate, eftpgate, claude-st; -f to watch
+```
+
+- **The Atari can't connect at all.** Ping the Pi from the Atari. Check
+  the address and port typed into the program against what `install`
+  printed. With `--allow`, the Atari's address must be the one given
+  (`status` shows it): an Atari whose address changed (DHCP) is turned
+  away; give it a fixed address in your router, or run `install` again
+  with the new one. If ufw is on, `sudo ufw status` should list the
+  gateway's ports.
+- **"didn't start (port N is taken by another program)".** See who has
+  it: `sudo ss -ltnp '( sport = :N )'`. Stop that program, or give the
+  gateway other ports (`--ports`, `--port`) and type those into the
+  Atari program.
+- **EMail says "emailgate: ...".** The Pi couldn't reach your provider,
+  or its certificate didn't check out: the line says which. Check the
+  server names in `status`, and that the Pi itself is online.
+- **The provider refuses the login.** That is between EMail and your
+  provider: most want an app password (see mail above).
+- **ECal or EContact can't reach a server at home** (a Radicale, a
+  Nextcloud): `sudo gateway/aera-gateway install dav --allow-local`. The
+  same for EFTP and a NAS: `install ftp --allow-local`.
+- **EFTP: an SFTP server is refused because its key changed.** If the
+  server was really reinstalled, remove its line from
+  `/var/lib/eftpgate/known_hosts`.
+- **ClaudeST: claude.ai logs you out.** Paste a new session key:
+  `sudo gateway/aera-gateway set-key`.
+- **After an update, a gateway didn't start.** `aera-gateway` put the one
+  before back and said so; the journal says why the new one failed.
+  Report it in AERA-Gateway's
+  [Issues](https://github.com/whomper/AERA-Gateway/issues), with `status`'s output.
 
 ## Keeping it private
 
