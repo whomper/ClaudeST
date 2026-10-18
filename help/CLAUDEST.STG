@@ -64,7 +64,7 @@
 
   @{U}What you need@{u}
 
-    - An ST, STE, Mega ST/STE, TT or Falcon with TOS 1.0 to 4.x, EmuTOS
+    - An ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or newer, EmuTOS
       or MiNT, a screen of 640 x 200 or more, about 250 KB free RAM
     - STinG with a working network, or a null-modem serial cable
     - A Raspberry Pi, or any Linux computer, on the same network

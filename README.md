@@ -131,7 +131,7 @@ The installer asks for an API key. Chats are then stored on the Pi, in `/var/lib
 instead of in your claude.ai account. `--backend demo` gives sample chats without any account, to test
 the setup.
 
-**Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.0 to 4.x, EmuTOS or MiNT; a 640×200 or
+**Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or newer, EmuTOS or MiNT; a 640×200 or
 larger screen; about 250 KB of free RAM; STinG with a working network, or a null-modem serial cable; a
 Raspberry Pi, or any Linux computer, on the same network; a claude.ai account, or an Anthropic API key.
 
