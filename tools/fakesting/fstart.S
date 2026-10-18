@@ -125,3 +125,18 @@ get_sr:
 	STUB	get_err_text
 	STUB	unsupported
 	STUB	resolve
+
+| ---- the reset hook for a cookie jar FAKESTNG made itself ----
+| TOS 1.04 and older don't clear _p_cookies at a reset; this does, and
+| hands on to the hook that was there before (called with the return
+| address in a6, as TOS calls resvector)
+	.globl	jar_reset
+jar_reset:
+	clr.l	0x5a0.w
+	move.l	old_resvector,0x42a.w
+	move.l	old_resvalid,0x426.w
+	cmp.l	#0x31415926,0x426.w
+	bne.s	1f
+	move.l	0x42a.w,-(%sp)
+	rts				| the old hook, which returns through a6
+1:	jmp	(%a6)
