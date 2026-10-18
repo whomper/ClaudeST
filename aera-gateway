@@ -11,6 +11,7 @@ says how they are.
   sudo ./aera-gateway install claude --network --atari ATARI_IP
                                                             ClaudeST's bridge (claude-st)
   sudo ./aera-gateway update        every one installed, from this copy, settings kept
+                                    (../update-pi.sh: this copy to the latest release first)
   aera-gateway status               what runs, on which ports, with which settings
   sudo ./aera-gateway remove SERVICE
   sudo ./aera-gateway set-key       a new claude.ai session key for ClaudeST
@@ -434,7 +435,7 @@ class Mail(Gateway):
             lines.append("  (or POP3        Server: %s   Port: %s)" % (ip, pop3))
         lines += ["  Outgoing (SMTP)   Server: %s   Port: %s" % (ip, smtp),
                   "",
-                  "with your usual mail user name and password (for Gmail: an app password)."]
+                  "with your usual mail user name and password (Gmail, iCloud, Yahoo and Fastmail: an app password)."]
         return "\n".join(lines)
 
     def before_start(self, pi):
@@ -752,7 +753,7 @@ class Claude:
 # Bridge options, see: claude_bridge.py --help
 CLAUDE_ST_ARGS=--backend claudeai --serial auto --baud 19200
 # claude.ai "sessionKey" cookie (for --backend claudeai). Change it with:
-#   sudo ./install.sh --set-key
+#   sudo gateway/aera-gateway set-key   (in the AERA-Gateway folder)
 CLAUDE_SESSION_KEY=
 # Anthropic API key (for --backend api)
 #ANTHROPIC_API_KEY=
@@ -924,8 +925,8 @@ CLAUDE_SESSION_KEY=
             self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --serial %s --baud %s" % (s.backend, s.port, s.baud))
 
         if s.backend == "claudeai" and not self.get_var(pi, "CLAUDE_SESSION_KEY"):
-            say("claude.ai needs your browser's sessionKey cookie (see README.md).")
-            key = pi.ask("Paste it now, or press Return to add it later with --set-key: ", secret=True)
+            say("claude.ai needs your browser's sessionKey cookie (ClaudeST's README says where to find it).")
+            key = pi.ask("Paste it now, or press Return to add it later with: sudo %s set-key: " % PROG, secret=True)
             if key:
                 self.set_var(pi, "CLAUDE_SESSION_KEY", key)
         if s.backend == "api" and not self.get_var(pi, "ANTHROPIC_API_KEY"):
@@ -944,12 +945,13 @@ CLAUDE_SESSION_KEY=
             if pi.run("ls", "-l", "/dev/serial/by-id/", check=False, errors=False).returncode:
                 say("(no USB serial adapters plugged in)")
             if pi.exists("/dev/serial0"):
-                say("Pi UART: /dev/serial0 (needs an RS-232 level shifter, see README)")
+                say("Pi UART: /dev/serial0 (needs an RS-232 level shifter, see ClaudeST's README)")
 
         heading("Done")
         if s.mode == "tcp":
             say("Backend: %s   wireless: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
-                "On the Atari, CLAUDEST.INF should say:  tcp %s %s" % (pi.ip() or "THIS-PI-IP", s.tcp_port))
+                "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "PI_IP",
+                                                                                         s.tcp_port))
         else:
             say("Backend: %s   serial port: %s   baud: %s" % (s.backend, s.port, s.baud))
         say("Status:  systemctl status claude-st", "Log:     journalctl -u claude-st -f")
@@ -1066,6 +1068,9 @@ def main(argv=None, pi=None):
             ap.add_argument("--tag", help="ClaudeST's bridge from this release (default: the latest)")
             o = ap.parse_args(rest)
         elif cmd == "set-key":
+            if rest:
+                raise Usage("sudo aera-gateway set-key: it asks for the new claude.ai session key; "
+                            "it takes nothing more")
             o = None
         else:
             if not rest or rest[0].startswith("-"):
