@@ -52,6 +52,13 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 - **README:** keep the section order from the template (Highlights, Getting started, How it reaches the
   servers, Building, Source, Tests, Licence, family footer). Use British English.
 
+## Talking with Erez
+
+- No progress or in-between messages: write only when he has a decision to make, with short context
+  and the decision.
+- Findings: the information, your assessment and what he should do. Nothing more.
+- Messages to the hub session stay complete, with the evidence.
+
 ## ClaudeST
 
 - **The version** is `#define VERSION` in `st/claudest.c`, not a `VERSION` file: `tools/bump.py`
