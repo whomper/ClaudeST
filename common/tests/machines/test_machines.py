@@ -39,6 +39,9 @@ with tempfile.TemporaryDirectory() as d:
           a[a.index("--memsize") + 1] == "1" and "mono" in a and m.describe() == "ST-1:mono, TOS 1.04")
     check("ST-1: its own HOME", m.env()["HOME"] == os.path.join(d, "st1.home"))
 
+    check("ST-1 with Erez's TOS 1.04: C:\\AUTO\\BOOTC.PRG makes C: the boot drive",
+          os.path.exists(os.path.join(d, "st1", "AUTO", "BOOTC.PRG")))
+
     m = machines.Machine("TT", os.path.join(d, "tt"))
     a = m.args()
     check("TT: 68030 code in 16 MB of TT RAM, TT medium", a[a.index("--ttram") + 1] == "16"
@@ -56,6 +59,8 @@ with tempfile.TemporaryDirectory() as d:
         check("Falcon:%s: NEWDESK.INF's #E carries the mode" % screen, "#E 18 01 00 06 00 %02X \r\n" % mode in inf)
         check("Falcon:%s: 14 MB, 128 MB TT RAM, DSP" % screen, a[a.index("--memsize") + 1] == "14"
               and a[a.index("--ttram") + 1] == "128" and a[a.index("--dsp") + 1] == "emu")
+
+    check("no BOOTC.PRG on the Falcon", not os.path.exists(os.path.join(d, "f16", "AUTO", "BOOTC.PRG")))
 
     hd = os.path.join(d, "own")
     os.makedirs(hd)

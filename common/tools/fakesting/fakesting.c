@@ -303,21 +303,48 @@ long c_TCP_close(const short *a)
 
 static char rxbuf[16384];
 
+/* a cookie jar of our own: TOS 1.04 and older have none (as STinG does,
+   FAKESTNG makes one, and takes it away again at a reset: those TOSes
+   don't clear _p_cookies, jar_reset in fstart.S does), and a full jar is
+   moved into it */
+#define OWNJAR 32
+static long ownjar[OWNJAR * 2];
+long old_resvalid, old_resvector;
+void jar_reset(void);
+
+#pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed system variables */
 static void sup_install(void)
 {
-	long *jar;
+	long *jar, i = 0;
 	short sr;
 	__asm__ volatile("move.l 0x5a0.w,%0" : "=a"(jar));
-	if (jar) {
-		long i = 0;
+	if (!jar) {
+		ownjar[1] = OWNJAR;		/* empty: the terminator holds the size */
+		old_resvalid = *(volatile long *)0x426L;
+		old_resvector = *(volatile long *)0x42aL;
+		*(volatile long *)0x42aL = (long)jar_reset;
+		*(volatile long *)0x426L = 0x31415926L;
+		jar = ownjar;
+	} else {
 		while (jar[i * 2])
 			i++;
+		if (i + 1 >= jar[i * 2 + 1] && i + 2 <= OWNJAR) {	/* full: move it */
+			long n;
+			for (n = 0; n < i * 2; n++)
+				ownjar[n] = jar[n];
+			ownjar[i * 2] = 0;
+			ownjar[i * 2 + 1] = OWNJAR;
+			jar = ownjar;
+		}
+	}
+	if (i + 1 < jar[i * 2 + 1]) {
 		/* the terminator's value is the jar size; append before it */
 		jar[i * 2 + 2] = 0;
 		jar[i * 2 + 3] = jar[i * 2 + 1];
 		jar[i * 2] = 0x5354694bL;	/* 'STiK' */
 		jar[i * 2 + 1] = (long)&drivers;
 	}
+	*(volatile long *)0x5a0L = (long)jar;
 	__asm__ volatile("move.w %%sr,%0\n\tor.w #0x0700,%%sr" : "=d"(sr) :: "memory");
 	io->ibuf = rxbuf;
 	io->ibufsiz = sizeof(rxbuf);
@@ -331,7 +358,6 @@ static void sup_install(void)
    instead of 200 (2457600 / 64 / 123), TOS's handler still counting
    each one in _hz_200: a 200 Hz clock that runs 1.56 times too fast, as
    on Erez's Falcon, for EFTP's tests/hatari/clock_test.py */
-#pragma GCC diagnostic ignored "-Warray-bounds"	/* a fixed hardware address */
 static void sup_fastclk(void)
 {
 	*(volatile unsigned char *)0xfffffa23L = 123;	/* timer C's data register */
@@ -348,6 +374,10 @@ long fake_install(long *basepage)
 	/* a Falcon's AUX port is its SCC; Hatari wires the MFP port (6) */
 	if ((get_cookie(0x5f4d4348L) >> 16) == 3)	/* '_MCH' */
 		trap14_ww(44, 6);			/* Bconmap(6) */
+	/* no flow control: the frames are binary, and TOS 1.04 starts with
+	   XON/XOFF, which takes 0x11 and 0x13 out of the input (a length of
+	   19 is 0x13) and stops sending at an XOFF */
+	Rsconf(-1, 0, -1, -1, -1, -1);
 	io = Iorec(0);
 	Supexec(sup_install);
 	Cconws("Fake STinG installed (TCP over serial)\r\n");
