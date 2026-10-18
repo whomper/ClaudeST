@@ -1515,7 +1515,7 @@ static short edit_key(char *buf, short *len, short *cur, short max, short kstate
 {
 	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff, c;
 	short shift = kstate & (K_LSHIFT | K_RSHIFT);
-	short ctrl = (kstate & K_CTRL) || scan == 0x73 || scan == 0x74;
+	short ctrl = key_ctrl(kstate, kr) || scan == 0x73 || scan == 0x74;
 	short dir = 0;
 
 	if (scan == 0x4b || scan == 0x73)
@@ -4665,7 +4665,8 @@ static void handle_click(short mx, short my)
 static u8 key_char(short kstate, short kr)
 {
 	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff;
-	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | K_CTRL | 0x08)) &&
+	/* key_ctrl: a Control key typed while busy comes with kstate 0 */
+	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | 0x08)) && !key_ctrl(kstate, kr) &&
 	    scan >= 0x10 && scan < 0x36 && hebrew_keys[scan - 0x10])
 		ascii = hebrew_keys[scan - 0x10];
 	return ascii >= 32 && ascii != 127 ? ascii : 0;
@@ -4942,7 +4943,7 @@ static void handle_key(short kstate, short kr)
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
-	if ((kstate & K_CTRL) && scan == 0x33) {	/* ^, */
+	if (key_ctrl(kstate, kr) && scan == 0x33) {	/* ^, (0x0c, kstate 0 if typed while busy) */
 		settings_dialog();
 		return;
 	}
