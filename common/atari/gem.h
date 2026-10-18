@@ -143,6 +143,19 @@ typedef struct {
 #define K_LSHIFT 0x02
 #define K_CTRL   0x04
 
+/* A Control key: kstate has K_CTRL, or the key is ^A..^Z. The AES gives
+ * kstate as it is when the program reads the key, so a Ctrl+R typed while
+ * the program was busy arrives as 0x1312 with kstate 0 (EMail 1.40). Not
+ * Backspace, Tab, Return or Enter, whose codes are ^H, ^I and ^M too.
+ * Shortcuts test this, never kstate & K_CTRL alone. */
+static inline int key_ctrl(short kstate, short key)
+{
+	short scan = (key >> 8) & 0xff;
+	short ascii = key & 0xff;
+	return (kstate & K_CTRL) || (ascii >= 1 && ascii <= 26 && scan != 0x0e && scan != 0x0f &&
+				     scan != 0x1c && scan != 0x72);
+}
+
 typedef struct {
 	short which, mx, my, mbutton, kstate, kreturn, breturn;
 } AEVENT;

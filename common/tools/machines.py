@@ -25,8 +25,8 @@ NVRAM is shared between rigs), the Falcon's screen mode in its NVRAM and,
 for a real TOS 4, in C:\\NEWDESK.INF (TOS 4's desktop takes the mode from
 there), unless the rig brought its own. Standard Python only.
 
-The network: m.network() puts FAKESTNG.PRG (made with make in
-tools/fakesting when it isn't there) in C:\\AUTO, starts serial_bridge.py
+The network: m.network() puts FAKESTNG.PRG (made again with make in
+tools/fakesting whenever its source changed) in C:\\AUTO, starts serial_bridge.py
 on the other end of the serial port and gives Hatari's serial arguments;
 the Atari's TCP connections become this computer's. m.stop() ends the
 bridge. It works on Erez's TOS too: FAKESTNG makes the cookie jar TOS
@@ -165,8 +165,7 @@ class Machine:
         """FAKESTNG and its bridge; Hatari's serial arguments"""
         fs = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fakesting")
         prg = os.path.join(fs, "FAKESTNG.PRG")
-        if not os.path.exists(prg):
-            subprocess.run(["make", "-s", "-C", fs], check=True)
+        subprocess.run(["make", "-s", "-C", fs], check=True)     # rebuilt when its source changed
         os.makedirs(os.path.join(self.hd, "AUTO"), exist_ok=True)
         shutil.copy(prg, os.path.join(self.hd, "AUTO", "FAKESTNG.PRG"))
         out, inp = self.hd.rstrip("/") + ".st_out", self.hd.rstrip("/") + ".st_in"
