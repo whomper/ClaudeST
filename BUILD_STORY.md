@@ -203,7 +203,7 @@ The code, setup guide and demo videos are on GitHub:
 | [docs/demo/claude-st-falcon.mp4](docs/demo/claude-st-falcon.mp4) | The same demo in 4:3 |
 | [docs/falcon-colour.png](docs/falcon-colour.png) | The main window on a Falcon in 16 colours, with a chat open |
 | [docs/st-high-mono.png](docs/st-high-mono.png) | The main window in classic black and white |
-| [docs/ste-medium-colour.png](docs/ste-medium-colour.png) | The same on a colour STE |
+| [docs/st-medium-colour.png](docs/st-medium-colour.png) | The same in ST medium resolution, in colour |
 | [docs/hebrew.png](docs/hebrew.png) | Hebrew, right to left |
 | [docs/code.png](docs/code.png) | A Claude Code session on the Atari |
 | [docs/account.png](docs/account.png) | Plan and usage |

@@ -35,7 +35,7 @@ window has the iconify button: ClaudeST shrinks to its icon, with *busy*
 under it while Claude answers and *offline* when the bridge isn't there.
 Replies still come in while it is iconified.
 
-![STE medium resolution, in colour, inside a project](ste-medium-colour.png)
+![ST medium resolution, in colour, inside a project](st-medium-colour.png)
 
 - **Status area** (bottom left): a dot for the connection, green when
   online and red when not (filled or hollow in black and white), with
@@ -134,7 +134,8 @@ menu: the models, then the effort levels that model supports.
 - **Effort:** Low, Medium, High, Extra high and Max. Higher effort means
   more thinking: slower and more thorough. The default is Medium for
   Opus 5.5 and High for the others. Haiku and models older than the 4.5
-  family have no effort setting; Opus 4.5 has only Low, Medium and High.
+  family have no effort setting; Opus 4.6 and Sonnet 4.6 have no Extra
+  high, and Opus 4.5 has only Low, Medium and High.
 - **Each chat keeps its own model and effort.** Opening a chat, a
   project's chat or a Code session shows the model and effort claude.ai
   has for it. If claude.ai has no effort for it, the chip shows the one
@@ -197,7 +198,7 @@ Claude made with a script, such as a Word cover letter.
   set with CR/LF line ends. Word, PDF and other binary files are saved
   unchanged.
 
-To look further back than 100 chats, see
+To look further back than 40 chats, see
 [extra bridge options](#extra-bridge-options).
 
 ## Account, plan and usage
@@ -326,8 +327,8 @@ the window, the keys, the settings and troubleshooting. Keep it next to
 `CLAUDEST.PRG` (or in the viewer's help folder); with EHypView, ST-Guide
 or HypView running (as an accessory, or as a program under MultiTOS or
 MagiC), `Help` in ClaudeST opens it. Without a viewer, `Help` says how to
-get one and offers the About box instead. It also opens on its own in any
-of them.
+get one and offers ClaudeST's keys instead (also **Help ▸ Keys…**). It also
+opens on its own in any of them.
 
 ## All keys
 
@@ -364,8 +365,9 @@ sets the gateway address, and `/serial` switches to the serial port.
 **Network** (through STinG) with the gateway's address and port, or
 **Serial** with the speed. Tab moves between the two fields; Return is OK.
 
-ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`, as
-soon as you change them, in the format of the other AERA programs: a
+ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
+(strictly, in the folder that is current when ClaudeST starts, which the
+desktop sets to the program's own), as soon as you change them, in the format of the other AERA programs: a
 `[OPTIONS]` part, one `NAME=value` per line, and a `;` note above each.
 You can also edit it in any text editor; lines ClaudeST doesn't know are
 kept. A `CLAUDEST.INF` from before 1.38 (`tcp 192.168.1.10 2323` and so
@@ -373,14 +375,14 @@ on) is still read, and written in the new form the next time.
 
 | Setting | Set by |
 |------|--------|
-| `LINK=network` or `serial` | Options ▸ Settings, `/connect`, `/serial` |
+| `LINK=network` or `serial` | Options ▸ Settings, Options ▸ Network (STinG) / Serial port, `/connect`, `/serial`. Without a `CLAUDEST.INF`, ClaudeST uses the serial port |
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
-| `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, Options ▸ baud rate |
-| `SERIALPORT=7` | edit by hand: on a TT or Falcon, which serial port to use: 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2). 0: the port TOS has chosen. |
+| `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, or the baud items in Options |
+| `SERIALPORT=0` | edit by hand, on a TT or Falcon only to use another serial port than the one TOS has chosen (0, the default): 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2) |
 | `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
 | `FONT=1,8`, `HEBFONT=0` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes); where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
-| `SIDEBAR=240` | dragging the divider (width in pixels) |
-| `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` |
+| `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
+| `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
 The window always opens full screen with a new chat.
 
@@ -410,6 +412,7 @@ All commands run on the Pi.
 | *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDEST.INF`, and that the Atari's address matches the installer's `--atari` |
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | "Claude hasn't answered for 90 seconds", or a usage-limit message | Your claude.ai usage limit is reached (F8 shows it), so claude.ai can't answer until it resets; reading your chats still works. The message is sent: open the chat again later to see the answer |
+| "claude.ai says too many requests (HTTP 429)" | claude.ai is limiting requests for a while. Wait a few minutes; F8 shows your usage |
 | An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo gateway/aera-gateway set-key` in the AERA-Gateway folder |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 | ClaudeST itself crashed (on the Atari) | It says so, writes what happened to `CRASH.LOG` next to `CLAUDEST.PRG` and quits, leaving the Atari running. A crash in the system or a driver still gives the bombs; TOS keeps a record of them, and ClaudeST adds it to `CRASH.LOG` the next time it starts. Send `CRASH.LOG` to the author. Under MiNT or MagiC, which handle crashes themselves, there is none |
@@ -466,8 +469,8 @@ chats. `python3 claude_bridge.py --help` lists every option.
 Use a null-modem cable and a USB-to-RS-232 adapter on the Pi. To use the
 Pi's GPIO UART instead, put a MAX3232 level-shifter board in between,
 turn off the serial console in `raspi-config`, and install with
-`--port /dev/serial0`. The speed is 19200 baud, 8N1; change it under
-**Options** and give the Pi the same `--baud`.
+`--serial /dev/serial0`. The speed is 19200 baud, 8N1; change it in
+**Options ▸ Settings** and give the Pi the same `--baud`.
 
 A WiFi modem on the serial port also works in transparent TCP mode:
 point it at the Pi's port 2323, keep ClaudeST on the serial link, and
@@ -511,9 +514,9 @@ make dist                # a release's files in dist/
 shows. To release:
 `tools/bump.py`, commit and push, then run the Release workflow
 (Actions > Release > Run workflow, on main) with what is new:
-`.github/workflows/release.yml` tags the commit `v1.35`, tests, builds
+`.github/workflows/release.yml` tags the commit `vX.Y`, tests, builds
 the program and the help, and publishes them as a GitHub Release with
-those notes. Pushing a tag `v1.35` made with `git tag -a` does the same,
+those notes. Pushing a tag `vX.Y` made with `git tag -a` does the same,
 with the tag's message as the notes.
 
 The program is freestanding C with its own startup code, AES, VDI and
@@ -551,7 +554,8 @@ the emulator only; never install it on a real Atari.
 
 Hatari only connects the ST-style MFP serial port to the bridge, so on
 the Falcon the script puts `SERIALPORT=6` in `CLAUDEST.INF`; a real
-Falcon uses its Modem port, which needs no `port` line.
+Falcon uses its Modem port, the one TOS chooses, so it needs no
+`SERIALPORT` line.
 
 ### Recording a demo video
 
@@ -576,18 +580,23 @@ running EmuTOS.
 ### Source layout
 
 ```
-help/      CLAUDEST.STG, the ST-Guide help: make help (needs HCP) -> binary/CLAUDEST.HYP
 st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
            CLAUDEST.INF (the example settings file a release carries)
-common/    the AERA programs' shared code (a git subtree of AERA-Atari):
-           atari/ (start-up, C library, TOS traps, AES/VDI, STinG client),
-           src/bidi.c (right-to-left), tools/elf2tos.py
+help/      CLAUDEST.STG, the ST-Guide help: make help (needs HCP) -> binary/CLAUDEST.HYP
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
-pi/        install.sh (hands on to aera-gateway) and the systemd service
-tools/     hatari-test.sh, sync-common.sh, bump.py, check_version.sh,
-           icon/
+pi/        install.sh (hands on to gateway/aera-gateway) and the systemd service
+gateway/   a copy of AERA-Gateway's installer, aera-gateway, which sets up
+           the bridge (tools/sync-gateway.sh)
+common/    the AERA programs' shared code (a git subtree of AERA-Atari):
+           atari/ (start-up, C library, TOS traps, AES/VDI, STinG client),
+           src/bidi.c (right-to-left), tools/ (elf2tos.py, machines.py,
+           fakesting/, helpfront.py)
+tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
+           check_version.sh, icon/ (the desktop icon), reel/ (the demo video)
 icons/     the desktop icon files (from tools/icon)
+docs/      this guide, its screenshots, the demo recording and the help's
+           front page (front.json, help/WINDOW.IMG)
 binary/    what make builds for the Atari (not committed: the releases
            have it)
 ```

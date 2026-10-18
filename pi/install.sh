@@ -6,7 +6,7 @@
 #
 #   sudo ./install.sh                     install or update, asks what it needs
 #   sudo ./install.sh --network --atari 192.168.1.20
-#                                         wireless: ClaudeST connects over STinG
+#                                         network: ClaudeST connects over STinG
 #                                         (several Ataris: --atari IP1,IP2;
 #                                          any address on the home
 #                                          network: --atari any)

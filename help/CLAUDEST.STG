@@ -7,7 +7,8 @@
 @charset "atarist"
 @subject "Communication"
 @author "AERA | Erez Yaary"
-## the version and date: help/Makefile sets them from st/claudest.c
+## the version and date, and the version in About ClaudeST: help/Makefile
+## sets them from st/claudest.c
 @$VER: CLAUDEST.HYP x.y (set by make)
 @options "+z -s"
 @width 75
@@ -69,8 +70,12 @@
     - A Raspberry Pi, or any Linux computer, on the same network
     - A claude.ai account (or an Anthropic API key)
 
-  @{U}On the Pi@{u}
+  Give the Pi a fixed address (a DHCP reservation in your router), and
+  the Atari too unless the bridge accepts any address (--atari any).
 
+  @{U}On the Pi@{u}, in your home folder:
+
+      sudo apt install -y git
       git clone https://github.com/whomper/AERA-Gateway.git
       cd AERA-Gateway
       ./update-pi.sh
@@ -84,16 +89,29 @@
   @{U}On the Atari@{u}
 
     1. Load STinG and check that the network works.
-    2. Copy CLAUDEST.PRG, CLAUDEST.INF and CLAUDEST.HYP into one
-       folder.
-    3. Choose Options > Settings... (Control+,), pick Network and type
-       the Pi's address, or type @{B}/connect 192.168.1.10@{b} in the
-       reply line.
-    4. Run CLAUDEST.PRG. The status line shows Connecting..., then
-       Online, with a green dot.
+    2. Copy CLAUDEST.PRG, CLAUDEST.INF, CLAUDEST.HYP and CLAUDEST.REF
+       into one folder, any folder on any drive. ClaudeST keeps its
+       settings in CLAUDEST.INF next to the program.
+    3. Put the Pi's address on the HOST= line of CLAUDEST.INF, or set
+       it in the next step.
+    4. Run CLAUDEST.PRG. If it doesn't know the Pi's address yet, choose
+       Options > Settings... (Control+,), pick Network and type it, or
+       type @{B}/connect 192.168.1.10@{b} in the reply line. The status
+       line shows Connecting..., then Online, with a green dot.
 
   If the Pi restarts or the network drops, ClaudeST reconnects by
   itself. For a serial cable, see @{"Settings" link "Settings"}.
+
+  @{U}Updating@{u}
+
+    On the Atari, copy the new CLAUDEST.PRG, CLAUDEST.HYP and
+    CLAUDEST.REF over the old ones. Keep your own CLAUDEST.INF: the
+    release's is only an example, and copying it would replace your
+    settings.
+
+    On the Pi, when a release's notes say the bridge changed, run
+    "./update-pi.sh" in your AERA-Gateway folder. It keeps every
+    setting and is safe to run at any time.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -439,20 +457,26 @@
     HOST=192.168.1.10       the gateway's address (Settings, /connect)
     PORT=2323               the gateway's port
     BAUD=19200              4800, 9600 or 19200 (Settings)
-    SERIALPORT=7            on a TT or Falcon, which serial port to use:
-                            6 MFP, 7 SCC B (the Falcon's Modem port),
-                            8 TT-MFP, 9 SCC A; 0 the one TOS chose
+    SERIALPORT=0            the port TOS chose (the default); on a TT or
+                            Falcon, another port: 6 MFP, 7 SCC B (the
+                            Falcon's Modem port), 8 TT-MFP, 9 SCC A
     HEBREW=1                F10 / Options > Hebrew keys
     FONT=1,8  HEBFONT=0     Options > Font: the font's id (1 = system
                             font) and size; where it keeps Hebrew
                             (0 Atari, 1 ISO-8859-8, 2 DOS 862)
     SIDEBAR=240             the sidebar's width, by dragging the divider
-    MODEL=...  EFFORT=...   the model chip / F9
+                            (0: ClaudeST's choice)
+    MODEL=...  EFFORT=...   the model chip / F9 (empty: the defaults)
+
+  Without a CLAUDEST.INF, ClaudeST uses the serial port.
 
   A @{B}serial cable@{b}: connect the Atari's Modem port to a
   USB-to-RS-232 adapter on the Pi with a null-modem cable (never
-  straight to the Pi's pins), run "sudo gateway/aera-gateway install claude
-  --serial auto" on the Pi, and choose Options > Settings > Serial on the Atari.
+  straight to the Pi's pins), run
+
+      sudo gateway/aera-gateway install claude --serial auto
+
+  on the Pi, and choose Options > Settings > Serial on the Atari.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -514,7 +538,7 @@
 @node "About ClaudeST"
 @{U}About ClaudeST@{u}
 
-  ClaudeST 1.31
+  ClaudeST x.y
   Created by AERA | Erez Yaary, (c) 2026.
 
   Written with Claude, in Claude Code on claude.ai: a claude.ai client

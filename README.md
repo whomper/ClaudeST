@@ -32,9 +32,10 @@ The [user guide](docs/GUIDE.md) describes every feature.
 ClaudeST has two parts: the bridge, on a Raspberry Pi or any Linux computer on your network, and the
 program on the Atari. Set up the Pi first.
 
-Give the Atari and the Pi fixed IP addresses, for example with a DHCP reservation in your router. The
-examples below use **192.168.1.10** for the Pi and **192.168.1.20** for the Atari. Replace them with
-your own.
+Give the Pi a fixed IP address, for example with a DHCP reservation in your router, so that ClaudeST
+always finds it. Give the Atari one too, unless you let the bridge accept any address on your network
+(`--atari any`, below). The examples below use **192.168.1.10** for the Pi and **192.168.1.20** for the
+Atari. Replace them with your own.
 
 ### 1. Get your claude.ai session key
 
@@ -51,9 +52,11 @@ bridge.
 The Pi side of all the AERA apps is installed by
 [AERA-Gateway](https://github.com/whomper/AERA-Gateway). It always installs the bridge from ClaudeST's
 [latest release](https://github.com/whomper/ClaudeST/releases/latest), never unreleased code (its
-README's [Getting started](https://github.com/whomper/AERA-Gateway#getting-started) has the details):
+README's [Getting started](https://github.com/whomper/AERA-Gateway#getting-started) has the details).
+In your home folder on the Pi:
 
 ```sh
+sudo apt install -y git      # Raspberry Pi OS Lite comes without it
 git clone https://github.com/whomper/AERA-Gateway.git
 cd AERA-Gateway
 ./update-pi.sh
@@ -79,18 +82,29 @@ own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folde
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 
 1. Load **STinG** and check that the network works, for example by pinging the Pi.
-2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder.
-3. Start ClaudeST, choose **Options ▸ Settings…** (`Ctrl+,`), pick **Network** and type the Pi's
-   address (port 2323). Or put it on the `HOST=` line of `CLAUDEST.INF` with any text editor:
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder, any folder
+   on any drive. ClaudeST keeps its settings in `CLAUDEST.INF` next to the program.
+3. Put the Pi's address on the `HOST=` line of `CLAUDEST.INF` with any text editor:
    ```
    HOST=192.168.1.10
    ```
-4. Run `CLAUDEST.PRG`. The status line at the bottom left shows *Connecting…*, then *Online*, with a
-   green dot.
+   Or set it from ClaudeST itself, in the next step.
+4. Run `CLAUDEST.PRG`. If it doesn't know the Pi's address yet, choose **Options ▸ Settings…**
+   (`Ctrl+,`), pick **Network** and type it (port 2323), or type `/connect 192.168.1.10` in the reply
+   line. The status line at the bottom left shows *Connecting…*, then *Online*, with a green dot.
 
-Instead of step 3 you can type `/connect 192.168.1.10` in ClaudeST's reply line; ClaudeST saves the
-address to `CLAUDEST.INF`. If the Pi restarts or the network drops, ClaudeST reconnects by itself. The
-guide's [Icons](docs/GUIDE.md#icons) section says how to put the icon on the desktop.
+ClaudeST saves what you set to `CLAUDEST.INF`. If the Pi restarts or the network drops, ClaudeST
+reconnects by itself. The guide's [Icons](docs/GUIDE.md#icons) section says how to put the icon on the
+desktop.
+
+### Updating
+
+- **The Atari:** from a new release, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` over the old
+  ones. Keep your own `CLAUDEST.INF`: the release's is only an example, and copying it would replace
+  your settings.
+- **The Pi:** when a release's notes say the bridge changed, run `./update-pi.sh` in your
+  `AERA-Gateway` folder (see [Looking after the Pi](#looking-after-the-pi)). It is safe to run at any
+  time.
 
 ### Using a serial cable instead
 
@@ -177,6 +191,8 @@ release.
 | F10 | Hebrew keyboard on or off |
 | ^O | Attach a file to the next message (Backspace on the empty reply line removes the last one) |
 | ^, | Settings: the gateway's address and port, or the serial port |
+| Esc / Undo | Cancel any box or alert; leave Search. Never throws away what you typed |
+| Shift+Delete | Clear the reply line (^X cuts it to the clipboard) |
 | Help | Help in EHypView or ST-Guide, or the keys (also in the Help menu) |
 | ^Q | Quit |
 
@@ -256,8 +272,8 @@ never here, then bring the copy up to date with `tools/sync-common.sh`.
 The CI workflow runs them, and builds the program, on every push to `main` and every pull request.
 
 To try ClaudeST itself, `tools/hatari-test.sh` boots [Hatari](https://hatari.tuxfamily.org/) into it,
-with EmuTOS (downloaded the first time) and the bridge on this computer, connected through the emulated
-serial port:
+with EmuTOS 1.4 (downloaded the first time, or your own TOS images in `~/.aera/tos`) and the bridge
+on this computer, connected through the emulated serial port:
 
 ```sh
 tools/hatari-test.sh                 # demo chats, no account needed
