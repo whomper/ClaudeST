@@ -60,6 +60,8 @@ short sys_cw, sys_ch;			/* the system font's, as the AES uses it */
  * system font (font_pt 8 or 16: its 8x8 or 8x16 size; 0 the screen's
  * own), else a GDOS font at font_pt points */
 static short font_id = 1, font_pt;
+static short cur_font_id = 1, cur_font_pt;	/* the font set now (set_font) */
+static short set_font(short id, short pt);
 static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
 /* where the font keeps its Hebrew letters (for system and bitmap fonts):
  * the Atari character set, or where ISO-8859-8 or DOS 862 put them */
@@ -1712,6 +1714,7 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 {
 	short r[4], area[4], scr[4];
 	short text_from = mask & D_TEXT ? text_dirty_row : 0;
+	short keep_id = cur_font_id, keep_pt = cur_font_pt, keep_cw = cw, keep_ch = ch;
 
 	if (win < 0 || win_icon)
 		return;
@@ -1728,6 +1731,10 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
+	/* the window's own font, whatever the VDI was left with: the font
+	   selector's sample, or the font being measured. Under NVDI another
+	   id is another font (it drew the status line in Symbol) */
+	set_font(font_id, font_pt);
 	vswr_mode(vh, 2);	/* transparent text over our own fills */
 	vsf_perimeter(vh, 0);
 	vst_alignment(vh, 0, 5);
@@ -1753,6 +1760,9 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 		wind_get(win, WF_NEXTXYWH, &r[0], &r[1], &r[2], &r[3]);
 	}
 	vs_clip(vh, 0, clip);
+	set_font(keep_id, keep_pt);	/* and back to what the caller had */
+	cw = keep_cw;
+	ch = keep_ch;
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
 }
@@ -3291,7 +3301,7 @@ static FAM fam[MAXFAM];
 static short nfam;
 static short sizes[MAXSIZE], nsizes;
 static char size_label[MAXSIZE][12];
-static short cur_font_id = 1, cur_font_pt, probed_id = -1;
+static short probed_id = -1;
 
 /* Unicode of the Hebrew letters in the Atari order (0xC2-0xDC), less 0x5D0 */
 #define heb_uni heb_order
@@ -3566,7 +3576,8 @@ static void keep_monospaced(void)
 				fam[i].mono = (signed char)measure_mono(&fam[i]);
 			}
 		graf_mouse(ARROW, 0);
-		set_status(keep);
+		set_status(keep);	/* shown again now, not after the selector */
+		redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
 		/* the answers, for next time: gathered here, written in one go */
 		for (line = fnt_buf, i = 1; i < nfam; i++) {
 			*line++ = fam[i].mono ? '1' : '0';

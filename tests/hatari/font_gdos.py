@@ -10,16 +10,18 @@ whole in it.
                               [--boot SECONDS]
 
 With the demo bridge on the serial port, it opens the demo's Hebrew chat,
-then Options > Font... (with the mouse: the selector has no key), and
-moves down the families from the system font, trying each with Return
-until the selector closes: the first fixed-width GDOS font, in the size
-it offers first (proportional ones can't be picked, so the dialog stays).
-Then:
-  1. the window redrew in the new font, and stayed (no dialog left);
-  2. CLAUDEST.INF has FONT= with that font's id (not 1, the system font);
-  3. after a restart, the same chat draws as it did before the restart.
+then Options > Font... (with the mouse: the selector has no key).
+  1. Under the selector, and after Cancel, the status line is drawn as
+     before (1.49 drew it in a Symbol face once NVDI's fonts were loaded).
+Then it opens the selector again and moves to the first fixed-width GDOS
+font, which CLAUDEST.FNT (the families in the selector's order) names, in
+the size the selector offers first, and presses Return:
+  2. the window redrew in the new font, and stayed (no dialog left);
+  3. CLAUDEST.INF has FONT= with that font's id (not 1, the system font);
+  4. after a restart, the same chat draws as it did before the restart.
 Screenshots go in WORK/shots. Without GDOS fonts the selector has only the
-system font: "no GDOS fonts, skipped", and it passes. For NVDI, run it
+system font and no CLAUDEST.FNT is written: "no GDOS fonts, skipped",
+and it passes after the checks in 1. For NVDI, run it
 with AERA_WITH_NVDI=1 (common/tools/machines.py installs Erez's NVDI on
 the Falcons); the boot then takes about 90 s, 120 s on Falcon-4.
 --release tests that ClaudeST release (common/tools/getrelease.py) in
@@ -128,43 +130,66 @@ def main():
         rest = (w - 8, h * 3 // 4)		# the mouse, out of the way
         before = hebrew_chat(r, "1-chat-system-font")
 
-        # Options > Font...: Options is the fourth title (" Desk " starts
-        # two cells in), Font... its twelfth item
-        r.move(16 + 8 * (6 + 6 + 6) + 8 * 4, bar // 2)
-        time.sleep(1)
-        r.click(16 + 8 * (6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
-        r.wait(3, limit=300)			# the first time, every GDOS font is measured
-        dlg = r.shot("2-font-dialog")
+        # the status box's first line ("Online: demo"), right of the ring:
+        # the same text in the same font, whatever happened in between
+        status = (5 * 8, h - 2 * (ch + 6), 23 * 8, h - (ch + 6))
+
+        def font_dialog(name):
+            """Options > Font...: Options is the fourth title (" Desk "
+            starts two cells in), Font... its twelfth item"""
+            r.move(16 + 8 * (6 + 6 + 6) + 8 * 4, bar // 2)
+            time.sleep(1)
+            r.click(16 + 8 * (6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
+            r.wait(3, limit=300)		# the first time, every GDOS font is measured
+            return r.shot(name)
+
+        dlg = font_dialog("2-font-dialog")
         check("the font selector opened", changed(before, dlg) > 0.05,
               "%.0f%% of the screen" % (100 * changed(before, dlg)))
+        check("the status line, under the selector, is still in the window's font",
+              changed(before, dlg, status) < 0.02,
+              "%.1f%% of it differs" % (100 * changed(before, dlg, status)))
+        r.key(K["ESC"])			# Cancel
+        r.wait(3)
+        r.move(*rest)
+        cancelled = r.shot("2b-cancelled")
+        check("after Cancel the window is as before", changed(before, cancelled) < 0.02,
+              "%.1f%% differs" % (100 * changed(before, cancelled)))
+        check("... its status line too", changed(before, cancelled, status) < 0.02,
+              "%.1f%% of it differs" % (100 * changed(before, cancelled, status)))
 
+        # CLAUDEST.FNT has the families in the selector's order after the
+        # system font, "1 Name" for a fixed-width one: the first of those
+        # is that many Downs from the system font
         picked = None
-        for n in range(1, 60):
-            r.key(K["DOWN"])
-            r.wait(1, limit=30)		# a vector font's sample takes a while under NVDI
-            moved = r.shot("_moved")
-            if changed(dlg, moved) < 0.0005:	# the list didn't move: the last family
-                break
-            dlg = moved
-            r.key(K["RETURN"])		# OK, if this one can be picked
-            r.wait(3, limit=60)
-            now = r.shot("_now")
-            if changed(dlg, now) > 0.05:	# the selector closed (the sample alone is less)
-                picked = n
-                break
+        try:
+            with open(os.path.join(hd, "CLAUDEST.FNT"), errors="replace") as f:
+                fams = [l.rstrip("\r\n") for l in f if l.strip()]
+            picked = next(i + 1 for i, l in enumerate(fams) if l.startswith("1 "))
+        except (OSError, StopIteration):
+            pass
         if picked is None:
-            print("  no fixed-width GDOS font in the selector (no GDOS, or none listed), skipped")
+            print("  no fixed-width GDOS font (no CLAUDEST.FNT, or no \"1 \" line in it), skipped")
             skipped = True
-            r.key(K["ESC"])
-            r.wait(2)
         else:
+            print("  %d families after the system font; the first fixed-width one, %d down: %s"
+                  % (len(fams), picked, fams[picked - 1][2:]))
+            dlg = font_dialog("2c-font-dialog-again")
+            for _ in range(len(fams) + 5):	# up to the system font, wherever the click left it
+                r.key(K["UP"])
+            r.wait(2, limit=120)
+            for _ in range(picked):
+                r.key(K["DOWN"])
+            r.wait(2, limit=120)		# a vector font's sample takes a while under NVDI
+            on = r.shot("2d-on-the-font")
+            r.key(K["RETURN"])			# OK
+            r.wait(3, limit=120)
             r.move(*rest)
             after = r.shot("3-chosen")
-            print("  picked the font %d down from the system font" % picked)
+            check("the selector closed on OK", changed(on, after) > 0.05,
+                  "%.1f%% changed from the selector" % (100 * changed(on, after)))
             check("the window redrew in the new font", changed(before, after) > 0.01,
                   "%.1f%% changed from the system font" % (100 * changed(before, after)))
-            check("the selector is gone", changed(dlg, after) > 0.05,
-                  "%.1f%% changed from the selector" % (100 * changed(dlg, after)))
             time.sleep(4)
             later = r.shot("4-later")
             check("the screen stayed as drawn (no dialog left)", changed(after, later) < 0.02,
