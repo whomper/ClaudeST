@@ -139,7 +139,7 @@ static void rx_byte(int c)
 	if (rx_pos == 1) {
 		rx_cn = c < NCONN ? c : NCONN;	/* NCONN: not ours, read past */
 		if (rx_type == 'E') {
-			if (rx_cn < NCONN)
+			if (rx_cn < NCONN && conn[rx_cn].open)
 				conn[rx_cn].eof = 1;
 			rx_type = -1;
 		}
@@ -156,7 +156,9 @@ static void rx_byte(int c)
 		if (!rx_left)
 			rx_type = -1;
 	} else {
-		if (rx_cn < NCONN) {
+		/* only for a connection open (a closed one's last data may
+		   still be on its way, and its number used again) */
+		if (rx_cn < NCONN && conn[rx_cn].open) {
 			long next = (conn[rx_cn].head + 1) % RXSIZE;
 			if (next != conn[rx_cn].tail) {
 				conn[rx_cn].buf[conn[rx_cn].head] = (unsigned char)c;
@@ -295,7 +297,7 @@ long c_TCP_close(const short *a)
 	out('C');
 	out(cn);
 	flush(TXSIZE);
-	conn[cn].used = 0;
+	conn[cn].used = conn[cn].open = 0;
 	return 0;
 }
 

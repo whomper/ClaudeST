@@ -29,5 +29,5 @@ void *heap_realloc(void *p, size_t n);
 void heap_add(void *p, size_t bytes);
 long heap_check(long *nfree);
 unsigned heap_bin(size_t s);
-extern long heap_tt, heap_st;
+extern long heap_tt, heap_st, heap_use, heap_peak;
 #endif

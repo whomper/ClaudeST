@@ -49,3 +49,8 @@ void big_free(void *p)
 	if (p)
 		Mfree(p);
 }
+
+int big_direct(void)
+{
+	return get_cookie(0x5F465242L) != 0;	/* '_FRB' */
+}

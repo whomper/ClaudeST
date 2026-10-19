@@ -5,10 +5,26 @@
  */
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "secret.h"
 #include "plat.h"
 
 static unsigned long key[4];
+/* the text being encrypted or read: a password's on the stack, a longer
+   one (a cookie, up to SECRET_MAX) from the heap, so that a 1 MB ST's
+   programs carry no 4 KB of BSS for it; wiped after use either way */
+#define SMALL 128
+static unsigned char *work(unsigned char *small, int n)
+{
+	return n <= SMALL ? small : (unsigned char *)malloc(6 + n);
+}
+
+static void done(unsigned char *b, unsigned char *small, int n)
+{
+	memset(b, 0, 6 + (n <= SMALL ? SMALL : n));
+	if (b != small)
+		free(b);
+}
 static int have_key, warned;
 static char keyname[128];
 
@@ -73,18 +89,22 @@ static const char hexd[] = "0123456789ABCDEF";
 
 int secret_encode(const char *plain, char *out, int size)
 {
-	unsigned char buf[2 + 4 + 128];
+	unsigned char small[6 + SMALL], *buf;
 	int n = (int)strlen(plain), i, o;
 	if (!*plain) {
 		snprintf(out, size, "%s", "");
 		return 1;
 	}
-	if (!have_key || n > 128 || size < (int)strlen(SECRET_TAG) + 2 * (6 + n) + 1) {
+	if (!have_key || n > SECRET_MAX || size < (int)strlen(SECRET_TAG) + 2 * (6 + n) + 1) {
 		snprintf(out, size, "%s", plain);	/* as it is, and said so */
 		if (!warned && secret_warn) {
 			warned = 1;
 			secret_warn(keyname);
 		}
+		return 0;
+	}
+	if (!(buf = work(small, n))) {
+		snprintf(out, size, "%s", plain);
 		return 0;
 	}
 	pf_entropy(buf, 4);			/* the nonce */
@@ -99,6 +119,7 @@ int secret_encode(const char *plain, char *out, int size)
 		out[o++] = hexd[buf[i] & 15];
 	}
 	out[o] = 0;
+	done(buf, small, n);
 	return 1;
 }
 
@@ -115,8 +136,8 @@ static int hexv(char c)
 
 int secret_decode(const char *in, char *out, int size)
 {
-	unsigned char buf[2 + 4 + 128];
-	int t = (int)strlen(SECRET_TAG), len, n, i;
+	unsigned char small[6 + SMALL], *buf;
+	int t = (int)strlen(SECRET_TAG), len, n, i, ok;
 	if (strncmp(in, SECRET_TAG, t)) {
 		snprintf(out, size, "%s", in);		/* written by an older version */
 		return 1;
@@ -125,18 +146,22 @@ int secret_decode(const char *in, char *out, int size)
 	len = (int)strlen(in);
 	n = len / 2;
 	out[0] = 0;
-	if (!have_key || len % 2 || n < 6 || n > (int)sizeof(buf))
+	if (!have_key || len % 2 || n < 6 || n > 6 + SECRET_MAX || !(buf = work(small, n - 6)))
 		return 0;
 	for (i = 0; i < n; i++) {
 		int a = hexv(in[2 * i]), b = hexv(in[2 * i + 1]);
-		if (a < 0 || b < 0)
+		if (a < 0 || b < 0) {
+			done(buf, small, n - 6);
 			return 0;
+		}
 		buf[i] = (unsigned char)(a << 4 | b);
 	}
 	crypt(buf, buf + 4, n - 4);
-	if (buf[4] != 'P' || buf[5] != 'W' || n - 6 >= size)
-		return 0;
-	memcpy(out, buf + 6, n - 6);
-	out[n - 6] = 0;
-	return 1;
+	ok = buf[4] == 'P' && buf[5] == 'W' && n - 6 < size;
+	if (ok) {
+		memcpy(out, buf + 6, n - 6);
+		out[n - 6] = 0;
+	}
+	done(buf, small, n - 6);
+	return ok;
 }

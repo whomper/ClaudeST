@@ -40,11 +40,18 @@ class Bridge:
         self.out = os.fdopen(os.open(dst, os.O_RDWR), "wb", buffering=0)
         self.inp = os.fdopen(os.open(src, os.O_RDWR), "rb", buffering=0)
 
-    def send(self, data):
+    def send(self, data, cn=None, s=None):
+        """a frame to the Atari; with cn and s, only while s is still that
+        connection's socket (checked as the frame goes, so that nothing of a
+        connection the Atari has closed follows the open of the next one in
+        its place)"""
         with self.lock:
+            if cn is not None and self.socks.get(cn) is not s:
+                return False
             for i in range(0, len(data), 256):
                 self.out.write(data[i:i + 256])
                 time.sleep(len(data[i:i + 256]) / self.rate)
+        return True
 
     def read(self, n):
         buf = b""
@@ -72,10 +79,10 @@ class Bridge:
                 break
             with self.cv:
                 self.credit[cn] = self.credit.get(cn, 0) - len(data)
-            self.send(b"D" + bytes([cn]) + struct.pack(">H", len(data)) + data)
-        if self.socks.get(cn) is s:
+            if not self.send(b"D" + bytes([cn]) + struct.pack(">H", len(data)) + data, cn, s):
+                break
+        if self.send(b"E" + bytes([cn]), cn, s):
             log("conn %d closed by the server" % cn)
-            self.send(b"E" + bytes([cn]))
 
     def run(self):
         while True:
@@ -88,7 +95,8 @@ class Bridge:
                 try:
                     s = socket.create_connection((ip, port), timeout=10)
                     s.settimeout(None)
-                    self.socks[cn] = s
+                    with self.lock:
+                        self.socks[cn] = s
                     with self.cv:
                         self.credit[cn] = WINDOW
                     self.send(b"S" + bytes([cn, 1]))
@@ -111,7 +119,8 @@ class Bridge:
                     self.credit[cn] = self.credit.get(cn, 0) + n
                     self.cv.notify_all()
             elif t == b"C":
-                s = self.socks.pop(cn, None)
+                with self.lock:
+                    s = self.socks.pop(cn, None)
                 log("conn %d: closed by the Atari" % cn)
                 if s:
                     # shutdown first: a plain close() waits for the reader

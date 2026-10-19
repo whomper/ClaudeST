@@ -57,7 +57,7 @@ static void warn(const char *keyfile)
 
 int main(void)
 {
-	char key[300], key2[300], enc[300], enc2[300], dec[200], longpw[200];
+	static char key[300], key2[300], enc[9000], enc2[300], dec[4200], longpw[4200];
 	if (!mkdtemp(dir))
 		return 2;
 	snprintf(key, sizeof(key), "%s/ECAL.KEY", dir);
@@ -87,11 +87,16 @@ int main(void)
 	check(secret_encode("swordfish", enc, sizeof(enc)) == 0 && warnings == 1, "told once a run");
 	check(secret_encode("", enc, sizeof(enc)) == 1, "an empty one isn't a password");
 
-	/* with a key: too long, or too little room, goes in as it is too */
+	/* with a key: up to SECRET_MAX (a cookie's value); longer, or too
+	   little room, goes in as it is too */
 	check(secret_init(key) == 1, "the first key again");
-	memset(longpw, 'p', 150);
-	longpw[150] = 0;
-	check(secret_encode(longpw, enc, sizeof(enc)) == 0 && !strcmp(enc, longpw), "150 characters: as it is");
+	memset(longpw, 'p', SECRET_MAX);
+	longpw[SECRET_MAX] = 0;
+	check(secret_encode(longpw, enc, sizeof(enc)) == 1 && !strstr(enc, "pppp"), "SECRET_MAX characters encrypted");
+	check(secret_decode(enc, dec, sizeof(dec)) && !strcmp(dec, longpw), "and read back");
+	longpw[SECRET_MAX] = 'p';
+	longpw[SECRET_MAX + 1] = 0;
+	check(secret_encode(longpw, enc, sizeof(enc)) == 0 && !strcmp(enc, longpw), "one more: as it is");
 	check(secret_encode("hunter2", enc, 20) == 0, "too little room: as it is");
 
 	unlink(key);

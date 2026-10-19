@@ -68,6 +68,13 @@ void conn_log_flush(void);	/* write out what is still buffered */
 /* 1: a job begins, its milestones are written with the buffer (when it
    is full, at an error, or at conn_log_hold(0), which writes it out) */
 void conn_log_hold(int on);
+/* the held log's buffer, taken from the heap for the job: 16384; 0 (or
+   up to 4096) keeps the 4 KB static one */
+extern long conn_log_hold_bytes;
+/* STinG's output buffer for each connection opened from now on: 4096;
+   up to 32000 (back to 4096 when STinG's pool hasn't the room).
+   MiNTnet's buffers are the kernel's */
+extern long net_sendbuf;
 /* add text (a crash report) at the end of the log, after what is still
    buffered: crash_report = conn_log_append (crash.h) */
 void conn_log_append(const char *text, long n);

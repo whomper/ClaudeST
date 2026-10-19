@@ -126,17 +126,44 @@ void (*conn_tick)(void);
    big download crawl on an Atari disk. Milestones (" -- ", " !! ")
    write it out at once, so a crash loses little; but not those of a TLS
    handshake (start_tls) */
-static char logbuf[4096];
-static int loglen, job_hold;
+static char logstat[4096];
+static char *logbuf = logstat;
+static int loglen, logcap = sizeof(logstat), job_hold;
 
 /* a job's milestones (" -- ") stay in the buffer too until it ends (the
-   guidelines, 6.5: a sync that wrote each one opened the log 30 times);
-   errors (" !! ") are still written out at once */
+   guidelines, 6.5: a sync that wrote each one opened the log 30 times),
+   in conn_log_hold_bytes (16 KB) while it is held when the memory is
+   there (a sync's headers fill 4 KB fast); errors (" !! ") are still
+   written out at once. An app short of heap (an accessory on a 1 MB ST)
+   sets it to 0 and keeps the 4 KB buffer */
+long conn_log_hold_bytes = 16384;
+
+/* STinG's output buffer for each connection (net_tos.c): what may be in
+   flight unacknowledged. 4 KB caps an upload at about 40 KB/s on a LAN
+   (EFTP measured 34 KB/s); an app sending bulk raises it before it
+   connects */
+long net_sendbuf = 4096;
+
 void conn_log_hold(int on)
 {
+	if (on && !job_hold && conn_logfile[0] && logbuf == logstat &&
+	    conn_log_hold_bytes > (long)sizeof(logstat)) {
+		char *b = malloc(conn_log_hold_bytes);
+		if (b) {
+			memcpy(b, logbuf, loglen);
+			logbuf = b;
+			logcap = (int)conn_log_hold_bytes;
+		}
+	}
 	job_hold = on;
-	if (!on)
+	if (!on) {
 		conn_log_flush();
+		if (logbuf != logstat) {
+			free(logbuf);
+			logbuf = logstat;
+			logcap = sizeof(logstat);
+		}
+	}
 }
 
 void conn_log_flush(void)
@@ -164,14 +191,14 @@ void conn_log_append(const char *text, long n)
 static void log_add(const char *s, long n)
 {
 	while (n > 0) {
-		long k = (long)sizeof(logbuf) - loglen;
+		long k = (long)logcap - loglen;
 		if (k > n)
 			k = n;
 		memcpy(logbuf + loglen, s, k);
 		loglen += (int)k;
 		s += k;
 		n -= k;
-		if (loglen == (int)sizeof(logbuf))
+		if (loglen == logcap)
 			conn_log_flush();
 	}
 }

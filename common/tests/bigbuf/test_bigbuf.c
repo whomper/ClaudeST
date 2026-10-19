@@ -43,6 +43,13 @@ long Mfree(void *p)
 	return 0;
 }
 
+static long frb;
+
+long get_cookie(long id)
+{
+	return id == 0x5F465242L ? frb : 0;
+}
+
 static int failed;
 
 static void check(const char *what, long tt, long st, int old, long want,
@@ -87,6 +94,12 @@ int main(void)
 	check("too little, tos 1.x", 0, 36 * K, 1, 100 * K, 0, 0, 0);
 	/* odd sizes go up to even */
 	check("odd size", 0, 2 * K * K, 0, 9001, 9002, 0, 0);
+	frb = 0;
+	if (big_direct())
+		printf("FAIL big_direct without _FRB\n"), failed++;
+	frb = 0x123456;
+	if (!big_direct())
+		printf("FAIL big_direct with _FRB\n"), failed++;
 	if (freed != 9)
 		printf("FAIL big_free: %d freed, want 9\n", freed), failed++;
 	if (!failed)
