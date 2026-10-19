@@ -69,6 +69,10 @@
     - STinG with a working network, or a null-modem serial cable
     - A Raspberry Pi, or any Linux computer, on the same network
     - A claude.ai account (or an Anthropic API key)
+    - Under TOS: Atari's FOLDR100.PRG first in AUTO, renamed for more
+      room (FOLDR400.PRG). TOS halts with "OUT OF INTERNAL MEMORY"
+      when its small pool of folder entries runs out; FOLDRxxx makes
+      the pool bigger.
 
   Give the Pi a fixed address (a DHCP reservation in your router), and
   the Atari too unless the bridge accepts any address (--atari any).

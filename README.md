@@ -135,6 +135,10 @@ the setup.
 larger screen; about 250 KB of free RAM; STinG with a working network, or a null-modem serial cable; a
 Raspberry Pi, or any Linux computer, on the same network; a claude.ai account, or an Anthropic API key.
 
+**Under TOS, put Atari's `FOLDR100.PRG` first in `AUTO`**, renamed for more room (`FOLDR400.PRG`).
+TOS keeps an entry in a small internal pool for every folder a program or accessory has looked
+into, and halts with "OUT OF INTERNAL MEMORY" when it runs out; FOLDRxxx makes the pool bigger.
+
 ## How it reaches the servers
 
 An 8 MHz 68000 can't do modern HTTPS, so a small Python program, the bridge, does it for the Atari. It
