@@ -134,14 +134,41 @@ def main():
         # the same text in the same font, whatever happened in between
         status = (5 * 8, h - 2 * (ch + 6), 23 * 8, h - (ch + 6))
 
+        # the selector: 64 x 23 cells of the system font, in the middle
+        dw, dh = 64 * 8, 23 * ch
+        dx, dy = (w - dw) // 2, max((h - dh) // 2, ch + 2)
+        dialog = (dx, dy, dx + dw, dy + dh)
+
         def font_dialog(name):
             """Options > Font...: Options is the fourth title (" Desk "
-            starts two cells in), Font... its twelfth item"""
+            starts two cells in), Font... its twelfth item. The first
+            time, every GDOS font is measured before the selector shows:
+            minutes at 16 MHz with Erez's 137 families"""
             r.move(16 + 8 * (6 + 6 + 6) + 8 * 4, bar // 2)
             time.sleep(1)
             r.click(16 + 8 * (6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
-            r.wait(3, limit=300)		# the first time, every GDOS font is measured
+            end = time.time() + 900
+            while time.time() < end:
+                time.sleep(3)
+                if changed(before, r.shot("_wait"), dialog) > 0.08:
+                    break
+            r.wait(2, limit=120)
             return r.shot(name)
+
+        def step(key, limit):
+            """one key, then wait until the selector shows it: under NVDI
+            each move draws a Bitstream sample, and a key sent before
+            ClaudeST is back in its loop is lost. False if nothing moved"""
+            for _ in range(2):		# once more if the key went astray
+                a = r.shot("_k0")
+                r.key(key)
+                end = time.time() + limit
+                while time.time() < end:
+                    time.sleep(0.3)
+                    if changed(a, r.shot("_k1"), dialog) > 0.0005:
+                        r.wait(0.3, limit=60)	# the sample finished
+                        return True
+            return False
 
         dlg = font_dialog("2-font-dialog")
         check("the font selector opened", changed(before, dlg) > 0.05,
@@ -175,13 +202,17 @@ def main():
             print("  %d families after the system font; the first fixed-width one, %d down: %s"
                   % (len(fams), picked, fams[picked - 1][2:]))
             dlg = font_dialog("2c-font-dialog-again")
-            for _ in range(len(fams) + 5):	# up to the system font, wherever the click left it
-                r.key(K["UP"])
-            r.wait(2, limit=120)
-            for _ in range(picked):
-                r.key(K["DOWN"])
-            r.wait(2, limit=120)		# a vector font's sample takes a while under NVDI
+            ups = 0
+            while ups < len(fams) + 5 and step(K["UP"], 3):	# to the system font,
+                ups += 1					# wherever the click left it
+            downs = 0
+            while downs < picked and step(K["DOWN"], 10):
+                downs += 1
             on = r.shot("2d-on-the-font")
+            print("  %d Up to the system font, %d Down to the font" % (ups, downs))
+            check("the opening click selected no row", ups == 0,
+                  "%d Up back to the system font" % ups)
+            check("the selector moved to the font", downs == picked, "%d of %d Downs" % (downs, picked))
             r.key(K["RETURN"])			# OK
             r.wait(3, limit=120)
             r.move(*rest)

@@ -2987,13 +2987,20 @@ static void reconnect(void)
 
 static void wait_release(void)
 {
-	short mx, my, mb, ks, m[8];
+	short mx, my, mb, ks, m[8], i;
 	AEVENT e;
 	for (;;) {
 		graf_mkstate(&mx, &my, &mb, &ks);
 		if (!(mb & 3))
-			return;
+			break;
 		evnt_multi_(MU_TIMER, 0, 0, 0, 10, m, &e);
+	}
+	/* and a click the AES still holds, such as the one that chose the
+	   menu item: a list under the pointer would take it as a choice */
+	for (i = 0; i < 4; i++) {
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 1, 0, m, &e);
+		if (!(e.which & MU_BUTTON))
+			break;
 	}
 }
 
