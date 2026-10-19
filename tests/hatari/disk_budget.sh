@@ -19,7 +19,9 @@ HERE=$ROOT/tests/hatari
 MACHINE=${MACHINE:-ST}
 IDLE=${IDLE:-120}
 W=$(mktemp -d)
-trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$W"' EXIT
+fail=0
+# the logs and the trace stay for a run that failed
+trap 'kill $(jobs -p) 2>/dev/null; if [ $fail = 0 ]; then rm -rf "$W"; else echo "logs in $W"; fi' EXIT
 
 mkdir -p "$W/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
@@ -44,10 +46,9 @@ wait_for() {	# wait_for SECONDS COMMAND...
   until "$@"; do t=$((t - 1)); [ $t -gt 0 ] || return 1; sleep 1; done
 }
 count() { python3 "$HERE/disk_count.py" "$W/trace" "$@" || fail=1; }
-fail=0
 
 # online: the bridge has sent the usage after the Atari's HELLO
-wait_for 180 grep -q "session usage" "$W/bridge.log" || { echo "ClaudeST didn't come online"; exit 1; }
+wait_for 180 grep -q "session usage" "$W/bridge.log" || { echo "FAIL ClaudeST didn't come online in 180 s"; fail=1; exit 1; }
 sleep 3
 a=$(mark); count 0 "$a" start Fopen=1 Fcreate=0 Fwrite=0
 
