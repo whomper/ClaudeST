@@ -15,13 +15,14 @@
 #include <sys/stat.h>
 #include "plat.h"
 
-static int tos_rename = 1, no_rename, fail_writes_to_tmp, failed, checks;
+static int tos_rename = 1, no_rename, fail_writes_to_tmp, failed, checks, looks, opens;
 static char dir[] = "/tmp/futilXXXXXX";
 
 int pf_open(const char *path, int mode)
 {
 	if (mode == PF_WRITE && fail_writes_to_tmp && strchr(path, '$'))
 		return -1;
+	opens++;
 	return open(path, mode == PF_WRITE ? O_WRONLY | O_CREAT | O_TRUNC : O_RDONLY, 0644);
 }
 long pf_read(int h, void *buf, long n) { return (long)read(h, buf, n); }
@@ -30,6 +31,7 @@ void pf_close(int h) { close(h); }
 long pf_size(const char *path)
 {
 	struct stat st;
+	looks++;
 	return stat(path, &st) == 0 ? (long)st.st_size : -1;
 }
 int pf_remove(const char *path) { return unlink(path); }
@@ -39,6 +41,12 @@ int pf_rename(const char *from, const char *to)
 	if (no_rename || (tos_rename && stat(to, &st) == 0))
 		return -36;		/* EACCDN */
 	return rename(from, to);
+}
+
+static long size_open(int h)
+{
+	long n = (long)lseek(h, 0, SEEK_END);
+	return lseek(h, 0, SEEK_SET) == 0 ? n : -1;
 }
 
 static void check(int ok, const char *what)
@@ -105,6 +113,19 @@ int main(void)
 	      "renaming refused: written in place, the temporary file gone");
 	no_rename = 0;
 	check(pf_save(at("NODIR/X.INF"), "y", 1) != 0, "a folder that isn't there: an error");
+	/* pf_size_open: the file opened first, no look at the directory */
+	looks = opens = 0;
+	check(holds("ECAL.INF", "five") && looks == 1 && opens == 1, "without pf_size_open: a look, then the open");
+	pf_size_open = size_open;
+	looks = opens = 0;
+	check(holds("ECAL.INF", "five") && looks == 0 && opens == 1, "with pf_size_open: the open alone");
+	put("WIN.IN$", "won");
+	check(holds("WIN.INF", "won") && pf_size(at("WIN.IN$")) < 0, "  and a save cut short is still finished");
+	looks = opens = 0;
+	check(pf_load(at("NONE.INF"), 0) == 0 && opens == 1 && looks == 1,
+	      "  and no file is still nothing: the open, then only the look for NONE.IN$");
+	pf_size_open = 0;
+	unlink(at("WIN.INF"));
 	unlink(at("ECAL.INF"));
 	unlink(at("EMAIL.INF"));
 	unlink(at("README"));

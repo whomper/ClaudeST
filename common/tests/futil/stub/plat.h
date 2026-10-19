@@ -10,4 +10,5 @@ long pf_size(const char *path);
 int  pf_remove(const char *path);
 int  pf_rename(const char *from, const char *to);
 char *pf_load(const char *path, long *len);
+extern long (*pf_size_open)(int h);
 int  pf_save(const char *path, const void *data, long len);

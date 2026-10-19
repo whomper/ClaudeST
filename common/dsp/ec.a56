@@ -1,0 +1,373 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
+; Copyright (C) 2026 AERA | Erez Yaary
+; ec.a56 - arithmetic modulo a prime on the Falcon's DSP56001, for the
+; elliptic curves of a TLS handshake (src/ecdsp.c works the curves out
+; with it): P-256, P-384, P-521 and Curve25519.
+;
+; The DSP holds 128 numbers ("registers") and works on them as the 68030
+; tells it, one command word each, so the numbers stay here and only the
+; commands and the answers cross the host port.
+;
+; Numbers are little-endian arrays of N 23-bit digits in 24-bit words
+; (as in rsa.a56), so the signed 24x24 multiplier never sees a negative
+; digit, and a column of up to 48 products fits the 56-bit accumulator.
+; Products are Montgomery products with R = 2^(23N) >= 4p: for a, b below
+; 2p, a*b/R mod p comes out below 2p, and sums and differences are kept
+; below 2p too, so nothing is reduced fully until it is sent back.
+;
+; Command words: op (3 bits) d (7) a (7) b (7), from bit 23 down.
+;   1 CFG    then N, -p^-1 mod 2^23, p[N]; every register becomes 0
+;   2 LD d   then N digits
+;   3 MUL d,a,b   d = a*b/R    (product scanning: a column at a time)
+;   4 ADD d,a,b   d = a+b      (minus 2p if that is 2p or more)
+;   5 SUB d,a,b   d = a-b      (plus 2p if that is below 0)
+;   6 OUT a       sends a mod p (N digits)
+;   7 ISZ a       sends 1 if a mod p is 0, else 0
+; d may be a or b.
+
+HSR	equ	$ffe9
+HRX	equ	$ffeb
+
+; variables, internal X memory
+NV	equ	$00		; N
+MPV	equ	$01		; -p^-1 mod 2^23
+PNV	equ	$02		; YP + N
+BNV	equ	$03		; b + N, for a product
+DV	equ	$04		; addresses of d, a and b
+AV	equ	$05
+BV	equ	$06
+N1V	equ	$07		; N + 1
+
+; internal memory: both operands of every multiplication come from here
+; or from one external space, so no instruction waits for the bus
+XA	equ	$20		; x: a copy of a, for a product or a sum
+XM	equ	$40		; x: the Montgomery digits m, zeros above
+XP	equ	$60		; x: p
+XP2	equ	$80		; x: 2p
+YP	equ	$40		; y: p, zeros above (a column reads p[N])
+YT1	equ	$60		; y: a sum or difference
+YT2	equ	$80		; y: the same, corrected
+
+; external Y memory: the registers, 32 words each, the digits above N
+; always 0 (a product reads b[N])
+REGS	equ	$1000
+
+	org	p:$0
+	jmp	start
+
+	org	p:$40
+start
+	movep	#1,x:$ffe0		; port B is the host port
+	movep	#0,x:$fffe		; no wait states
+cmd
+	jsr	rd			; x0 = the command word
+	; addresses: (d << 5), (a << 5), (b << 5) from shifts by the
+	; multiplier (x0 times 2^k: the product's top word is x0 >> (23-k))
+	move	#>$fe0,x1
+	move	#>REGS,y1
+	move	#>$4000,y0
+	mpy	x0,y0,a			; a1 = w >> 9
+	and	x1,a
+	add	y1,a
+	move	a1,x:DV
+	move	#>$200000,y0
+	mpy	x0,y0,a			; a1 = w >> 2
+	and	x1,a
+	add	y1,a
+	move	a1,x:AV
+	move	#>$10,y0
+	mpy	x0,y0,a			; a0 = w << 5
+	move	a0,a
+	and	x1,a
+	add	y1,a
+	move	a1,x:BV
+	move	#>4,y0
+	mpy	x0,y0,a			; a1 = w >> 21 (and the sign)
+	move	#>7,x1
+	and	x1,a
+	move	a1,b			; the op alone
+	move	#>3,x0
+	cmp	x0,b
+	jeq	fmul
+	move	#>4,x0
+	cmp	x0,b
+	jeq	fadd
+	move	#>5,x0
+	cmp	x0,b
+	jeq	fsub
+	move	#>2,x0
+	cmp	x0,b
+	jeq	fld
+	move	#>6,x0
+	cmp	x0,b
+	jeq	fout
+	move	#>7,x0
+	cmp	x0,b
+	jeq	fisz
+	move	#>1,x0
+	cmp	x0,b
+	jeq	fcfg
+	jmp	cmd
+
+; ---- CFG: N, mp, p
+fcfg
+	jsr	rd
+	move	x0,x:NV
+	move	x0,a
+	move	#>1,x1
+	add	x1,a
+	move	a1,x:N1V
+	move	#>YP,x1
+	move	x0,a
+	add	x1,a
+	move	a1,x:PNV
+	jsr	rd
+	move	x0,x:MPV
+	; every register 0, and p's space above N
+	clr	a	#REGS,r4
+	move	#>4096,x0
+	do	x0,c0
+	move	a,y:(r4)+
+c0
+	move	#YP,r4
+	move	#>32,x0
+	do	x0,c1
+	move	a,y:(r4)+
+c1
+	move	#YP,r4
+	move	#XP,r0
+	do	x:NV,c2
+	jsr	rd
+	move	x0,y:(r4)+
+	move	x0,x:(r0)+
+c2
+	; 2p, into XP2
+	move	#>1,x0
+	move	#>1,y1
+	clr	b
+	move	b1,x1
+	move	#YP,r4
+	move	#XP,r0
+	move	#YT1,r5
+	jsr	rowop
+	move	#YT1,r4
+	move	#XP2,r0
+	do	x:NV,c3
+	move	y:(r4)+,x0
+	move	x0,x:(r0)+
+c3
+	jmp	cmd
+
+; ---- LD d: N digits
+fld
+	move	x:DV,r4
+	nop
+	do	x:NV,ld1
+	jsr	rd
+	move	x0,y:(r4)+
+ld1
+	jmp	cmd
+
+; ---- MUL d,a,b. For the 2N columns of a*b + m*p: the sum of a[j]*b[i-j]
+; and m[j]*p[i-j], two products an instruction pair; in the first N
+; columns m[i] is chosen to make the low digit 0, then the sum moves
+; down a digit; in the last N each low digit is a digit of d.
+; The accumulator holds twice the sum (the multiplier's fractions).
+fmul
+	move	x:AV,r4
+	move	#XA,r0
+	do	x:NV,mu0
+	move	y:(r4)+,x0
+	move	x0,x:(r0)+
+mu0
+	clr	a	#XM,r1
+	rep	x:N1V
+	move	a,x:(r1)+
+	move	x:BV,r6			; b + i
+	move	#YP,r7			; p + i
+	move	#1,r2			; i + 1 products of each kind
+	do	x:NV,mu1
+	move	#XA,r0
+	move	#XM,r1
+	move	r6,r4
+	move	r7,r5
+	nop
+	move	x:(r0)+,x0	y:(r4)-,y0
+	do	r2,mu2
+	mac	y0,x0,a	x:(r1)+,x1	y:(r5)-,y1
+	mac	y1,x1,a	x:(r0)+,x0	y:(r4)-,y0
+mu2
+	; m[i] = (sum mod 2^23) * mp mod 2^23
+	move	a0,b
+	lsr	b	x:MPV,y0
+	move	b1,x1
+	mpy	x1,y0,b	y:YP,y1		; y1 = p[0]
+	move	b0,b
+	lsr	b
+	move	b1,x1
+	mac	x1,y1,a	x1,x:-(r1)	; + m[i]*p[0]: the low digit is 0
+	; down a digit: twice (sum >> 23) = 2 * (a2:a1)
+	move	a1,y0
+	move	a2,x1
+	move	x1,a
+	move	y0,a0
+	asl	a	(r6)+
+	move	(r7)+
+	move	(r2)+
+mu1
+	move	r6,x:BNV		; b + N
+	move	#XA,r6			; a + i - N
+	move	#XM,r7			; m + i - N
+	move	x:DV,r3
+	move	x:NV,r2			; 2N - i products of each kind
+	do	x:NV,mu3
+	move	r6,r0
+	move	r7,r1
+	move	x:BNV,r4
+	move	x:PNV,r5
+	nop
+	move	x:(r0)+,x0	y:(r4)-,y0
+	do	r2,mu4
+	mac	y0,x0,a	x:(r1)+,x1	y:(r5)-,y1
+	mac	y1,x1,a	x:(r0)+,x0	y:(r4)-,y0
+mu4
+	move	a0,b
+	lsr	b
+	move	b1,y:(r3)+		; a digit of d
+	move	a1,y0
+	move	a2,x1
+	move	x1,a
+	move	y0,a0
+	asl	a	(r6)+
+	move	(r7)+
+	move	(r2)-
+mu3
+	jmp	cmd
+
+; ---- ADD d,a,b: YT1 = a + b; YT2 = YT1 - 2p; YT2 unless that borrowed
+fadd
+	jsr	bcopy
+	move	#>1,x0
+	jsr	rowop
+	move	#YT1,r4
+	move	#XP2,r0
+	move	#YT2,r5
+	move	#>-1,x0
+	clr	b
+	move	b1,x1
+	jsr	rowop
+	move	#YT1,r4
+	move	#YT2,r1
+	move	x1,b
+	tst	b
+	teq	x1,b	r1,r4
+	jmp	fput
+
+; ---- SUB d,a,b: YT1 = a - b; YT2 = YT1 + 2p; YT2 if a - b borrowed
+fsub
+	jsr	bcopy
+	move	#>-1,x0
+	jsr	rowop
+	move	x1,x:BNV		; the borrow
+	move	#YT1,r4
+	move	#XP2,r0
+	move	#YT2,r5
+	move	#>1,x0
+	clr	b
+	move	b1,x1
+	jsr	rowop
+	move	#YT1,r4
+	move	#YT2,r1
+	move	x:BNV,b
+	tst	b
+	tne	x1,b	r1,r4
+fput
+	move	x:DV,r5
+	nop
+	do	x:NV,pu1
+	move	y:(r4)+,x0
+	move	x0,y:(r5)+
+pu1
+	jmp	cmd
+
+; b -> XA; then the rowop's arguments: t = a, src = XA, dst = YT1,
+; carry 0, y1 = 1
+bcopy
+	move	x:BV,r4
+	move	#XA,r0
+	do	x:NV,bc1
+	move	y:(r4)+,x0
+	move	x0,x:(r0)+
+bc1
+	move	x:AV,r4
+	move	#XA,r0
+	move	#YT1,r5
+	move	#>1,y1
+	clr	b
+	move	b1,x1
+	rts
+
+; ---- a mod p: r4 -> a or YT2 (= a - p, when that didn't borrow)
+canon
+	move	x:AV,r4
+	move	#XP,r0
+	move	#YT2,r5
+	move	#>-1,x0
+	move	#>1,y1
+	clr	b
+	move	b1,x1
+	jsr	rowop
+	move	x:AV,r4
+	move	#YT2,r1
+	move	x1,b
+	tst	b
+	teq	x1,b	r1,r4
+	nop
+	rts
+
+; ---- OUT a
+fout
+	jsr	canon
+	do	x:NV,o1
+	move	y:(r4)+,x1
+	jsr	wr
+	nop
+o1
+	jmp	cmd
+
+; ---- ISZ a
+fisz
+	jsr	canon
+	clr	a
+	do	x:NV,z1
+	move	y:(r4)+,x0
+	or	x0,a
+z1
+	move	#>1,x1
+	tst	a
+	jeq	z2
+	move	#>0,x1
+z2
+	jsr	wr
+	jmp	cmd
+
+; ---- host port
+rd	jclr	#0,x:HSR,rd
+	movep	x:HRX,x0
+	rts
+wr	jclr	#1,x:HSR,wr
+	movep	x1,x:HRX
+	rts
+
+; ---- one row (rsa.a56's): y:dst[j] = y:t[j] + x0 * x:src[j] + carry,
+; N digits. r4 = t, r0 = src, r5 = dst, x1 = carry in and out; y1 = 1
+rowop
+	do	x:NV,ro
+	mpy	y1,x1,a	y:(r4)+,y0	; 2C
+	mac	y0,y1,a	x:(r0)+,y0	; + 2t[j]
+	mac	y0,x0,a			; + 2 x0 src[j]
+	move	a0,b1
+	lsr	b	a1,x1		; digit; carry
+	move	b1,y:(r5)+
+ro
+	rts
