@@ -225,14 +225,21 @@ class Machine:
         nv[48], nv[49] = ~s & 0xFF, s
         with open(os.path.join(cfg, "hatari.nvram"), "wb") as f:
             f.write(nv)
+        # under NVDI, TOS's memory count as well (TOS 4.04 on Falcon-4 was
+        # still counting after 45 s): fast-boot skips it
+        fast = ["--fast-boot", "yes"] if os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else []
         return (["--tos", self.tos] + self.base + SCREENS[self.screen] +
                 ["--harddrive", self.hd, "--gemdos-drive", "C", "--sound", "off",
-                 "--confirm-quit", "no"])
+                 "--confirm-quit", "no"] + fast)
 
     def nvdi(self):
         """Erez's NVDI on C: (see above): True, or False when it isn't here"""
         src = os.environ.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
-        if not os.path.exists(os.path.join(src, "auto", "nvdi.prg")):
+        need = [os.path.join("auto", "nvdi.prg"), "nvdi.inf", "ASSIGN.SYS", "gemsys", "btfonts"]
+        missing = [n for n in need if not os.path.exists(os.path.join(src, n))]
+        if missing:
+            if len(missing) < len(need):        # NVDI stops at its banner without GEMSYS
+                print("machines.py: NVDI in %s lacks %s" % (src, ", ".join(missing)), file=sys.stderr)
             return False
         os.makedirs(os.path.join(self.hd, "AUTO"), exist_ok=True)
         shutil.copy(os.path.join(src, "auto", "nvdi.prg"), os.path.join(self.hd, "AUTO", "NVDI.PRG"))
