@@ -12,12 +12,14 @@
 #define E_NODATA    -2
 #define E_EOF       -3
 #define E_RRESET    -4
+#define E_NOMEM     -6
 #define E_REFUSE    -7
 #define E_CNTIMEOUT -16
 
 short sting_init(void);			/* 1 if STinG (or GlueSTiK) is loaded */
 short sting_resolve(const char *name, u32 *ip);	/* > 0 on success */
-short sting_open(u32 ip, u16 port);	/* handle >= 0 or error */
+short sting_open(u32 ip, u16 port);	/* handle >= 0 or error; a 4 KB output buffer */
+short sting_open_buf(u32 ip, u16 port, short obsize);	/* the output buffer given */
 short sting_wait_established(short cn, short seconds);
 short sting_send(short cn, const char *buf, short len);
 short sting_count(short cn);

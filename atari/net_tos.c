@@ -220,7 +220,12 @@ int net_open(const char *host, unsigned short port, char *err, int errlen)
 		conns[slot].mintnet = 1;
 		conns[slot].h = (short)fd;
 	} else {
-		short cn = sting_open(ip, port), r, s;
+		/* the output buffer the app asked for; when STinG's pool (its
+		   ALLOCMEM) hasn't that much, the 4 KB it always had */
+		short ob = net_sendbuf > 4096 && net_sendbuf <= 32000 ? (short)net_sendbuf : 4096;
+		short cn = sting_open_buf(ip, port, ob), r, s;
+		if (cn == E_NOMEM && ob > 4096)
+			cn = sting_open_buf(ip, port, 4096);
 		if (cn < 0) {
 			snprintf(err, errlen, "%s", sting_error(cn));
 			return -1;

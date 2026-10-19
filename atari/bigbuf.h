@@ -23,4 +23,11 @@
 void *big_alloc(long want, long *got, int *tt);
 void big_free(void *p);
 
+/* 1: TT RAM may go to the disk as it is: the _FRB cookie says the hard
+   disk driver bounces DMA to and from TT RAM through its own ST RAM
+   buffer (HDDRIVER on Erez's Falcon sets it). 0: copy TT RAM through a
+   piece of ST RAM (8 to 32 KB) for each Fwrite and Fread, as a driver
+   without _FRB may DMA straight to an address the DMA can't reach. */
+int big_direct(void);
+
 #endif

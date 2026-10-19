@@ -33,6 +33,15 @@ on the other end of the serial port and gives Hatari's serial arguments;
 the Atari's TCP connections become this computer's. m.stop() ends the
 bridge. It works on Erez's TOS too: FAKESTNG makes the cookie jar TOS
 1.04 lacks and turns off its XON/XOFF.
+
+NVDI: m.nvdi() installs Erez's own NVDI 5.03 (C:\\AUTO\\NVDI.PRG, NVDI.INF,
+ASSIGN.SYS, his GEMSYS drivers and his Bitstream fonts in C:\\BTFONTS) from
+the folder $AERA_NVDI (~/.aera/nvdi/x), as the TOS images: commercial,
+never in git nor sent anywhere. False when it isn't there (a rig that
+needs it says so and stops). AERA_WITH_NVDI=1 installs it on every Falcon
+a rig starts, so the hub runs an app's own rigs under NVDI unchanged. His GEMSYS\\STING (his network's settings)
+and his accessories are left out. NVDI 5.03 boots on the Falcon's TOS 4.04
+in about 30 s here, reading every font.
 """
 import hashlib
 import os
@@ -58,6 +67,11 @@ MACHINES = {
                ["--machine", "falcon", "--cpuclock", "32", "--fpu", "68882", "--memsize", "14",
                 "--ttram", "128", "--addr24", "off", "--dsp", "emu", "--monitor", "vga"],
                ["16", "256"], "tos404.img"),
+    "Falcon-4": ("a Falcon030 as sold: 68030 at 16 MHz, no FPU, 4 MB ST RAM and no TT RAM, VGA "
+                 "(Erez, 19 Oct 2026: the machine for all three accessories loaded at once)",
+                 ["--machine", "falcon", "--cpuclock", "16", "--memsize", "4", "--ttram", "0",
+                  "--addr24", "on", "--monitor", "vga"],
+                 ["16", "256"], "tos404.img"),
 }
 
 SCREENS = {
@@ -138,6 +152,31 @@ def emutos():
     return img
 
 
+def xvfb(display, size="1024x768x24", timeout=20):
+    """An X display for a rig: None when one answers on display already,
+    else the Xvfb started on it, once it answers (Hatari started on a
+    display that isn't up yet hangs and prints nothing; a fixed sleep was
+    too short on a slow CI runner: EHypView found it)"""
+    env = dict(os.environ, DISPLAY=display)
+
+    def up():
+        try:
+            return subprocess.run(["xdpyinfo"], env=env, capture_output=True).returncode == 0
+        except FileNotFoundError:   # no xdpyinfo: the server's socket is there
+            return os.path.exists("/tmp/.X11-unix/X" + display.lstrip(":").split(".")[0])
+    if up():
+        return None
+    p = subprocess.Popen(["Xvfb", display, "-screen", "0", size],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    end = time.time() + timeout
+    while not up():
+        if p.poll() is not None or time.time() > end:
+            p.kill()
+            sys.exit("machines.py: Xvfb on %s didn't start" % display)
+        time.sleep(0.1)
+    return p
+
+
 def tos_version(path):
     v = struct.unpack(">H", open(path, "rb").read(4)[2:4])[0]
     return "%x.%02x" % (v >> 8, v & 0xFF)
@@ -166,10 +205,12 @@ class Machine:
     def args(self):
         """Hatari's arguments; also writes the machine's own settings"""
         os.makedirs(self.hd, exist_ok=True)
+        if os.environ.get("AERA_WITH_NVDI") and self.name.startswith("Falcon") and not self.nvdi():
+            sys.exit("machines.py: AERA_WITH_NVDI, but no NVDI here")
         cfg = os.path.join(self.home, ".config", "hatari")
         os.makedirs(cfg, exist_ok=True)
         nv = bytearray(50)                  # the TT's and Falcon's NVRAM, past the clock
-        if self.name == "Falcon":
+        if self.name.startswith("Falcon"):
             mode = FALCON_MODE[self.screen]
             nv[14:16] = struct.pack(">H", mode)
             inf = os.path.join(self.hd, "NEWDESK.INF")
@@ -187,6 +228,25 @@ class Machine:
         return (["--tos", self.tos] + self.base + SCREENS[self.screen] +
                 ["--harddrive", self.hd, "--gemdos-drive", "C", "--sound", "off",
                  "--confirm-quit", "no"])
+
+    def nvdi(self):
+        """Erez's NVDI on C: (see above): True, or False when it isn't here"""
+        src = os.environ.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
+        if not os.path.exists(os.path.join(src, "auto", "nvdi.prg")):
+            return False
+        os.makedirs(os.path.join(self.hd, "AUTO"), exist_ok=True)
+        shutil.copy(os.path.join(src, "auto", "nvdi.prg"), os.path.join(self.hd, "AUTO", "NVDI.PRG"))
+        shutil.copy(os.path.join(src, "nvdi.inf"), os.path.join(self.hd, "NVDI.INF"))
+        shutil.copy(os.path.join(src, "ASSIGN.SYS"), os.path.join(self.hd, "ASSIGN.SYS"))
+        gemsys = os.path.join(self.hd, "GEMSYS")
+        os.makedirs(gemsys, exist_ok=True)
+        for f in os.listdir(os.path.join(src, "gemsys")):
+            if os.path.isfile(os.path.join(src, "gemsys", f)):
+                shutil.copy(os.path.join(src, "gemsys", f), os.path.join(gemsys, f.upper()))
+        fonts = os.path.join(self.hd, "BTFONTS")
+        if not os.path.exists(fonts):
+            shutil.copytree(os.path.join(src, "btfonts"), fonts)
+        return True
 
     def network(self, rate=None):
         """FAKESTNG and its bridge; Hatari's serial arguments"""

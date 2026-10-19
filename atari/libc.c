@@ -473,6 +473,17 @@ static __attribute__((noinline)) int more_core(size_t need)
 	   so the heap doubles and 16 MB takes six. Less if that much isn't
 	   free; at worst exactly what is needed. */
 	want = least < 512L * 1024 ? 512L * 1024 : least;
+	if (!taken) {
+		/* the first block: with no TT RAM, at most a quarter of what is
+		   free, so a 1 MB ST keeps room for a job's buffer (bigbuf.c)
+		   and for GEM; the heap still doubles from there as it needs */
+		long tt = (long)Mxalloc(-1L, 1), st;
+		if (tt == -32 || tt <= 0) {
+			st = tt == -32 ? (long)Malloc(-1L) : (long)Mxalloc(-1L, 0);
+			if (st > 0 && (size_t)(st / 4) < want)
+				want = (size_t)(st / 4) > least ? (size_t)(st / 4) & ~(size_t)1 : least;
+		}
+	}
 	if (want < taken)
 		want = taken;
 	if (blocks >= MAX_BLOCKS)
@@ -505,9 +516,13 @@ static size_t block_for(size_t n)
 
 static void *malloc_more(size_t need);
 
+/* the bytes of the blocks in use, and the most since heap_peak was last
+   set: an accessory keeps what its data needs, not a flat share */
+long heap_use, heap_peak;
+
 /* the common cases first, in few registers: a small block of a size that
    is free, or one cut from the end of dv */
-void *malloc(size_t n)
+static inline void *malloc0(size_t n)
 {
 	size_t need, s;
 	BLK *b;
@@ -529,6 +544,14 @@ void *malloc(size_t n)
 		return (char *)b + WORD;
 	}
 	return malloc_more(need);
+}
+
+void *malloc(size_t n)
+{
+	void *p = malloc0(n);
+	if (p && (heap_use += (long)SIZE((BLK *)((char *)p - WORD))) > heap_peak)
+		heap_peak = heap_use;
+	return p;
 }
 
 /* the rest: the lists, dv, more from GEMDOS */
@@ -610,6 +633,7 @@ void free(void *ptr)
 		return;			/* freed twice: left alone */
 	b->head &= ~INUSE;		/* (so it shows, even once joined) */
 	s = SIZE(b);
+	heap_use -= (long)s;
 	n = AT(b, s);
 	if (!(b->head & PINUSE) && (n->head & INUSE) && dv &&
 	    (BLK *)((char *)b - (ps = *((size_t *)b - 1))) == dv) {
@@ -702,6 +726,8 @@ void *realloc(void *ptr, size_t n)
 			dv = 0;
 		else
 			bin_take(nx, bin_of(SIZE(nx)));
+		if ((heap_use += (long)((t - need >= MINBLK ? need : t) - s)) > heap_peak)
+			heap_peak = heap_use;
 		if (t - need >= MINBLK) {
 			b->head = need | (b->head & FLAGS);
 			make_free(AT(b, need), t - need);

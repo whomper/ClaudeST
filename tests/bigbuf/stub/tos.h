@@ -6,4 +6,5 @@
 void *Mxalloc(long n, int mode);
 void *Malloc(long n);
 long Mfree(void *p);
+long get_cookie(long id);
 #endif

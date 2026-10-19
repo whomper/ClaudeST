@@ -74,11 +74,16 @@ short sting_resolve(const char *name, u32 *ip)
 
 short sting_open(u32 ip, u16 port)
 {
+	return sting_open_buf(ip, port, 4096);
+}
+
+short sting_open_buf(u32 ip, u16 port, short obsize)
+{
 	short a[5];
 	put_long(a, ip);
 	a[2] = port;
 	a[3] = 0;		/* type of service */
-	a[4] = 4096;		/* output buffer */
+	a[4] = obsize;		/* output buffer, from STinG's pool */
 	return (short)sting_call(tpl->fn[T_TCP_OPEN], a, 5);
 }
 
