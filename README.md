@@ -34,8 +34,8 @@ These files were the same code in ECal, EContact, EMail and EFTP when they moved
 | `atari/include/` | `ctype.h` `limits.h` `stdio.h` `string.h` `strings.h` | the parts of the freestanding C library headers every app shares |
 | `src/` | `bidi.c/.h`, `ctime.c/.h`, `futil.c`, `secret.c/.h` | Hebrew right-to-left layout; dates and times; safe file writes (`pf_save` writes `NAME.IN$` and renames it over `NAME.INF`; `tests/futil`); password encryption |
 | `ui/` | `dsp.c` | checks the DSP and turns Falcon mode on |
-| `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array) |
-| `tools/` | `elf2tos.py`, `mkroots.c` | ELF to TOS program header; root certificates to `ROOTS.DAT` |
+| `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array); `ec.a56` since 18 Oct 2026 (below) |
+| `tools/` | `elf2tos.py`, `mkroots.c`, `build-hcp.sh` | ELF to TOS program header; root certificates to `ROOTS.DAT`; `build-hcp.sh DIR` builds the `hcp` help compiler (th-otto/hypview at a fixed commit) for `make help` and the Release workflow |
 | `third_party/bearssl/` | BearSSL 0.6 | TLS for Falcon mode (MIT licence) |
 | `certs/` | `CACERT.PEM` | Mozilla's root certificates (MPL 2.0) |
 
@@ -114,11 +114,11 @@ same as before.
 | `atari/crash.c/.S/.h` | EMail | the crash catcher: a crash in the program (2 to 8 bombs) writes `CRASH.LOG` and quits tidily; TOS's record of a crash in the system is added at the next start. `crash_install(workdir, "ECal", version)`, in a program only (a desk accessory never installs it, and takes no memory for it). `crash_report = conn_log_append` adds the report to the protocol log too. Test builds (`-DCRASH_TEST`) crash on purpose with F1 to F4 (`crash_test()` in the app's key handler). `tests/crash/run.py` checks every kind of crash in Hatari on a 68000 and a 68030; `tests/crash/app_crash.py` checks an app's own handling (its alert, a tidy exit, "crashed last time" after a reset); `crash_log()` is where CRASH.LOG is |
 | `atari/crash_none.c` | | the same calls, doing nothing, for an edition that is only ever a desk accessory (ECal's and EContact's ST editions) |
 | `tools/crashaddr.py` | EMail | turns the offsets in a `CRASH.LOG` into function names, from the ELF file of the same build |
-| `tools/getrelease.py` | | another AERA program for a test, from its GitHub release (guidelines 1.2): `getrelease.py EHypView DIR EHYPVIEW.PRG` takes the latest, `EHypView@v1.8` a given one, and writes `DIR/EHYPVIEW.VERSION` so the report can name it. Standard Python only |
-| `tools/machines.py` | | the family's test machines (guidelines, The machines): `ST`, `ST-1`, `TT` and `Falcon`, each with its screens (`Falcon:256`). `Machine(name, hd).args()` gives Hatari's arguments and `env()` its own HOME (its own NVRAM), `network()` FAKESTNG and its bridge; Erez's TOS from `$AERA_TOS` (`~/.aera/tos`, never in git) or EmuTOS 1.4. `python3 tools/machines.py list`; tested by `tests/machines/test_machines.py`. Standard Python only |
+| `tools/getrelease.py` | | another AERA program for a test, from its GitHub release (guidelines 1.2): `getrelease.py EHypView DIR EHYPVIEW.PRG` takes the latest, `EHypView@v1.8` a given one, and writes `DIR/EHYPVIEW.VERSION` so the report can name it; `--source AERA-Gateway DIR gateway/eftpgate.py` takes files of the source at the latest release's tag, for a program whose release carries no files. Standard Python only; `xl/tools/getrelease.py` is the same file |
+| `tools/machines.py` | | the family's test machines (guidelines, The machines): `ST`, `ST-1`, `TT` and `Falcon`, each with its screens (`Falcon:256`). `Machine(name, hd).args()` gives Hatari's arguments and `env()` its own HOME (its own NVRAM), `network()` FAKESTNG and its bridge; Erez's TOS from `$AERA_TOS` (`~/.aera/tos`, never in git) or EmuTOS 1.4. An ST gets `C:\AUTO\CLOCK.PRG` (the date and time; an ST has no clock) and, with TOS 1.04, `C:\AUTO\BOOTC.PRG` (C: as the boot drive). `python3 tools/machines.py list`; tested by `tests/machines/test_machines.py`. Standard Python only |
 | `tools/helpfront.py`, `tools/gemimg.py`, `help/NAME.IMG` | | the family's help front page (guidelines 4.3): `helpfront.py page docs/front.json IN.STG OUT.STG` makes the Main node from the app's `docs/front.json` (welcome, window, diagram, contents; `**bold**`, `[[Page]]` and `[[text\|Page]]` in its texts) and copies the pictures next to OUT.STG for hcp; standard Python only. `helpfront.py thumb SCREEN.PNG docs/help/WINDOW.IMG x,y,w,h [bx,by ...]` makes the half-size window picture with numbered badges once (Pillow; commit it). `help/NAME.IMG` are the banners, drawn by AERA-Atari's `brand/tools/mkhelpbanner.py`; `gemimg.py` writes 16-colour GEM IMGs in the standard palette and their monochrome masks. `tests/help/test_helpfront.py` checks a page (and compiles it with hcp when there is one) |
-| `tools/fakesting/` | ECal + EFTP + EMail | the Hatari rigs' network (Hatari has no network card): `FAKESTNG.PRG` (`make -C common/tools/fakesting`, then into `C:\AUTO`) stands in for STinG and carries up to four TCP connections over the emulated serial port to `serial_bridge.py FROM_ATARI TO_ATARI`, which makes the real ones. Never on a real Atari. As real STinG it never holds the machine: sends wait in a queue, received bytes are filed as they come, read straight from the serial buffer for at most 20 ms a call (ECal's background syncing measures its gaps through it: a Mega ST stays within 100 ms), and the bridge sends no more than the Atari has said it has room for (EFTP's downloads). `C:\FASTCLK` sets timer C to 312 Hz, a 200 Hz clock 1.56 times too fast, as on Erez's Falcon (EFTP's `clock_test.py`). EFTP's `net_test.py` passes with it (Falcon, and the ST edition on 1 MB), its downloads twice as fast as with EFTP's own copy |
-| `ui/help.c/.h` | ECal + EContact | the Help key: `help_show(dir, "ECAL.HYP", page)` sends `VA_START "C:\ECAL\ECAL.HYP page"` (or `"*:\ECAL.HYP page"`) to the viewer that runs, EHypView first, then ST-Guide and HypView; 0 when none runs. The string is in memory the viewer may read (`av_shared()`); `help_init()` takes it at start-up. `tests/help/app_help.py` checks an app's Help key in Hatari with a stand-in viewer. `help_key(dir, hyp, page, "Keys")` is the Help key: the viewer, else an alert saying to install EHypView or ST-Guide, with a button for what the app shows itself (guidelines 4.3) |
+| `tools/fakesting/` | every app's network rigs (`machines.py` `network()`) | the Hatari rigs' network (Hatari has no network card): `FAKESTNG.PRG` (`make -C common/tools/fakesting`, then into `C:\AUTO`) stands in for STinG (on TOS 1.04 too: it makes the cookie jar that TOS lacks and turns off its XON/XOFF) and carries up to four TCP connections over the emulated serial port to `serial_bridge.py FROM_ATARI TO_ATARI`, which makes the real ones. Never on a real Atari. As real STinG it never holds the machine: sends wait in a queue, received bytes are filed as they come, read straight from the serial buffer for at most 20 ms a call (ECal's background syncing measures its gaps through it: a Mega ST stays within 100 ms), and the bridge sends no more than the Atari has said it has room for (EFTP's downloads). `C:\FASTCLK` sets timer C to 312 Hz, a 200 Hz clock 1.56 times too fast, as on Erez's Falcon (EFTP's `clock_test.py`). EFTP's `net_test.py` passes with it (Falcon, and the ST edition on 1 MB), its downloads twice as fast as with EFTP's own copy |
+| `ui/help.c/.h` | ECal + EContact | the Help key: `help_show(dir, "ECAL.HYP", page)` sends `VA_START "DIR\ECAL.HYP page"` when the guide is in the app's folder `DIR` (wherever that is), else `"*:\ECAL.HYP page"` to the viewer that runs, EHypView first, then ST-Guide and HypView; 0 when none runs. The string is in memory the viewer may read (`av_shared()`); `help_init()` takes it at start-up. `tests/help/app_help.py` checks an app's Help key in Hatari with a stand-in viewer. `help_key(dir, hyp, page, "Keys")` is the Help key: the viewer, else an alert saying to install EHypView or ST-Guide, with a button for what the app shows itself (guidelines 4.3) |
 | `ui/av.c/.h` | EHypView + EContact | the AV protocol (guidelines 4.1): `av_init("ECONTACT\|ECONTST")` tells the desktop's AV server (`AVSERVER`, else Thing, jinnee or Gemini) that we take VA_START, under the name the AES knows us by; `av_message()` takes a VA_START, keeps its own copy and answers AV_STARTED; `av_arg()` takes the next (quoted) file name off it; `av_exit()` says AV_EXIT when a program quits; `av_send(name, text)` hands another program a string (EContact's `mailto:` to EMail), in memory it may read (`av_shared()`: Mxalloc 0x2B under MiNT and MagiC, static on plain TOS). `av_window(h, 1)` tells the desktop an accessory opened a window (AV_ACCWINDOPEN), so files dropped on it come as VA_DRAGACCWIND. `av_command()` is the command line a program was started with (the desktop's way to open a file with it), as a VA_START string. `tests/av` checks it on the build machine, and `app_av.py` checks an app in Hatari with a stand-in AV server, `THING.ACC`, which also drops files (`dropfiles`) and text (`drop`, AP_DRAGDROP under MiNT), puts text on the clipboard (`clip`) and writes down what is there (`clipshow`) |
 | `ui/alert.c/.h` | ECal + EContact | `alert(def, "[3][Can't reach %s.|...][ OK ]", host)`: form_alert's string with printf formatting, words wrapped into lines of 30 characters, at most 5 lines, brackets in the text made parentheses, an empty line kept (EmuTOS reads `||` as `|`), Hebrew put into display order; `alert_hebrew` lets an app map the letters for its font. Since 17 Oct 2026 the box is our own, built as EmuTOS's `fm_alert` builds it (the icon, our own 32 by 32 drawings of `!`, `?` and stop; the lines; up to 3 buttons, the default one marked) in the system font's cells, and run by `ui/dialog.c` with the screen under it saved and put back: Return gives the default button, **Esc and Undo the last one** (guidelines 3.5, 6.2), on every AES. What it can't show that way (4 buttons, one over 20 characters, a screen too small) goes to form_alert. It returns 1 to 3 as before; an app links `dialog.o` too. `tests/alert` checks the text and the tree's layout in five screen modes on the build machine. `screen_check(app, width)`: on a screen narrower than 640 pixels an alert says so (guidelines 5.2) |
 | `ui/dialog.c/.h` | | the dialog loop (guidelines 3.5): `dlg_do(tree, start, cancel)` is form_do written out with `evnt_multi`, `form_keybd`, `form_button` and `objc_edit` (Return, Tab and the arrows, clicks, the double-click bit as form_do), where **Esc and Undo end it at once with `cancel`**, the text field as it was (form_do hands Esc to the field, which clears it); `cancel` -1 for a dialog with no button that does nothing (EFTP's Skip\|Resume\|Replace during a transfer): Esc then gives -1. `dlg_modal(tree, start, cancel)` does the rest of the modal dance (`wind_update`, `form_center`, `form_dial`, drawing, the exit object deselected) and returns the object; `dlg_modal_save` puts the screen back itself, as form_alert does. (Not `dlg_run`: ECal's and EContact's FIELD engine has one.) An app moves over by `form_do(tree, 0)` becoming `dlg_do(tree, 0, CANCEL)`, or its whole dialog function `dlg_modal(tree, 0, CANCEL)`. `tests/dialog`: `make test` against a stand-in AES that clears a field on Esc as TOS's does; `make prg` and `run.py etos512us.img` run DLGT.PRG in Hatari with EmuTOS in ST high, medium, low and the Falcon's VGA mode, and `--xaaes` under FreeMiNT and XaAES (`../xaaes`): alerts answered with Return, Esc, Undo and a click, a dialog's field typed into, then Esc, Undo, Return and a click. Built with `-DDLG_TRACE`, `dlg_modal` says where each exit button is on the emulator's console, for a rig to click |
@@ -233,6 +233,82 @@ bugs, all caught); `tests/av` checks PEOPLE in and out.
 `tests/tz`: `make test`, 83 million offsets from the kept zone-years against the rules: every built-in
 zone around each change from 1990 to 2040, random moments, a zone whose rules change at the same
 address, and one that changes on new year's day (four planted bugs, all caught).
+
+## Elliptic curves on the DSP (18 Oct 2026, from EWeb)
+
+The handshake's elliptic curves, done by the Falcon's DSP56001 as `dsprsa.c` does RSA. On a 50 MHz
+68030 BearSSL's `br_ec_all_m31` takes 8 million instructions for an X25519 key exchange, 21 million to
+check an ECDSA P-256 signature and 119 million for P-384 (BearSSL's P-384 code is generic): EWeb's
+first fetch of Wikipedia, whose certificates are ECDSA only, spent 86 seconds in the handshake.
+
+| File | What it does |
+|---|---|
+| `dsp/ec.a56`, `dsp/ec_prog.h` | arithmetic modulo a prime (up to 527 bits) on the DSP: 128 numbers held there, each command a 24-bit word (Montgomery product by product scanning, sum, difference, out, is-zero). `cd dsp && a56 ec.a56 && python3 mkh.py a56.out ec_prog.h dsp_ec_prog ec.a56` |
+| `src/ecdsp.c/.h` | BearSSL's `br_ec_impl` with the curves worked out as streams of those commands: P-256, P-384, P-521 (Jacobian, 4-bit windows) and Curve25519 (RFC 7748's ladder); `ecdsp_vrfy_asn1` checks a whole ECDSA signature there, the inverse modulo the order included (2 to 6 million 68030 instructions in BearSSL's). The secret scalars give the DSP the same commands whatever their bits. Any other curve, or a DSP that can't be had, goes to `br_ec_all_m31` |
+| `atari/dspec.c/.h` | the port: Dsp_Lock, the bootstrap, the host port; the job runs in supervisor mode on the program's own stack (`Super(0)`, not `Supexec`) |
+| `ui/dsp_ec.c` | `falcon_dsp_ec_init()`, after `falcon_dsp_init()`: when Falcon mode and the DSP are on, every handshake's curves go to the DSP (`tls_set_ec`), after a self-test (RFC 7748's first X25519 example) the first time; `falcon_dsp_ec_state()` says "DSP" or "68030"; each operation is in the log ("ECDSA P-384 on the DSP, 780 ms") |
+| `src/tls.c/.h`, `src/conn.c/.h` | `tls_set_ec()`, `tls_ec_fast()`. With the curves on the DSP the first hello offers ECDSA as well as RSA, instead of asking for RSA and connecting again; `c->tls_ms` counts the tries a server refused, and `c->tls_tries` says how many it took |
+
+It is opt-in: an app builds `ecdsp.c`, `dspec.c` and `dsp_ec.c`, declares the two calls in its `ui.h`
+and calls `falcon_dsp_ec_init()`; an app that doesn't builds exactly as before.
+
+Times on the DSP (32 MHz), counted on Hatari's DSP core: X25519 0.23 s, an ECDSA P-256 check 0.40 s,
+P-384 0.78 s, P-521 1.7 s (for P-384: 40 s or more on the 68030). In EWeb's Hatari rig a handshake with
+an ECDSA certificate (a P-256 key, signed with P-384) took 1.1 s, but Hatari runs the DSP more than
+twice as fast as a real one when the 68030 is set to 32 MHz: count on about 2 s.
+
+On a DFB1 (EWeb 0.6, Wikipedia, the 68030's caches off): P-384 0.94 s, P-256 0.44 s, X25519 0.24 s;
+the handshake 12.8 s, of which 4.5 s on the DSP.
+
+## The handshake in the log (18 Oct 2026, from EWeb)
+
+Every app with a connection log gets these. `conn.c` keeps a TLS handshake's lines in the log's buffer
+until the handshake ends: written out one at a time, each cost about half a second on a DFB1's disk,
+which was a quarter of the handshake. `tls.c` logs the handshake's steps through `tls_log` (conn.c sets
+it): the random seed ready (`SEED.DAT` read and written), the server's first answer after the hello,
+the server's certificates (how many, their bytes, the time spent decoding and checking them against
+the time they took to arrive), and how much of the handshake was waiting for the network.
+`dsp_ec.c`'s self-test line gives its own time, and leaves it out of the first operation's.
+
+## Handshakes: the seed, the roots' names, the signatures already checked (18 Oct 2026, from EWeb)
+
+From the DFB1's log (EWeb 0.7, Wikipedia): saving `SEED.DAT` took 2.9 s of an 8.5 s handshake, and
+BearSSL spent 3.8 million 68030 instructions finding each certificate's issuer among the 121 roots.
+In `src/tls.c`:
+
+- **`SEED.DAT`** is written once a session, over the old one in place when the app's `plat.h`
+  defines `PF_UPDATE` ("an existing file, written over from the start, not truncated": `Fopen(path,
+  1)` on TOS, `O_WRONLY` on POSIX); otherwise with `pf_save` as before. An app adds `PF_UPDATE` to
+  its `plat.h` and `pf_open` to get it.
+- **The roots' names** are hashed once a session: the X.509 engine's name hash is `tls.c`'s own
+  SHA-256, which remembers a root's (BearSSL itself unchanged).
+- **Signatures already checked** (ECDSA, of certificates) are remembered: 64 SHA-256 keys of the
+  curve, key, signed hash and signature, after a check that succeeded; `tls_sigs_path` keeps them
+  between sessions (EWeb: `SIGS.DAT`), empty keeps them for the session. Names, dates, uses and the
+  chain to a root are still BearSSL's to decide. The log's certificates line says how many were
+  known.
+
+## `ROOTS.DAT` told by `CACERT.PEM`'s date; the answer's times (18 Oct 2026, from EWeb)
+
+From EWeb 0.8's log on a DFB1: reading the root certificates took 1.5 s a run, mostly reading all
+186 KB of `CACERT.PEM` for the checksum that says `ROOTS.DAT` was made from it.
+
+- `ROOTS.DAT` has a new layout (`MAILROOTS2`: CACERT.PEM's size, checksum and date). The old one
+  (`MAILROOTS1`) is still read. `tools/mkroots` writes the new one with no date.
+- New hook `tls_file_stamp` (`tls.h`): a function giving a file's date and time, 0 if missing; an app
+  sets it to its `pf_stamp` (or leaves it NULL: the checksum every time, as before). With it, the
+  first run that checks the checksum writes the date into `ROOTS.DAT` (in place with `PF_UPDATE`;
+  a `MAILROOTS1` file is written again, once), and later runs compare size and date only. A
+  different `CACERT.PEM` (another size or date) is checked by its checksum again.
+- After a TLS request, the log gets "the answer's first bytes came N ms after the request" and "its
+  first N bytes decrypted N ms after the request". `conn.c` writes TLS lines outside a handshake as
+  " .. ", which doesn't write the log out at once.
+
+`tests/ec`: `make test` checks `ecdsp.c` against BearSSL with a C model of `ec.a56` (key exchanges and
+signature checks on every curve, RFC 7748's vectors, doublings and the point at infinity inside a
+check, points off the curve, good and bad signatures with short and long hashes: 902 checks);
+`./fetch-hatari.sh` then `make sim` runs the same through `ec.a56` itself on Hatari's DSP core
+(fetched, not kept here) and prints the DSP's time for each kind of operation.
 
 ## Coming next
 

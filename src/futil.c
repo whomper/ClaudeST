@@ -39,14 +39,28 @@ static int tmp_name(const char *path, char *out, long size)
 	return 1;
 }
 
+/* an open file's size, its position left at the start (GEMDOS: Fseek
+   to the end and back), or NULL. An app that sets it (declared in its
+   plat.h) has pf_load open the file first and look at the directory
+   only when that fails: one look per file read instead of two (the
+   guidelines, 6.5) */
+long (*pf_size_open)(int h);
+
 char *pf_load(const char *path, long *len)
 {
-	long size = pf_size(path), got = 0, r;
+	long size = -1, got = 0, r;
 	char *buf;
-	int h;
+	int h = -1;
 	if (len)
 		*len = 0;
-	if (size < 0) {
+	if (pf_size_open && (h = pf_open(path, PF_READ)) >= 0 && (size = pf_size_open(h)) < 0) {
+		pf_close(h);
+		h = -1;
+		size = pf_size(path);
+	} else if (!pf_size_open) {
+		size = pf_size(path);	/* with the hook, a failed open says it */
+	}
+	if (h < 0 && size < 0) {
 		/* a save cut short after the old file went: the new one is whole */
 		char tmp[260];
 		if (!tmp_name(path, tmp, sizeof(tmp)) || pf_size(tmp) < 0 || pf_rename(tmp, path) != 0)
@@ -55,7 +69,8 @@ char *pf_load(const char *path, long *len)
 		if (size < 0)
 			return 0;
 	}
-	h = pf_open(path, PF_READ);
+	if (h < 0)
+		h = pf_open(path, PF_READ);
 	if (h < 0)
 		return 0;
 	buf = malloc(size + 1);

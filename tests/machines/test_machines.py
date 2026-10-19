@@ -11,6 +11,7 @@ import os
 import struct
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
@@ -42,6 +43,12 @@ with tempfile.TemporaryDirectory() as d:
     check("ST-1 with Erez's TOS 1.04: C:\\AUTO\\BOOTC.PRG makes C: the boot drive",
           os.path.exists(os.path.join(d, "st1", "AUTO", "BOOTC.PRG")))
 
+    prg = open(os.path.join(d, "st1", "AUTO", "CLOCK.PRG"), "rb").read()
+    t = time.localtime()
+    check("ST-1: C:\\AUTO\\CLOCK.PRG sets today's date (Tsetdate)",
+          prg[:2] == b"\x60\x1a" and struct.unpack(">HHHH", prg[28:36]) ==
+          (0x3F3C, (t.tm_year - 1980) << 9 | t.tm_mon << 5 | t.tm_mday, 0x3F3C, 0x2B))
+
     m = machines.Machine("TT", os.path.join(d, "tt"))
     a = m.args()
     check("TT: 68030 code in 16 MB of TT RAM, TT medium", a[a.index("--ttram") + 1] == "16"
@@ -60,7 +67,7 @@ with tempfile.TemporaryDirectory() as d:
         check("Falcon:%s: 14 MB, 128 MB TT RAM, DSP" % screen, a[a.index("--memsize") + 1] == "14"
               and a[a.index("--ttram") + 1] == "128" and a[a.index("--dsp") + 1] == "emu")
 
-    check("no BOOTC.PRG on the Falcon", not os.path.exists(os.path.join(d, "f16", "AUTO", "BOOTC.PRG")))
+    check("no BOOTC.PRG or CLOCK.PRG on the Falcon", not os.path.exists(os.path.join(d, "f16", "AUTO")))
 
     hd = os.path.join(d, "own")
     os.makedirs(hd)

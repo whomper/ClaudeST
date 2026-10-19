@@ -23,7 +23,9 @@ are never put in git (Atari's copyright), nor sent anywhere.
 Each machine starts with its own settings: its own HOME for Hatari (so no
 NVRAM is shared between rigs), the Falcon's screen mode in its NVRAM and,
 for a real TOS 4, in C:\\NEWDESK.INF (TOS 4's desktop takes the mode from
-there), unless the rig brought its own. Standard Python only.
+there), unless the rig brought its own. An ST, which has no clock, gets
+C:\\AUTO\\CLOCK.PRG, setting this computer's date and time. Standard Python
+only.
 
 The network: m.network() puts FAKESTNG.PRG (made again with make in
 tools/fakesting whenever its source changed) in C:\\AUTO, starts serial_bridge.py
@@ -38,6 +40,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 
@@ -78,6 +81,30 @@ EMUTOS = ("https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-51
 #   clr.w -(sp); trap #1                                          Pterm0
 #   setboot: move.w #2,$446.w; rts
 BOOTC = bytes.fromhex("487A000E" "3F3C0026" "4E4E" "5C8F" "4267" "4E41" "31FC00020446" "4E75")
+
+
+def clock():
+    """C:\\AUTO\\CLOCK.PRG's code for an ST, which has no clock: it sets the
+    date and time to this computer's local time, as one does on a real ST
+    from the Control Panel (a few seconds behind by the time it runs):
+      move.w #date,-(sp); move.w #$2B,-(sp); trap #1; addq.l #4,sp   Tsetdate
+      move.w #time,-(sp); move.w #$2D,-(sp); trap #1; addq.l #4,sp   Tsettime
+      move.l #both,-(sp); move.w #22,-(sp); trap #14; addq.l #6,sp   Settime
+      clr.w -(sp); trap #1                                            Pterm0"""
+    t = time.localtime(time.time() + 5)
+    date = (t.tm_year - 1980) << 9 | t.tm_mon << 5 | t.tm_mday
+    tod = t.tm_hour << 11 | t.tm_min << 5 | t.tm_sec // 2
+    return (struct.pack(">HHHHHH", 0x3F3C, date, 0x3F3C, 0x2B, 0x4E41, 0x588F) +
+            struct.pack(">HHHHHH", 0x3F3C, tod, 0x3F3C, 0x2D, 0x4E41, 0x588F) +
+            struct.pack(">HIHHHH", 0x2F3C, date << 16 | tod, 0x3F3C, 22, 0x4E4E, 0x5C8F) +
+            struct.pack(">HH", 0x4267, 0x4E41))
+
+
+def write_prg(path, code):
+    """a TOS program of code alone (no data, no relocation)"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(struct.pack(">HIIIIIIH", 0x601A, len(code), 0, 0, 0, 0, 0, 0) + code + bytes(4))
 
 # TOS 4's desktop file with the screen mode in the #E line's 5th and 6th
 # values (Hatari's own TOS 2+ NEWDESK.INF otherwise)
@@ -149,10 +176,10 @@ class Machine:
             if self.real and not os.path.exists(inf):
                 with open(inf, "w", newline="") as f:
                     f.write(NEWDESK % (mode >> 8, mode & 0xFF))
-        if self.real and self.name.startswith("ST"):
-            os.makedirs(os.path.join(self.hd, "AUTO"), exist_ok=True)
-            with open(os.path.join(self.hd, "AUTO", "BOOTC.PRG"), "wb") as f:
-                f.write(struct.pack(">HIIIIIIH", 0x601A, len(BOOTC), 0, 0, 0, 0, 0, 0) + BOOTC + bytes(4))
+        if self.name.startswith("ST"):
+            write_prg(os.path.join(self.hd, "AUTO", "CLOCK.PRG"), clock())
+            if self.real:
+                write_prg(os.path.join(self.hd, "AUTO", "BOOTC.PRG"), BOOTC)
         s = sum(nv[:48]) & 0xFF
         nv[48], nv[49] = ~s & 0xFF, s
         with open(os.path.join(cfg, "hatari.nvram"), "wb") as f:

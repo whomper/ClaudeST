@@ -7,11 +7,17 @@ other program's latest release, not a build of its main).
 
     getrelease.py APP DIR FILE...            the latest release
     getrelease.py APP@v1.8 DIR FILE...       that release
+    getrelease.py --source APP DIR PATH...   files of the source at the
+                                             latest release's tag
 
 APP is the repository's name under github.com/whomper (EHypView,
-EContact...). The files land in DIR, and DIR/APP.VERSION says which
-release they came from (a rig prints it, so a report names it). Standard
-Python only.
+EContact...). FILE is a file the release carries; with --source, PATH is
+a file in the repository as it was tagged for the release, for a program
+whose release carries no files of its own (AERA-Gateway's
+gateway/eftpgate.py). The files land in DIR (by their names, without the
+folders), and DIR/APP.VERSION says which release they came from (a rig
+prints it, so a report names it). Standard Python only. The same file is
+in AERA-Atari's common/tools and xl/tools.
 """
 import os
 import re
@@ -62,18 +68,21 @@ def highest_tag(app):
     return max(tags, key=lambda t: (int(t[1]), int(t[2])))[0]
 
 
-def fetch(spec, d, names):
+def fetch(spec, d, names, source=False):
     app, _, tag = spec.partition("@")
-    tag = tag or latest(app, names[0])
+    tag = tag or (highest_tag(app) if source else latest(app, names[0]))
     os.makedirs(d, exist_ok=True)
     for n in names:
-        url = "https://github.com/%s/%s/releases/download/%s/%s" % (OWNER, app, tag, n)
+        if source:
+            url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (OWNER, app, tag, n)
+        else:
+            url = "https://github.com/%s/%s/releases/download/%s/%s" % (OWNER, app, tag, n)
         try:
             with urllib.request.urlopen(url) as r:
                 data = r.read()
         except urllib.error.HTTPError as e:
             sys.exit("%s %s: no %s (%s)" % (app, tag, n, e))
-        with open(os.path.join(d, n), "wb") as f:
+        with open(os.path.join(d, os.path.basename(n)), "wb") as f:
             f.write(data)
     with open(os.path.join(d, app.upper() + ".VERSION"), "w") as f:
         f.write(tag + "\n")
@@ -82,6 +91,10 @@ def fetch(spec, d, names):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
+    args = sys.argv[1:]
+    source = args[:1] == ["--source"]
+    if source:
+        args = args[1:]
+    if len(args) < 3:
         sys.exit(__doc__)
-    fetch(sys.argv[1], sys.argv[2], sys.argv[3:])
+    fetch(args[0], args[1], args[2:], source)

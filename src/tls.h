@@ -25,10 +25,28 @@ extern const int tls_available;
 extern int tls_tz_minutes;
 /* where the random seed is kept between sessions (SEED.DAT) */
 extern char tls_seed_path[200];
+/* where the certificate signatures already checked are kept (SIGS.DAT);
+   empty: for this session only */
+extern char tls_sigs_path[200];
 /* the decoded root certificates are kept here (ROOTS.DAT, next to CACERT.PEM) */
 extern char tls_roots_cache[200];
+/* a file's date and time (pf_stamp), 0 if missing; or NULL. With it, a
+   ROOTS.DAT checked once against CACERT.PEM's checksum is afterwards
+   checked against its size and date only */
+extern unsigned long (*tls_file_stamp)(const char *path);
+/* up to n bytes of a file from offset off, opening and closing it (open,
+   seek, read, close), < 0 on error; or NULL. An accessory sets it: then
+   CACERT.PEM is never open while pf_idle lets the program in front run
+   (the guidelines, 2.2) */
+extern long (*tls_read_at)(const char *path, long off, void *buf, long n);
+/* a file's date (as tls_file_stamp) and its size in *size (-1 if
+   missing) from one look at the directory (pf_info); or NULL: then
+   tls_file_stamp and pf_size, two looks (the guidelines, 6.5) */
+extern unsigned long (*tls_file_info)(const char *path, long *size);
 /* a word for the status line while something slow happens, or NULL */
 extern void (*tls_note)(const char *msg);
+/* the handshake's steps and their times, for the log (conn.c), or NULL */
+extern void (*tls_log)(const char *msg);
 
 /* load the root certificates from a PEM file (once; later calls are
    cheap). Returns how many, or 0 with err filled in */
@@ -65,5 +83,10 @@ const char *tls_describe(TLS *t);
 extern int (*tls_rsa_accel)(unsigned char *x, size_t xlen,
 			    const unsigned char *n, size_t nlen,
 			    const unsigned char *e, size_t elen);
+
+/* the elliptic curves are done elsewhere (the Falcon's DSP): set by
+   tls_set_ec() (declared in ecdsp.h, where BearSSL's types are). Then
+   ECDSA is about as cheap as RSA, and a server is offered both at once */
+int tls_ec_fast(void);
 
 #endif
