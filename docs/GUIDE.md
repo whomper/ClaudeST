@@ -300,7 +300,8 @@ keep the system font.
   fixed-width font: proportional ones are listed in grey and can't be
   picked. The first time, ClaudeST measures each font to find them
   ("Looking for fixed-width fonts" on the status line; it can take a
-  while with many vector fonts) and keeps the answers in `CLAUDEST.FNT`,
+  while with many vector fonts) and keeps the answers in `CLAUDEST.FNT`
+  next to `CLAUDEST.PRG`,
   so the selector opens quickly afterwards and only new fonts are
   measured. Delete `CLAUDEST.FNT` to measure them all again.
 - **Hebrew letters:** fonts keep them in different places: the standard
@@ -594,6 +595,7 @@ common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            fakesting/, helpfront.py)
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
            check_version.sh, icon/ (the desktop icon), reel/ (the demo video)
+tests/     hatari/disk_budget.sh: the disk-access check (README, Tests)
 icons/     the desktop icon files (from tools/icon)
 docs/      this guide, its screenshots, the demo recording and the help's
            front page (front.json, help/WINDOW.IMG)

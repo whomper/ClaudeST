@@ -251,6 +251,7 @@ common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up
            TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
            icon/ (the desktop icon), reel/ (the demo video)
+tests/     hatari/disk_budget.sh: the disk-access check in Hatari
 icons/     the desktop icon files (from tools/icon)
 docs/      the user guide (GUIDE.md), its screenshots, the demo recording and the help's front
            page (front.json, help/WINDOW.IMG: help/Makefile adds it with common/tools/helpfront.py)
@@ -286,6 +287,11 @@ Hatari has no network card: with `LINK=network`, the shared `FAKESTNG.PRG` (`com
 built by the script) stands in for STinG by tunnelling its TCP connections over the serial port to the
 bridge on TCP port 2323, as on the Pi, to test the network code. It is for the emulator only; never
 install it on a real Atari. The guide's [Running it in Hatari](docs/GUIDE.md#running-it-in-hatari) has more.
+
+`tests/hatari/disk_budget.sh` checks ClaudeST's disk work in Hatari against the AERA rule (the
+guidelines, 6.5), from Hatari's GEMDOS trace. It fails if a conversation or an idle window touches the
+disk at all, or if saving a 50 KB artifact or attaching a 40 KB file takes more than one open and a
+few big reads or writes (`MACHINE=ST-1` or `TT` for the other machines).
 
 ## Licence
 

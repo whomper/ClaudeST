@@ -783,8 +783,9 @@ class Session:
         self.out("F", self.be.artifact_name(item_id))
 
     def cmd_fetch(self, kind, item_id, *_):
-        """Send the artifact as hex-encoded D lines, then G <size>. Text is
-        converted to the Atari character set with CR/LF line ends."""
+        """Send the artifact as hex-encoded D lines (the first with the
+        size), then G <size>. Text is converted to the Atari character
+        set with CR/LF line ends."""
         name, text = self.be.artifact_file(item_id)
         if isinstance(text, bytes):     # a binary file (.docx, .pdf...) as is
             data = text
@@ -792,7 +793,11 @@ class Session:
             data = b"\r\n".join(to_atari(line) for line in text.split("\n"))
         self.notice("Sending %s..." % name)
         for i in range(0, len(data), 90):
-            self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + b"\n")
+            # the first piece also says the whole size, so ClaudeST 1.49 can
+            # gather the file in memory and write it in one go; older ones
+            # ignore the extra field
+            size = b"\t%d" % len(data) if i == 0 else b""
+            self.link.write(b"D\t" + data[i:i + 90].hex().upper().encode() + size + b"\n")
         self.out("G", len(data))
         self.be.forget_artifact_data(item_id)
         self.online()

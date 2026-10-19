@@ -71,7 +71,7 @@ All commands are one letter.
 | `Y` `0`\|`1` | Claude is (not) replying. |
 | `A` `<text>` | Show an alert box. |
 | `F` `<name>` | Suggested 8.3 file name for a `SAVE`; the Atari shows the file selector, then sends `FETCH` (or nothing if cancelled). |
-| `D` `<hex>` | Up to 90 bytes of the file being saved, hex-encoded. Text is already in the Atari character set with CR/LF line ends. |
+| `D` `<hex>` [`<size>`] | Up to 90 bytes of the file being saved, hex-encoded. Text is already in the Atari character set with CR/LF line ends. The first `D` also gives the whole file's size (since 1.49), so ClaudeST can take the memory to gather it and write it in one go; older ClaudeSTs ignore the field. |
 | `G` `<size>` | The file is complete. |
 | `O` | Start the model lists (sent after `HELLO`, `CHOOSE`, opening a chat, and `NEW` when the model changes: each chat keeps its own model). |
 | `V` `<id>` `<label>` | A model for the model menu. |

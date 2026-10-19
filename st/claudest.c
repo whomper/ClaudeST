@@ -28,6 +28,7 @@
 #include "iconify.h"
 #include "clip.h"
 #include "dd.h"
+#include "bigbuf.h"
 #include "icon.h"
 #include "icon16.h"
 
@@ -195,6 +196,15 @@ static short pick_x;
 static char save_id[40];
 static short save_fd = -1;
 static long save_bytes;
+
+/* disk work in big pieces (the guidelines, 6.5): Save to disk gathers the
+   file in memory and writes it in one go, Attach reads 16 KB (68000) or
+   32 KB (68030 and up) at a time. The memory is big_alloc's, TT RAM when
+   the machine has it; with too little free, this buffer. */
+#define DISK_BUF (16L * 1024)
+static char disk_buf[DISK_BUF];
+static char *save_buf;			/* what is gathered, save_len of save_cap */
+static long save_cap, save_len;
 static char save_path[160];
 
 /* dirty regions */
@@ -262,7 +272,7 @@ static short chip_x0, chip_x1;			/* the model chip in the reply line */
 static void tx_cmd(const char *a, const char *b, const char *c);
 static void show_picker(void);
 static void choose_save_file(const char *name);
-static void save_chunk(const char *hex);
+static void save_chunk(const char *hex, long size);
 static void finish_save(void);
 static void save_config(void);
 static void say_notice(const char *s);
@@ -1948,9 +1958,10 @@ static void handle_line(char *s)
 		if (n > 1 && save_id[0])
 			choose_save_file(f[1]);
 		break;
-	case 'D':			/* D <hex>: a piece of the file being saved */
+	case 'D':			/* D <hex> [<size>]: a piece of the file being saved;
+				   the first one says the whole file's size (1.49's bridge) */
 		if (save_fd >= 0 && n > 1)
-			save_chunk(f[1]);
+			save_chunk(f[1], n > 2 ? atol(f[2]) : 0);
 		break;
 	case 'G':			/* G <size>: the file is complete */
 		finish_save();
@@ -2485,11 +2496,36 @@ static char *inf_put_num(char *p, const char *note, const char *name, u16 v)
 	return inf_put(p, note, name, n);
 }
 
+/* name (next to the program) in one write: NAME.IN$ first, then renamed,
+   so a reset in between never leaves half a file (the guidelines, 2.3) */
+static void safe_save(const char *name, const char *tmpname, const char *data, long len)
+{
+	char path[160], tmp[160];
+	long fd;
+	inf_path(path, sizeof(path), name);
+	inf_path(tmp, sizeof(tmp), tmpname);
+	fd = Fcreate(tmp, 0);
+	if (fd >= 0) {
+		long n = Fwrite((short)fd, len, data);
+		Fclose((short)fd);
+		if (n == len) {
+			Fdelete(path);
+			if (Frename(tmp, path) == 0)
+				return;
+		}
+		Fdelete(tmp);
+	}
+	fd = Fcreate(path, 0);		/* no room for both: as before */
+	if (fd >= 0) {
+		Fwrite((short)fd, len, data);
+		Fclose((short)fd);
+	}
+}
+
 static void save_config(void)
 {
 	static char text[2048 + INF_KEEP];
-	char path[160], tmp[160], v[24], *p = text;
-	long fd;
+	char v[24], *p = text;
 
 	strcpy(p, "; ClaudeST settings, written by CLAUDEST.PRG. Lines starting with ; are notes.\r\n"
 		  "; Most of these are set in Options > Settings; see the guide.\r\n"
@@ -2527,26 +2563,7 @@ static void save_config(void)
 	}
 	*p = 0;
 
-	/* CLAUDEST.IN$ first, then renamed: a reset in between never leaves
-	   half a file (the guidelines, 2.3) */
-	inf_path(path, sizeof(path), "CLAUDEST.INF");
-	inf_path(tmp, sizeof(tmp), "CLAUDEST.IN$");
-	fd = Fcreate(tmp, 0);
-	if (fd >= 0) {
-		long n = Fwrite((short)fd, p - text, text);
-		Fclose((short)fd);
-		if (n == p - text) {
-			Fdelete(path);
-			if (Frename(tmp, path) == 0)
-				return;
-		}
-		Fdelete(tmp);
-	}
-	fd = Fcreate(path, 0);		/* no room for both: as before */
-	if (fd >= 0) {
-		Fwrite((short)fd, p - text, text);
-		Fclose((short)fd);
-	}
+	safe_save("CLAUDEST.INF", "CLAUDEST.IN$", text, p - text);
 }
 
 static void use_link(short l)
@@ -2665,13 +2682,14 @@ static void do_list(const char *kind)
  * in hex lines (ATTACH <name> <size>, ADATA <hex>..., AEND), and the
  * bridge sends it with the message */
 #define ATT_MAX (500L << 20)		/* claude.ai's limit for a file */
+#define ATT_LINE 480			/* bytes in an ADATA line */
 static void attach_file(const char *path)
 {
-	static char buf[480];
-	char hex[2 * sizeof(buf) + 1], size[12];
+	char hex[2 * ATT_LINE + 1], size[12], *buf;
 	const char *name = path, *p;
-	long fd, len, sent = 0, n;
+	long fd, len, sent = 0, n, piece, got, off;
 	short i, pct = -1;
+	int tt;
 
 	for (p = path; *p; p++)
 		if (*p == '\\' || *p == ':')
@@ -2686,6 +2704,10 @@ static void attach_file(const char *path)
 	}
 	if (natt >= MAXATT) {
 		alert(1, "[1][claude.ai takes up to 20|files in a chat.][ OK ]");
+		return;
+	}
+	if (save_fd >= 0) {
+		alert(1, "[1][An artifact is being saved:|attach the file when it's|done.][ OK ]");
 		return;
 	}
 	fd = Fopen(path, 0);
@@ -2714,29 +2736,45 @@ static void attach_file(const char *path)
 	}
 	tx_cmd("ATTACH", name, size);
 	graf_mouse(BUSYBEE, 0);
-	while ((n = Fread((short)fd, sizeof(buf), buf)) > 0) {
-		static const char hx[] = "0123456789ABCDEF";
-		for (i = 0; i < n; i++) {
-			hex[2 * i] = hx[((u8)buf[i]) >> 4];
-			hex[2 * i + 1] = hx[buf[i] & 15];
+	/* read in big pieces (the guidelines, 6.5), sent a line at a time */
+	piece = get_cookie(0x5F435055L) >= 30 ? 32L * 1024 : 16L * 1024;	/* _CPU */
+	buf = big_alloc(len < piece ? len : piece, &got, &tt);
+	if (!buf) {
+		buf = disk_buf;
+		got = DISK_BUF;
+	}
+	piece = got < piece ? got : piece;
+	while ((n = Fread((short)fd, piece, buf)) > 0) {
+		for (off = 0; off < n; off += ATT_LINE) {
+			static const char hx[] = "0123456789ABCDEF";
+			short k = (short)(n - off < ATT_LINE ? n - off : ATT_LINE);
+			const char *b = buf + off;
+			for (i = 0; i < k; i++) {
+				hex[2 * i] = hx[((u8)b[i]) >> 4];
+				hex[2 * i + 1] = hx[b[i] & 15];
+			}
+			hex[2 * k] = 0;
+			tx_cmd("ADATA", hex, 0);
+			sent += k;
+			/* "Attaching 40%" (in tenths, without overflowing a long) */
+			if ((sent == len ? 10 : sent / (len / 10 + 1)) != pct) {
+				pct = (short)(sent == len ? 10 : sent / (len / 10 + 1));
+				strcpy(notice, "Attaching ");
+				*put_num(notice + 10, pct * 10) = 0;
+				strcat(notice, "%");
+				notice_until = ticks + 250;
+				dirty |= D_TITLE;
+				flush_dirty();
+			}
+			if (link == LINK_TCP && tcp_cn < 0)
+				break;		/* the connection went */
 		}
-		hex[2 * n] = 0;
-		tx_cmd("ADATA", hex, 0);
-		sent += n;
-		/* "Attaching 40%" (in tenths, without overflowing a long) */
-		if ((sent == len ? 10 : sent / (len / 10 + 1)) != pct) {
-			pct = (short)(sent == len ? 10 : sent / (len / 10 + 1));
-			strcpy(notice, "Attaching ");
-			*put_num(notice + 10, pct * 10) = 0;
-			strcat(notice, "%");
-			notice_until = ticks + 250;
-			dirty |= D_TITLE;
-			flush_dirty();
-		}
-		if (link == LINK_TCP && tcp_cn < 0)
-			break;			/* the connection went */
+		if (off < n)
+			break;
 	}
 	Fclose((short)fd);
+	if (buf != disk_buf)
+		big_free(buf);
 	graf_mouse(ARROW, 0);
 	if (sent != len) {
 		tx_cmd("UNATTACH", 0, 0);
@@ -3483,8 +3521,10 @@ static char fnt_buf[MAXFAM * 40];
 static void keep_monospaced(void)
 {
 	short i, done = 0, todo = 0;
-	long fd = Fopen("CLAUDEST.FNT", 0), n = 0;
-	char *line;
+	long fd, n = 0;
+	char *line, path[160];
+	inf_path(path, sizeof(path), "CLAUDEST.FNT");
+	fd = Fopen(path, 0);
 	if (fd >= 0) {
 		n = Fread((short)fd, sizeof(fnt_buf) - 1, fnt_buf);
 		Fclose((short)fd);
@@ -3527,19 +3567,15 @@ static void keep_monospaced(void)
 			}
 		graf_mouse(ARROW, 0);
 		set_status(keep);
-		/* the answers, for next time */
-		fd = Fcreate("CLAUDEST.FNT", 0);
-		if (fd >= 0) {
-			for (i = 1; i < nfam; i++) {
-				char l[40];
-				l[0] = fam[i].mono ? '1' : '0';
-				l[1] = ' ';
-				strcpy(l + 2, fam[i].name);
-				strcat(l, "\r\n");
-				Fwrite((short)fd, strlen(l), l);
-			}
-			Fclose((short)fd);
+		/* the answers, for next time: gathered here, written in one go */
+		for (line = fnt_buf, i = 1; i < nfam; i++) {
+			*line++ = fam[i].mono ? '1' : '0';
+			*line++ = ' ';
+			strcpy(line, fam[i].name);
+			strcat(line, "\r\n");
+			line += strlen(line);
 		}
+		safe_save("CLAUDEST.FNT", "CLAUDEST.FN$", fnt_buf, line - fnt_buf);
 		font_reselect();
 	}
 }
@@ -4279,30 +4315,58 @@ static short hexval(char c)
 	return 0;
 }
 
-static void save_chunk(const char *hex)
+static void save_done(void)
 {
-	static u8 buf[128];
-	short n = 0;
-	while (hex[0] && hex[1] && n < (short)sizeof(buf)) {
-		buf[n++] = (u8)(hexval(hex[0]) << 4 | hexval(hex[1]));
+	if (save_buf != disk_buf)
+		big_free(save_buf);
+	save_buf = 0;
+	Fclose(save_fd);
+	save_fd = -1;
+}
+
+/* what is gathered to the file: 0 when the write failed */
+static short save_flush(void)
+{
+	if (save_len && Fwrite(save_fd, save_len, save_buf) != save_len) {
+		save_done();
+		Fdelete(save_path);
+		save_id[0] = 0;
+		alert(1, "[3][Writing the file failed.|The disk may be full.][ OK ]");
+		return 0;
+	}
+	save_len = 0;
+	return 1;
+}
+
+static void save_chunk(const char *hex, long size)
+{
+	if (!save_buf) {
+		/* the whole file when it fits (an older bridge doesn't say how
+		   big it is: up to 1 MB), else a buffer at a time */
+		int tt;
+		save_buf = big_alloc(size > 0 ? size : 1L << 20, &save_cap, &tt);
+		if (!save_buf) {
+			save_buf = disk_buf;
+			save_cap = DISK_BUF;
+		}
+		save_len = 0;
+	}
+	while (hex[0] && hex[1]) {
+		if (save_len == save_cap && !save_flush())
+			return;
+		save_buf[save_len++] = (char)(hexval(hex[0]) << 4 | hexval(hex[1]));
+		save_bytes++;
 		hex += 2;
 	}
-	if (Fwrite(save_fd, n, buf) != n) {
-		Fclose(save_fd);
-		save_fd = -1;
-		Fdelete(save_path);
-		alert(1, "[3][Writing the file failed.|The disk may be full.][ OK ]");
-		return;
-	}
-	save_bytes += n;
 }
 
 static void finish_save(void)
 {
 	if (save_fd < 0)
 		return;
-	Fclose(save_fd);
-	save_fd = -1;
+	if (save_buf && !save_flush())
+		return;
+	save_done();
 	save_id[0] = 0;
 	notice[0] = 0;
 	dirty |= D_TITLE;

@@ -1335,6 +1335,18 @@ class SavingArtifacts(unittest.TestCase):
         for l in lines:
             self.assertLess(len(b"\t".join(l)), 200)
 
+    def test_the_first_piece_says_the_size(self):
+        class Big(DemoBackend):
+            def artifact_file(self, aid):
+                return "BIG.BIN", bytes(range(256)) * 4
+        link = FakeLink()
+        Session(link, Big()).handle(b"FETCH\tARTIFACT\ta1")
+        pieces = [l for l in link.lines() if l[0] == b"D"]
+        self.assertEqual(pieces[0][2], b"1024")     # ClaudeST 1.49 takes the memory for it
+        self.assertTrue(all(len(l) == 2 for l in pieces[1:]))
+        for l in pieces:
+            self.assertLess(len(b"\t".join(l)), 200)
+
     def test_empty_artifact_list_says_so(self):
         class NoArtifacts(DemoBackend):
             last_scan = 40
