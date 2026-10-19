@@ -595,7 +595,7 @@ common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            fakesting/, helpfront.py)
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
            check_version.sh, icon/ (the desktop icon), reel/ (the demo video)
-tests/     hatari/disk_budget.sh: the disk-access check (README, Tests)
+tests/     hatari/: disk_budget.sh and font_gdos.py (README, Tests)
 icons/     the desktop icon files (from tools/icon)
 docs/      this guide, its screenshots, the demo recording and the help's
            front page (front.json, help/WINDOW.IMG)

@@ -255,7 +255,7 @@ common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up
            TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
            icon/ (the desktop icon), reel/ (the demo video)
-tests/     hatari/disk_budget.sh: the disk-access check in Hatari
+tests/     hatari/: disk_budget.sh (the disk-access check) and font_gdos.py (a GDOS font)
 icons/     the desktop icon files (from tools/icon)
 docs/      the user guide (GUIDE.md), its screenshots, the demo recording and the help's front
            page (front.json, help/WINDOW.IMG: help/Makefile adds it with common/tools/helpfront.py)
@@ -296,6 +296,11 @@ install it on a real Atari. The guide's [Running it in Hatari](docs/GUIDE.md#run
 guidelines, 6.5), from Hatari's GEMDOS trace. It fails if a conversation or an idle window touches the
 disk at all, or if saving a 50 KB artifact or attaching a 40 KB file takes more than one open and a
 few big reads or writes (`MACHINE=ST-1` or `TT` for the other machines).
+
+`tests/hatari/font_gdos.py WORK` chooses the first fixed-width GDOS font in Options ▸ Font and checks
+that the window redraws in it with no dialog left, that `CLAUDEST.INF` keeps it, and that a Hebrew
+chat draws the same after a restart. It needs GDOS fonts (NVDI: `AERA_WITH_NVDI=1` on the Falcons,
+see `common/tools/machines.py`) and skips without them; `--release v1.49` tests a release.
 
 ## Licence
 
