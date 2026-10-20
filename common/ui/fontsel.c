@@ -3,10 +3,10 @@
 /*
  * fontsel.c - the family's Font dialog (fontsel.h; the guidelines, 5.3),
  * from ECal's font selector, laid out as NVDI's WDIALOG one: the Family
- * list, and beside it the Style list and the Size list with a Pt:
- * field; below them the Type line, a small sample in the font chosen
- * (Erez, 20 Oct 2026: no Hebrew samples), OK and Cancel. 64 by 23 cells
- * of the system font: ST medium's 640 x 200 too.
+ * list, and beside it the Style list and the Size list; below them the
+ * Type line, a small sample in the font chosen (Erez, 20 Oct 2026: no
+ * Hebrew samples, no Pt: field, a quarter smaller), OK and Cancel. 48 by
+ * 17 cells of the system font: ST medium's 640 x 200 too.
  *
  * The programs lay their text out in character cells, so only the
  * system font and the fixed-width GDOS fonts with letters are listed
@@ -18,9 +18,8 @@
  * name ("Courier 10 Pitch Bold Italic": Courier 10 Pitch, Bold Italic).
  *
  * The keys: Up and Down in the list with the focus_ring (Shift: a page), Tab,
- * Shift+Tab, Left and Right from list to list and to the Pt: field, a
- * letter to the next family starting with it, a digit into Pt:, Return
- * OK, Esc and Undo Cancel. A row is chosen by a press of the button in
+ * Shift+Tab, Left and Right from list to list, a letter to the next
+ * family starting with it, Return OK, Esc and Undo Cancel. A row is chosen by a press of the button in
  * a list, never by where the pointer rests (ClaudeST's stray row came
  * from taking the menu's release for a click). The type line and the
  * sample, which may be slow under NVDI, are drawn once no key waits.
@@ -267,7 +266,7 @@ static FSFAM *fa, fa_sys;
 static short nfo, nfa;
 static short sizes[MAXSIZE], nsizes;
 static char size_label[MAXSIZE][8];
-static short sys_cw, sys_ch;	/* the system font's cell, as font_sys_push left it */
+static short fs_sys_cw, fs_sys_ch;	/* the system font's cell, as font_sys_push left it */
 static short xfnt = -1;		/* vqt_xfntinfo answers: -1 not asked yet */
 static XFNT_INFO xi;
 
@@ -288,8 +287,8 @@ static void sys_font(void)
 	short w, h;
 	vst_font(vdi_h, 1);
 	vst_height(vdi_h, gl_hchar >= 16 ? 13 : 6, &w, &h);
-	cw = sys_cw;
-	ch = sys_ch;
+	cw = fs_sys_cw;
+	ch = fs_sys_ch;
 }
 
 short fontsel_hebrew(short id, short format, unsigned short *idx, short *why)
@@ -438,7 +437,7 @@ static void show_progress(GRECT *r, short done, short todo)
 	char m[64];
 	if (!r)
 		return;
-	snprintf(m, sizeof(m), "Looking for fixed-width fonts: %d of %d...", done, todo);
+	snprintf(m, sizeof(m), "Measuring the fonts: %d of %d...", done, todo);
 	sys_font();			/* (the last font measured was set) */
 	graf_mouse(M_OFF, 0);
 	clip_on(r);
@@ -625,8 +624,8 @@ int fontsel_usable(fontsel *s, short id)
 	if (id == 1)
 		return 1;
 	font_sys_push();
-	sys_cw = cw;
-	sys_ch = ch;
+	fs_sys_cw = cw;
+	fs_sys_ch = ch;
 	collect(s, 0);
 	for (i = 1; i < nfo; i++)
 		if (fo[i].id == id && !fo[i].later)
@@ -709,8 +708,6 @@ static short size_index(short pt)
 #define DMAX 20
 static OBJECT fs_tree[DMAX];
 static short nobj, last_child;
-static TEDINFO pt_ted;
-static char pt_text[4];
 
 static void tr_begin(short w, short h)
 {
@@ -765,7 +762,7 @@ static void tr_end(void)
 
 /* ---------------- a list ---------------- */
 
-enum { L_FAM, L_STYLE, L_SIZE, F_PT };	/* the lists, and the Pt: field */
+enum { L_FAM, L_STYLE, L_SIZE };	/* the lists */
 
 typedef struct {
 	short obj;		/* its G_BOX */
@@ -778,7 +775,7 @@ static LIST lists[3];
 #define lst lists[L_STYLE]
 #define ls lists[L_SIZE]
 
-static short focus;		/* L_* or F_PT */
+static short focus;		/* L_* */
 
 static FSF *chosen(void)
 {
@@ -894,12 +891,10 @@ static void fl_show(LIST *l, short k)
 /* ---------------- the dialog ---------------- */
 
 #define D_SIZES   1		/* the font changed: its sizes to look at */
-#define D_TYPED   2		/* Pt: typed into */
 #define D_PREVIEW 4		/* the type line and the sample to draw */
 
-static short o_ok, o_cancel, o_type, o_prev, o_pt;
-static short dirty, pt, want, pt_idx;
-static short pt_fresh;		/* Pt: just entered: a digit typed replaces its size */
+static short o_ok, o_cancel, o_type, o_prev;
+static short dirty, pt, want;
 static fontsel *fs;
 
 static void tr_draw(short obj)
@@ -919,20 +914,6 @@ static void tr_box(short obj, GRECT *r, short in)
 	r->y = y + in;
 	r->w = fs_tree[obj].ob_width - 2 * in;
 	r->h = fs_tree[obj].ob_height - 2 * in;
-}
-
-/* Pt: shows n (0: empty); the cursor out of the way while it is drawn */
-static void field_set(short n)
-{
-	if (n > 0)
-		snprintf(pt_text, sizeof(pt_text), "%d", n);
-	else
-		pt_text[0] = 0;
-	if (focus == F_PT)
-		objc_edit(fs_tree, o_pt, 0, &pt_idx, ED_END);
-	tr_draw(o_pt);
-	if (focus == F_PT)
-		objc_edit(fs_tree, o_pt, 0, &pt_idx, ED_INIT);
 }
 
 static void ok_state(void)
@@ -960,7 +941,7 @@ static void draw_type(void)
 		for (i = 0; fs->app && fs->app[i] && i < 8; i++)
 			prg[i] = fs->app[i] >= 'a' && fs->app[i] <= 'z' ? (char)(fs->app[i] - 32) : fs->app[i];
 		prg[i] = 0;
-		snprintf(line, sizeof(line), "System; GDOS fonts: Font... in %s.PRG once", prg);
+		snprintf(line, sizeof(line), "GDOS fonts: Font... in %s.PRG", prg);
 	} else if (f->id == 1) {
 		snprintf(line, sizeof(line), "Bitmap (built in)");
 	} else if (is_vector(f->format) || !f->format) {
@@ -970,10 +951,11 @@ static void draw_type(void)
 		vst_point(vdi_h, pt ? pt : 12, &w, &h);
 		m = fontsel_hebrew(f->id, f->format, 0, &why);
 		sys_font();
-		snprintf(line, sizeof(line), "%s, Hebrew %s", format_name(f->format),
-			 m == FS_HEB_UNICODE ? "from the font" :
-			 why == FS_WHY_NOHEB ? "in the system font (none in it)" :
-			 why == FS_WHY_NOLOOKUP ? "in the system font (no NVDI 5)" : "as the font has it");
+		/* (the line has 38 columns) */
+		snprintf(line, sizeof(line), "%s, %s", format_name(f->format),
+			 m == FS_HEB_UNICODE ? "Hebrew from the font" :
+			 why == FS_WHY_NOHEB ? "system font's Hebrew" :
+			 why == FS_WHY_NOLOOKUP ? "system Hebrew (no NVDI 5)" : "Hebrew as the font has it");
 	} else {
 		snprintf(line, sizeof(line), "%s", format_name(f->format));
 	}
@@ -1031,8 +1013,6 @@ static void sizes_now(void)
 	ls.top = 0;
 	fl_show(&ls, ls.sel < 0 ? 0 : ls.sel);
 	fl_draw(&ls);
-	if (focus != F_PT)
-		field_set(pt);
 	ok_state();
 }
 
@@ -1041,15 +1021,6 @@ static void catch_up(void)
 {
 	if (dirty & D_SIZES)
 		sizes_now();
-	if (dirty & D_TYPED) {
-		short v = (short)atoi(pt_text);
-		if (v > 0 && nsizes) {
-			pt = fit_pt(chosen(), v);
-			ls.sel = size_index(pt);
-			fl_show(&ls, ls.sel < 0 ? 0 : ls.sel);
-			fl_draw(&ls);
-		}
-	}
 	if (dirty) {
 		draw_type();
 		draw_preview();
@@ -1057,39 +1028,14 @@ static void catch_up(void)
 	dirty = 0;
 }
 
-/* Pt: as typed, taken: the size it gives, shown there */
-static void pt_commit(void)
-{
-	short v = (short)atoi(pt_text);
-	if (dirty & D_SIZES)
-		catch_up();
-	if (v > 0 && nsizes) {
-		pt = want = fit_pt(chosen(), v);
-		ls.sel = size_index(pt);
-		fl_show(&ls, ls.sel < 0 ? 0 : ls.sel);
-		fl_draw(&ls);
-		dirty |= D_PREVIEW;
-	}
-	field_set(pt);
-}
-
 static void focus_set(short f)
 {
 	if (f == focus)
 		return;
-	if (focus == F_PT) {
-		objc_edit(fs_tree, o_pt, 0, &pt_idx, ED_END);
-		focus = -1;
-		pt_commit();
-	} else if (focus >= 0) {
+	if (focus >= 0)
 		focus_ring(&lists[focus], 0);
-	}
 	focus = f;
-	pt_fresh = focus == F_PT;
-	if (focus == F_PT)
-		objc_edit(fs_tree, o_pt, 0, &pt_idx, ED_INIT);
-	else
-		focus_ring(&lists[focus], 1);
+	focus_ring(&lists[focus], 1);
 }
 
 /* the family's styles: the one of the same name as before, else the
@@ -1131,7 +1077,6 @@ static void size_set(short k)
 	pt = want = sizes[k];
 	fl_show(&ls, k);
 	fl_draw(&ls);
-	field_set(pt);
 	dirty |= D_PREVIEW;
 }
 
@@ -1210,51 +1155,28 @@ static int rect_in(const GRECT *r, short x, short y)
 static int on_key(short k, short kstate)
 {
 	short sc = (k >> 8) & 0xff, as = k & 0xff, shift = kstate & (K_LSHIFT | K_RSHIFT), i;
-	LIST *l = focus == F_PT ? &ls : &lists[focus];
+	LIST *l = &lists[focus];
 	if (dlg_esc(k))
 		return -1;
 	if (as == 0x0d || sc == 0x72 || sc == 0x1c)
 		return 1;
 	if (sc == 0x0f) {		/* Tab */
-		focus_set((focus + (shift ? 3 : 1)) % 4);
-		return 0;
-	}
-	if (focus == F_PT && ((as >= '0' && as <= '9') || sc == 0x0e || sc == 0x53 ||
-			      ((sc == 0x4b || sc == 0x4d) && pt_text[0]))) {
-		if (pt_fresh && as >= '0' && as <= '9')
-			field_set(0);
-		pt_fresh = 0;
-		objc_edit(fs_tree, o_pt, k, &pt_idx, ED_CHAR);
-		dirty |= D_TYPED | D_PREVIEW;
+		focus_set((focus + (shift ? 2 : 1)) % 3);
 		return 0;
 	}
 	switch (sc) {
 	case 0x48:			/* Up, Down */
 	case 0x50:
-		if (focus == F_PT && (dirty & D_TYPED))
-			pt_commit();
-		if (l->sel < 0)		/* a size typed that isn't listed */
-			for (i = 0, l->sel = sc == 0x50 ? -1 : l->n; i < l->n; i++)
-				if (sizes[i] < pt)
-					l->sel = sc == 0x50 ? i : i + 1;
 		fl_pick(l, l->sel + (sc == 0x48 ? -1 : 1) * (shift ? l->rows - 1 : 1));
 		return 0;
 	case 0x47:			/* Home: the first; Shift: the last */
 		fl_pick(l, shift ? l->n - 1 : 0);
 		return 0;
 	case 0x4b:			/* Left, Right */
-		focus_set(focus ? focus - 1 : F_PT);
+		focus_set(focus ? focus - 1 : L_SIZE);
 		return 0;
 	case 0x4d:
-		focus_set(focus == F_PT ? L_FAM : focus + 1);
-		return 0;
-	}
-	if (as >= '0' && as <= '9') {	/* a size typed */
-		focus_set(F_PT);
-		field_set(0);
-		pt_fresh = 0;
-		objc_edit(fs_tree, o_pt, k, &pt_idx, ED_CHAR);
-		dirty |= D_TYPED | D_PREVIEW;
+		focus_set(focus == L_SIZE ? L_FAM : focus + 1);
 		return 0;
 	}
 	if ((as >= 'a' && as <= 'z') || (as >= 'A' && as <= 'Z')) {
@@ -1283,9 +1205,7 @@ static int on_click(short mx, short my, short clicks)
 				return 1;
 			return 0;
 		}
-	if (obj == o_pt) {
-		focus_set(F_PT);
-	} else if ((obj == o_ok && !(fs_tree[o_ok].ob_state & DISABLED)) || obj == o_cancel) {
+	if ((obj == o_ok && !(fs_tree[o_ok].ob_state & DISABLED)) || obj == o_cancel) {
 		fs_tree[obj].ob_state |= SELECTED;
 		tr_draw(obj);
 		left_up();
@@ -1297,14 +1217,14 @@ static int on_click(short mx, short my, short clicks)
 
 int fontsel_run(fontsel *s)
 {
-	short i, x, y, w, h, m[8], up = 0, done = 0, more, o_size;
+	short i, x, y, w, h, m[8], up = 0, done = 0, o_size;
 	AEVENT e;
 	GRECT prev;
 
 	fs = s;
 	font_sys_push();
-	sys_cw = cw;
-	sys_ch = ch;
+	fs_sys_cw = cw;
+	fs_sys_ch = ch;
 	/* the program loads the GDOS fonts when they're first wanted; the
 	   accessory never here (2.2): it had them at boot, or not */
 	if (s->gdos < 0 && !s->acc && vq_gdos()) {
@@ -1313,40 +1233,32 @@ int fontsel_run(fontsel *s)
 		graf_mouse(ARROW, 0);
 		sys_font();
 	}
-	pt_text[0] = 0;
-	pt_ted.te_ptext = pt_text;
-	pt_ted.te_ptmplt = "___";
-	pt_ted.te_pvalid = "999";
-	pt_ted.te_font = 3;
-	pt_ted.te_just = 0;
-	pt_ted.te_color = 0x1180;
-	pt_ted.te_thickness = 0;
-	pt_ted.te_txtlen = 4;
-	pt_ted.te_tmplen = 4;
 
-	/* 64 x 23 cells: ST medium's and ST high's 23 rows under the menu
-	   bar; on a taller screen (VGA's 28) the lists grow */
-	more = desk_h / gl_hchar - 25;
-	more = more < 0 ? 0 : more > 4 ? 4 : more;
-	tr_begin(64, 23 + more);
+	/* 48 x 17 cells: ST medium's and ST high's rows under the menu bar,
+	   a quarter smaller than the first (Erez) */
+	tr_begin(48, 17);
 	tr_text(2, 1, "Family");
-	tr_text(40, 1, "Style");
-	lf.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 2, 36, 12 + more);
-	lst.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 40, 2, 22, 4);
-	o_size = tr_text(40, 6, "Size");
-	ls.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 40, 7, 10, 7 + more);
-	tr_text(52, 7, "Pt:");
-	o_pt = tr_add(G_FTEXT, EDITABLE, 0, (long)&pt_ted, 56, 7, 3, 1);
-	tr_text(2, 15 + more, "Type:");
-	o_type = tr_add(G_IBOX, 0, 0, 0L, 8, 15 + more, 54, 1);
-	o_prev = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 17 + more, 60, 3);
-	o_ok = tr_add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"OK", 42, 21 + more, 9, 1);
-	o_cancel = tr_add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", 53, 21 + more, 9, 1);
+	tr_text(30, 1, "Style");
+	lf.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 2, 26, 9);
+	lst.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 30, 2, 16, 4);
+	o_size = tr_text(30, 6, "Size");
+	ls.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 30, 7, 10, 4);
+	tr_text(2, 11, "Type:");
+	o_type = tr_add(G_IBOX, 0, 0, 0L, 8, 11, 38, 1);
+	o_prev = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 12, 44, 3);
+	o_ok = tr_add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"OK", 26, 15, 9, 1);
+	o_cancel = tr_add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", 37, 15, 9, 1);
 	tr_end();
 	/* the borders and focus rings are drawn outside the boxes: the
 	   lists and Size a few pixels down, so no label loses its top or
 	   its descenders (no list loses a row) */
 	fs_tree[o_size].ob_y += 2;
+	fs_tree[o_type - 1].ob_y += 3;		/* Type: and its line, under the lists */
+	fs_tree[o_type].ob_y += 3;
+	fs_tree[o_prev].ob_y += 5;		/* the sample, under the Type line */
+	fs_tree[o_ok].ob_y += 12;		/* OK and Cancel, under the sample */
+	fs_tree[o_cancel].ob_y += 12;
+	fs_tree[0].ob_height += 14;
 	for (i = 0; i < 3; i++) {
 		fs_tree[lists[i].obj].ob_y += 3;
 		fs_tree[lists[i].obj].ob_height -= 3;
@@ -1439,16 +1351,12 @@ int fontsel_run(fontsel *s)
 				s->message(0);
 		}
 		if (done > 0) {
-			if (focus == F_PT)
-				pt_commit();
 			if (dirty)
 				catch_up();
 			if (!nsizes)
 				done = 0;	/* a font the VDI no longer has */
 		}
 	}
-	if (focus == F_PT)
-		objc_edit(fs_tree, o_pt, 0, &pt_idx, ED_END);
 	form_dial(FMD_FINISH, x, y, w, h);
 	clip_off();			/* no clip left on vdi_h: NVDI clips raster copies with it */
 	wind_update(2);			/* END_MCTRL */

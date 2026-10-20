@@ -23,7 +23,10 @@
  * the accessories, so the PRG can't see its ACC: it runs, and the ACC
  * stands aside. To be sure the name the AES gives ap_id 0 isn't a
  * leftover, the ACC asks it (TWIN_ASK); our programs answer in
- * av_message() (TWIN_HERE).
+ * av_message() (TWIN_HERE). A program still starting answers late:
+ * av_message() hands that TWIN_HERE to twin_answered(), and until it
+ * comes (or 30 s) the program in front is taken for ours. Opened from
+ * the Desk menu meanwhile, the ACC asks again and waits a second.
  */
 #ifndef AERA_TWIN_H
 #define AERA_TWIN_H
@@ -36,5 +39,6 @@ int twin_handover(const char *cmd);	/* 1: the ACC has it, the PRG quits */
 short twin_prg(void);			/* -1: not running */
 int twin_pass(const char *s);		/* 1 when the PRG has it */
 void twin_reset(void);
+void twin_answered(short id);		/* a TWIN_HERE from id (av_message) */
 
 #endif

@@ -3,9 +3,8 @@
 /*
  * fontsel.h - the family's Font dialog (the guidelines, 5.3), laid out as
  * the Atari font selectors are (NVDI's WDIALOG): the Family list on the
- * left, the Style list and the Size list with its Pt: field on the
- * right, then the Type line, a small sample in the font chosen, OK and
- * Cancel. Only fonts the program can use are listed: the
+ * left, the Style list and the Size list on the right, then the Type
+ * line, a small sample in the font chosen, OK and Cancel; 48 by 17 cells. Only fonts the program can use are listed: the
  * system font and the fixed-width GDOS fonts that have letters, each
  * measured once and the answer kept in the app's NAME.FNT.
  *

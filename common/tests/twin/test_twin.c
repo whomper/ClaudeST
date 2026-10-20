@@ -23,6 +23,9 @@ static short inbox[8][8], ninbox, inbox_at;
 static int failed, checks;
 static int answer_ask = 1, answer_va = 1;	/* what the other program does */
 
+static unsigned long now_ms;
+void (*av_twin_here)(short id);
+unsigned long tos_ms(void) { return now_ms; }
 long get_cookie(long id) { return id == 0x4D616758L ? cookie_magx : 0; }
 char *av_shared(char *local, long size) { (void)size; return local; }
 short appl_id(void) { return me; }
@@ -135,12 +138,45 @@ int main(void)
 	answer_ask = 0;
 	deliver(41, 0);			/* AC_CLOSE and a redraw come meanwhile */
 	deliver(20, 0);
-	check(twin_prg() == -1, "a name left to the desktop: no answer, not ours");
-	check(waits == 5, "  after half a second");
+	check(twin_prg() == 0, "no answer in half a second: taken for ours, it may still be starting");
+	check(waits == 5, "  having waited half a second");
 	check(nsent == 3 && sent_to[1] == 2 && sent[1][0] == 41 && sent_to[2] == 2 && sent[2][0] == 20,
 	      "  the messages that came meanwhile back in our queue, in order");
 	nsent = 0;
+	now_ms += 29000;
+	check(twin_prg() == 0 && nsent == 0, "  still after 29 s, not asked again");
+	now_ms += 1000;
+	check(twin_prg() == -1 && nsent == 0, "  after 30 s without an answer: a name left to the desktop, not ours");
 	check(twin_prg() == -1 && nsent == 0, "  and not asked again until the program changes");
+
+	reset();
+	answer_ask = 0;
+	check(twin_prg() == 0 && av_twin_here != 0, "a program still starting: taken for ours (twin_init set av_twin_here)");
+	av_twin_here(7);
+	now_ms += 30000;
+	check(twin_prg() == -1, "  a TWIN_HERE from another ap_id doesn't count");
+	reset();
+	answer_ask = 0;
+	twin_prg();
+	av_twin_here(0);		/* its answer, once it reaches its event loop */
+	now_ms += 60000;
+	check(twin_prg() == 0, "  its late TWIN_HERE: ours for as long as it runs");
+
+	reset();
+	answer_ask = 0;
+	twin_prg();
+	answer_ask = 1;
+	nsent = waits = 0;
+	check(twin_pass("") == 1 && nsent == 2 && sent[0][0] == TWIN_ASK && sent[1][0] == VA_START,
+	      "opened from the Desk menu while waiting: asked again, it answers, AC_OPEN passed on");
+	reset();
+	answer_ask = 0;
+	twin_prg();
+	nsent = waits = 0;
+	check(twin_pass("") == 0 && nsent == 1 && sent[0][0] == TWIN_ASK && waits == 10,
+	      "  no answer in a second: the accessory opens itself");
+	now_ms += 1000;
+	check(twin_prg() == -1 && nsent == 1, "  and the name in front isn't ours from then on");
 
 	reset();
 	procs[0].name = "EMAIL   ";

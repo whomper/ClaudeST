@@ -287,6 +287,7 @@ typedef struct blk {
 /* one list per size below SMALL; above it four per power of two, each
    list holding blocks within a quarter of each other */
 #define SMALL	512
+#define BIG	4096		/* and up: cut from a free block of its own, not dv */
 #define SMALL_LG 9
 #define NSMALL	(SMALL / ALIGN)
 #define NBINS	(NSMALL + (30 - SMALL_LG + 1) * 4)
@@ -456,6 +457,9 @@ void heap_add(void *p, size_t bytes)
 #define MAX_BLOCKS 40		/* TOS's pool is shared with every program and folder */
 
 long heap_tt, heap_st;		/* bytes the heap took from TT/Fast and ST RAM (About) */
+long heap_early;		/* of those, an accessory's before its heap_add (its log says so) */
+
+extern short _is_acc;		/* crt0.S (tests/heap: its own) */
 
 /* more memory from GEMDOS for a block of need bytes (kept out of malloc,
    whose registers it would cost) */
@@ -467,6 +471,27 @@ static __attribute__((noinline)) int more_core(size_t need)
 	void *h = 0;
 	if (heap_fixed)
 		return 0;
+	if (_is_acc) {
+		/* an accessory before its heap_add (acc_heap): what it asks for
+		   is taken as it is, in 16 KB steps, never the 512 KB first
+		   block, which it would hold beside its heap for good (ECal's
+		   PEOPLE cache before acc_heap held 512 KB, 20 Oct 2026). Its
+		   log can name it: heap_early */
+		want = (least + 16383) & ~(size_t)16383;
+		h = Mxalloc(want, 3);
+		if ((long)h == -32 || (long)h <= 0)
+			h = Malloc(want);
+		if ((long)h <= 0)
+			return 0;
+		blocks++;
+		taken += want;
+		heap_early += want;
+		if ((unsigned long)h >= 0x01000000UL)
+			heap_tt += want;
+		else
+			heap_st += want;
+		return add_area(h, want);
+	}
 	/* Every GEMDOS block takes an entry in TOS's small internal pool, and
 	   when that runs out TOS halts the machine ("OUT OF INTERNAL MEMORY").
 	   So few blocks: 512 KB at first, then each as big as all before it,
@@ -572,12 +597,16 @@ static __attribute__((noinline)) void *malloc_more(size_t need)
 			if (b)
 				break;
 		}
-		if (dv && SIZE(dv) >= need)
+		if (dv && SIZE(dv) >= need && need < BIG)
 			goto cut;
-		/* any block in a later list is big enough */
+		/* any block in a later list is big enough. A big block is cut
+		   from its end and dv stays where the small ones are: made dv,
+		   the small blocks that stay were cut from beside each big
+		   buffer, and once those went no big piece was left (ECal's
+		   refresh in Falcon mode: 3.6 MB free, none of it 40 KB) */
 		if ((i = bin_next((unsigned)i + 1)) >= 0) {
 			b = bins[i];
-			if (SIZE(b) - need < MINBLK)
+			if (SIZE(b) - need < MINBLK || need >= BIG)
 				break;
 			bin_take(b, (unsigned)i);	/* it is cut from now on */
 			if (dv)
@@ -585,6 +614,8 @@ static __attribute__((noinline)) void *malloc_more(size_t need)
 			dv = b;
 			goto cut;
 		}
+		if (dv && SIZE(dv) >= need)
+			goto cut;		/* a big one, nothing else fits */
 		if (!more_core(need))
 			return 0;
 	}
@@ -757,9 +788,12 @@ unsigned heap_bin(size_t s)
 /* walks every area: sizes and flags agree, no two free blocks side by
    side, every free block in its list and every list's blocks free and of
    its size. The free bytes, and the free blocks in *nfree; -1 if wrong. */
+long heap_check_big;		/* heap_check: the largest free block */
+
 long heap_check(long *nfree)
 {
 	long bytes = 0, blocks = 0, listed = 0;
+	heap_check_big = 0;
 	int a, dv_seen = 0;
 	unsigned i;
 	for (a = 0; a < areas; a++) {
@@ -778,6 +812,8 @@ long heap_check(long *nfree)
 					return -1;
 				bytes += (long)s;
 				blocks++;
+				if ((long)s > heap_check_big)
+					heap_check_big = (long)s;
 			}
 			prev_used = !!(b->head & INUSE);
 			b = AT(b, s);

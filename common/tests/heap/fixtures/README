@@ -1,0 +1,13 @@
+Allocation traces from the Atari, replayed by test_heap replay (make test).
+
+ecal-falconmode-3x500.trace.gz: ECal's accessory (whomper/ECal 29f16496
+with a trace probe), Falcon:16 TOS 4.04, mem_test.py --falcon-mode, three
+calendars of 500 events: every malloc/realloc/free after heap_add, as block
+ids and sizes only. On the Atari the refresh failed at the X lines with
+3,655,112 bytes free in 540 blocks, the largest 39,180 (libc before
+6e6dac6, which the replay gives exactly); the test wants 128 KB or more
+there.
+
+Lines: "A size" heap_add, "M id n" malloc (id 0: it failed there), "F id"
+free, "R oldid newid n" realloc (newid 0: failed there), "X" where the app
+failed. conv.py makes a trace from a probe build's console (H lines).

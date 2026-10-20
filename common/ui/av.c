@@ -25,6 +25,7 @@
 static char local_name[10], local_out[1024];
 static char *name_buf = local_name, *out_buf;
 int (*av_people_started)(const char *p);
+void (*av_twin_here)(short id);
 static char got[2048];			/* the last VA_START's string, ours */
 static short server = -1;		/* the AV server's id, once told */
 static int registered;
@@ -194,6 +195,12 @@ int av_message(const short *msg, const char **s)
 		reply[0] = TWIN_HERE;
 		reply[1] = appl_id();
 		appl_write(msg[1], 16, reply);
+		return AV_DONE;
+	}
+	if (msg[0] == TWIN_HERE) {
+		/* our program's late answer to TWIN_ASK (twin.c) */
+		if (av_twin_here)
+			av_twin_here(msg[1]);
 		return AV_DONE;
 	}
 	if (msg[0] == AV_STARTED && av_people_started &&
