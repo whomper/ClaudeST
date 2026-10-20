@@ -114,7 +114,7 @@ def main():
 
     out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "bridge", "claude_bridge.py"),
-                               "--backend", "demo", "--pipe", out, inp],
+                               "--backend", "demo", "-v", "--pipe", out, inp],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     serial = ["--rs232-out", out, "--rs232-in", inp]
 
@@ -249,6 +249,8 @@ def main():
             row = selected_row(dlg, list_x, list_y, list_w, ch)
             check("... nor the second time", row == 0, "selected row: %s" % row)
             check("the selector moved to the font", downs == picked, "%d of %d Downs" % (downs, picked))
+            blog = os.path.join(work, "bridge.log")
+            sent_before = os.path.getsize(blog)
             r.key(K["RETURN"])			# OK
             r.wait(3, limit=120)
             r.move(*rest)
@@ -259,6 +261,13 @@ def main():
                   "%.1f%% changed from the system font" % (100 * changed(before, after)))
             time.sleep(4)
             later = r.shot("4-later")
+            # nothing reaches the window as the selector closes: the click
+            # that opened it, held by the AES, once landed on the sidebar's
+            # Projects row as laid out in the new font (ba6fe50b, Falcon-4)
+            with open(blog, errors="replace") as f:
+                f.seek(sent_before)
+                asked = [l.strip() for l in f if "<- ['LIST'" in l or "<- ['OPEN'" in l]
+            check("the window asked the bridge for nothing after OK", not asked, "; ".join(asked))
             check("the screen stayed as drawn (no dialog left)", changed(after, later) < 0.02,
                   "%.1f%% changed since" % (100 * changed(after, later)))
             font = inf_font(inf)

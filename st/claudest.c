@@ -2996,9 +2996,12 @@ static void wait_release(void)
 		evnt_multi_(MU_TIMER, 0, 0, 0, 10, m, &e);
 	}
 	/* and a click the AES still holds, such as the one that chose the
-	   menu item: a list under the pointer would take it as a choice */
+	   menu item: a list under the pointer would take it as a choice, and
+	   back in the window it lands where it was made, which after a new
+	   font can be another sidebar row. 0x101, one click: waiting for two,
+	   a zero timer comes first and the click is left to the main loop */
 	for (i = 0; i < 4; i++) {
-		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 0, 0, m, &e);
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x101, 3, 0, 0, m, &e);
 		if (!(e.which & MU_BUTTON))
 			break;
 	}
@@ -4035,7 +4038,7 @@ static void font_menu(void)
 	   AES 4 (TOS 4.04) report the buttons being up, all the time, so
 	   the row under the resting pointer was chosen again and again.) */
 	for (i = 0; i < 8; i++) {
-		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 0, 300, m, &e);
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x101, 3, 0, 300, m, &e);
 		if (!(e.which & MU_BUTTON))
 			break;
 	}
