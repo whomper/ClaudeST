@@ -3665,6 +3665,8 @@ static void look_at(FAM *f)
 		nsizes = 2;
 		return;
 	}
+	if (!f->mono)			/* proportional (measured): it can't be picked */
+		return;
 	graf_mouse(BUSYBEE, 0);
 	if (vst_font(vh, f->id) != f->id) {
 		f->mono = 0;
@@ -3836,7 +3838,7 @@ static void draw_type(void)
 	char t[72];
 	short n;
 	strcpy(t, format_name(f));
-	if (f->id != 1 && f->format != 1) {
+	if (f->id != 1 && f->format != 1 && f->mono) {
 		/* setting it says where its Hebrew comes from */
 		set_font(f->id, chosen_pt() ? chosen_pt() : 12);
 		strcat(t, heb_mode == HM_UNICODE ? ", Hebrew from the font" :
@@ -3931,7 +3933,7 @@ static short flist_click(FLIST *l, short mx, short my, short clicks)
 static void font_menu(void)
 {
 	static char heb_label[3][24];
-	short i, done = 0, ok = 0, m[8], clipr[4];
+	short i, done = 0, ok = 0, m[8], clipr[4], pending = 0;
 	short keep_id = cur_font_id, keep_pt = cur_font_pt, keep_heb = hebfont;
 	AEVENT e;
 
@@ -4019,23 +4021,56 @@ static void font_menu(void)
 	draw_preview();
 	graf_mouse(M_ON, 0);
 	wait_release();
+	/* the click that chose Font... can still come in as a button event
+	   (TOS 4.04 with NVDI): what comes in the first 0.3 s isn't meant
+	   for the lists */
+	for (i = 0; i < 8; i++) {
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 1, 300, m, &e);
+		if (!(e.which & MU_BUTTON))
+			break;
+	}
 
 	while (!done) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x102, 3, 1, 0, m, &e);
+		/* a family moved to by key: its sizes, type and sample (slow with
+		   a vector font under NVDI) once no key has come for 0.2 s */
+		evnt_multi_(MU_KEYBD | MU_BUTTON | (pending ? MU_TIMER : 0), 0x102, 3, 1, 200, m, &e);
+		if (pending) {
+			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			short moving = e.which == MU_KEYBD && (sc == 0x48 || sc == 0x50 ||
+				(as >= 'a' && as <= 'z') || (as >= 'A' && as <= 'Z') || (as >= '0' && as <= '9'));
+			if (!moving) {		/* the timer, a click, Return, the size keys... */
+				pending = 0;
+				family_changed(1);
+			}
+		}
 		if (e.which & MU_KEYBD) {
 			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			short to = -1;
 			if (as == 0x1b || sc == 0x61) {
 				done = 1;
 			} else if (as == 0x0d || sc == 0x72) {
 				if (ok_enabled())
 					done = ok = 1;
 			} else if ((sc == 0x48 && lf.sel > 0) || (sc == 0x50 && lf.sel < nfam - 1)) {
-				lf.sel += sc == 0x48 ? -1 : 1;
+				to = lf.sel + (sc == 0x48 ? -1 : 1);
+			} else if ((as >= 'a' && as <= 'z') || (as >= 'A' && as <= 'Z') || (as >= '0' && as <= '9')) {
+				/* the next family starting with that letter: C for Courier */
+				short k;
+				char want = as >= 'a' && as <= 'z' ? as - 32 : as;
+				for (k = 1; k <= nfam && to < 0; k++) {
+					const char *nm = fam[(lf.sel + k) % nfam].name;
+					char c = *nm >= 'a' && *nm <= 'z' ? *nm - 32 : *nm;
+					if (c == want)
+						to = (lf.sel + k) % nfam;
+				}
+			}
+			if (to >= 0 && to != lf.sel) {
+				lf.sel = to;
 				flist_show(&lf, lf.sel);
 				graf_mouse(M_OFF, 0);
 				flist_draw(&lf);
 				graf_mouse(M_ON, 0);
-				family_changed(1);
+				pending = 1;
 			} else if ((sc == 0x4b && ls.sel > 0) || (sc == 0x4d && ls.sel >= 0 && ls.sel < nsizes - 1)) {
 				ls.sel += sc == 0x4b ? -1 : 1;
 				flist_show(&ls, ls.sel);

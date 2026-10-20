@@ -52,6 +52,20 @@ def changed(a, b, box=None):
     return d.histogram()[255] / float((box[2] - box[0]) * (box[3] - box[1]))
 
 
+def selected_row(shot, x, y, w, ch):
+    """the row of the selector's family list drawn selected (inverted:
+    mostly dark), 0 the top one shown; None if none is"""
+    from PIL import Image
+    im = Image.open(shot).convert("L")
+    px = im.load()
+    for k in range(8):
+        dark = sum(1 for yy in range(y + k * ch + 2, y + (k + 1) * ch - 2, 2)
+                   for xx in range(x + 2, x + w, 2) if px[xx, yy] < 128)
+        if dark > 0.5 * ((ch - 4) // 2) * ((w - 2) // 2):
+            return k
+    return None
+
+
 def inf_font(path):
     """FONT= from CLAUDEST.INF, as (id, size), or None"""
     try:
@@ -138,6 +152,9 @@ def main():
         dw, dh = 64 * 8, 23 * ch
         dx, dy = (w - dw) // 2, max((h - dh) // 2, ch + 2)
         dialog = (dx, dy, dx + dw, dy + dh)
+        # its family list: two cells in, four and a half rows down, 35
+        # cells wide less the scroll bar (st/claudest.c, font_menu)
+        list_x, list_y, list_w = dx + 2 * 8 + 1, dy + 4 * ch + ch // 2 + 1, 33 * 8 - 4
 
         def font_dialog(name):
             """Options > Font...: Options is the fourth title (" Desk "
@@ -173,6 +190,9 @@ def main():
         dlg = font_dialog("2-font-dialog")
         check("the font selector opened", changed(before, dlg) > 0.05,
               "%.0f%% of the screen" % (100 * changed(before, dlg)))
+        row = selected_row(dlg, list_x, list_y, list_w, ch)
+        check("the opening click chose no font: the system font, the top row, is selected",
+              row == 0, "selected row: %s" % row)
         check("the status line, under the selector, is still in the window's font",
               changed(before, dlg, status) < 0.02,
               "%.1f%% of it differs" % (100 * changed(before, dlg, status)))
@@ -210,8 +230,8 @@ def main():
                 downs += 1
             on = r.shot("2d-on-the-font")
             print("  %d Up to the system font, %d Down to the font" % (ups, downs))
-            check("the opening click selected no row", ups == 0,
-                  "%d Up back to the system font" % ups)
+            row = selected_row(dlg, list_x, list_y, list_w, ch)
+            check("... nor the second time", row == 0, "selected row: %s" % row)
             check("the selector moved to the font", downs == picked, "%d of %d Downs" % (downs, picked))
             r.key(K["RETURN"])			# OK
             r.wait(3, limit=120)
