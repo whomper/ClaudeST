@@ -297,8 +297,8 @@ keep the system font.
   as many lines on an ST high or a Falcon VGA screen.
 - **GDOS fonts:** with a GDOS such as NVDI or SpeedoGDOS, its fonts are
   listed too. ClaudeST lays text out in character cells, so it needs a
-  fixed-width font: proportional ones are listed in grey and can't be
-  picked. The first time, ClaudeST measures each font to find them
+  fixed-width font: only those are listed, and the sizes each one draws.
+  The first time, ClaudeST measures each font to find them
   ("Looking for fixed-width fonts" on the status line; it can take a
   while with many vector fonts) and keeps the answers in `CLAUDEST.FNT`
   next to `CLAUDEST.PRG`,
@@ -317,7 +317,8 @@ keep the system font.
   "Hebrew in the system font": those letters are then drawn in the
   system font, in the same cells.
 
-Keys in the selector: `↑` `↓` change the family, `←` `→` the size,
+Keys in the selector: `↑` `↓` change the family, a letter goes to the
+next family starting with it (`C` for Courier), `←` `→` change the size,
 `Return` is OK and `Esc` cancels. A double click on a family or size
 also picks it.
 

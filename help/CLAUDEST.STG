@@ -389,9 +389,9 @@
   keep the system font.
 
   - @{B}The system font@{b} comes in two sizes, 8 x 8 and 8 x 16.
-  - @{B}GDOS fonts:@{b} with NVDI or SpeedoGDOS, its fonts are listed
-    too. ClaudeST needs a fixed-width font: proportional ones are listed
-    in grey. The first time, each font is measured ("Looking for
+  - @{B}GDOS fonts:@{b} with NVDI or SpeedoGDOS, its fixed-width fonts
+    are listed too (ClaudeST needs one), with the sizes each draws. The
+    first time, each font is measured ("Looking for
     fixed-width fonts" on the status line) and the answers kept in
     CLAUDEST.FNT. Delete that file to measure them all again.
   - @{B}Hebrew letters:@{b} fonts keep them in different places. The
@@ -401,8 +401,9 @@
     for its own Hebrew letters; without them, they are drawn in the
     system font.
 
-  Keys: Up and Down change the family, Left and Right the size, Return
-  is OK and Esc cancels.
+  Keys: Up and Down change the family, a letter goes to the next family
+  starting with it (C for Courier), Left and Right change the size,
+  Return is OK and Esc cancels.
 @endnode
 
 ## ------------------------------------------------------------------------

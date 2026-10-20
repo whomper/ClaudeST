@@ -16,9 +16,10 @@ then Options > Font... (with the mouse: the selector has no key).
      did under TOS 4.04), and under the selector and after Cancel the
      status line is drawn as before (1.49 drew it in a Symbol face once
      NVDI's fonts were loaded).
-Then it opens the selector again and moves to the first fixed-width GDOS
-font, which CLAUDEST.FNT (the families in the selector's order) names, in
-the size the selector offers first, and presses Return:
+Then it opens the selector again, which lists the system font and the
+fixed-width GDOS fonts only, moves one Down to the first of those (the
+first "1 " line of CLAUDEST.FNT), in the size offered first, and presses
+Return:
   2. the window redrew in the new font, and stayed (no dialog left);
   3. CLAUDEST.INF has FONT= with that font's id (not 1, the system font);
   4. after a restart, the same chat draws as it did before the restart.
@@ -220,22 +221,22 @@ def main():
         check("... its status line too", changed(before, cancelled, status) < 0.02,
               "%.1f%% of it differs" % (100 * changed(before, cancelled, status)))
 
-        # CLAUDEST.FNT has the families in the selector's order after the
-        # system font, "1 Name" for a fixed-width one: the first of those
-        # is that many Downs from the system font
+        # CLAUDEST.FNT has every family measured, "1 Name" for a fixed-
+        # width one; the selector lists only those (the guidelines, 5.3),
+        # after the system font: the first is one Down from it
         picked = None
         try:
             with open(os.path.join(hd, "CLAUDEST.FNT"), errors="replace") as f:
-                fams = [l.rstrip("\r\n") for l in f if l.strip()]
-            picked = next(i + 1 for i, l in enumerate(fams) if l.startswith("1 "))
-        except (OSError, StopIteration):
+                fams = [l.rstrip("\r\n") for l in f if l.startswith("1 ")]
+            picked = 1 if fams else None
+        except OSError:
             pass
         if picked is None:
             print("  no fixed-width GDOS font (no CLAUDEST.FNT, or no \"1 \" line in it), skipped")
             skipped = True
         else:
-            print("  %d families after the system font; the first fixed-width one, %d down: %s"
-                  % (len(fams), picked, fams[picked - 1][2:]))
+            print("  %d fixed-width families listed after the system font; the first: %s"
+                  % (len(fams), fams[0][2:]))
             dlg = font_dialog("2c-font-dialog-again")
             ups = 0
             while ups < len(fams) + 5 and step(K["UP"], 3):	# to the system font,

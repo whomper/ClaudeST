@@ -3649,6 +3649,13 @@ static void list_families(void)
 		nfam++;
 	}
 	keep_monospaced();
+	/* only what ClaudeST can use is listed (the guidelines, 5.3): the
+	   system font and the fixed-width ones; CLAUDEST.FNT still has the
+	   proportional ones, so they aren't measured again */
+	for (i = k = 1; i < nfam; i++)
+		if (fam[i].mono)
+			fam[k++] = fam[i];
+	nfam = k;
 }
 
 /* the sizes of a family */
