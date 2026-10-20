@@ -2998,7 +2998,7 @@ static void wait_release(void)
 	/* and a click the AES still holds, such as the one that chose the
 	   menu item: a list under the pointer would take it as a choice */
 	for (i = 0; i < 4; i++) {
-		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 1, 0, m, &e);
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 0, 0, m, &e);
 		if (!(e.which & MU_BUTTON))
 			break;
 	}
@@ -4021,11 +4021,14 @@ static void font_menu(void)
 	draw_preview();
 	graf_mouse(M_ON, 0);
 	wait_release();
-	/* the click that chose Font... can still come in as a button event
-	   (TOS 4.04 with NVDI): what comes in the first 0.3 s isn't meant
-	   for the lists */
+	/* the click that chose Font... can still come in as a button event:
+	   what comes in the first 0.3 s isn't meant for the lists. (The
+	   button waits are 0x102, 3, 0: either button going down, with a
+	   double click counted. With a state of 1 the negating 0x100 made
+	   AES 4 (TOS 4.04) report the buttons being up, all the time, so
+	   the row under the resting pointer was chosen again and again.) */
 	for (i = 0; i < 8; i++) {
-		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 1, 300, m, &e);
+		evnt_multi_(MU_BUTTON | MU_TIMER, 0x102, 3, 0, 300, m, &e);
 		if (!(e.which & MU_BUTTON))
 			break;
 	}
@@ -4033,7 +4036,7 @@ static void font_menu(void)
 	while (!done) {
 		/* a family moved to by key: its sizes, type and sample (slow with
 		   a vector font under NVDI) once no key has come for 0.2 s */
-		evnt_multi_(MU_KEYBD | MU_BUTTON | (pending ? MU_TIMER : 0), 0x102, 3, 1, 200, m, &e);
+		evnt_multi_(MU_KEYBD | MU_BUTTON | (pending ? MU_TIMER : 0), 0x102, 3, 0, 200, m, &e);
 		if (pending) {
 			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
 			short moving = e.which == MU_KEYBD && (sc == 0x48 || sc == 0x50 ||
