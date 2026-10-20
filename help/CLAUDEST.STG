@@ -73,6 +73,9 @@
       room (FOLDR400.PRG). TOS halts with "OUT OF INTERNAL MEMORY"
       when its small pool of folder entries runs out; FOLDRxxx makes
       the pool bigger.
+    - With STinG: the Delay in STING.CPX set to suit the machine, 10 on
+      a Falcon or TT, 25 to 50 on an ST, as STinG's manual says. It
+      sets the speed of every STinG program.
 
   Give the Pi a fixed address (a DHCP reservation in your router), and
   the Atari too unless the bridge accepts any address (--atari any).
@@ -504,9 +507,9 @@
 @{U}Troubleshooting@{u}
 
   @{B}Connecting... never turns into Online@{b}
-    On the Pi, check "systemctl status claude-st", the address in
-    CLAUDEST.INF, and that the Atari's address matches the installer's
-    --atari option.
+    On the Pi, check "systemctl status claude-st"; on the Atari, the
+    address in Options > Settings; and that the Atari's address matches
+    the installer's --atari option.
 
   @{B}An error mentions the session key, or HTTP 401/403@{b}
     claude.ai logged you out: get a new sessionKey from the website and

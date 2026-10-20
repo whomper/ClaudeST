@@ -413,7 +413,8 @@ All commands run on the Pi.
 
 | Problem | What to do |
 |---------|-----------|
-| *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in `CLAUDEST.INF`, and that the Atari's address matches the installer's `--atari` |
+| *Connecting…* never turns into *Online* | Check `systemctl status claude-st`, the address in Options ▸ Settings, and that the Atari's address matches the installer's `--atari` |
+| Slow over the network (attaching files, long chats) | Set the Delay in `STING.CPX` to suit the machine: 10 on a Falcon or TT, 25 to 50 on an ST, as STinG's manual says. STinG looks at the network card that often, so it sets the speed of every STinG program |
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | "Claude hasn't answered for 90 seconds", or a usage-limit message | Your claude.ai usage limit is reached (F8 shows it), so claude.ai can't answer until it resets; reading your chats still works. The message is sent: open the chat again later to see the answer |
 | "claude.ai says too many requests (HTTP 429)" | claude.ai is limiting requests for a while. Wait a few minutes; F8 shows your usage |
