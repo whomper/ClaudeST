@@ -6,6 +6,7 @@ and EHypView, their latest releases (getrelease.py), loaded together on a
 4 MB machine, as on Erez's own:
 
     common/tests/family/acc_all.py WORK [MACHINE] [--nvdi [--font]] [--display :N] [--use FILE]...
+                                   [--accs ECal,EContact] [--prg EMail]
 
 MACHINE is ST (4 MB, TOS 1.04: ECALST.ACC and ECONTST.ACC, the ST
 editions) or Falcon-4 (4 MB, no TT RAM, TOS 4.04: ECAL.ACC and
@@ -13,7 +14,10 @@ ECONTACT.ACC), ST by default; EHYPVIEW.ACC runs on both. --nvdi boots
 with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
 candidate's accessory (ECAL.ACC, say) in place of the release's of that name, for the hub's run
-before the release; the report names it. The Atari boots to the desktop,
+before the release; the report names it. --accs names the accessories (all three by default);
+--prg APP starts that program's latest release (EMAIL.PRG) first, as Erez works: the accessories
+are then opened from its own Desk menu, and at the end the program is quit (^Q) and must give
+the desktop back. The Atari boots to the desktop,
 each accessory is opened from the Desk menu in turn, the three windows
 left open over each other, then each opened again; the Desk menu and every
 step are screenshots in WORK/shots. Checks: the desktop came, the Desk
@@ -41,6 +45,15 @@ display = ":90"
 if "--display" in args:
     display = args[args.index("--display") + 1]
     args.remove(display)
+accs = ["ECal", "EContact", "EHypView"]
+if "--accs" in args:
+    v = args[args.index("--accs") + 1]
+    args.remove(v)
+    accs = [a.strip() for a in v.split(",") if a.strip()]
+prg = None
+if "--prg" in args:
+    prg = args[args.index("--prg") + 1]
+    args.remove(prg)
 use = {}
 while "--use" in args:
     i = args.index("--use")
@@ -73,6 +86,7 @@ if nvdi and not m.nvdi():
 want = {"ECal": "ECALST.ACC" if st else "ECAL.ACC",
         "EContact": "ECONTST.ACC" if st else "ECONTACT.ACC",
         "EHypView": "EHYPVIEW.ACC"}
+want = {a: f for a, f in want.items() if a in accs}
 for app, f in want.items():
     subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), app, rel, f], check=True,
                    stdout=subprocess.DEVNULL)
@@ -86,14 +100,24 @@ for name in ("ECAL", "ECONTACT"):
 if font:
     with open(os.path.join(hd, "EHYPVIEW.INF"), "w", newline="") as f:
         f.write("FOLDER=C:\\\r\nFONT=Courier 10 Pitch\r\nPOINT=10\r\n")
+auto = []
+if prg:
+    pf = prg.upper() + ".PRG"
+    subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), prg, rel, pf], check=True,
+                   stdout=subprocess.DEVNULL)
+    os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
+    shutil.copy(os.path.join(rel, pf), os.path.join(hd, prg.upper(), pf))
+    auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
 versions = ", ".join("%s %s" % (a, use[f] if f in use else open(os.path.join(rel, a.upper() + ".VERSION")).read().strip())
                      for a, f in want.items())
+if prg:
+    versions += ", %s %s in front" % (prg, open(os.path.join(rel, prg.upper() + ".VERSION")).read().strip())
 print("on %s%s; %s" % (m.describe(), " with NVDI" if nvdi else "", versions), flush=True)
 
 x = machines.xvfb(display)
 env = m.env(dict(os.environ, DISPLAY=display, SDL_VIDEODRIVER="x11"))
 hatari = subprocess.Popen(["hatari", "--statusbar", "no", "--borders", "no", "--zoom", "1",
-                           "--fast-boot", "yes", "--natfeats", "yes", "--log-level", "warn"] + m.args(), env=env,
+                           "--fast-boot", "yes", "--natfeats", "yes", "--log-level", "warn"] + m.args() + auto, env=env,
                           stdout=open(work + "/hatari.log", "w"), stderr=subprocess.STDOUT)
 
 
@@ -144,7 +168,16 @@ try:
             break
         prev = shutil.copy(cur, os.path.join(shots, "boot-prev.png"))
     desk = shot("0-desktop")
-    check(hatari.poll() is None and os.path.getsize(desk) > 0, "the desktop came")
+    check(hatari.poll() is None and os.path.getsize(desk) > 0,
+          "%s's window came" % prg if prg else "the desktop came")
+    if prg:
+        # a first start's welcome (EMail's "Let's set up your mail account")
+        # waits for OK, then the account dialog: Esc declines
+        xdo("key", "Return")
+        time.sleep(3)
+        xdo("key", "Escape")
+        time.sleep(3)
+        desk = shot("0b-%s-ready" % prg.lower())
     click(18, 8)                                     # the Desk menu
     menu = shot("1-desk-menu")
     check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: three accessories)")
@@ -165,6 +198,17 @@ try:
                 time.sleep(2)
                 shot("%d-%d-welcomed" % (rnd, i))
             check(n > 2000, "round %d: the Desk menu's accessory %d drew its window (%d pixels)" % (rnd, i + 1, n))
+    if prg:
+        # the accessories' windows closed (^W, the top one each time), then
+        # the program quit: the desktop must come back
+        for i in range(len(want)):
+            xdo("key", "ctrl+w")
+            time.sleep(3)
+        before = shot("8-accessories-closed")
+        xdo("key", "ctrl+q")
+        time.sleep(10 if st else 6)
+        after = shot("9-%s-quit" % prg.lower())
+        check(differs(before, after) > 2000, "%s quit, the desktop back (%d pixels)" % (prg, differs(before, after)))
     check(hatari.poll() is None, "Hatari still runs")
     crashes = [os.path.join(d, f) for d, _, fs in os.walk(hd) for f in fs if f.upper() == "CRASH.LOG"]
     check(not crashes, "no CRASH.LOG" + ("" if not crashes else ": " + ", ".join(crashes)))

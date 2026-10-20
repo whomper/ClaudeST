@@ -262,6 +262,20 @@ void vst_unload_fonts(short h, short select);
 short vqt_name(short h, short index, char *name);	/* -> font id; name of 33 chars */
 long  vqt_char_index(short h, unsigned short c, short from, short to);
 short vst_map_mode(short h, short mode);
+/* NVDI 3 and later, SpeedoGDOS 5: a font's names (vqt_xfntinfo), by its id,
+ * or by its index (1 the system font) with id 0. size is set by the call */
+typedef struct {
+	long size;
+	short format, id, index;		/* format: 1 bitmap, 2 Speedo, 4 TrueType, 8 Type 1 */
+	char font_name[50], family_name[50], style_name[50];
+	char file_name1[200], file_name2[200], file_name3[200];
+	short pt_cnt, pt_sizes[64];		/* a bitmap font's sizes (XFNT_SIZES) */
+} XFNT_INFO;
+#define XFNT_NAME   0x0001
+#define XFNT_FAMILY 0x0002
+#define XFNT_STYLE  0x0004
+#define XFNT_SIZES  0x0100
+short vqt_xfntinfo(short h, short flags, short id, short index, XFNT_INFO *info);	/* format; 0 without */
 void  v_gtext_w(short h, short x, short y, const unsigned short *s, short n);
 short vqt_font_format(short h, short index);	/* 1 bitmap, 2 Speedo, 4 TrueType, 8 Type 1, 0 unknown */
 short vst_font(short h, short id);
