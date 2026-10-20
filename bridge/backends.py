@@ -902,10 +902,16 @@ class ClaudeAiBackend(Backend):
                  s.get("updated_at") or s.get("created_at"), bool(s.get("unread")),
                  code_state(s)) for s in sessions]
 
-    def _code_events(self, session_id, after=None, cap=2000):
-        events, params = [], {"limit": 200}
-        if after:
-            params["after_id"] = after
+    def _code_events(self, session_id, after=None, cap=2000, want=60):
+        """The events after AFTER; with no AFTER, the session's latest
+        events, enough for WANT messages. A long session holds tens of
+        thousands of events (most of them tool calls), so it is read from
+        the newest end: the newest page, then pages back with before_id.
+        Should the server give the oldest page first, it is walked forward
+        and only the latest CAP events are kept."""
+        if not after:
+            return self._code_recent(session_id, cap, want)
+        events, params = [], {"limit": 200, "after_id": after}
         while len(events) < cap:
             page = self._code("get", "/sessions/%s/events" % session_id, **params)
             batch = self._data(page)
@@ -913,6 +919,42 @@ class ClaudeAiBackend(Backend):
             if not (isinstance(page, dict) and page.get("has_more")) or not batch:
                 break
             params["after_id"] = page.get("last_id") or batch[-1].get("id")
+        return events
+
+    # pages to read at most: a forward walk through a very long session
+    CODE_PAGES = 500
+
+    def _code_recent(self, session_id, cap, want):
+        path = "/sessions/%s/events" % session_id
+        page = self._code("get", path, limit=200)
+        events = self._data(page)
+        if not (isinstance(page, dict) and page.get("has_more")) or not events:
+            return events
+        # which end is this? Nothing after it: the newest page
+        newer = self._code_events(session_id, after=page.get("last_id") or events[-1].get("id"), cap=cap)
+        if not newer:
+            seen = set(e.get("id") for e in events)
+            first = page.get("first_id") or events[0].get("id")
+            for _ in range(self.CODE_PAGES):
+                if len(code_messages(events)) >= want:
+                    break
+                page = self._code("get", path, limit=200, before_id=first)
+                older = [e for e in self._data(page) if e.get("id") not in seen]
+                if not older:       # the start, or a server without before_id
+                    break
+                seen.update(e.get("id") for e in older)
+                events = older + events
+                first = page.get("first_id") or older[0].get("id")
+                if not page.get("has_more"):
+                    break
+            return events
+        # the oldest page: walk forward, keeping the latest
+        events = (events + newer)[-cap:]
+        for _ in range(self.CODE_PAGES):
+            more = self._code_events(session_id, after=events[-1].get("id"), cap=cap)
+            if not more:
+                break
+            events = (events + more)[-cap:]
         return events
 
     @staticmethod

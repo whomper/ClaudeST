@@ -1191,6 +1191,50 @@ class CodeSessions(unittest.TestCase):
         sent = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]
         self.assertEqual(sent["message"], {"role": "user", "content": "and the tests?"})
 
+    def long_session(self, newest_first, n=5000):
+        """A backend whose session has N events, served newest page first
+        (before_id goes back) or oldest page first (after_id only)"""
+        from backends import ClaudeAiBackend
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        events = [{"id": "e%d" % i, "data": {"type": "user" if i % 2 == 0 else "assistant", "message": {
+            "role": "user", "content": "q%d" % i} if i % 2 == 0 else {"content": [
+                {"type": "text", "text": "a%d" % i}]}}} for i in range(n)]
+        ids = [e["id"] for e in events]
+        gets = []
+
+        def code(method, path, body=None, **params):
+            if not path.endswith("/events"):
+                return {"title": "Long"}
+            gets.append(params)
+            limit = params["limit"]
+            if params.get("after_id"):
+                lo = ids.index(params["after_id"]) + 1
+                hi = min(lo + limit, n)
+            elif params.get("before_id") and newest_first:
+                hi = ids.index(params["before_id"])
+                lo = max(hi - limit, 0)
+            elif newest_first:
+                lo, hi = n - limit, n
+            else:
+                lo, hi = 0, limit
+            page = events[lo:hi]
+            more = lo > 0 if newest_first and not params.get("after_id") else hi < n
+            return {"data": page, "has_more": more,
+                    "first_id": page[0]["id"] if page else None, "last_id": page[-1]["id"] if page else None}
+        be._code = code
+        be._memory = lambda: {}
+        return be, gets
+
+    def test_a_long_session_shows_its_latest_messages(self):
+        for newest_first in (True, False):
+            be, gets = self.long_session(newest_first)
+            title, msgs = be.get_code_session("session_l")
+            self.assertEqual(msgs[-1], ("A", "a4999"), newest_first)
+            self.assertGreaterEqual(len(msgs), 40)
+            self.assertEqual(be._code_last, {"session_l": "e4999"})
+            if newest_first:      # the newest page and the probe after it: no walk
+                self.assertEqual(len(gets), 2)
+
     def test_code_over_the_protocol(self):
         link = FakeLink()
         s = Session(link, DemoBackend())
