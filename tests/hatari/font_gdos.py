@@ -153,16 +153,15 @@ def main():
         # the same text in the same font, whatever happened in between
         status = (5 * 8, h - 2 * (ch + 6), 23 * 8, h - (ch + 6))
 
-        # the family's Font dialog (common/ui/fontsel.c): 64 cells of the
-        # system font by 23, and up to 4 rows more on a taller screen,
-        # in the middle of the desktop, under the menu bar (form_center)
-        more = max(0, min(4, (h - bar) // ch - 25))
-        dw, dh = 64 * 8, (23 + more) * ch
+        # the family's Font dialog (common/ui/fontsel.c): 48 cells of the
+        # system font by 17, in the middle of the desktop, under the menu
+        # bar (form_center)
+        dw, dh = 48 * 8, 17 * ch
         dx, dy = (w - dw) // 2, bar + (h - bar - dh) // 2
         dialog = (dx, dy, dx + dw, dy + dh)
         # its Family list: two cells in and two rows down (and 3 pixels),
-        # 36 cells wide, the scroll bar in its last two
-        list_x, list_y, list_w = dx + 2 * 8, dy + 2 * ch + 3, 34 * 8
+        # 26 cells wide, the scroll bar in its last two
+        list_x, list_y, list_w = dx + 2 * 8, dy + 2 * ch + 3, 24 * 8
         fam_rows = (list_x, list_y, list_x + list_w, list_y + 4 * ch)	# its first four rows
 
         def font_dialog(name):

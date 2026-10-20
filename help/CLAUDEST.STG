@@ -93,15 +93,15 @@
   @{U}On the Atari@{u}
 
     1. Load STinG and check that the network works.
-    2. Copy CLAUDEST.PRG, CLAUDEST.INF, CLAUDEST.HYP and CLAUDEST.REF
-       into one folder, any folder on any drive. ClaudeST keeps its
-       settings in CLAUDEST.INF next to the program.
-    3. Put the Pi's address on the HOST= line of CLAUDEST.INF, or set
-       it in the next step.
-    4. Run CLAUDEST.PRG. If it doesn't know the Pi's address yet, choose
-       Options > Settings... (Control+,), pick Network and type it, or
-       type @{B}/connect 192.168.1.10@{b} in the reply line. The status
-       line shows Connecting..., then Online, with a green dot.
+    2. Copy CLAUDEST.PRG, CLAUDEST.HYP and CLAUDEST.REF into one
+       folder, any folder on any drive.
+    3. Run CLAUDEST.PRG, choose Options > Settings... (Control+,), pick
+       Network and type the Pi's address, or type
+       @{B}/connect 192.168.1.10@{b} in the reply line. The status line
+       shows Connecting..., then Online, with a green dot.
+
+  ClaudeST keeps what you set in CLAUDEST.INF, which it writes next to
+  the program.
 
   If the Pi restarts or the network drops, ClaudeST reconnects by
   itself. For a serial cable, see @{"Settings" link "Settings"}.
@@ -109,9 +109,8 @@
   @{U}Updating@{u}
 
     On the Atari, copy the new CLAUDEST.PRG, CLAUDEST.HYP and
-    CLAUDEST.REF over the old ones. Keep your own CLAUDEST.INF: the
-    release's is only an example, and copying it would replace your
-    settings.
+    CLAUDEST.REF over the old ones. Your settings, in CLAUDEST.INF,
+    stay as they are.
 
     On the Pi, when a release's notes say the bridge changed, run
     "./update-pi.sh" in your AERA-Gateway folder. It keeps every
@@ -384,7 +383,7 @@
 
   @{B}Options > Font...@{b} opens the Font dialog all the AERA programs
   share: the Family list on the left; beside it the Style list and the
-  Size list with a Pt: field; then the Type line (what kind of font it
+  Size list; then the Type line (what kind of font it
   is, and where its Hebrew comes from) and a sample. The font is used
   for everything in ClaudeST's window; menus and dialogs keep the
   system font.
@@ -401,10 +400,9 @@
     for its own Hebrew letters; without them, they are drawn in the
     system font.
 
-  Keys: Tab (or Left and Right) moves between Family, Style, Size and
-  Pt:; Up and Down move in a list; a letter goes to the next family
-  starting with it (C for Courier); digits type a size. Return is OK
-  and Esc cancels.
+  Keys: Tab (or Left and Right) moves between Family, Style and Size;
+  Up and Down move in a list; a letter goes to the next family starting
+  with it (C for Courier). Return is OK and Esc cancels.
 @endnode
 
 ## ------------------------------------------------------------------------

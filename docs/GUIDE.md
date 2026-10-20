@@ -288,7 +288,7 @@ points (niqqud) and turns maqaf, geresh and gershayim into `-`, `'` and
 **Options ▸ Font…** opens the Font dialog all the AERA programs share,
 laid out as Atari font selectors are: the **Family** list on the left;
 beside it the **Style** list (Regular, Italic, Bold…) and the **Size**
-list with a **Pt:** field; then the **Type** line (bitmap, Speedo,
+list; then the **Type** line (bitmap, Speedo,
 TrueType or Type 1, and where its Hebrew comes from) and a sample in the
 chosen font. The font is used for everything in ClaudeST's window: the
 sidebar, the title bar, the conversation and the reply line. Menus and
@@ -315,10 +315,10 @@ dialogs keep the system font.
   Hebrew, or without NVDI 5 to ask, has those letters drawn in the
   system font, in the same cells.
 
-Keys in the dialog: `Tab` (and `←` `→`) move between Family, Style, Size
-and Pt:; `↑` `↓` move in a list, `Clr/Home` to its top; a letter goes to
-the next family starting with it (`C` for Courier); digits type a size
-into Pt:. `Return` is OK and `Esc` cancels. A double click on a row
+Keys in the dialog: `Tab` (and `←` `→`) move between Family, Style and
+Size; `↑` `↓` move in a list, `Clr/Home` to its top; a letter goes to
+the next family starting with it (`C` for Courier). `Return` is OK and
+`Esc` cancels. A double click on a row
 also picks it.
 
 ## Help
@@ -584,8 +584,7 @@ running EmuTOS.
 ### Source layout
 
 ```
-st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
-           CLAUDEST.INF (the example settings file a release carries)
+st/        the Atari program: claudest.c (UI and protocol), bidi_test.c
 help/      CLAUDEST.STG, the ST-Guide help: make help (needs HCP) -> binary/CLAUDEST.HYP
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
            API, demo), atari_text.py (charset and Markdown), test_bridge.py
