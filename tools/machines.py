@@ -42,6 +42,14 @@ needs it says so and stops). AERA_WITH_NVDI=1 installs it on every Falcon
 a rig starts, so the hub runs an app's own rigs under NVDI unchanged. His GEMSYS\\STING (his network's settings)
 and his accessories are left out. NVDI 5.03 boots on the Falcon's TOS 4.04
 in about 30 s here, reading every font.
+
+The family's accessories alongside: m.accs(["ECal", "EContact"]) puts those
+programs' accessories from their latest releases (getrelease.py; the ST
+editions on an ST) in C:\\, each with C:\\NAME.INF naming its folder
+C:\\NAME so that no first-time question waits; a file the rig put there
+itself is kept. AERA_WITH_ACCS=ECal,EContact does it on every machine a
+rig starts, so the hub runs an app's own rigs with the others loaded, as
+on Erez's machines. Name only the other programs, not the one under test.
 """
 import hashlib
 import os
@@ -200,13 +208,16 @@ class Machine:
 
     def describe(self):
         return "%s:%s, %s" % (self.name, self.screen,
-                              "TOS " + tos_version(self.tos) if self.real else "EmuTOS 1.4")
+                              "TOS " + tos_version(self.tos) if self.real else "EmuTOS 1.4") + \
+            ("; with " + ", ".join(self.with_accs) if getattr(self, "with_accs", None) else "")
 
     def args(self):
         """Hatari's arguments; also writes the machine's own settings"""
         os.makedirs(self.hd, exist_ok=True)
         if os.environ.get("AERA_WITH_NVDI") and self.name.startswith("Falcon") and not self.nvdi():
             sys.exit("machines.py: AERA_WITH_NVDI, but no NVDI here")
+        if os.environ.get("AERA_WITH_ACCS"):
+            self.accs([a for a in os.environ["AERA_WITH_ACCS"].split(",") if a.strip()])
         cfg = os.path.join(self.home, ".config", "hatari")
         os.makedirs(cfg, exist_ok=True)
         nv = bytearray(50)                  # the TT's and Falcon's NVRAM, past the clock
@@ -254,6 +265,40 @@ class Machine:
         if not os.path.exists(fonts):
             shutil.copytree(os.path.join(src, "btfonts"), fonts)
         return True
+
+    # the accessories, by program: (the edition for the Falcon and TT, the ST's)
+    ACCS = {"ECal": ("ECAL.ACC", "ECALST.ACC"), "EContact": ("ECONTACT.ACC", "ECONTST.ACC"),
+            "EHypView": ("EHYPVIEW.ACC", "EHYPVIEW.ACC")}
+
+    def accs(self, apps):
+        """the family's accessories alongside (see above); returns what was put
+        on C:, e.g. ["ECal v2.16"]"""
+        os.makedirs(self.hd, exist_ok=True)
+        done = []
+        for app in apps:
+            app = app.strip()
+            if app not in self.ACCS:
+                sys.exit("machines.py: no accessory for %r (%s)" % (app, ", ".join(self.ACCS)))
+            names = self.ACCS[app]
+            f = names[1] if self.name.startswith("ST") else names[0]
+            if any(os.path.exists(os.path.join(self.hd, n)) for n in names):
+                continue                    # the rig's own
+            cache = os.path.join(os.path.expanduser("~"), ".cache", "aera", "accs", app)
+            os.makedirs(cache, exist_ok=True)
+            subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                         "getrelease.py"), app, cache, f],
+                           check=True, stdout=subprocess.DEVNULL)
+            shutil.copy(os.path.join(cache, f), os.path.join(self.hd, f))
+            stem = names[0][:-4]
+            os.makedirs(os.path.join(self.hd, stem), exist_ok=True)
+            inf = os.path.join(self.hd, stem + ".INF")
+            if not os.path.exists(inf):
+                with open(inf, "w", newline="") as fh:
+                    fh.write("[OPTIONS]\r\nFOLDER=C:\\%s\r\n" % stem)
+            tag = open(os.path.join(cache, app.upper() + ".VERSION")).read().strip()
+            done.append("%s %s" % (app, tag))
+        self.with_accs = done
+        return done
 
     def network(self, rate=None):
         """FAKESTNG and its bridge; Hatari's serial arguments"""

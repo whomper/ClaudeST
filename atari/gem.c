@@ -809,6 +809,24 @@ short vst_map_mode(short h, short mode)
 	return contrl[4] < 1 ? -1 : vintout[0];
 }
 
+/* NVDI 3 and later, SpeedoGDOS 5: the font's names; 0 when the VDI
+ * doesn't answer (TOS's, FONTGDOS) or has no such font */
+short vqt_xfntinfo(short h, short flags, short id, short index, XFNT_INFO *info)
+{
+	info->size = sizeof(*info);
+	info->format = 0;
+	vintin[0] = flags;
+	vintin[1] = id;
+	vintin[2] = index;
+	vintin[3] = (short)((u32)info >> 16);
+	vintin[4] = (short)((u32)info & 0xffff);
+	contrl[4] = 0;
+	vdi(229, 0, 5, h);
+	if (contrl[4] < 1 || !vintout[0])
+		return 0;
+	return vintout[0];
+}
+
 /* text given as 16-bit codes (font indices in map mode 0) */
 void v_gtext_w(short h, short x, short y, const unsigned short *s, short n)
 {
