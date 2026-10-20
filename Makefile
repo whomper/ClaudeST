@@ -34,8 +34,7 @@ icons:
 
 # a release's files: each one in dist/, and all of them in
 # dist/CLAUDEST-x.y.zip (the icons in icons/), for the release workflow.
-# CLAUDEST.INF is the example settings file (st/CLAUDEST.INF).
-DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF st/CLAUDEST.INF
+DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
 ICONS   := icons/CLAUDEST.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
 dist: all help
 	rm -rf dist

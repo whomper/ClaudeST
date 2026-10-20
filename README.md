@@ -77,31 +77,23 @@ own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folde
 |---|---|
 | `CLAUDEST.PRG` | the program |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
-| `CLAUDEST.INF` | an example settings file: keep it next to `CLAUDEST.PRG` (or leave it out and use Options ▸ Settings) |
 | `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 
 1. Load **STinG** and check that the network works, for example by pinging the Pi.
-2. Copy `CLAUDEST.PRG`, `CLAUDEST.INF`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder, any folder
-   on any drive. ClaudeST keeps its settings in `CLAUDEST.INF` next to the program.
-3. Put the Pi's address on the `HOST=` line of `CLAUDEST.INF` with any text editor:
-   ```
-   HOST=192.168.1.10
-   ```
-   Or set it from ClaudeST itself, in the next step.
-4. Run `CLAUDEST.PRG`. If it doesn't know the Pi's address yet, choose **Options ▸ Settings…**
-   (`Ctrl+,`), pick **Network** and type it (port 2323), or type `/connect 192.168.1.10` in the reply
-   line. The status line at the bottom left shows *Connecting…*, then *Online*, with a green dot.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder, any folder on any drive.
+3. Run `CLAUDEST.PRG`, choose **Options ▸ Settings…** (`Ctrl+,`), pick **Network** and type the Pi's
+   address (port 2323). Or type `/connect 192.168.1.10` in the reply line. The status line at the
+   bottom left shows *Connecting…*, then *Online*, with a green dot.
 
-ClaudeST saves what you set to `CLAUDEST.INF`. If the Pi restarts or the network drops, ClaudeST
-reconnects by itself. The guide's [Icons](docs/GUIDE.md#icons) section says how to put the icon on the
+ClaudeST keeps what you set in `CLAUDEST.INF`, which it writes next to the program. If the Pi
+restarts or the network drops, ClaudeST reconnects by itself. The guide's [Icons](docs/GUIDE.md#icons) section says how to put the icon on the
 desktop.
 
 ### Updating
 
 - **The Atari:** from a new release, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` over the old
-  ones. Keep your own `CLAUDEST.INF`: the release's is only an example, and copying it would replace
-  your settings.
+  ones. Your settings, in `CLAUDEST.INF`, stay as they are.
 - **The Pi:** when a release's notes say the bridge changed, run `./update-pi.sh` in your
   `AERA-Gateway` folder (see [Looking after the Pi](#looking-after-the-pi)). It is safe to run at any
   time.
@@ -115,7 +107,8 @@ the Atari straight to the Pi's GPIO pins: the Atari's ±12 V signals damage the 
 sudo gateway/aera-gateway install claude --serial auto
 ```
 
-On the Atari, choose **Options ▸ Settings…** and pick **Serial**, or leave out `CLAUDEST.INF`. Both sides use 19200 baud
+On the Atari, choose **Options ▸ Settings…** and pick **Serial** (a new ClaudeST, with nothing set
+yet, starts on the serial port). Both sides use 19200 baud
 by default. The guide's [Serial cables and ports](docs/GUIDE.md#serial-cables-and-ports) says which
 port to use on each Atari.
 
@@ -243,8 +236,7 @@ running ClaudeST in Hatari and recording the demo video.
 ## Source
 
 ```
-st/        the Atari program: claudest.c (UI and protocol), bidi_test.c,
-           CLAUDEST.INF (the example settings file a release carries)
+st/        the Atari program: claudest.c (UI and protocol), bidi_test.c
 help/      CLAUDEST.STG, the ST-Guide help (make help)
 bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai, API, demo),
            atari_text.py (charset and Markdown), test_bridge.py

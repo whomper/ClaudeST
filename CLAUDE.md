@@ -63,8 +63,8 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 
 - **The version** is `#define VERSION` in `st/claudest.c`, not a `VERSION` file: `tools/bump.py`
   raises it (1.34 -> 1.35), and `tools/check_version.sh` fails when vX.Y is out already (the
-  release workflow runs it). A release carries `CLAUDEST.PRG`, `CLAUDEST.HYP` and `.REF`, the
-  example `st/CLAUDEST.INF` and the icon (`icons/`).
+  release workflow runs it). A release carries `CLAUDEST.PRG`, `CLAUDEST.HYP` and `.REF` and the
+  icon (`icons/`); no example `CLAUDEST.INF` (Erez, 20 Oct 2026): ClaudeST writes its own.
 - `bridge/` is ClaudeST's; `gateway/` is a read-only copy of
   [AERA-Gateway](https://github.com/whomper/AERA-Gateway)'s, whose
   `aera-gateway install claude` sets the bridge up (`pi/install.sh` hands
