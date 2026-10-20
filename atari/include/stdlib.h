@@ -12,6 +12,9 @@ void heap_add(void *p, size_t bytes);	/* a fixed heap (accessories) */
 /* the heap's bytes in use (whole blocks), and the most since the app last
    set heap_peak (to heap_use, say): what its data really needs */
 extern long heap_use, heap_peak;
+/* an accessory's bytes taken from GEMDOS before its heap_add (acc_heap):
+   0 unless something was malloc'd first; its log should say so */
+extern long heap_early;
 int atoi(const char *s);
 long atol(const char *s);
 long strtol(const char *s, char **end, int base);

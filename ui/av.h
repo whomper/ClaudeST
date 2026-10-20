@@ -62,6 +62,8 @@ long av_people_lost(void);
    AV_STARTED back (1 when p was ours) */
 void av_post(short id, short what, short w3, const char *p);
 extern int (*av_people_started)(const char *p);
+/* a TWIN_HERE that came after twin.c stopped waiting (twin_init sets it) */
+extern void (*av_twin_here)(short id);
 /* in a loop of the shared code's own (busy.c): a PEOPLE goes to
    av_people_hook (people_init sets it) and our PEOPLE's AV_STARTED is
    taken; 1 when the message was one of those, 0 for the app's */

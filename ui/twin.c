@@ -18,12 +18,21 @@ static const char *names = "";
 static char local_buf[1024];
 static char *buf;
 static short asked = -2, answer = -1;	/* ap_id 0 asked since AC_CLOSE, and what it said */
+static short pending;			/* asked, no answer yet: it may still be starting */
+static unsigned long asked_at;		/* tos_ms() of the ask */
 static int searching = -1;		/* the AES lists its programs: not known yet */
+
+/* how long a program in front that hasn't answered yet is taken for
+   ours: it answers once it reaches its event loop, and reading its files
+   before that takes seconds on an ST. After this, a name left to the
+   desktop by an older TOS */
+#define TWIN_PATIENCE 30000UL
 
 void twin_init(const char *n)
 {
 	names = n;
 	searching = -1;
+	av_twin_here = twin_answered;
 }
 
 /* the AES lists its programs: appl_search (AES 4.0, MagiC, XaAES). Only
@@ -159,16 +168,28 @@ int twin_handover(const char *cmd)
 short twin_prg(void)
 {
 	short id = find(KIND_PRG);
-	if (id < 0)
+	if (id < 0) {
 		asked = -2;		/* gone: the next one is asked again */
+		pending = 0;
+	}
 	if (id < 0 || can_search())
 		return id;
 	/* plain TOS: the name may be the last program's, left to the desktop
-	   on an older TOS; the answer holds until the program changes */
+	   on an older TOS; the answer holds until the program changes. A
+	   program still starting answers late (twin_answered): until then,
+	   or TWIN_PATIENCE, it is taken for ours, so that nothing of ours
+	   writes its files meanwhile */
 	if (asked != id) {
 		asked = id;
+		asked_at = tos_ms();
 		post(id, TWIN_ASK, 0);
-		answer = await(id, TWIN_HERE, 5) ? id : -1;
+		pending = !await(id, TWIN_HERE, 5);
+		answer = pending ? -1 : id;
+	}
+	if (pending) {
+		if (tos_ms() - asked_at < TWIN_PATIENCE)
+			return id;
+		pending = 0;		/* no answer: not ours */
 	}
 	return answer;
 }
@@ -178,12 +199,30 @@ int twin_pass(const char *s)
 	short id = twin_prg();
 	if (id < 0)
 		return 0;
+	if (pending) {
+		/* the user opened us from the Desk menu: the program in front
+		   is in its event loop, so ours answers now. Asked once more */
+		post(id, TWIN_ASK, 0);
+		pending = 0;
+		answer = await(id, TWIN_HERE, 10) ? id : -1;
+		if (answer < 0)
+			return 0;
+	}
 	post(id, VA_START, shared(s ? s : ""));
 	return 1;
+}
+
+void twin_answered(short id)
+{
+	if (id == asked) {
+		answer = id;
+		pending = 0;
+	}
 }
 
 void twin_reset(void)
 {
 	asked = -2;
 	answer = -1;
+	pending = 0;
 }

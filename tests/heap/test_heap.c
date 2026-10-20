@@ -321,6 +321,133 @@ static void case_grow(void)
 	free(v);
 }
 
+short _is_acc;
+
+/* an accessory's malloc before its heap_add: 16 KB steps, not 512 KB */
+static void case_accearly(void)
+{
+	static char arena[100000 + 16];
+	void *p, *q;
+	pool_new(4L << 20);
+	_is_acc = 1;
+	p = heap_malloc(8000);
+	check(p != 0 && ngrants == 1 && grants[0] == 16384, "accearly: 8000 bytes take one 16 KB block");
+	check(heap_early == 16384 && heap_tt + heap_st == 16384, "accearly: counted in heap_early and the heap's total");
+	q = heap_malloc(20000);
+	check(q != 0 && ngrants == 2 && grants[1] == 32768, "accearly: 20000 more take 32 KB, not 512");
+	heap_add(arena + 2, 100000);
+	q = heap_malloc(50000);
+	check(q != 0 && ngrants == 2, "accearly: after heap_add, from the heap, no more GEMDOS");
+	check(heap_early == 49152, "accearly: heap_early stays as it was");
+	check(heap_check(0) >= 0, "accearly: checks out");
+	_is_acc = 0;
+}
+
+/* ECal's refresh in Falcon mode (20 Oct 2026): an answer's buffer grows
+   by doubling and goes, while the events read from it stay, small; over
+   many answers the small ones must not end up all through the heap */
+static void case_frag(void)
+{
+	static char arena[4L * 1024 * 1024 + 16];
+	unsigned r;
+	int k, failed_big = 0;
+	long worst = 1L << 30;
+	heap_add(arena + 2, 4L * 1024 * 1024);
+	for (r = 0; r < 1500; r++) {
+		size_t n = 8192, top = 16384u << (r % 4);
+		char *answer = heap_malloc(12000 + r % 5000);	/* the gzip'd answer */
+		char *big = heap_malloc(n), *nb;
+		for (; big && n < top; n *= 2) {
+			/* inflate's output doubles; events are parsed meanwhile */
+			for (k = 0; k < 3; k++)
+				if (!heap_malloc(40 + (r * 37 + k * 101 + n) % 260))
+					failed_big++;
+			nb = heap_realloc(big, n * 2);
+			if (!nb)
+				break;
+			big = nb;
+		}
+		if (!answer || !big || n < top)
+			failed_big++;
+		heap_free(answer);
+		heap_free(big);
+		if (r % 50 == 49) {
+			heap_check(0);
+			if (heap_check_big < worst)
+				worst = heap_check_big;
+		}
+	}
+	check(failed_big == 0, "frag: every answer's buffer grew to its size, every event kept");
+	check(heap_check(0) >= 0, "frag: checks out");
+	check(worst >= 1024L * 1024, "frag: the largest free block never under 1 MB");
+	printf("frag: %ld KB free, largest %ld KB, worst %ld KB\n", heap_check(0) / 1024, heap_check_big / 1024, worst / 1024);
+}
+
+/* a trace from an Atari, replayed (fixtures/: ECal's accessory, Falcon
+   mode, three calendars of 500 events; whomper/ECal's conv.py made it
+   from a probe build's console). Lines: "A size" heap_add, "M id n"
+   malloc (id 0: it failed there), "F id" free, "R oldid newid n"
+   realloc (newid 0: failed there), "X" where the app failed there. Every
+   call that worked there must work here, and at each X the largest free
+   block must be at least 128 KB (it was 39 KB, 20 Oct 2026) */
+static void case_replay(const char *path)
+{
+	FILE *f = fopen(path, "r");
+	unsigned char **ptr = calloc(400000, sizeof(*ptr));
+	char line[100];
+	long nops = 0, fails = 0, xs = 0, worst = 1L << 30, nfree, fr;
+	if (!f || !ptr) {
+		check(0, "replay: the trace");
+		return;
+	}
+	pool_new(64L << 20);
+	while (fgets(line, sizeof(line), f)) {
+		long a, b, n;
+		unsigned char *p;
+		nops++;
+		if (line[0] == 'A' && sscanf(line + 2, "%ld", &n) == 1) {
+			heap_add(pool + 2, (size_t)n);
+		} else if (line[0] == 'M' && sscanf(line + 2, "%ld %ld", &a, &n) == 3 - 1) {
+			p = heap_malloc((size_t)n);
+			if (!p && a)
+				fails++;
+			if (a && a < 400000)
+				ptr[a] = p;
+			else if (p)
+				heap_free(p);
+		} else if (line[0] == 'F' && sscanf(line + 2, "%ld", &a) == 1 && a < 400000) {
+			heap_free(ptr[a]);
+			ptr[a] = 0;
+		} else if (line[0] == 'R' && sscanf(line + 2, "%ld %ld %ld", &a, &b, &n) == 3 &&
+			   a < 400000 && b < 400000) {
+			p = heap_realloc(a ? ptr[a] : 0, (size_t)n);
+			if (!p && b)
+				fails++;
+			if (p) {
+				if (a)
+					ptr[a] = 0;
+				if (b)
+					ptr[b] = p;
+				else
+					heap_free(p);
+			}
+		} else if (line[0] == 'X') {
+			fr = heap_check(&nfree);
+			xs++;
+			if (heap_check_big < worst)
+				worst = heap_check_big;
+			printf("replay: at X (op %ld): free %ld in %ld, largest %ld, use %ld\n", nops, fr, nfree,
+			       heap_check_big, heap_use);
+		}
+	}
+	fclose(f);
+	check(fails == 0, "replay: every call that worked on the Atari works");
+	check(xs > 0 && worst >= 128L * 1024, "replay: at the Atari's failure points, a free block of 128 KB or more");
+	check(heap_check(0) >= 0, "replay: checks out");
+	printf("replay: %ld calls, peak %ld\n", nops, heap_peak);
+	free(ptr);
+}
+
 static void case_limited(void)
 {
 	int n = 0, i;
@@ -562,6 +689,12 @@ int main(int argc, char **argv)
 		case_fixed();
 	else if (!strcmp(c, "grow"))
 		case_grow();
+	else if (!strcmp(c, "replay") && argc > 2)
+		case_replay(argv[2]);
+	else if (!strcmp(c, "frag"))
+		case_frag();
+	else if (!strcmp(c, "accearly"))
+		case_accearly();
 	else if (!strcmp(c, "limited"))
 		case_limited();
 	else if (!strcmp(c, "tos1"))
