@@ -30,7 +30,7 @@
 #define font_sys_push  cst_ui_font_sys_push
 #define font_sys_pop   cst_ui_font_sys_pop
 #define vdi_h          vh
-#define gl_wchar       sys_cw
-#define gl_hchar       sys_ch
+#define gl_wchar       cst_gl_wchar	/* the AES's cell, set with sys_cw, sys_ch */
+#define gl_hchar       cst_gl_hchar
 
 #endif

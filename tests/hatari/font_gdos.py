@@ -10,17 +10,18 @@ whole in it.
                               [--boot SECONDS]
 
 With the demo bridge on the serial port, it opens the demo's Hebrew chat,
-then Options > Font... (with the mouse: the selector has no key).
-  1. The selector opens on the system font (the click that opened it
-     chose nothing), the pointer resting on a row chooses nothing (1.50
-     did under TOS 4.04), and under the selector and after Cancel the
-     status line is drawn as before (1.49 drew it in a Symbol face once
-     NVDI's fonts were loaded).
-Then it opens the selector again, which lists the system font and the
-fixed-width GDOS fonts only, moves one Down to the first of those (the
-first "1 " line of CLAUDEST.FNT), in the size offered first, and presses
-Return:
-  2. the window redrew in the new font, and stayed (no dialog left);
+then Options > Font... (with the mouse: there is no key), the family's
+Font dialog (common/ui/fontsel.c): Family, Style and Size lists.
+  1. The dialog opens on the system font (the click that opened it chose
+     nothing), the pointer resting on a family chooses nothing (ClaudeST
+     1.50's own dialog did under TOS 4.04), and under the dialog and
+     after Cancel the status line is drawn as before (1.49 drew it in a
+     Symbol face once NVDI's fonts were loaded).
+Then it opens the dialog again, which lists the system font and the
+fixed-width GDOS fonts only, by family; moves one Down to the first
+family, in the style and size offered first, and presses Return:
+  2. the window redrew in the new font, and stayed (no dialog left), and
+     asked the bridge for nothing (a late click once opened Projects);
   3. CLAUDEST.INF has FONT= with that font's id (not 1, the system font);
   4. after a restart, the same chat draws as it did before the restart.
 Screenshots go in WORK/shots. Without GDOS fonts the selector has only the
@@ -152,14 +153,17 @@ def main():
         # the same text in the same font, whatever happened in between
         status = (5 * 8, h - 2 * (ch + 6), 23 * 8, h - (ch + 6))
 
-        # the selector: 64 x 23 cells of the system font, in the middle
-        dw, dh = 64 * 8, 23 * ch
-        dx, dy = (w - dw) // 2, max((h - dh) // 2, ch + 2)
+        # the family's Font dialog (common/ui/fontsel.c): 64 cells of the
+        # system font by 23, and up to 4 rows more on a taller screen,
+        # in the middle of the desktop, under the menu bar (form_center)
+        more = max(0, min(4, (h - bar) // ch - 25))
+        dw, dh = 64 * 8, (23 + more) * ch
+        dx, dy = (w - dw) // 2, bar + (h - bar - dh) // 2
         dialog = (dx, dy, dx + dw, dy + dh)
-        # its family list: two cells in, four and a half rows down, 35
-        # cells wide less the scroll bar (st/claudest.c, font_menu)
-        list_x, list_y, list_w = dx + 2 * 8 + 1, dy + 4 * ch + ch // 2 + 1, 33 * 8 - 4
-        sizes = (dx + 39 * 8 + 1, list_y, dx + 39 * 8 + 1 + 9 * 8, list_y + 2 * ch)	# its first two rows
+        # its Family list: two cells in and two rows down (and 3 pixels),
+        # 36 cells wide, the scroll bar in its last two
+        list_x, list_y, list_w = dx + 2 * 8, dy + 2 * ch + 3, 34 * 8
+        fam_rows = (list_x, list_y, list_x + list_w, list_y + 4 * ch)	# its first four rows
 
         def font_dialog(name):
             """Options > Font...: Options is the fourth title (" Desk "
@@ -198,20 +202,22 @@ def main():
         row = selected_row(dlg, list_x, list_y, list_w, ch)
         check("the opening click chose no font: the system font, the top row, is selected",
               row == 0, "selected row: %s" % row)
+        # (the part the selector leaves showing: on a VGA screen it is tall
+        # enough to cover the rest)
+        shown = status if dy + dh <= status[1] else (status[0], status[1], min(status[2], dx - 6), status[3])	# clear of its 3-pixel outline
         check("the status line, under the selector, is still in the window's font",
-              changed(before, dlg, status) < 0.02,
-              "%.1f%% of it differs" % (100 * changed(before, dlg, status)))
-        # the pointer resting on a row picks nothing: on the size list's
-        # first row (the system font starts on its second, 8 x 16, where
-        # the screen has 16-pixel lines). 1.50 chose it again and again
-        # under AES 4 (TOS 4.04)
-        r.move(sizes[0] + 24, list_y + ch // 2)
+              changed(before, dlg, shown) < 0.02,
+              "%.1f%% of it differs" % (100 * changed(before, dlg, shown)))
+        # the pointer resting on a row picks nothing: on the Family list's
+        # third row (the system font is the first). ClaudeST 1.50's own
+        # dialog chose the row under it again and again under AES 4
+        r.move(list_x + 40, list_y + 2 * ch + ch // 2)
         time.sleep(3)
         resting = r.shot("2a-pointer-resting")
         # (the pointer itself, in the shot, is a few per cent of it; a row
-        # chosen swaps the two rows' colours, nearly all of it)
-        check("the pointer resting on a row picks nothing", changed(dlg, resting, sizes) < 0.2,
-              "%.1f%% of the size list changed" % (100 * changed(dlg, resting, sizes)))
+        # chosen moves the highlight, half of these rows or more)
+        check("the pointer resting on a row picks nothing", changed(dlg, resting, fam_rows) < 0.2,
+              "%.1f%% of the list's first rows changed" % (100 * changed(dlg, resting, fam_rows)))
         r.key(K["ESC"])			# Cancel
         r.wait(3)
         r.move(*rest)
@@ -221,9 +227,9 @@ def main():
         check("... its status line too", changed(before, cancelled, status) < 0.02,
               "%.1f%% of it differs" % (100 * changed(before, cancelled, status)))
 
-        # CLAUDEST.FNT has every family measured, "1 Name" for a fixed-
-        # width one; the selector lists only those (the guidelines, 5.3),
-        # after the system font: the first is one Down from it
+        # CLAUDEST.FNT has every font measured, "1 Name..." for one the
+        # selector lists; it lists those by family, after the system font:
+        # the first is one Down from it
         picked = None
         try:
             with open(os.path.join(hd, "CLAUDEST.FNT"), errors="replace") as f:
@@ -235,8 +241,8 @@ def main():
             print("  no fixed-width GDOS font (no CLAUDEST.FNT, or no \"1 \" line in it), skipped")
             skipped = True
         else:
-            print("  %d fixed-width families listed after the system font; the first: %s"
-                  % (len(fams), fams[0][2:]))
+            print("  %d fixed-width fonts in CLAUDEST.FNT; the first: %s"
+                  % (len(fams), fams[0][2:].split("\t")[0]))
             dlg = font_dialog("2c-font-dialog-again")
             ups = 0
             while ups < len(fams) + 5 and step(K["UP"], 3):	# to the system font,

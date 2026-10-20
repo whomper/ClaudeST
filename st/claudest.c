@@ -29,6 +29,23 @@
 #include "clip.h"
 #include "dd.h"
 #include "bigbuf.h"
+#include "fontsel.h"
+#include "plat.h"
+/* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
+   claudest.c's own fill(), frame() and so on take other arguments */
+#undef fill
+#undef frame
+#undef hline
+#undef line_col
+#undef text_at
+#undef clip_on
+#undef clip_off
+#undef st_ram
+#undef font_sys_push
+#undef font_sys_pop
+#undef vdi_h
+#undef gl_wchar
+#undef gl_hchar
 #include "icon.h"
 #include "icon16.h"
 
@@ -55,6 +72,7 @@ static short apid, phys;
 short vh;				/* the VDI workstation (and the shared blocks', st/ui.h) */
 short cw, ch;				/* character cell of the text font */
 short sys_cw, sys_ch;			/* the system font's, as the AES uses it */
+short cst_gl_wchar, cst_gl_hchar;	/* the same, for the shared blocks (st/ui.h) */
 
 /* the text font (Options > Font), as in EMail and ECal: font_id 1 is the
  * system font (font_pt 8 or 16: its 8x8 or 8x16 size; 0 the screen's
@@ -3280,43 +3298,22 @@ static void keys_dialog(void)
 /* the text font (Options > Font), as in EMail and ECal                */
 /* ------------------------------------------------------------------ */
 /*
- * The font selector looks like the ones in other GEM programs: the font
- * families in a list on the left, the sizes of the chosen one next to
- * it, what kind of font it is, and a sample. The system font comes in
- * two sizes; with a GDOS (NVDI, SpeedoGDOS, FontGDOS...) its fonts are
- * listed too. ClaudeST lays text out in character cells, so it needs a
- * monospaced font: only those can be picked. Each font is measured once
- * and the answer kept in CLAUDEST.FNT, so the selector opens quickly the
- * next time even with hundreds of fonts installed.
+ * Options > Font... is the family's Font dialog (common/ui/fontsel.c):
+ * the system font and the fixed-width GDOS fonts, by family, style and
+ * size. ClaudeST lays text out in character cells, so only those are
+ * listed; each font is measured once and the answer kept in
+ * CLAUDEST.FNT.
  *
- * The dialog also says where the system and bitmap fonts keep their
- * Hebrew letters: the Atari character set (TOS, EmuTOS) or the
- * ISO-8859-8 or DOS places, as Israeli system fonts and many GDOS fonts
- * have them. A vector font (Speedo, TrueType, Type 1) is asked through
- * NVDI for its Hebrew letters by Unicode; when it has none, they are
- * drawn in the system font in the same cells. Menus and the dialog
- * itself keep the system font.
+ * Where the system and bitmap fonts keep their Hebrew letters (the
+ * Atari character set, or the ISO-8859-8 or DOS 862 places, as Israeli
+ * system fonts and many GDOS fonts have them) is set in Options >
+ * Settings. A vector font (Speedo, TrueType, Type 1) is asked through
+ * NVDI for its Hebrew letters by Unicode (fontsel_hebrew); when it has
+ * none, they are drawn in the system font in the same cells.
  */
 
-#define MAXFAM 256
-#define MAXSIZE 20
-
-typedef struct {
-	short id, format;	/* VDI font id; 1 bitmap, 2 Speedo, 4 TrueType, 8 Type 1 */
-	signed char mono;	/* -1: not looked at yet */
-	char name[33];
-} FAM;
-
-static FAM fam[MAXFAM];
-static short nfam;
-static short sizes[MAXSIZE], nsizes;
-static char size_label[MAXSIZE][12];
 static short probed_id = -1;
 
-/* Unicode of the Hebrew letters in the Atari order (0xC2-0xDC), less 0x5D0 */
-#define heb_uni heb_order
-
-static short format_of(short id);
 static void on_resize(void);
 
 /* a vector font: its Hebrew letters by Unicode through NVDI, else the
@@ -3324,7 +3321,7 @@ static void on_resize(void);
 static void probe_hebrew(short id)
 {
 	static short probed_mode, probed_why;
-	short k, fmt;
+	short why = HW_NONE;
 	if (id == 1) {
 		heb_mode = HM_MAP;
 		heb_why = HW_NONE;
@@ -3336,31 +3333,10 @@ static void probe_hebrew(short id)
 		return;
 	}
 	probed_id = id;
-	heb_mode = HM_MAP;
-	heb_why = HW_NONE;
-	fmt = format_of(id);
 	/* a bitmap font draws the Atari codes itself; a vector font (or one
 	   whose kind the VDI doesn't say) is asked for its Hebrew letters */
-	if (fmt != 1) {
-		long a = vqt_char_index(vh, 'A', 1, 0);
-		if (a > 0) {
-			for (k = 0; k < 27; k++) {
-				long i = vqt_char_index(vh, (unsigned short)(0x5D0 + heb_uni[k]), 2, 0);
-				if (i <= 0)
-					break;
-				heb_idx[k] = (unsigned short)i;
-			}
-			if (k == 27) {
-				heb_mode = HM_UNICODE;
-			} else {
-				heb_mode = HM_SYSTEM;
-				heb_why = HW_NOHEB;
-			}
-		} else if (fmt) {
-			heb_mode = HM_SYSTEM;	/* a vector font, and no NVDI 5 to ask */
-			heb_why = HW_NOLOOKUP;
-		}
-	}
+	heb_mode = fontsel_hebrew(id, 0, heb_idx, &why);
+	heb_why = heb_mode == HM_SYSTEM ? why : HW_NONE;
 	probed_mode = heb_mode;
 	probed_why = heb_why;
 }
@@ -3519,627 +3495,35 @@ void cst_ui_font_sys_pop(void)
 	ch = sys_saved_ch;
 }
 
-/* whether a font is monospaced: 'i', 'W' and 'm' as wide */
-static short measure_mono(FAM *f)
+/* Options > Font...: the family's Font dialog (common/ui/fontsel.c, the
+   guidelines 5.3). It lists the system font and the fixed-width GDOS
+   fonts, measured once and kept in CLAUDEST.FNT; OK gives take_font the
+   font, which the window takes and CLAUDEST.INF keeps */
+static void take_font(fontsel *fs)
 {
-	short w, h;
-	if (vst_font(vh, f->id) != f->id)
-		return 0;
-	vst_point(vh, 12, &w, &h);
-	if (w < 1)
-		return 0;
-	return vqt_width(vh, 'i') == vqt_width(vh, 'W') &&
-	       vqt_width(vh, 'i') == vqt_width(vh, 'm');
-}
-
-static char fnt_buf[MAXFAM * 40];
-
-/* Only monospaced fonts can be picked. Measuring means loading each
-   font, slow with hundreds of vector fonts: the answers are kept in
-   CLAUDEST.FNT ("1 Courier 10 Pitch", "0 Swiss 721") and only new fonts
-   measured. */
-static void keep_monospaced(void)
-{
-	short i, done = 0, todo = 0;
-	long fd, n = 0;
-	char *line, path[160];
-	inf_path(path, sizeof(path), "CLAUDEST.FNT");
-	fd = Fopen(path, 0);
-	if (fd >= 0) {
-		n = Fread((short)fd, sizeof(fnt_buf) - 1, fnt_buf);
-		Fclose((short)fd);
-	}
-	fnt_buf[n > 0 ? n : 0] = 0;
-	for (i = 1; i < nfam; i++) {
-		fam[i].mono = -1;
-		for (line = fnt_buf; *line; ) {
-			short len = 0;
-			while (line[2 + len] && line[2 + len] != '\r' && line[2 + len] != '\n')
-				len++;
-			if (line[1] == ' ' && len == (short)strlen(fam[i].name) &&
-			    !memcmp(line + 2, fam[i].name, len)) {
-				fam[i].mono = line[0] == '1';
-				break;
-			}
-			while (*line && *line != '\n')
-				line++;
-			if (*line)
-				line++;
-		}
-		if (fam[i].mono < 0)
-			todo++;
-	}
-	if (todo) {
-		char m[64], *p, keep[64];
-		strlcpy_(keep, status, sizeof(keep));
-		graf_mouse(BUSYBEE, 0);
-		for (i = 1; i < nfam; i++)
-			if (fam[i].mono < 0) {
-				p = m;
-				strcpy(p, "Looking for fixed-width fonts: ");
-				p = put_num(p + strlen(p), ++done);
-				strcpy(p, " of ");
-				p = put_num(p + 4, todo);
-				*p = 0;
-				set_status(m);
-				redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
-				fam[i].mono = (signed char)measure_mono(&fam[i]);
-			}
-		graf_mouse(ARROW, 0);
-		set_status(keep);	/* shown again now, not after the selector */
-		redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
-		/* the answers, for next time: gathered here, written in one go */
-		for (line = fnt_buf, i = 1; i < nfam; i++) {
-			*line++ = fam[i].mono ? '1' : '0';
-			*line++ = ' ';
-			strcpy(line, fam[i].name);
-			strcat(line, "\r\n");
-			line += strlen(line);
-		}
-		safe_save("CLAUDEST.FNT", "CLAUDEST.FN$", fnt_buf, line - fnt_buf);
-		font_reselect();
-	}
-}
-
-/* the format of the font with this id (1 bitmap, 2 Speedo, 4 TrueType,
-   8 Type 1), from the list or the VDI */
-static short format_of(short id)
-{
-	short i, n;
-	char name[34];
-	for (i = 0; i < nfam; i++)
-		if (fam[i].id == id)
-			return fam[i].format;
-	n = gdos_fonts > 0 ? gdos_fonts : 0;
-	for (i = 2; i <= n + 1; i++)
-		if (vqt_name(vh, i, name) == id)
-			return vqt_font_format(vh, i);
-	return 1;
-}
-
-/* names only: quick, whatever the number of fonts. The system font
-   first, then the GDOS fonts, proportional ones too (greyed) */
-static void list_families(void)
-{
-	short i, k;
-	if (nfam)
-		return;
-	fam[0].id = 1;
-	fam[0].format = 1;
-	fam[0].mono = 1;
-	strcpy(fam[0].name, "System font");
-	nfam = 1;
-	if (gdos_fonts < 0) {
-		graf_mouse(BUSYBEE, 0);
-		gdos_fonts = vq_gdos() ? vst_load_fonts(vh, 0) : 0;
-		graf_mouse(ARROW, 0);
-	}
-	for (i = 2; i <= gdos_fonts + 1 && nfam < MAXFAM; i++) {
-		FAM *f = &fam[nfam];
-		short n;
-		f->id = vqt_name(vh, i, f->name);
-		if (f->id <= 1)
-			continue;
-		for (k = 1; k < nfam; k++)
-			if (fam[k].id == f->id)
-				break;
-		if (k < nfam)
-			continue;
-		for (n = 31; n >= 0 && (f->name[n] == ' ' || !f->name[n]); n--)
-			f->name[n] = 0;
-		f->format = vqt_font_format(vh, i);
-		f->mono = -1;
-		nfam++;
-	}
-	keep_monospaced();
-	/* only what ClaudeST can use is listed (the guidelines, 5.3): the
-	   system font and the fixed-width ones; CLAUDEST.FNT still has the
-	   proportional ones, so they aren't measured again */
-	for (i = k = 1; i < nfam; i++)
-		if (fam[i].mono)
-			fam[k++] = fam[i];
-	nfam = k;
-}
-
-/* the sizes of a family */
-static void look_at(FAM *f)
-{
-	static const short try_pt[] = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36 };
-	short i, w, h;
-	nsizes = 0;
-	if (f->id == 1) {
-		sizes[0] = 8;
-		strcpy(size_label[0], "8 x 8");
-		sizes[1] = 16;
-		strcpy(size_label[1], "8 x 16");
-		nsizes = 2;
-		return;
-	}
-	if (!f->mono)			/* proportional (measured): it can't be picked */
-		return;
-	graf_mouse(BUSYBEE, 0);
-	if (vst_font(vh, f->id) != f->id) {
-		f->mono = 0;
-		graf_mouse(ARROW, 0);
-		return;
-	}
-	for (i = 0; i < (short)(sizeof(try_pt) / sizeof(try_pt[0])) && nsizes < MAXSIZE; i++) {
-		short got = vst_point(vh, try_pt[i], &w, &h);
-		if (w < 4 || h < 6 || (nsizes && sizes[nsizes - 1] >= got))
-			continue;
-		if (f->mono < 0)
-			f->mono = vqt_width(vh, 'i') == vqt_width(vh, 'W') &&
-				  vqt_width(vh, 'i') == vqt_width(vh, 'm');
-		sizes[nsizes] = got;
-		strcpy(put_num(size_label[nsizes], got), " pt");
-		nsizes++;
-	}
-	if (f->mono < 0)
-		f->mono = 0;
-	if (!f->mono)
-		nsizes = 0;
-	graf_mouse(ARROW, 0);
-}
-
-static const char *format_name(FAM *f)
-{
-	if (f->id == 1)
-		return "Bitmap (built in)";
-	switch (f->format) {
-	case 1: return "Bitmap (GDOS)";
-	case 2: return "Speedo";
-	case 4: return "TrueType";
-	case 8: return "Type 1";
-	}
-	return "GDOS font";
-}
-
-/* ---- the dialog, drawn in the system font ---- */
-
-typedef struct {
-	short x, y, w, h;	/* inside the border */
-	short n, top, sel, rows, of_sizes;
-} FLIST;
-
-static FLIST lf, ls;
-static short fd_x, fd_y, fd_w, fd_h, sel_heb;
-static short ok_bx, ok_by, cn_bx, cn_by, fb_w, heb_bx[3], heb_by, pv_x, pv_y, pv_w, pv_h;
-static short type_x, type_y;
-
-static short fd_cx(short col) { return fd_x + col * cw; }
-static short fd_cy(short row) { return fd_y + row * ch + ch / 2; }
-
-static void frame(short x, short y, short w, short h)
-{
-	line(x, y, x + w - 1, y, 1);
-	line(x + w - 1, y, x + w - 1, y + h - 1, 1);
-	line(x + w - 1, y + h - 1, x, y + h - 1, 1);
-	line(x, y + h - 1, x, y, 1);
-}
-
-static short chosen_pt(void)
-{
-	return ls.sel >= 0 && ls.sel < nsizes ? sizes[ls.sel] : 0;
-}
-
-static short ok_enabled(void)
-{
-	return fam[lf.sel].mono && nsizes;
-}
-
-/* a button; `on`: pressed or chosen (inverted), `dim`: can't be used */
-static void fbutton(short x, short y, short w, const char *label, short is_default, short on, short dim)
-{
-	short n = strlen(label), h = ch + 4;
-	fill(x, y, x + w - 1, y + h - 1, on ? 1 : 0);
-	frame(x, y, w, h);
-	if (is_default)
-		frame(x - 1, y - 1, w + 2, h + 2);
-	text(x + (w - n * cw) / 2, y + 2, label, n, dim ? 2 : is_default ? 1 : 0, on ? 0 : 1);
-}
-
-static void flist_draw(FLIST *l)
-{
-	short i, sw = 2 * cw, cols_ = (l->w - sw - 4) / cw;
-	fill(l->x, l->y, l->x + l->w - 1, l->y + l->h - 1, 0);
-	for (i = 0; i < l->rows && l->top + i < l->n; i++) {
-		short k = l->top + i, y = l->y + i * ch, n, fx = 0, col = 1;
-		const char *s = l->of_sizes ? size_label[k] : fam[k].name;
-		if (!l->of_sizes && !fam[k].mono)
-			fx = 2;			/* proportional: greyed */
-		if (k == l->sel) {
-			fill(l->x, y, l->x + l->w - sw - 1, y + ch - 1, 1);
-			col = 0;
-			fx = 0;
-		}
-		n = strlen(s);
-		if (n > cols_)
-			n = cols_;
-		text(l->x + 2, y, s, n, fx, col);
-	}
-	/* the scroll bar: arrows, and a box for where the view is */
-	{
-		short sx = l->x + l->w - sw, th = l->h - 2 * ch;
-		line(sx, l->y, sx, l->y + l->h - 1, 1);
-		text(sx + cw / 2, l->y, "\001", 1, 0, 1);
-		text(sx + cw / 2, l->y + l->h - ch, "\002", 1, 0, 1);
-		line(sx, l->y + ch, sx + sw - 1, l->y + ch, 1);
-		line(sx, l->y + l->h - ch - 1, sx + sw - 1, l->y + l->h - ch - 1, 1);
-		if (l->n > l->rows && th > 4) {
-			short h = (short)((long)th * l->rows / l->n), y;
-			if (h < 4)
-				h = 4;
-			y = l->y + ch + (short)((long)(th - h) * l->top / (l->n - l->rows));
-			fill(sx + 2, y + 1, sx + sw - 3, y + h - 2, 1);
-		}
-	}
-}
-
-static void flist_show(FLIST *l, short k)
-{
-	if (k < l->top)
-		l->top = k;
-	if (k >= l->top + l->rows)
-		l->top = k - l->rows + 1;
-	if (l->top > l->n - l->rows)
-		l->top = l->n - l->rows;
-	if (l->top < 0)
-		l->top = 0;
-}
-
-static void draw_preview(void)
-{
-	static const char l1[] = "AaBbCc 0123 The quick brown fox";
-	/* shalom, olam (logical order, Atari character set) */
-	static const char l2[] = "\xD6\xCD\xC7\xDA \xD1\xC7\xCD\xDA - Hebrew";
-	short keep = hebfont;
-	fill(pv_x + 1, pv_y + 1, pv_x + pv_w - 2, pv_y + pv_h - 2, 0);
-	if (fam[lf.sel].mono && set_font(fam[lf.sel].id, chosen_pt())) {
-		short cols_ = (pv_w - 2 * cw) / cw, n;
-		/* clip to the box: a big font must not spill over the dialog */
-		short c[4];
-		c[0] = pv_x + 1;
-		c[1] = pv_y + 1;
-		c[2] = pv_x + pv_w - 2;
-		c[3] = pv_y + pv_h - 2;
-		vs_clip(vh, 1, c);
-		hebfont = sel_heb;
-		n = strlen(l1);
-		text(pv_x + cw, pv_y + 2, l1, n > cols_ ? cols_ : n, 0, 1);
-		n = strlen(l2);
-		text_bidi(pv_x + cw, pv_y + 4 + ch, l2, n > cols_ ? cols_ : n, 0, 1, 0);
-		hebfont = keep;
-		c[0] = 0;
-		c[1] = 0;
-		c[2] = scr_w - 1;
-		c[3] = scr_h - 1;
-		vs_clip(vh, 1, c);
-		use_sys();
-	} else {
-		use_sys();
-		text(pv_x + cw, pv_y + 2, "Proportional: ClaudeST needs a fixed-width font.", 47, 0, 1);
-	}
-	use_sys();
-}
-
-static void draw_type(void)
-{
-	FAM *f = &fam[lf.sel];
-	char t[72];
-	short n;
-	strcpy(t, format_name(f));
-	if (f->id != 1 && f->format != 1 && f->mono) {
-		/* setting it says where its Hebrew comes from */
-		set_font(f->id, chosen_pt() ? chosen_pt() : 12);
-		strcat(t, heb_mode == HM_UNICODE ? ", Hebrew from the font" :
-			  heb_why == HW_NOHEB ? ", Hebrew in the system font (none in it)" :
-			  heb_why == HW_NOLOOKUP ? ", Hebrew in the system font (no NVDI 5)" :
-			  ", Hebrew as the font has it");
-		use_sys();
-	}
-	fill(type_x, type_y, fd_x + fd_w - 2 * cw, type_y + ch - 1, 0);
-	n = strlen(t);
-	text(type_x, type_y, t, n, 0, 1);
-}
-
-static void draw_ok(void)
-{
-	fbutton(ok_bx, ok_by, fb_w, "OK", 1, 0, !ok_enabled());
-}
-
-/* a family was picked: its sizes, keeping the size if it has it */
-static void family_changed(short draw)
-{
-	short want = chosen_pt(), i, best = 0;
-	if (!want)
-		want = font_id == 1 ? (font_pt ? font_pt : sys_ch >= 16 ? 16 : 8) : font_pt;
-	look_at(&fam[lf.sel]);
-	use_sys();
-	ls.n = nsizes;
-	for (i = 0; i < nsizes; i++)
-		if (sizes[i] <= want)
-			best = i;
-	if (fam[lf.sel].id == 1)
-		best = want >= 16 ? 1 : 0;
-	ls.sel = nsizes ? best : -1;
-	ls.top = 0;
-	flist_show(&ls, ls.sel < 0 ? 0 : ls.sel);
-	if (draw) {
-		graf_mouse(M_OFF, 0);
-		flist_draw(&ls);
-		draw_type();
-		draw_preview();
-		draw_ok();
-		graf_mouse(M_ON, 0);
-	}
-}
-
-/* a click in a list: 1 = a double click on an entry */
-static short flist_click(FLIST *l, short mx, short my, short clicks)
-{
-	short sw = 2 * cw;
-	if (mx >= l->x + l->w - sw) {
-		short old = l->top;
-		if (my < l->y + ch)
-			l->top--;
-		else if (my >= l->y + l->h - ch)
-			l->top++;
-		else {
-			short th = l->h - 2 * ch, mid = l->y + ch + th / 2;
-			l->top += my < mid ? -l->rows : l->rows;
-		}
-		if (l->top > l->n - l->rows)
-			l->top = l->n - l->rows;
-		if (l->top < 0)
-			l->top = 0;
-		if (l->top != old) {
-			graf_mouse(M_OFF, 0);
-			flist_draw(l);
-			graf_mouse(M_ON, 0);
-		}
-		return 0;
-	}
-	{
-		short k = l->top + (my - l->y) / ch;
-		if (k < 0 || k >= l->n)
-			return 0;
-		if (k != l->sel) {
-			l->sel = k;
-			graf_mouse(M_OFF, 0);
-			flist_draw(l);
-			graf_mouse(M_ON, 0);
-			if (l == &lf)
-				family_changed(1);
-			else {
-				graf_mouse(M_OFF, 0);
-				draw_preview();
-				graf_mouse(M_ON, 0);
-			}
-		}
-		return clicks >= 2;
-	}
+	font_id = fs->id;
+	font_pt = fs->pt;
+	font_apply();
+	save_config();
+	on_resize();		/* lay out again, wrap the text anew */
 }
 
 static void font_menu(void)
 {
-	static char heb_label[3][24];
-	short i, done = 0, ok = 0, m[8], clipr[4], pending = 0;
-	short keep_id = cur_font_id, keep_pt = cur_font_pt, keep_heb = hebfont;
-	AEVENT e;
-
-	hebfont = HEB_ATARI;	/* the dialog's own samples are drawn as they are */
-	use_sys();
-	list_families();
-	use_sys();
-	sel_heb = keep_heb;
-	lf.sel = 0;
-	for (i = 0; i < nfam; i++)
-		if (fam[i].id == font_id)
-			lf.sel = i;
-	lf.n = nfam;
-	lf.top = 0;
-	lf.of_sizes = 0;
-	ls.of_sizes = 1;
-	ls.sel = -1;
-	family_changed(0);
-
-	/* samples of shalom as each kind of font would show it */
-	strcpy(heb_label[0], "Atari  \xDA\xC7\xCD\xD6");
-	strcpy(heb_label[1], "ISO 8859-8  \xED\xE5\xEC\xF9");
-	strcpy(heb_label[2], "DOS 862  \x8D\x85\x8C\x99");
-
-	/* 64 x 23 cells: fits ST medium's 640 x 200 too */
-	fd_w = 64 * cw;
-	fd_h = 23 * ch;
-	fd_x = (scr_w - fd_w) / 2;
-	fd_y = (scr_h - fd_h) / 2;
-	if (fd_y < sys_ch + 2)
-		fd_y = sys_ch + 2;
-	lf.x = fd_cx(2) + 1;
-	lf.y = fd_cy(4) + 1;
-	lf.w = 35 * cw - 2;
-	lf.rows = 8;
-	lf.h = lf.rows * ch;
-	ls.x = fd_cx(39) + 1;
-	ls.y = lf.y;
-	ls.w = 12 * cw - 2;
-	ls.rows = lf.rows;
-	ls.h = lf.h;
-	fb_w = 9 * cw;
-	ok_bx = cn_bx = fd_cx(53);
-	ok_by = fd_cy(4);
-	cn_by = fd_cy(6) + 2;
-	type_x = fd_cx(8);
-	type_y = fd_cy(14);
-	heb_by = fd_cy(17);
-	for (i = 0; i < 3; i++)
-		heb_bx[i] = fd_cx(2 + i * 20);
-	pv_x = fd_cx(2);
-	pv_y = fd_cy(19);
-	pv_w = 60 * cw;
-	pv_h = 3 * ch;
-	flist_show(&lf, lf.sel);
-	flist_show(&ls, ls.sel < 0 ? 0 : ls.sel);
-
-	wind_update(BEG_UPDATE);
-	wind_update(3);		/* BEG_MCTRL */
-	form_dial(FMD_START, fd_x, fd_y, fd_w + 3, fd_h + 3);
-	graf_mouse(M_OFF, 0);
-	vswr_mode(vh, 2);
-	vsf_perimeter(vh, 0);
-	clipr[0] = 0;
-	clipr[1] = 0;
-	clipr[2] = scr_w - 1;
-	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
-	dlg_frame(fd_x, fd_y, fd_w, fd_h);
-	text(fd_cx(2), fd_cy(1), "Font for the text", 17, 1, 1);
-	text(fd_cx(2), fd_cy(3), "Family", 6, 0, 1);
-	text(fd_cx(39), fd_cy(3), "Size", 4, 0, 1);
-	frame(lf.x - 1, lf.y - 1, lf.w + 2, lf.h + 2);
-	frame(ls.x - 1, ls.y - 1, ls.w + 2, ls.h + 2);
-	draw_ok();
-	fbutton(cn_bx, cn_by, fb_w, "Cancel", 0, 0, 0);
-	text(fd_cx(2), type_y, "Type:", 5, 0, 1);
-	text(fd_cx(2), fd_cy(16), "Hebrew in bitmap fonts: pick the sample that reads right", 56, 0, 1);
-	for (i = 0; i < 3; i++)
-		fbutton(heb_bx[i], heb_by, 18 * cw, heb_label[i], 0, i == sel_heb, 0);
-	frame(pv_x, pv_y, pv_w, pv_h);
-	flist_draw(&lf);
-	flist_draw(&ls);
-	draw_type();
-	draw_preview();
-	graf_mouse(M_ON, 0);
-	wait_release();
-	/* the click that chose Font... can still come in as a button event:
-	   what comes in the first 0.3 s isn't meant for the lists. (The
-	   button waits are 0x102, 3, 0: either button going down, with a
-	   double click counted. With a state of 1 the negating 0x100 made
-	   AES 4 (TOS 4.04) report the buttons being up, all the time, so
-	   the row under the resting pointer was chosen again and again.) */
-	for (i = 0; i < 8; i++) {
-		evnt_multi_(MU_BUTTON | MU_TIMER, 0x101, 3, 0, 300, m, &e);
-		if (!(e.which & MU_BUTTON))
-			break;
-	}
-
-	while (!done) {
-		/* a family moved to by key: its sizes, type and sample (slow with
-		   a vector font under NVDI) once no key has come for 0.2 s */
-		evnt_multi_(MU_KEYBD | MU_BUTTON | (pending ? MU_TIMER : 0), 0x102, 3, 0, 200, m, &e);
-		if (pending) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			short moving = e.which == MU_KEYBD && (sc == 0x48 || sc == 0x50 ||
-				(as >= 'a' && as <= 'z') || (as >= 'A' && as <= 'Z') || (as >= '0' && as <= '9'));
-			if (!moving) {		/* the timer, a click, Return, the size keys... */
-				pending = 0;
-				family_changed(1);
-			}
-		}
-		if (e.which & MU_KEYBD) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			short to = -1;
-			if (as == 0x1b || sc == 0x61) {
-				done = 1;
-			} else if (as == 0x0d || sc == 0x72) {
-				if (ok_enabled())
-					done = ok = 1;
-			} else if ((sc == 0x48 && lf.sel > 0) || (sc == 0x50 && lf.sel < nfam - 1)) {
-				to = lf.sel + (sc == 0x48 ? -1 : 1);
-			} else if ((as >= 'a' && as <= 'z') || (as >= 'A' && as <= 'Z') || (as >= '0' && as <= '9')) {
-				/* the next family starting with that letter: C for Courier */
-				short k;
-				char want = as >= 'a' && as <= 'z' ? as - 32 : as;
-				for (k = 1; k <= nfam && to < 0; k++) {
-					const char *nm = fam[(lf.sel + k) % nfam].name;
-					char c = *nm >= 'a' && *nm <= 'z' ? *nm - 32 : *nm;
-					if (c == want)
-						to = (lf.sel + k) % nfam;
-				}
-			}
-			if (to >= 0 && to != lf.sel) {
-				lf.sel = to;
-				flist_show(&lf, lf.sel);
-				graf_mouse(M_OFF, 0);
-				flist_draw(&lf);
-				graf_mouse(M_ON, 0);
-				pending = 1;
-			} else if ((sc == 0x4b && ls.sel > 0) || (sc == 0x4d && ls.sel >= 0 && ls.sel < nsizes - 1)) {
-				ls.sel += sc == 0x4b ? -1 : 1;
-				flist_show(&ls, ls.sel);
-				graf_mouse(M_OFF, 0);
-				flist_draw(&ls);
-				draw_preview();
-				graf_mouse(M_ON, 0);
-			}
-		}
-		if (e.which & MU_BUTTON) {
-			short mx = e.mx, my = e.my, bh = ch + 4;
-			FLIST *l = 0;
-			if (mx >= lf.x && mx < lf.x + lf.w && my >= lf.y && my < lf.y + lf.h)
-				l = &lf;
-			else if (mx >= ls.x && mx < ls.x + ls.w && my >= ls.y && my < ls.y + ls.h)
-				l = &ls;
-			if (l) {
-				if (flist_click(l, mx, my, e.breturn) && ok_enabled())
-					done = ok = 1;
-			} else if (mx >= ok_bx && mx < ok_bx + fb_w && my >= ok_by && my < ok_by + bh) {
-				if (ok_enabled())
-					done = ok = 1;
-			} else if (mx >= cn_bx && mx < cn_bx + fb_w && my >= cn_by && my < cn_by + bh) {
-				done = 1;
-			} else if (my >= heb_by && my < heb_by + bh) {
-				for (i = 0; i < 3; i++)
-					if (mx >= heb_bx[i] && mx < heb_bx[i] + 18 * cw && i != sel_heb) {
-						short k;
-						sel_heb = i;
-						graf_mouse(M_OFF, 0);
-						for (k = 0; k < 3; k++)
-							fbutton(heb_bx[k], heb_by, 18 * cw, heb_label[k], 0, k == sel_heb, 0);
-						draw_preview();
-						graf_mouse(M_ON, 0);
-					}
-			}
-			if (!done)
-				wait_release();
-		}
-	}
-	vs_clip(vh, 0, clipr);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	form_dial(FMD_FINISH, fd_x, fd_y, fd_w + 3, fd_h + 3);
-	wait_release();
-	if (ok) {
-		font_id = fam[lf.sel].id;
-		font_pt = chosen_pt();
-		hebfont = sel_heb;
-		font_apply();
-		save_config();
-		on_resize();		/* lay out again, wrap the text anew */
-	} else {
-		hebfont = keep_heb;
-		set_font(keep_id, keep_pt);
-	}
+	static fontsel fs;
+	static char fnt[160];
+	inf_path(fnt, sizeof(fnt), "CLAUDEST.FNT");
+	memset(&fs, 0, sizeof(fs));
+	fs.app = "ClaudeST";
+	fs.fnt = fnt;
+	fs.id = font_id;
+	fs.pt = font_pt;
+	fs.gdos = gdos_fonts < 0 ? FS_UNLOADED : gdos_fonts;
+	fs.apply = take_font;
+	flush_dirty();
+	fontsel_run(&fs);
+	if (fs.gdos >= 0)
+		gdos_fonts = fs.gdos;
 }
 
 /* The help: EHypView or ST-Guide (as an accessory or a program) shows
@@ -4847,10 +4231,13 @@ static void settings_dialog(void)
 {
 	static const char *const sp_label[3] = { "4800", "9600", "19200" };
 	static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
+	/* where the system and bitmap fonts keep the Hebrew letters (the
+	   Font dialog's own sample row before the family's dialog) */
+	static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
 	char f[2][24];
 	short len[2], cur[2], start[2] = { 0, 0 }, cols[2] = { 17, 7 }, fx[2], fy[2];
-	short nl = link, nb = baud, focus = 0, res = -1, clipr[4], m[8], i;
-	short lh, cx, ly[4], chw, ch_x[2], sp_w, sp_x[3];
+	short nl = link, nb = baud, nh = hebfont, focus = 0, res = -1, clipr[4], m[8], i;
+	short lh, cx, ly[5], chw, ch_x[2], sp_w, sp_x[3], hb_w, hb_x[3];
 	AEVENT e;
 
 	f[0][0] = 0;
@@ -4863,16 +4250,16 @@ static void settings_dialog(void)
 	lh = ch + 8;
 	btn_w = 10 * cw;
 	btn_h = ch + 6;
-	dlg_w = 50 * cw;
+	dlg_w = 52 * cw;
 	if (dlg_w > ww - 2 * cw)
 		dlg_w = ww - 2 * cw;
-	dlg_h = ch + lh * 6 + btn_h + ch;
+	dlg_h = ch + lh * 7 + btn_h + ch;
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 	cx = dlg_x + 20 * cw;			/* where the controls start */
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 5; i++)
 		ly[i] = dlg_y + ch + lh * (i + 1) + lh / 2;
 	chw = 11 * cw;				/* Network | Serial */
 	ch_x[0] = cx;
@@ -4884,6 +4271,9 @@ static void settings_dialog(void)
 	sp_w = 7 * cw;
 	for (i = 0; i < 3; i++)
 		sp_x[i] = cx + i * (sp_w + cw);
+	hb_w = 9 * cw;
+	for (i = 0; i < 3; i++)
+		hb_x[i] = cx + i * (hb_w + cw);
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
@@ -4906,15 +4296,18 @@ static void settings_dialog(void)
 	text(dlg_x + 2 * cw, ly[1], "Gateway address", 15, 0, 1);
 	text(dlg_x + 2 * cw, ly[2], "Gateway port", 12, 0, 1);
 	text(dlg_x + 2 * cw, ly[3], "Serial speed", 12, 0, 1);
+	text(dlg_x + 2 * cw, ly[4], "Hebrew in fonts", 15, 0, 1);
 	dlg_button(cancel_x, "Cancel", 0);
 	dlg_button(ok_x, "OK", 1);
 
 	for (;;) {
 		/* the choices: the chosen one drawn inverted */
-		for (i = 0; i < 5; i++) {
-			short x = i < 2 ? ch_x[i] : sp_x[i - 2], w = i < 2 ? chw : sp_w, y = ly[i < 2 ? 0 : 3] - 3;
-			const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : sp_label[i - 2];
-			short on = i < 2 ? (i == 0) == (nl == LINK_TCP) : sp_baud[i - 2] == nb, n = strlen(l);
+		for (i = 0; i < 8; i++) {
+			short x = i < 2 ? ch_x[i] : i < 5 ? sp_x[i - 2] : hb_x[i - 5];
+			short w = i < 2 ? chw : i < 5 ? sp_w : hb_w, y = ly[i < 2 ? 0 : i < 5 ? 3 : 4] - 3;
+			const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
+			short on = i < 2 ? (i == 0) == (nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == nb : nh == i - 5;
+			short n = strlen(l);
 			fill(x, y, x + w - 1, y + ch + 5, on ? 1 : 0);
 			line(x, y, x + w - 1, y, 1);
 			line(x + w - 1, y, x + w - 1, y + ch + 5, 1);
@@ -4968,9 +4361,12 @@ static void settings_dialog(void)
 				if (mx >= fx[i] && mx < fx[i] + cols[i] * cw && my >= fy[i] && my < fy[i] + ch + 6)
 					focus = i;
 			}
-			for (i = 0; i < 3; i++)
+			for (i = 0; i < 3; i++) {
 				if (mx >= sp_x[i] && mx < sp_x[i] + sp_w && my >= ly[3] - 3 && my < ly[3] + ch + 3)
 					nb = sp_baud[i];
+				if (mx >= hb_x[i] && mx < hb_x[i] + hb_w && my >= ly[4] - 3 && my < ly[4] + ch + 3)
+					nh = i;
+			}
 			if (my >= btn_y && my < btn_y + btn_h) {
 				if (mx >= ok_x && mx < ok_x + btn_w)
 					res = 1;
@@ -5016,6 +4412,10 @@ static void settings_dialog(void)
 		tcp_port = port;
 		if (nb != baud)
 			set_baud(nb);
+		if (nh != hebfont) {	/* the window's Hebrew, drawn anew */
+			hebfont = nh;
+			on_resize();
+		}
 		if (changed)
 			use_link(nl);		/* connects again, saves */
 		else
@@ -5454,8 +4854,8 @@ int main(void)
 	if (apid < 0)
 		return 1;
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
-	sys_cw = cw;
-	sys_ch = ch;
+	sys_cw = cst_gl_wchar = cw;
+	sys_ch = cst_gl_hchar = ch;
 	{
 		/* our folder, for the help file: the current one at start */
 		short drv = (short)Dgetdrv();
@@ -5466,6 +4866,7 @@ int main(void)
 		if (home_dir[strlen(home_dir) - 1] != '\\')
 			strcat(home_dir, "\\");
 	}
+	pf_size_open = pf_handle_size;	/* futil.c's pf_load: open, then ask */
 	crash_install(home_dir, "ClaudeST", APP_VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */

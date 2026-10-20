@@ -382,28 +382,29 @@
 @node "Font"
 @{U}Font@{u}
 
-  @{B}Options > Font...@{b} opens a font selector: the font families on
-  the left, the sizes of the chosen one beside them, what kind of font
-  it is (bitmap, Speedo, TrueType, Type 1) and a sample below. The font
-  is used for everything in ClaudeST's window; menus and the selector
-  keep the system font.
+  @{B}Options > Font...@{b} opens the Font dialog all the AERA programs
+  share: the Family list on the left; beside it the Style list and the
+  Size list with a Pt: field; then the Type line (what kind of font it
+  is, and where its Hebrew comes from) and a sample. The font is used
+  for everything in ClaudeST's window; menus and dialogs keep the
+  system font.
 
   - @{B}The system font@{b} comes in two sizes, 8 x 8 and 8 x 16.
   - @{B}GDOS fonts:@{b} with NVDI or SpeedoGDOS, its fixed-width fonts
-    are listed too (ClaudeST needs one), with the sizes each draws. The
-    first time, each font is measured ("Looking for
-    fixed-width fonts" on the status line) and the answers kept in
-    CLAUDEST.FNT. Delete that file to measure them all again.
-  - @{B}Hebrew letters:@{b} fonts keep them in different places. The
-    three buttons under "Hebrew in bitmap fonts" each show the word
-    shalom as that kind of font would (Atari, ISO 8859-8, DOS 862): pick
-    the one that reads correctly. A vector font is asked through NVDI 5
+    are listed too (ClaudeST needs one), by family, with the styles and
+    sizes each has. The first time, each font is measured ("Looking for
+    fixed-width fonts") and the answers kept in CLAUDEST.FNT. Delete
+    that file to measure them all again.
+  - @{B}Hebrew letters:@{b} fonts keep them in different places. Choose
+    where yours keeps them in Options > Settings, "Hebrew in fonts":
+    Atari, ISO 8859 or DOS 862. A vector font is asked through NVDI 5
     for its own Hebrew letters; without them, they are drawn in the
     system font.
 
-  Keys: Up and Down change the family, a letter goes to the next family
-  starting with it (C for Courier), Left and Right change the size,
-  Return is OK and Esc cancels.
+  Keys: Tab (or Left and Right) moves between Family, Style, Size and
+  Pt:; Up and Down move in a list; a letter goes to the next family
+  starting with it (C for Courier); digits type a size. Return is OK
+  and Esc cancels.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -451,7 +452,8 @@
 
   @{B}Options > Settings...@{b} (Control+,) sets how ClaudeST reaches
   its gateway: Network (STinG) with the gateway's address and port, or
-  Serial with the speed.
+  Serial with the speed, and where your fonts keep the Hebrew letters
+  (Hebrew in fonts: Atari, ISO 8859 or DOS 862).
 
   ClaudeST saves its settings to CLAUDEST.INF, next to CLAUDEST.PRG, as
   soon as you change them, as the other AERA programs do: an [OPTIONS]
@@ -466,9 +468,10 @@
                             Falcon, another port: 6 MFP, 7 SCC B (the
                             Falcon's Modem port), 8 TT-MFP, 9 SCC A
     HEBREW=1                F10 / Options > Hebrew keys
-    FONT=1,8  HEBFONT=0     Options > Font: the font's id (1 = system
-                            font) and size; where it keeps Hebrew
-                            (0 Atari, 1 ISO-8859-8, 2 DOS 862)
+    FONT=1,8                Options > Font: the font's id (1 = system
+                            font) and size
+    HEBFONT=0               Settings, Hebrew in fonts: where the font
+                            keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862)
     SIDEBAR=240             the sidebar's width, by dragging the divider
                             (0: ClaudeST's choice)
     MODEL=...  EFFORT=...   the model chip / F9 (empty: the defaults)
@@ -521,8 +524,9 @@
     shows your usage.
 
   @{B}Hebrew shows as other symbols@{b}
-    Your font keeps its Hebrew letters elsewhere: pick the right sample
-    in Options > Font, see @{"Font" link "Font"}.
+    Your font keeps its Hebrew letters elsewhere: choose ISO 8859 or
+    DOS 862 under "Hebrew in fonts" in Options > Settings, see
+    @{"Font" link "Font"}.
 
   @{B}Something else fails@{b}
     Watch "journalctl -u claude-st -f" on the Pi while you try again on

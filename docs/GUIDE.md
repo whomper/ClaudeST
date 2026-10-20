@@ -285,41 +285,40 @@ points (niqqud) and turns maqaf, geresh and gershayim into `-`, `'` and
 
 ## Font
 
-**Options ▸ Font…** opens a font selector like EMail's and ECal's, and
-like other GEM programs': the font families on the left, the sizes of
-the chosen one beside them, what kind of font it is (bitmap, Speedo,
-TrueType, Type 1) and a sample below. The chosen font is used for
-everything in ClaudeST's window: the sidebar, the title bar, the
-conversation and the reply line. Menus and the font selector itself
-keep the system font.
+**Options ▸ Font…** opens the Font dialog all the AERA programs share,
+laid out as Atari font selectors are: the **Family** list on the left;
+beside it the **Style** list (Regular, Italic, Bold…) and the **Size**
+list with a **Pt:** field; then the **Type** line (bitmap, Speedo,
+TrueType or Type 1, and where its Hebrew comes from) and a sample in the
+chosen font. The font is used for everything in ClaudeST's window: the
+sidebar, the title bar, the conversation and the reply line. Menus and
+dialogs keep the system font.
 
 - **The system font** comes in two sizes, 8×8 and 8×16. 8×8 fits twice
   as many lines on an ST high or a Falcon VGA screen.
 - **GDOS fonts:** with a GDOS such as NVDI or SpeedoGDOS, its fonts are
   listed too. ClaudeST lays text out in character cells, so it needs a
-  fixed-width font: only those are listed, and the sizes each one draws.
-  The first time, ClaudeST measures each font to find them
-  ("Looking for fixed-width fonts" on the status line; it can take a
-  while with many vector fonts) and keeps the answers in `CLAUDEST.FNT`
-  next to `CLAUDEST.PRG`,
-  so the selector opens quickly afterwards and only new fonts are
-  measured. Delete `CLAUDEST.FNT` to measure them all again.
+  fixed-width font: only those are listed, by family, with the styles
+  and sizes each one has. The first time, ClaudeST measures each font
+  ("Looking for fixed-width fonts" in the dialog; it can take a while
+  with many vector fonts) and keeps the answers in `CLAUDEST.FNT` next
+  to `CLAUDEST.PRG`, so the dialog opens quickly afterwards and only new
+  fonts are measured. Delete `CLAUDEST.FNT` to measure them all again.
 - **Hebrew letters:** fonts keep them in different places: the standard
   Atari font (TOS, EmuTOS) at the Atari character set's, Israeli system
   fonts and many GDOS fonts where ISO-8859-8 or DOS 862 put them. If
-  Hebrew shows as other symbols, open Options ▸ Font: the three buttons
-  under "Hebrew in bitmap fonts" each show the word shalom as that kind
-  of font would; pick the one that reads correctly, and the sample below
-  shows the result. A vector font (Speedo, TrueType, Type 1) is asked
-  through NVDI 5 for its Hebrew letters by Unicode, as FreeMono and
-  Liberation Mono have them; the Type line then says "Hebrew from the
-  font". A vector font without Hebrew, or without NVDI 5 to ask, says
-  "Hebrew in the system font": those letters are then drawn in the
+  Hebrew shows as other symbols, choose where your font keeps them in
+  **Options ▸ Settings**, under *Hebrew in fonts*: Atari, ISO 8859 or
+  DOS 862. A vector font (Speedo, TrueType, Type 1) is asked through
+  NVDI 5 for its Hebrew letters by Unicode, as FreeMono and Liberation
+  Mono have them; the Type line then says so. A vector font without
+  Hebrew, or without NVDI 5 to ask, has those letters drawn in the
   system font, in the same cells.
 
-Keys in the selector: `↑` `↓` change the family, a letter goes to the
-next family starting with it (`C` for Courier), `←` `→` change the size,
-`Return` is OK and `Esc` cancels. A double click on a family or size
+Keys in the dialog: `Tab` (and `←` `→`) move between Family, Style, Size
+and Pt:; `↑` `↓` move in a list, `Clr/Home` to its top; a letter goes to
+the next family starting with it (`C` for Courier); digits type a size
+into Pt:. `Return` is OK and `Esc` cancels. A double click on a row
 also picks it.
 
 ## Help
@@ -365,7 +364,9 @@ sets the gateway address, and `/serial` switches to the serial port.
 
 **Options ▸ Settings…** (`Ctrl+,`) sets how ClaudeST reaches its gateway:
 **Network** (through STinG) with the gateway's address and port, or
-**Serial** with the speed. Tab moves between the two fields; Return is OK.
+**Serial** with the speed, and where your fonts keep the Hebrew letters
+(*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
+moves between the two fields; Return is OK.
 
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
 (strictly, in the folder that is current when ClaudeST starts, which the
@@ -382,7 +383,8 @@ on) is still read, and written in the new form the next time.
 | `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, or the baud items in Options |
 | `SERIALPORT=0` | edit by hand, on a TT or Falcon only to use another serial port than the one TOS has chosen (0, the default): 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2) |
 | `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
-| `FONT=1,8`, `HEBFONT=0` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes); where it keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
+| `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
