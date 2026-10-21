@@ -80,7 +80,9 @@
   Give the Pi a fixed address (a DHCP reservation in your router), and
   the Atari too unless the bridge accepts any address (--atari any).
 
-  @{U}On the Pi@{u}, in your home folder:
+  @{U}On the Pi@{u}, in your home folder (the first line on Raspberry
+  Pi OS Lite only, which comes without git; put the Atari's address
+  in place of 192.168.1.20):
 
       sudo apt install -y git
       git clone https://github.com/whomper/AERA-Gateway.git
@@ -91,7 +93,10 @@
 
   The installer asks for your claude.ai @{B}sessionKey@{b} (a cookie from
   the website, starting with sk-ant-sid) and runs the bridge as a
-  service that starts at every boot.
+  service that starts at every boot. To see what runs, and which
+  ClaudeST release:
+
+      gateway/aera-gateway status
 
   @{U}On the Atari@{u}
 
@@ -99,7 +104,7 @@
     2. Copy CLAUDEST.PRG, CLAUDEST.HYP and CLAUDEST.REF into one
        folder, any folder on any drive.
     3. Run CLAUDEST.PRG, choose Options > Settings... (Control+,), pick
-       Network and type the Pi's address, or type
+       Network and type the Pi's address, port 2323, or type
        @{B}/connect 192.168.1.10@{b} in the reply line. The status line
        shows Connecting..., then Online, with a green dot.
 
@@ -115,9 +120,11 @@
     CLAUDEST.REF over the old ones. Your settings, in CLAUDEST.INF,
     stay as they are.
 
-    On the Pi, when a release's notes say the bridge changed, run
-    "./update-pi.sh" in your AERA-Gateway folder. It keeps every
-    setting and is safe to run at any time.
+    On the Pi, when a release's notes say the bridge changed, run:
+
+      cd ~/AERA-Gateway && ./update-pi.sh
+
+    It keeps every setting and is safe to run at any time.
 @endnode
 
 ## ------------------------------------------------------------------------

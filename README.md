@@ -56,14 +56,14 @@ README's [Getting started](https://github.com/whomper/AERA-Gateway#getting-start
 In your home folder on the Pi:
 
 ```sh
-sudo apt install -y git      # Raspberry Pi OS Lite comes without it
+sudo apt install -y git      # Raspberry Pi OS Lite only: it comes without git
 git clone https://github.com/whomper/AERA-Gateway.git
 cd AERA-Gateway
 ./update-pi.sh
 sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
 ```
 
-The installer asks for the session key. It then runs the bridge as a service called `claude-st`, which
+Put the Atari's address in place of `192.168.1.20`. The installer asks for the session key. It then runs the bridge as a service called `claude-st`, which
 starts at every boot and accepts connections only from the Atari's address. Use `--atari IP1,IP2` for
 several Ataris, or `--atari any` to accept any address on your network. If the `ufw` firewall is on,
 the installer opens port 2323 for them.
@@ -94,9 +94,9 @@ desktop.
 
 - **The Atari:** from a new release, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` over the old
   ones. Your settings, in `CLAUDEST.INF`, stay as they are.
-- **The Pi:** when a release's notes say the bridge changed, run `./update-pi.sh` in your
-  `AERA-Gateway` folder (see [Looking after the Pi](#looking-after-the-pi)). It is safe to run at any
-  time.
+- **The Pi:** when a release's notes say the bridge changed, run `cd ~/AERA-Gateway && ./update-pi.sh`
+  (see [Looking after the Pi](#looking-after-the-pi)). It is safe to run at any time.
+  `gateway/aera-gateway status` in the same folder shows what runs and which ClaudeST release.
 
 ### Using a serial cable instead
 

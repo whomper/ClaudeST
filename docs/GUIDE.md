@@ -1,9 +1,10 @@
 # ClaudeST user guide
 
-The [README](../README.md) covers setup. This guide describes each part
-of ClaudeST, then troubleshooting, settings and building. The
-screenshots use the bridge's demo backend, so they show sample chats.
+This guide covers installing, then each part of ClaudeST, then
+troubleshooting, settings and building. The screenshots use the
+bridge's demo backend, so they show sample chats.
 
+- [Installing](#installing)
 - [The window](#the-window)
 - [Chats, projects and search](#chats-projects-and-search)
 - [Right-click menus](#right-click-menus)
@@ -21,6 +22,32 @@ screenshots use the bridge's demo backend, so they show sample chats.
 - [Serial cables and ports](#serial-cables-and-ports)
 - [Icons](#icons)
 - [Building](#building)
+
+## Installing
+
+The [README](../README.md#getting-started) says what you need and how
+to get the session key. On the Pi, in your home folder:
+
+```sh
+sudo apt install -y git      # Raspberry Pi OS Lite only: it comes without git
+git clone https://github.com/whomper/AERA-Gateway.git
+cd AERA-Gateway
+./update-pi.sh
+sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
+```
+
+Put the Atari's address in place of `192.168.1.20`. The installer asks
+for the session key and runs the bridge as a service that starts at
+every boot.
+
+- **To update** the Pi, when a release's notes say the bridge changed:
+  `cd ~/AERA-Gateway && ./update-pi.sh`. It keeps every setting.
+- **To check** what runs, and which ClaudeST release:
+  `gateway/aera-gateway status` in the same folder.
+
+On the Atari, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF`
+into one folder and run `CLAUDEST.PRG`. Choose **Options ▸ Settings…**,
+pick **Network** and type the Pi's address, port 2323.
 
 ## The window
 
