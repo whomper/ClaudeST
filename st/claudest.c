@@ -4872,6 +4872,17 @@ int main(void)
 	help_init();			/* memory the help viewer may read */
 	av_init("CLAUDEST");		/* the desktop's AV server, if there is one */
 	vh = v_opnvwk_(phys, work_out);
+	if (!vh) {		/* NVDI out of memory: once more, after a moment */
+		evnt_timer_(500);
+		vh = v_opnvwk_(phys, work_out);
+	}
+	if (!vh) {		/* never draw with handle 0 (rule 2.1) */
+		alert(1, "[3][ClaudeST can't open its screen: the VDI has no memory for it. "
+		      "%ld KB were free; the accessories hold the rest.][ Quit ]",
+		      (long)Malloc(-1L) / 1024);
+		appl_exit();
+		return 1;
+	}
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
 	ncolors = work_out[13];
