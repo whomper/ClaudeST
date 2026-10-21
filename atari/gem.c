@@ -37,14 +37,20 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
    program in front, or for an accessory every other program, can't run
    (guideline 2.2). Each stretch of AES_PROFILE ms or more (50 when no
    number is given) goes to the emulator's console (NatFeats) as
-   "AESGAP <ms> ms <tag>"; tests/aesgap.py reads them. */
+   "AESGAP <ms> ms <tag>"; tests/aesgap.py reads them.
+   Under plain TOS the AES hands the processor to the other programs in
+   calls that do no work of their own (appl_write, appl_find, graf_mkstate,
+   wind_update: EContact saw ECal's whole turn of 160 ms run inside its
+   graf_mkstate, 21 Oct 2026). The time inside those calls, 5 ms or more a
+   call, isn't ours: it is left out of the stretch and, when it reaches
+   AES_PROFILE, goes out as "AESOTHER <ms> ms <tag>". */
 #include <stdio.h>
 #if AES_PROFILE < 2
 #undef AES_PROFILE
 #define AES_PROFILE 50
 #endif
 static const char *gap_tag = "start";
-static u32 gap_from, gap_max;
+static u32 gap_from, gap_max, other;
 
 void aes_profile_tag(const char *tag)
 {
@@ -60,19 +66,35 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 {
 	short r;
 	int ev = op >= 20 && op <= 25;		/* evnt_keybd ... evnt_multi */
+	int idle = op == 12 || op == 13 || op == 79 || op == 107;	/* no work of ours */
+	u32 t0 = 0;
 	if (ev && gap_from) {
 		u32 g = tos_ms() - gap_from;
+		char b[96];
+		g = g > other ? g - other : 0;
 		if (g > gap_max)
 			gap_max = g;
 		if (g >= AES_PROFILE) {
-			char b[96];
 			snprintf(b, sizeof(b), "AESGAP %lu ms %s\n", (unsigned long)g, gap_tag);
 			nf_debug(b);
 		}
+		if (other >= AES_PROFILE) {
+			snprintf(b, sizeof(b), "AESOTHER %lu ms %s\n", (unsigned long)other, gap_tag);
+			nf_debug(b);
+		}
 	}
+	if (idle && gap_from)
+		t0 = tos_ms();
 	r = aes_raw(op, nin, nout, nain, naout);
-	if (ev)
+	if (t0) {
+		u32 d = tos_ms() - t0;
+		if (d >= 5)
+			other += d;
+	}
+	if (ev) {
 		gap_from = tos_ms();
+		other = 0;
+	}
 	return r;
 }
 #else

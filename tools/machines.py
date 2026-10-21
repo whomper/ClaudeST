@@ -54,6 +54,7 @@ on Erez's machines. Name only the other programs, not the one under test.
 import hashlib
 import os
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -75,10 +76,10 @@ MACHINES = {
                ["--machine", "falcon", "--cpuclock", "32", "--fpu", "68882", "--memsize", "14",
                 "--ttram", "128", "--addr24", "off", "--dsp", "emu", "--monitor", "vga"],
                ["16", "256"], "tos404.img"),
-    "Falcon-4": ("a Falcon030 as sold: 68030 at 16 MHz, no FPU, 4 MB ST RAM and no TT RAM, VGA "
+    "Falcon-4": ("a Falcon030 as sold: 68030 at 16 MHz, no FPU, 4 MB ST RAM and no TT RAM, the DSP, VGA "
                  "(Erez, 19 Oct 2026: the machine for all three accessories loaded at once)",
                  ["--machine", "falcon", "--cpuclock", "16", "--memsize", "4", "--ttram", "0",
-                  "--addr24", "on", "--monitor", "vga"],
+                  "--addr24", "on", "--dsp", "emu", "--monitor", "vga"],
                  ["16", "256"], "tos404.img"),
 }
 
@@ -95,10 +96,12 @@ FALCON_MODE = {"16": 0x001A, "256": 0x001B}    # VGA | 80 columns | 4 or 8 plane
 EMUTOS = ("https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip",
           "1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663", "etos512us.img")
 
-# C:\AUTO\BOOTC.PRG, for Erez's TOS 1.04: Hatari's C: is no hard disk to
+# C:\AUTO\BOOTC.PRG, for Erez's TOS images: Hatari's C: is no hard disk to
 # TOS 1.04, which then counts A: as the boot drive (_bootdev) and programs
-# that read it look for their files on an empty floppy drive. A hard disk
-# driver sets C: on the real ST; this does the same:
+# that read it look for their files on an empty floppy drive; TOS 4.04 does
+# the same on a 1 MB Falcon (EHypView's colour-test, 21 Oct 2026: it looked
+# for A:\EHYPVIEW.INF). A hard disk driver sets C: on the real machine; this
+# does the same, and changes nothing where C: is the boot drive already:
 #   pea setboot(pc); move.w #38,-(sp); trap #14; addq.l #6,sp   Supexec
 #   clr.w -(sp); trap #1                                          Pterm0
 #   setboot: move.w #2,$446.w; rts
@@ -170,8 +173,17 @@ def xvfb(display, size="1024x768x24", timeout=20):
     def up():
         try:
             return subprocess.run(["xdpyinfo"], env=env, capture_output=True).returncode == 0
-        except FileNotFoundError:   # no xdpyinfo: the server's socket is there
-            return os.path.exists("/tmp/.X11-unix/X" + display.lstrip(":").split(".")[0])
+        except FileNotFoundError:   # no xdpyinfo: the server's socket answers
+            # (a socket left by an Xvfb that was killed is only a file:
+            # taken for a display, the rig's xdotool found no window)
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.connect("/tmp/.X11-unix/X" + display.lstrip(":").split(".")[0])
+                return True
+            except OSError:
+                return False
+            finally:
+                sock.close()
     if up():
         return None
     p = subprocess.Popen(["Xvfb", display, "-screen", "0", size],
@@ -230,8 +242,8 @@ class Machine:
                     f.write(NEWDESK % (mode >> 8, mode & 0xFF))
         if self.name.startswith("ST"):
             write_prg(os.path.join(self.hd, "AUTO", "CLOCK.PRG"), clock())
-            if self.real:
-                write_prg(os.path.join(self.hd, "AUTO", "BOOTC.PRG"), BOOTC)
+        if self.real:
+            write_prg(os.path.join(self.hd, "AUTO", "BOOTC.PRG"), BOOTC)
         s = sum(nv[:48]) & 0xFF
         nv[48], nv[49] = ~s & 0xFF, s
         with open(os.path.join(cfg, "hatari.nvram"), "wb") as f:

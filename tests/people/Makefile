@@ -6,10 +6,13 @@ B      := build
 
 $(B)/test_people: test_people.c ../../ui/people_ask.c ../../ui/people_ask.h | $(B)
 	cc $(CFLAGS) -o $@ test_people.c ../../ui/people_ask.c
+$(B)/test_people_file: test_people_file.c ../../ui/people_ask.c ../../ui/people_file.c ../../ui/people_file.h | $(B)
+	cc $(CFLAGS) -DPEOPLE_FILE_HOST -o $@ test_people_file.c ../../ui/people_ask.c ../../ui/people_file.c
 $(B):
 	mkdir -p $@
-test: $(B)/test_people
+test: $(B)/test_people $(B)/test_people_file
 	./$(B)/test_people
+	./$(B)/test_people_file
 clean:
 	rm -rf build
 .PHONY: test clean

@@ -1,0 +1,605 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
+; Copyright (C) 2026 AERA | Erez Yaary
+; dither.a56 - a picture dithered to the screen's pens on the Falcon's
+; DSP56001, for pic.c's pic_dither (atari/dspjpeg.c loads it): the same
+; pens as the 68030's dither_many, to the bit. Floyd-Steinberg,
+; serpentine: each pixel's error (the colour it wanted less its pen's)
+; carried 7/16 on and 3/16, 5/16 and 1/16 to the row below; the colour
+; wanted limited to -128..383 a component, its pen the nearest by
+; 3 dr^2 + 4 dg^2 + 2 db^2 to the middle of its cell (16 steps a
+; component), worked out the first time a cell is wanted and kept in the
+; near table (three cells to a word). The 68030 only copies pixels in
+; and pens out.
+;
+; Commands (a word each, then their words):
+;   1 LOADX  ADDR, N, then N words into X memory from ADDR
+;   4 LOADY  the same into Y memory
+;   6 LOADP  the same into P memory (the code from P:$7000)
+;   5 PING   "DTH" ($445448) back: the program is here, at its commands
+;   8 PAL    the palette's tables are loaded: the near table emptied
+;   9 DITHER W, H, WO: H rows of W pixels from the 68030 (each $00vvvv,
+;            5-6-5, or $01vvvv: not drawn, pen 0 and no error); after
+;            each row its pens: a word 0, then WO words of three pens
+;            (the first in the top byte), from the host's interrupt
+;            while the next row is dithered
+;
+; Numbers: a component the pixel wants is (c - 128) 2^15, and its
+; sixteenths (the errors' fractions) below; moved from the accumulator it
+; is limited to -2^23..2^23 - 1, which is c from -128 to 383, the 68030's
+; clamp. Its cell is the top 5 bits (the 68030's (c + 128) >> 4). An
+; error q (c less the pen's) is carried as q 2^14, the next row's
+; sixteenths of it as 2^11 each. The pens' components for the distances
+; are x 2^12, so that each square is the top word of a product.
+;
+; The next row's errors go into the row's own (the one being read): at
+; x the row below's x - dir is done (its last 3/16 came from this
+; pixel), so it is written over the error read there a pixel ago; the
+; next row's x and x + dir are kept aside (A and B) until then.
+
+HCR	equ	$ffe8
+HSR	equ	$ffe9
+HRX	equ	$ffeb
+
+; internal X: the variables (short addresses)
+V_W	equ	$00		; the width
+V_H	equ	$01		; rows
+V_WO	equ	$02		; words of pens a row: (W + 2) / 3
+V_XR	equ	$03		; the pixel's colour wanted, limited
+V_XG	equ	$04
+V_XB	equ	$05
+V_SR	equ	$06		; 7/16 of the last pixel's error (2^11 a sixteenth)
+V_SG	equ	$07
+V_SB	equ	$08
+V_AR	equ	$09		; the next row's at x so far (2^11 a sixteenth)
+V_AG	equ	$0a
+V_AB	equ	$0b
+V_BR	equ	$0c		; and at x + dir
+V_BG	equ	$0d
+V_BB	equ	$0e
+V_OUT	equ	$0f		; the end of the buffer for this row's pens
+V_TP	equ	$10		; the interrupt's next word
+V_SAV	equ	$11		; (its r7)
+V_DIR	equ	$12		; this row's way: 1, or -1 (from the right)
+V_BD	equ	$13		; the nearest: the best distance so far (x 2)
+V_BK	equ	$14		; and its pen + 1
+V_CR	equ	$15		; the cell's middle (x 2^12)
+V_CG	equ	$16
+V_CB	equ	$17
+V_SIDE	equ	$18		; 1: the pen looked at is the higher one
+V_SHI	equ	$19		; (from the 68030) S1 + 1 + n: past the last pen
+V_NA	equ	$1a		; the cell's WB entry
+V_IN0	equ	$1b		; this row's slot in the ring, the next row's
+V_IN1	equ	$1c
+V_HCR	equ	$1d		; the host's interrupts when the last row's pens have gone
+V_ROW	equ	$1e		; rows to go
+V_W2	equ	$1f		; W + 2: a row's words in the ring
+; constants, from the 68030
+C_12	equ	$20		; 2^12, 2^5, 2^4 (integers: the multiplier's shifts)
+C_5	equ	$21
+C_4	equ	$22
+C_TBG	equ	$23		; TBG + 32
+C_TBB	equ	$24		; TBB + 16
+C_78	equ	$25		; 7/8, 3/8, 5/8, 1/8
+C_38	equ	$26
+C_58	equ	$27
+C_18	equ	$28
+C_WR	equ	$29		; WR + 16, WG + 16, WB + 16
+C_WG	equ	$2a
+C_WB	equ	$2b
+C_PEN	equ	$2c		; PR
+C_K16	equ	$2d		; 2^16, 2^8, 1
+C_K8	equ	$2e
+C_K0	equ	$2f
+C_LO	equ	$30		; LO + 16
+C_BIG	equ	$31		; 1024 x 2^12: farther than any pen
+C_FF	equ	$32		; $0000FF, $FF8000: masks (AND takes no immediate)
+C_FM	equ	$33
+C_M	equ	$e0		; X and Y: -$020202
+; internal X and Y: the tables, from the 68030. For a cell's red, mr
+; (-16..15; mr + 16 the 68030's), WR its row of the near table: NT + (mr
+; + 16) x 352; for green, WG: (mg + 16) x 11; for blue, WB: (mb + 16) / 3,
+; the word in the row, WS: -2^(23 - 8 j) (the byte j its cell is, j = (mb
+; + 16) % 3, brought to the bottom by a multiply), WI: 2^(8 j); LO the
+; first pen (by red) at or above the middle of red's cell, as its place
+; in S1, MID the cell's middle, 16 m + 136 (x 2^12). TBR, TBG, TBB: a
+; pixel's 5, 6 and 5 bits as (c - 128) 2^15
+WR	equ	$40		; X
+WG	equ	$60		; X
+LO	equ	$80		; X
+MID	equ	$80		; Y
+WB	equ	$a0		; X
+WS	equ	$a0		; Y
+WI	equ	$c0		; X
+TBR	equ	$00		; Y, 0..31
+TBG	equ	$20		; Y, at TBG + 32 + g (-32..31)
+TBB	equ	$60		; Y, at TBB + 16 + b (-16..15)
+
+; external
+ER	equ	$0200		; X: red's errors, Y: green's, at ER + 1 + x
+S1	equ	$0800		; X: the pens' red, Y their green, sorted by red (S1 + 1 on; - and + far at the ends)
+S2	equ	$0a00		; X: their blue, Y their pen + 1
+PR	equ	$0c00		; X: red, Y: green of pen k - 1, as (c - 128) 2^15
+PB	equ	$0e00		; X: blue
+IN	equ	$1000		; X: the rows' pixels, a ring of two (modulo 2 (W + 2)), each pixel's pen + 1 over it
+EB	equ	$1c00		; X: blue's errors
+OUTA	equ	$2400		; X: a row's pens just below one of these (bit 10 set only there)
+OUTB	equ	$2c00
+NT	equ	$1000		; Y: the near table, 1024 rows of 11 words, 0: not worked out
+
+	org	p:$0
+	jmp	start
+
+	org	p:$20			; a word from the host (fast: into the ring)
+	movep	x:HRX,x:(r3)+
+	nop
+	org	p:$22			; the host can take a word
+	jsr	hint
+
+	org	p:$40
+start
+	movep	#1,x:$ffe0		; port B is the host port
+	movep	#0,x:$fffe		; no wait states
+	movep	#$0400,x:$ffff		; the host's interrupts at level 0
+	andi	#$fc,mr			; (only the transmitter's, when on)
+
+cmd
+	jsr	rd
+	move	x0,a
+	move	#>9,x1
+	cmp	x1,a
+	jeq	dither
+	move	#>1,x1
+	cmp	x1,a
+	jeq	ldx
+	move	#>4,x1
+	cmp	x1,a
+	jeq	ldy
+	move	#>6,x1
+	cmp	x1,a
+	jeq	ldp
+	move	#>8,x1
+	cmp	x1,a
+	jeq	pal
+	move	#>5,x1
+	cmp	x1,a
+	jeq	ping
+	jmp	cmd
+ldx
+	jsr	rdan
+	do	x0,lx1
+	jsr	rd
+	move	x0,x:(r0)+
+lx1
+	jmp	cmd
+ldy
+	jsr	rdan
+	do	x0,ly1
+	jsr	rd
+	move	x0,y:(r0)+
+ly1
+	jmp	cmd
+ldp
+	jsr	rdan
+	do	x0,lp1
+	jsr	rd
+	movem	x0,p:(r0)+
+lp1
+	jmp	cmd
+rdan
+	jsr	rd
+	move	x0,r0
+	jsr	rd
+	rts
+rd	jclr	#0,x:HSR,rd
+	movep	x:HRX,x0
+	rts
+; PING: "DTH" back
+ping
+	move	#>$445448,x1
+pw	jclr	#1,x:HSR,pw
+	movep	x1,x:HRX
+	jmp	cmd
+; PAL: no cell worked out yet
+pal
+	clr	a
+	move	#NT,r0
+	move	#>$2c00,x0
+	rep	x0
+	move	a,y:(r0)+
+	jmp	cmd
+
+; the host's interrupt: the row's next word (V_TP) to the 68030; at the
+; buffer's end (bit 10), no more
+hint	move	r7,x:<V_SAV
+	move	x:<V_TP,r7
+	nop
+	movep	x:(r7)+,x:HRX
+	move	r7,x:<V_TP
+	move	x:<V_SAV,r7
+	jclr	#10,x:<V_TP,hi1
+	movep	x:V_HCR,x:HCR		; (BSET and BCLR there: Hatari misses them)
+hi1	rti
+
+; ---- DITHER
+dither
+	jsr	rd
+	move	x0,x:<V_W
+	jsr	rd
+	move	x0,x:<V_H
+	jsr	rd
+	move	x0,x:<V_WO
+	; the errors 0, the first buffer, from the left; the rows come
+	; into a ring of two (W + 2 words each: the two past the row are 1,
+	; for the last word of pens) by the host's receive interrupt
+	clr	a
+	move	#ER,r0
+	move	#EB,r1
+	move	x:<V_W,b
+	move	#>2,x0
+	add	x0,b
+	do	b1,dz
+	move	a,x:(r1)+
+	move	a,l:(r0)+
+dz
+	move	b1,x1			; W + 2
+	move	x1,x:<V_W2
+	move	#>IN,x0
+	add	x0,b	x0,x:<V_IN0
+	move	b1,x:<V_IN1		; IN + W + 2
+	tfr	x1,b	#>1,x0
+	asl	b	x0,x:<V_DIR
+	sub	x0,b	#IN,r3
+	movec	b1,m3			; modulo 2 (W + 2)
+	move	#>OUTA,x0
+	move	x0,x:<V_OUT
+	move	#$200,n4
+	move	#$200,n6
+	move	x:<V_H,b
+	move	b1,x:<V_ROW
+	movep	#1,x:HCR		; HRIE
+	move	#>1,x0
+	move	x0,x:<V_HCR
+	do	x:<V_H,drow
+	jsr	row
+	nop
+drow
+	movec	#$ffff,m3
+	jmp	cmd
+
+; a row: once it is all in, dithered, its pens out
+row
+	move	x:<V_IN0,r2
+	move	x:<V_W2,y0
+rw0	ori	#$03,mr			; a word waiting, taken here: Hatari 2.4.1
+	nop				; raises no interrupt for one sent to a DSP
+	jclr	#0,x:HSR,rw2		; that had none (its direct transfer)
+	movep	x:HRX,x:(r3)+
+rw2	andi	#$fc,mr
+	move	r3,a			; past this row's slot yet?
+	move	r2,x0
+	sub	x0,a
+	jlt	rw1
+	cmp	y0,a
+	jlt	rw0
+rw1
+	; from its first pixel, the way it goes: r2 the pixels (and their
+	; pens, over them), r0 and r1 the errors at x - dir
+	move	x:<V_DIR,b
+	tst	b
+	jmi	rl
+	move	#ER,r0
+	move	#EB,r1
+	jmp	rgo
+rl	move	x:<V_W,b		; from the right: x = W - 1
+	move	x:<V_IN0,x0
+	add	x0,b	x:<V_W,a
+	move	#>1,x0
+	sub	x0,b
+	move	b1,r2
+	move	#>ER+1,x0
+	add	x0,a	x:<V_W,b
+	move	a1,r0
+	move	#>EB+1,x0
+	add	x0,b
+	move	b1,r1
+rgo
+	move	x:<V_DIR,n0
+	move	x:<V_DIR,n1
+	move	x:<V_DIR,n2
+	clr	a
+	move	a,x:<V_SR
+	move	a,x:<V_SG
+	move	a,x:<V_SB
+	move	a,x:<V_AR
+	move	a,x:<V_AG
+	move	a,x:<V_AB
+	move	a,x:<V_BR
+	move	a,x:<V_BG
+	move	a,x:<V_BB
+	move	x:(r2),x0		; the first pixel
+	move	x:<C_12,y0
+
+	; each pixel: x0 it, y0 2^12
+	do	x:<V_W,pend
+	jset	#16,x0,ptr
+	; its components' bases: R (the top 5 bits) at a1, G and B in a0
+	mpy	x0,y0,a		x:<C_TBG,b
+	move	a0,x1
+	move	x:<C_5,y0
+	mac	x1,y0,b		a1,r4		; G (signed) in b1, at TBG + 32
+	move	b0,x1
+	move	x:<C_4,y0
+	move	x:<C_TBB,a
+	mac	x1,y0,a		b1,r5		; B in a1, at TBB + 16
+	; what each wants: its base + the error carried here + 7/16 of the
+	; last pixel's, limited
+	move	l:(r0+n0),x		; x1 red's carried, x0 green's
+	move	y:(r4),b		; red's base
+	add	x1,b		x:<V_SR,x1
+	add	x1,b		a1,r6
+	move	b,x:<V_XR
+	move	y:(r5),b
+	add	x0,b		x:<V_SG,x1
+	add	x1,b		x:(r1+n1),x0
+	move	b,x:<V_XG
+	move	y:(r6),b
+	add	x0,b		x:<V_SB,x1
+	add	x1,b		x:<V_XR,x1
+	move	b,x:<V_XB
+	; its cell in the near table: WR[mr] + WG[mg] + WB[mb], the byte by
+	; WS[mb]
+	move	x:<C_WR,a
+	mac	x1,y0,a		x:<V_XG,x1
+	move	x:<C_WG,b
+	mac	x1,y0,b		a1,r4
+	move	x:<V_XB,x1
+	move	x:<C_WB,a
+	mac	x1,y0,a		b1,r5
+	move	x:(r4),b
+	move	a1,r6
+	move	x:(r5),x1
+	add	x1,b
+	move	l:(r6),y		; y1 WB, y0 WS
+	add	y1,b		x:<C_FF,y1
+	move	b1,r7
+	move	x:<C_PEN,x1
+	nop
+	move	y:(r7),x0
+	mpy	-x0,y0,a
+	and	y1,a		x:<C_FM,y0
+	jseq	nfill			; not worked out yet
+	; its pen (+ 1, over the pixel); the errors (q 2^14), red's in y1,
+	; green's in x0, blue's in y0
+	add	x1,a		a1,x:(r2)+n2	; a1: its colour's place
+	move	a1,r4
+	move	x:<V_XR,a
+	and	y0,a		x:<V_XG,b
+	and	y0,b		l:(r4),x	; x1 its red, x0 its green
+	sub	x1,a		x:(r4+n4),x1	; x1 its blue
+	asr	a
+	sub	x0,b		a,y1
+	asr	b		x:<V_XB,a
+	and	y0,a		b,x0
+	sub	x1,a
+	asr	a		x:<C_38,x1
+	; to the next row: at x - dir, A + 3/16 q (it is done); A = B + 5/16
+	; q; B = 1/16 q; and 7/16 q to the next pixel
+	move	x:V_AR,b	a,y0
+	mac	y1,x1,b		x:<V_AG,a
+	mac	x1,x0,a		b,x:(r0)
+	move	x:<V_AB,b
+	mac	x1,y0,b		a,y:(r0)+n0
+	move	x:<C_58,x1
+	move	x:<V_BR,a
+	mac	y1,x1,a		b,x:(r1)+n1
+	move	x:<V_BG,b
+	mac	x1,x0,b		a,x:<V_AR
+	move	x:<V_BB,a
+	mac	x1,y0,a		b,x:<V_AG
+	move	x:<C_18,x1
+	mpy	y1,x1,b		a,x:<V_AB
+	mpy	x1,x0,a		b,x:<V_BR
+	mpy	x1,y0,b		a,x:<V_BG
+	move	x:<C_78,x1
+	mpy	y1,x1,a		b,x:<V_BB
+	mpy	x1,x0,b		a,x:<V_SR
+	mpy	x1,y0,a		b,x:<V_SG
+	move	a,x:<V_SB
+ptail	move	x:(r2),x0		; the next pixel
+pnext	move	x:<C_12,y0
+pend
+	; the last pixel's place in the next row
+	move	x:<V_AR,x0
+	move	x0,x:(r0)
+	move	x:<V_AG,x0
+	move	x0,y:(r0)
+	move	x:<V_AB,x0
+	move	x0,x:(r1)
+
+	; the pens, three to a word ((k0 - 1) << 16 | (k1 - 1) << 8 | k2 -
+	; 1, made twice over in a0 and halved), below the buffer's end, a 0
+	; before them
+	move	x:<V_OUT,b
+	move	x:<V_WO,x0
+	sub	x0,b	#>1,x0
+	move	b1,r5
+	sub	x0,b	x:<V_IN0,r4
+	move	b1,r6
+	move	x:<C_K16,x1
+	move	x:<C_K8,y0
+	move	x:<C_K0,y1
+	move	l:C_M,b
+	do	x:<V_WO,pk1
+	move	x:(r4)+,x0
+	tfr	b,a
+	mac	x1,x0,a		x:(r4)+,x0
+	mac	y0,x0,a		x:(r4)+,x0
+	mac	x0,y1,a
+	asr	a
+	move	a0,x:(r5)+
+pk1
+	clr	a
+	move	a,x:(r6)
+	; they go once the last row's have (the last row's with no more
+	; coming in)
+sw	jset	#1,x:HCR,sw
+	move	r6,x:<V_TP
+	move	x:<V_ROW,b
+	move	#>1,x0
+	sub	x0,b
+	move	b1,x:<V_ROW
+	jeq	rlast
+	movep	#3,x:HCR		; HTIE, HRIE
+	jmp	rnext
+rlast	move	b1,x:<V_HCR
+	movep	#2,x:HCR		; HTIE alone
+rnext
+	move	x:<V_OUT,a		; the other buffer, slot and way next
+	move	#>OUTA^OUTB,x0
+	eor	x0,a
+	move	a1,x:<V_OUT
+	move	x:<V_IN0,x0
+	move	x:<V_IN1,x1
+	move	x1,x:<V_IN0
+	move	x0,x:<V_IN1
+	move	x:<V_DIR,b
+	neg	b
+	move	b1,x:<V_DIR
+	rts
+
+; a pixel not drawn: pen 0, no error (A, B and the next pixel's as for 0)
+ptr
+	move	#>1,x0
+	move	x0,x:(r2)+n2
+	clr	a
+	move	a,x:<V_SR
+	move	a,x:<V_SG
+	move	a,x:<V_SB
+	move	x:<V_AR,x0
+	move	x0,x:(r0)
+	move	x:<V_AG,x0
+	move	x0,y:(r0)+n0
+	move	x:<V_AB,x0
+	move	x0,x:(r1)+n1
+	move	x:<V_BR,x0
+	move	x0,x:<V_AR
+	move	x:<V_BG,x0
+	move	x0,x:<V_AG
+	move	x:<V_BB,x0
+	move	x0,x:<V_AB
+	move	a,x:<V_BR
+	move	a,x:<V_BG
+	move	a,x:<V_BB
+	jmp	ptail
+
+; ---------------------------------------------------------------- the rest
+; (seldom: loaded by LOADP after the bootstrap)
+	org	p:$7000
+
+; a cell not worked out yet: its pen, as the 68030's nearest_far finds
+; it (outwards from the pens of about its red, sorted by red, until red
+; alone puts a pen farther than the best; the first best kept), put into
+; the near table. In: V_XR..V_XB, r7 the word, r6 its WB entry. Out: a1
+; the pen + 1
+nfill
+	move	r6,x:<V_NA
+	move	x:<V_XR,x1
+	move	x:<C_4,y0
+	move	x:<C_LO,a
+	mac	x1,y0,a		x:<V_XG,x1
+	move	x:<C_LO,b
+	mac	x1,y0,b		a1,r4		; red's LO and MID
+	move	x:<V_XB,x1
+	move	x:<C_LO,a
+	mac	x1,y0,a		b1,r5		; green's MID
+	move	a1,r6			; blue's
+	move	y:(r4),x0
+	move	x0,x:<V_CR
+	move	y:(r5),x0
+	move	x0,x:<V_CG
+	move	y:(r6),x0
+	move	x0,x:<V_CB
+	move	x:(r4),r4		; the higher one: the first at or above the middle
+	move	#>$7fffff,x0
+	move	x0,x:<V_BD
+	move	#>1,x0
+	move	x0,x:<V_BK
+	lua	(r4)-,r5		; the lower one
+	move	#$200,n6
+nf1
+	move	x:<V_CR,x1
+	move	x:(r4),a		; the higher one's red
+	sub	x1,a		x:(r5),y1	; how far above; the lower one's red
+	tfr	x1,b
+	sub	y1,b				; how far below
+	cmp	b,a
+	jle	nf2
+	tfr	b,a		r5,r6		; the lower one
+	move	(r5)-
+	clr	b
+	move	b,x:<V_SIDE
+	jmp	nf3
+nf2	move	r4,r6			; the higher one (the nearer, or as near)
+	move	(r4)+
+	move	#>1,x0
+	move	x0,x:<V_SIDE
+nf3
+	move	x:<C_BIG,x0		; both past the ends: done
+	cmp	x0,a
+	jge	nfend
+	; 3 dr^2 against the best (each x 2)
+	move	a,x0
+	asl	a
+	add	x0,a
+	move	a,y0
+	mpy	x0,y0,b		x:<V_BD,x1
+	cmp	x1,b
+	jge	nfcut
+	; + 4 dg^2 + 2 db^2
+	move	y:(r6),x0		; its green
+	move	x:<V_CG,a
+	sub	x0,a
+	move	a,x0
+	asl	a
+	asl	a
+	move	a,y0
+	mac	x0,y0,b		x:(r6+n6),x0	; its blue
+	move	x:<V_CB,a
+	sub	x0,a
+	move	a,x0
+	asl	a
+	move	a,y0
+	mac	x0,y0,b
+	cmp	x1,b
+	jge	nf1
+	move	b,x:<V_BD		; the best so far
+	move	y:(r6+n6),x0
+	move	x0,x:<V_BK
+	jmp	nf1
+nfcut					; the rest that way are farther still
+	jclr	#0,x:<V_SIDE,nfc1
+	move	x:<V_SHI,r4
+	jmp	nf1
+nfc1	move	#S1,r5
+	jmp	nf1
+nfend
+	; the pen + 1 into its byte of the word (pen 255: 0, worked out
+	; each time)
+	move	x:<V_NA,r6
+	move	#$20,n6
+	move	x:<V_BK,a
+	move	x:<C_FF,x1
+	and	x1,a
+	move	x:(r6+n6),y0		; WI: 2^(8 j)
+	move	a1,x0
+	mpy	x0,y0,a
+	asr	a
+	move	a0,x0
+	move	y:(r7),a
+	add	x0,a
+	move	a1,y:(r7)
+	move	#$200,n6
+	move	x:<C_PEN,x1		; (as the pixel's loop has them)
+	move	x:<C_FM,y0
+	move	x:<V_BK,a
+	rts

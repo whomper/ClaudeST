@@ -5,6 +5,8 @@
 and more made from them here.
 
     run.py TEST_PIC                 every check (make test)
+    run.py TEST_PIC_DSP             the same, and the DSP's dither against
+                                    the 68030's (make testdsp)
     run.py --same TEST_PIC OTHER    OTHER (the 68030 build under QEMU) must
                                     give the very same bytes (make test68k)
 
@@ -96,8 +98,10 @@ def to565(a):
 
 
 def decode(cmd, path, w, h, dither=False):
-    out = os.path.join(OUT, os.path.basename(path) + ".%dx%d%s.raw" % (w, h, "d" if dither else ""))
-    args = shlex.split(cmd) + (["-d"] if dither else []) + [path, str(w), str(h), out]
+    """dither: True (16 colours), "-m" (black and white) or False"""
+    flag = "-d" if dither is True else dither or None
+    out = os.path.join(OUT, os.path.basename(path) + ".%dx%d%s.raw" % (w, h, flag or ""))
+    args = shlex.split(cmd) + ([flag] if flag else []) + [path, str(w), str(h), out]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
         return None, (r.stdout + r.stderr).strip()
@@ -267,6 +271,32 @@ def main():
                 if not ok:
                     print("FAIL %-22s dithered: mean %s, Pillow %s" % (name, m1.round(), m2.round()))
                     fails += 1
+        # to black and white: the mean brightness stays
+        res, why = decode(cmd, path, 0, 0, dither="-m")
+        checks += 1
+        if res is None and not os.path.basename(path) in UNSUPPORTED:
+            print("FAIL %-22s black and white: %s" % (name, why))
+            fails += 1
+        if res is not None:
+            d = res[0]
+            solid = ref[..., 3] >= 128
+            if solid.sum() > 64:
+                lum = lambda a: (a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114)  # noqa: E731
+                m1 = float(lum(d[..., :3].astype(float))[solid].mean())
+                m2 = float(lum(ref[..., :3].astype(float))[solid].mean())
+                ok = abs(m1 - m2) < 16 and set(np.unique(d[..., :3][solid])) <= {0, 255}
+                if not ok:
+                    print("FAIL %-22s black and white: mean %.0f, Pillow %.0f" % (name, m1, m2))
+                    fails += 1
+    if "dsp" in os.path.basename(shlex.split(cmd)[0]):
+        # dithered on the DSP (dsp/dither.a56) and on the 68030: the same
+        # pens, to 4, 16 and 256 colours
+        r = subprocess.run(shlex.split(cmd) + ["-X"] + pictures(), capture_output=True, text=True)
+        checks += 1
+        print(r.stdout.strip()[-3000:], r.stderr.strip()[-2000:])
+        if r.returncode != 0:
+            fails += 1
+            print("FAIL dithered on the DSP")
     r = subprocess.run(shlex.split(cmd) + ["-r"] + pictures(), capture_output=True, text=True)
     checks += 1
     print(r.stdout.strip(), r.stderr.strip()[-2000:])
@@ -283,7 +313,7 @@ def same(host, other):
     fails = 0
     files = pictures()
     for path in files:
-        for w, h, d in ((0, 0, False), (37, 23, False), (0, 0, True)):
+        for w, h, d in ((0, 0, False), (37, 23, False), (0, 0, True), (0, 0, "-m")):
             a, _ = decode(host, path, w, h, d)
             os.replace(_, _ + ".host") if a else None
             b, _ = decode(other, path, w, h, d)
@@ -291,7 +321,7 @@ def same(host, other):
                 continue
             if a is None or b is None or not np.array_equal(a[0], b[0]):
                 fails += 1
-                print("FAIL %s %dx%d%s: not the same" % (os.path.basename(path), w, h, " dithered" if d else ""))
+                print("FAIL %s %dx%d%s: not the same" % (os.path.basename(path), w, h, " dithered %s" % d if d else ""))
     print("%d pictures, %d differ" % (len(files), fails))
     sys.exit(1 if fails else 0)
 

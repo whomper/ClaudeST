@@ -67,7 +67,10 @@ with tempfile.TemporaryDirectory() as d:
         check("Falcon:%s: 14 MB, 128 MB TT RAM, DSP" % screen, a[a.index("--memsize") + 1] == "14"
               and a[a.index("--ttram") + 1] == "128" and a[a.index("--dsp") + 1] == "emu")
 
-    check("no BOOTC.PRG or CLOCK.PRG on the Falcon", not os.path.exists(os.path.join(d, "f16", "AUTO")))
+    auto = os.path.join(d, "f16", "AUTO")
+    check("the Falcon: no CLOCK.PRG (it has a clock)", not os.path.exists(os.path.join(auto, "CLOCK.PRG")))
+    check("the Falcon: BOOTC.PRG with a real TOS (a 1 MB Falcon boots from A:), none with EmuTOS",
+          os.path.exists(os.path.join(auto, "BOOTC.PRG")) == machines.Machine("Falcon", os.path.join(d, "f16x")).real)
 
     hd = os.path.join(d, "own")
     os.makedirs(hd)

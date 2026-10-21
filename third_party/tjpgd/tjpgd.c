@@ -48,19 +48,21 @@ static const uint8_t Zig[64] = {	/* Zigzag-order to raster-order conversion tabl
 
 
 /*-------------------------------------------------*/
-/* Input scale factor of Arai algorithm            */
-/* (scaled up 16 bits for fixed point operations)  */
+/* AERA: the AA&N scale factors, as libjpeg's fast */
+/* IDCT has them (jddctmgr.c, 14 bits): with them  */
+/* the de-quantized elements and the whole IDCT    */
+/* fit in 16 bits, a 68000's muls.w the multiplies */
 /*-------------------------------------------------*/
 
-static const uint16_t Ipsf[64] = {	/* See also aa_idct.png */
-	(uint16_t)(1.00000*8192), (uint16_t)(1.38704*8192), (uint16_t)(1.30656*8192), (uint16_t)(1.17588*8192), (uint16_t)(1.00000*8192), (uint16_t)(0.78570*8192), (uint16_t)(0.54120*8192), (uint16_t)(0.27590*8192),
-	(uint16_t)(1.38704*8192), (uint16_t)(1.92388*8192), (uint16_t)(1.81226*8192), (uint16_t)(1.63099*8192), (uint16_t)(1.38704*8192), (uint16_t)(1.08979*8192), (uint16_t)(0.75066*8192), (uint16_t)(0.38268*8192),
-	(uint16_t)(1.30656*8192), (uint16_t)(1.81226*8192), (uint16_t)(1.70711*8192), (uint16_t)(1.53636*8192), (uint16_t)(1.30656*8192), (uint16_t)(1.02656*8192), (uint16_t)(0.70711*8192), (uint16_t)(0.36048*8192),
-	(uint16_t)(1.17588*8192), (uint16_t)(1.63099*8192), (uint16_t)(1.53636*8192), (uint16_t)(1.38268*8192), (uint16_t)(1.17588*8192), (uint16_t)(0.92388*8192), (uint16_t)(0.63638*8192), (uint16_t)(0.32442*8192),
-	(uint16_t)(1.00000*8192), (uint16_t)(1.38704*8192), (uint16_t)(1.30656*8192), (uint16_t)(1.17588*8192), (uint16_t)(1.00000*8192), (uint16_t)(0.78570*8192), (uint16_t)(0.54120*8192), (uint16_t)(0.27590*8192),
-	(uint16_t)(0.78570*8192), (uint16_t)(1.08979*8192), (uint16_t)(1.02656*8192), (uint16_t)(0.92388*8192), (uint16_t)(0.78570*8192), (uint16_t)(0.61732*8192), (uint16_t)(0.42522*8192), (uint16_t)(0.21677*8192),
-	(uint16_t)(0.54120*8192), (uint16_t)(0.75066*8192), (uint16_t)(0.70711*8192), (uint16_t)(0.63638*8192), (uint16_t)(0.54120*8192), (uint16_t)(0.42522*8192), (uint16_t)(0.29290*8192), (uint16_t)(0.14932*8192),
-	(uint16_t)(0.27590*8192), (uint16_t)(0.38268*8192), (uint16_t)(0.36048*8192), (uint16_t)(0.32442*8192), (uint16_t)(0.27590*8192), (uint16_t)(0.21678*8192), (uint16_t)(0.14932*8192), (uint16_t)(0.07612*8192)
+static const uint16_t Aan[64] = {
+	16384, 22725, 21407, 19266, 16384, 12873,  8867,  4520,
+	22725, 31521, 29692, 26722, 22725, 17855, 12299,  6270,
+	21407, 29692, 27969, 25172, 21407, 16819, 11585,  5906,
+	19266, 26722, 25172, 22654, 19266, 15137, 10426,  5315,
+	16384, 22725, 21407, 19266, 16384, 12873,  8867,  4520,
+	12873, 17855, 16819, 15137, 12873, 10114,  6967,  3552,
+	 8867, 12299, 11585, 10426,  8867,  6967,  4799,  2446,
+	 4520,  6270,  5906,  5315,  4520,  3552,  2446,  1247
 };
 
 
@@ -163,7 +165,7 @@ static JRESULT create_qt_tbl (	/* 0:OK, !0:Failed */
 {
 	unsigned int i, zi;
 	uint8_t d;
-	int32_t *pb;
+	int16_t *pb;
 
 
 	while (ndata) {	/* Process all tables in the segment */
@@ -172,12 +174,14 @@ static JRESULT create_qt_tbl (	/* 0:OK, !0:Failed */
 		d = *data++;							/* Get table property */
 		if (d & 0xF0) return JDR_FMT1;			/* Err: not 8-bit resolution */
 		i = d & 3;								/* Get table ID */
-		pb = alloc_pool(jd, 64 * sizeof (int32_t));/* Allocate a memory block for the table */
+		pb = alloc_pool(jd, 64 * sizeof (int16_t) + 64);/* Allocate a memory block for the table (AERA: and its quantizers) */
 		if (!pb) return JDR_MEM1;				/* Err: not enough memory */
 		jd->qttbl[i] = pb;						/* Register the table */
+		jd->qtraw[i] = (uint8_t*)(pb + 64);
 		for (i = 0; i < 64; i++) {				/* Load the table */
 			zi = Zig[i];						/* Zigzag-order to raster-order conversion */
-			pb[zi] = (int32_t)((uint32_t)*data++ * Ipsf[zi]);	/* Apply scale factor of Arai algorithm to the de-quantizers */
+			((uint8_t*)(pb + 64))[zi] = *data;
+			pb[zi] = (int16_t)(((uint32_t)*data++ * Aan[zi] + (1 << 11)) >> 12);	/* AERA: as libjpeg's fast IDCT (2 fraction bits) */
 		}
 	}
 
@@ -573,123 +577,188 @@ static JRESULT restart (
 
 
 /*-----------------------------------------------------------------------*/
-/* Apply Inverse-DCT in Arai Algorithm (see also aa_idct.png)            */
+/* Apply Inverse-DCT in Arai Algorithm                                   */
+/* (AERA: libjpeg's fast IDCT, jidctfst.c, in 16-bit arithmetic as it is */
+/* meant to be for 8-bit samples: each multiply a 16 x 16 one, a 68000's */
+/* muls.w, where ChaN's took 32 x 32 ones (a library call there); the    */
+/* columns and rows whose AC elements are all zero made from the DC)     */
 /*-----------------------------------------------------------------------*/
 
+#define IMUL(v, c)	((int16_t)(((int32_t)(int16_t)(v) * (c)) >> 8))	/* 8 fraction bits */
+#define F1_082	277
+#define F1_414	362
+#define F1_847	473
+#define F2_613	669
+
 static void block_idct (
-	int32_t* src,	/* Input block data (de-quantized and pre-scaled for Arai Algorithm) */
-	jd_yuv_t* dst	/* Pointer to the destination to store the block as byte array */
+	int16_t* src,	/* Input block data (de-quantized, scaled for AA&N and up by 2 bits) */
+	jd_yuv_t* dst	/* Pointer to the destination to store the block (Y/C + 128, not clipped) */
 )
 {
-	const int32_t M13 = (int32_t)(1.41421*4096), M2 = (int32_t)(1.08239*4096), M4 = (int32_t)(2.61313*4096), M5 = (int32_t)(1.84776*4096);
-	int32_t v0, v1, v2, v3, v4, v5, v6, v7;
-	int32_t t10, t11, t12, t13;
+	int16_t t0, t1, t2, t3, t4, t5, t6, t7, t10, t11, t12, t13, z5, z10, z11, z12, z13;
+	int16_t *p;
 	int i;
 
-	/* Process columns */
-	for (i = 0; i < 8; i++) {
-		v0 = src[8 * 0];	/* Get even elements */
-		v1 = src[8 * 2];
-		v2 = src[8 * 4];
-		v3 = src[8 * 6];
+	/* Process columns (in place) */
+	for (i = 0, p = src; i < 8; i++, p++) {
+		if ((p[8] | p[16] | p[24] | p[32] | p[40] | p[48] | p[56]) == 0) {
+			t0 = p[0];
+			p[8] = p[16] = p[24] = p[32] = p[40] = p[48] = p[56] = t0;
+			continue;
+		}
+		t10 = p[0] + p[32];			/* Even part */
+		t11 = p[0] - p[32];
+		t13 = p[16] + p[48];
+		t12 = IMUL(p[16] - p[48], F1_414) - t13;
+		t0 = t10 + t13;
+		t3 = t10 - t13;
+		t1 = t11 + t12;
+		t2 = t11 - t12;
 
-		t10 = v0 + v2;		/* Process the even elements */
-		t12 = v0 - v2;
-		t11 = (v1 - v3) * M13 >> 12;
-		v3 += v1;
-		t11 -= v3;
-		v0 = t10 + v3;
-		v3 = t10 - v3;
-		v1 = t11 + t12;
-		v2 = t12 - t11;
+		z13 = p[40] + p[24];		/* Odd part */
+		z10 = p[40] - p[24];
+		z11 = p[8] + p[56];
+		z12 = p[8] - p[56];
+		t7 = z11 + z13;
+		t11 = IMUL(z11 - z13, F1_414);
+		z5 = IMUL(z10 + z12, F1_847);
+		t10 = IMUL(z12, F1_082) - z5;
+		t12 = IMUL(z10, -F2_613) + z5;
+		t6 = t12 - t7;
+		t5 = t11 - t6;
+		t4 = t10 + t5;
 
-		v4 = src[8 * 7];	/* Get odd elements */
-		v5 = src[8 * 1];
-		v6 = src[8 * 5];
-		v7 = src[8 * 3];
-
-		t10 = v5 - v4;		/* Process the odd elements */
-		t11 = v5 + v4;
-		t12 = v6 - v7;
-		v7 += v6;
-		v5 = (t11 - v7) * M13 >> 12;
-		v7 += t11;
-		t13 = (t10 + t12) * M5 >> 12;
-		v4 = t13 - (t10 * M2 >> 12);
-		v6 = t13 - (t12 * M4 >> 12) - v7;
-		v5 -= v6;
-		v4 -= v5;
-
-		src[8 * 0] = v0 + v7;	/* Write-back transformed values */
-		src[8 * 7] = v0 - v7;
-		src[8 * 1] = v1 + v6;
-		src[8 * 6] = v1 - v6;
-		src[8 * 2] = v2 + v5;
-		src[8 * 5] = v2 - v5;
-		src[8 * 3] = v3 + v4;
-		src[8 * 4] = v3 - v4;
-
-		src++;	/* Next column */
+		p[0] = t0 + t7;
+		p[56] = t0 - t7;
+		p[8] = t1 + t6;
+		p[48] = t1 - t6;
+		p[16] = t2 + t5;
+		p[40] = t2 - t5;
+		p[32] = t3 + t4;
+		p[24] = t3 - t4;
 	}
 
-	/* Process rows */
-	src -= 8;
-	for (i = 0; i < 8; i++) {
-		v0 = src[0] + (128L << 8);	/* Get even elements (remove DC offset (-128) here) */
-		v1 = src[2];
-		v2 = src[4];
-		v3 = src[6];
+	/* Process rows: descale 5 bits (8 and the 2 of the scaling), rounded (libjpeg's
+	   USE_ACCURATE_ROUNDING: one add, and a plain shift biases every pixel down half
+	   a step), and output */
+	for (i = 0, p = src; i < 8; i++, p += 8, dst += 8) {
+		if ((p[1] | p[2] | p[3] | p[4] | p[5] | p[6] | p[7]) == 0) {
+			t0 = (jd_yuv_t)(((p[0] + 16) >> 5) + 128);
+			dst[0] = dst[1] = dst[2] = dst[3] = dst[4] = dst[5] = dst[6] = dst[7] = t0;
+			continue;
+		}
+		t10 = p[0] + p[4];			/* Even part */
+		t11 = p[0] - p[4];
+		t13 = p[2] + p[6];
+		t12 = IMUL(p[2] - p[6], F1_414) - t13;
+		t0 = t10 + t13;
+		t3 = t10 - t13;
+		t1 = t11 + t12;
+		t2 = t11 - t12;
 
-		t10 = v0 + v2;				/* Process the even elements */
-		t12 = v0 - v2;
-		t11 = (v1 - v3) * M13 >> 12;
-		v3 += v1;
-		t11 -= v3;
-		v0 = t10 + v3;
-		v3 = t10 - v3;
-		v1 = t11 + t12;
-		v2 = t12 - t11;
+		z13 = p[5] + p[3];			/* Odd part */
+		z10 = p[5] - p[3];
+		z11 = p[1] + p[7];
+		z12 = p[1] - p[7];
+		t7 = z11 + z13;
+		t11 = IMUL(z11 - z13, F1_414);
+		z5 = IMUL(z10 + z12, F1_847);
+		t10 = IMUL(z12, F1_082) - z5;
+		t12 = IMUL(z10, -F2_613) + z5;
+		t6 = t12 - t7;
+		t5 = t11 - t6;
+		t4 = t10 + t5;
 
-		v4 = src[7];				/* Get odd elements */
-		v5 = src[1];
-		v6 = src[5];
-		v7 = src[3];
-
-		t10 = v5 - v4;				/* Process the odd elements */
-		t11 = v5 + v4;
-		t12 = v6 - v7;
-		v7 += v6;
-		v5 = (t11 - v7) * M13 >> 12;
-		v7 += t11;
-		t13 = (t10 + t12) * M5 >> 12;
-		v4 = t13 - (t10 * M2 >> 12);
-		v6 = t13 - (t12 * M4 >> 12) - v7;
-		v5 -= v6;
-		v4 -= v5;
-
-		/* Descale the transformed values 8 bits and output a row */
-#if JD_FASTDECODE >= 1
-		dst[0] = (int16_t)((v0 + v7) >> 8);
-		dst[7] = (int16_t)((v0 - v7) >> 8);
-		dst[1] = (int16_t)((v1 + v6) >> 8);
-		dst[6] = (int16_t)((v1 - v6) >> 8);
-		dst[2] = (int16_t)((v2 + v5) >> 8);
-		dst[5] = (int16_t)((v2 - v5) >> 8);
-		dst[3] = (int16_t)((v3 + v4) >> 8);
-		dst[4] = (int16_t)((v3 - v4) >> 8);
-#else
-		dst[0] = BYTECLIP((v0 + v7) >> 8);
-		dst[7] = BYTECLIP((v0 - v7) >> 8);
-		dst[1] = BYTECLIP((v1 + v6) >> 8);
-		dst[6] = BYTECLIP((v1 - v6) >> 8);
-		dst[2] = BYTECLIP((v2 + v5) >> 8);
-		dst[5] = BYTECLIP((v2 - v5) >> 8);
-		dst[3] = BYTECLIP((v3 + v4) >> 8);
-		dst[4] = BYTECLIP((v3 - v4) >> 8);
-#endif
-
-		dst += 8; src += 8;	/* Next row */
+		dst[0] = (jd_yuv_t)(((int16_t)(t0 + t7 + 16) >> 5) + 128);
+		dst[7] = (jd_yuv_t)(((int16_t)(t0 - t7 + 16) >> 5) + 128);
+		dst[1] = (jd_yuv_t)(((int16_t)(t1 + t6 + 16) >> 5) + 128);
+		dst[6] = (jd_yuv_t)(((int16_t)(t1 - t6 + 16) >> 5) + 128);
+		dst[2] = (jd_yuv_t)(((int16_t)(t2 + t5 + 16) >> 5) + 128);
+		dst[5] = (jd_yuv_t)(((int16_t)(t2 - t5 + 16) >> 5) + 128);
+		dst[4] = (jd_yuv_t)(((int16_t)(t3 + t4 + 16) >> 5) + 128);
+		dst[3] = (jd_yuv_t)(((int16_t)(t3 - t4 + 16) >> 5) + 128);
 	}
+}
+
+
+
+
+/*-----------------------------------------------------------------------*/
+/* (AERA) 1/2 and 1/4: the box average of the IDCT, made from the block  */
+/* itself. Averaging two (four) samples of the 8-point cosines gives the */
+/* 4-point (2-point) ones, the elements past the middle folding back on  */
+/* those before it with a sign; so the average is a 4 x 4 IDCT of the   */
+/* folded elements (2 x 2: sums and differences), exactly. The fold and  */
+/* the weights (Red2, Red4) are in the de-quantizers (qtred), made once  */
+/* a picture; the values are scaled up by 3 bits, 16-bit throughout.     */
+/*-----------------------------------------------------------------------*/
+
+static const int16_t Red2[8] = { 1448, 2009, 1892, 1703, 0, -1138, -784, -400 };	/* 1/2: C(u)/2 cos(u pi/16), 12 bits */
+static const int16_t Red4[8] = { 1448, 1312, 0, -461, 0, 308, 0, -261 };		/* 1/4: the mean of four, 12 bits */
+static const uint8_t Fold2[8] = { 0, 1, 2, 3, 0, 3, 2, 1 };
+static const uint8_t Fold4[8] = { 0, 1, 0, 1, 0, 1, 0, 1 };
+
+#define R4	181		/* cos(pi/4), 8 bits */
+#define C1	237		/* cos(pi/8) */
+#define C3	98		/* cos(3 pi/8) */
+
+static JRESULT make_qtred (JDEC* jd)
+{
+	const int16_t *w = jd->scale == 1 ? Red2 : Red4;
+	unsigned int t, i;
+	int32_t m;
+	for (t = 0; t < 4; t++) {
+		if (!jd->qttbl[t]) continue;
+		jd->qtred[t] = alloc_pool(jd, 64 * sizeof (int16_t));
+		if (!jd->qtred[t]) return JDR_MEM1;
+		for (i = 0; i < 64; i++) {	/* q w(u) w(v), 3 bits up and 6 for the multiply: 2^24 to 2^15 */
+			m = (int32_t)jd->qtraw[t][i] * w[i & 7] * w[i >> 3];
+			jd->qtred[t][i] = (int16_t)(m >= 0 ? (m + 16384) >> 15 : -((-m + 16384) >> 15));
+		}
+	}
+	return JDR_OK;
+}
+
+static void idct4 (
+	int16_t* s,		/* the folded block, 4 x 4 (rows: v) */
+	jd_yuv_t* dst	/* 4 x 4 out, at a stride of 8 */
+)
+{
+	int16_t e0, e1, o0, o1, *p;
+	int i;
+
+	for (i = 0, p = s; i < 4; i++, p++) {		/* columns */
+		e0 = p[0] + IMUL(p[8], R4);
+		e1 = p[0] - IMUL(p[8], R4);
+		o0 = IMUL(p[4], C1) + IMUL(p[12], C3);
+		o1 = IMUL(p[4], C3) - IMUL(p[12], C1);
+		p[0] = e0 + o0;
+		p[12] = e0 - o0;
+		p[4] = e1 + o1;
+		p[8] = e1 - o1;
+	}
+	for (i = 0, p = s; i < 4; i++, p += 4, dst += 8) {	/* rows: descale 3 bits, rounded */
+		e0 = p[0] + IMUL(p[2], R4);
+		e1 = p[0] - IMUL(p[2], R4);
+		o0 = IMUL(p[1], C1) + IMUL(p[3], C3);
+		o1 = IMUL(p[1], C3) - IMUL(p[3], C1);
+		dst[0] = (jd_yuv_t)(((int16_t)(e0 + o0 + 4) >> 3) + 128);
+		dst[3] = (jd_yuv_t)(((int16_t)(e0 - o0 + 4) >> 3) + 128);
+		dst[1] = (jd_yuv_t)(((int16_t)(e1 + o1 + 4) >> 3) + 128);
+		dst[2] = (jd_yuv_t)(((int16_t)(e1 - o1 + 4) >> 3) + 128);
+	}
+}
+
+static void idct2 (
+	const int16_t* s,	/* the folded block, 2 x 2 */
+	jd_yuv_t* dst		/* 2 x 2 out, at a stride of 8 */
+)
+{
+	int16_t a = s[0] + s[2], b = s[1] + s[3], c = s[0] - s[2], d = s[1] - s[3];
+	dst[0] = (jd_yuv_t)(((int16_t)(a + b + 4) >> 3) + 128);
+	dst[1] = (jd_yuv_t)(((int16_t)(a - b + 4) >> 3) + 128);
+	dst[8] = (jd_yuv_t)(((int16_t)(c + d + 4) >> 3) + 128);
+	dst[9] = (jd_yuv_t)(((int16_t)(c - d + 4) >> 3) + 128);
 }
 
 
@@ -703,12 +772,16 @@ static JRESULT mcu_load (
 	JDEC* jd		/* Pointer to the decompressor object */
 )
 {
-	int32_t *tmp = (int32_t*)jd->workbuf;	/* Block working buffer for de-quantize and IDCT */
+	int16_t *tmp = (int16_t*)jd->workbuf;	/* Block working buffer for de-quantize and IDCT (AERA: 16-bit) */
 	int d, e;
 	unsigned int blk, nby, i, bc, z, id, cmp;
 	jd_yuv_t *bp;
-	const int32_t *dqf;
+	const int16_t *dqf;
 
+
+	int red = JD_USE_SCALE && (jd->scale == 1 || jd->scale == 2);	/* (AERA) the folded IDCT */
+	const uint8_t *fold = jd->scale == 1 ? Fold2 : Fold4;
+	unsigned int fsh = jd->scale == 1 ? 2 : 1;	/* the folded block's rows: 4 or 2 */
 
 	nby = jd->msx * jd->msy;	/* Number of Y blocks (1, 2 or 4) */
 	bp = jd->mcubuf;			/* Pointer to the first block of MCU */
@@ -735,14 +808,20 @@ static JRESULT mcu_load (
 				d += e;								/* Get current value */
 				jd->dcv[cmp] = (int16_t)d;			/* Save current DC value for next block */
 			}
-			dqf = jd->qttbl[jd->qtid[cmp]];			/* De-quantizer table ID for this component */
-			tmp[0] = d * dqf[0] >> 8;				/* De-quantize, apply scale factor of Arai algorithm and descale 8 bits */
+			if (red) {								/* (AERA) the folded block, 4 x 4 or 2 x 2 */
+				dqf = jd->qtred[jd->qtid[cmp]];
+				memset(tmp, 0, 16 * sizeof (int16_t));
+				tmp[0] = (int16_t)(((int32_t)(int16_t)d * dqf[0]) >> 6);
+			} else {
+				dqf = jd->qttbl[jd->qtid[cmp]];		/* De-quantizer table ID for this component */
+				tmp[0] = (int16_t)((int16_t)d * dqf[0]);	/* De-quantize (AERA: 16 x 16, libjpeg's fast IDCT's scaling) */
+			}
 
 			/* Extract following 63 AC elements from input stream (EContact: at 1/8
 			   only the DC element is used: the ACs are read past, not cleared or
 			   de-quantized, which on a 68000 took most of the time) */
-			if (!(JD_USE_SCALE && jd->scale == 3))
-				memset(&tmp[1], 0, 63 * sizeof (int32_t));	/* Initialize all AC elements */
+			if (!red && !(JD_USE_SCALE && jd->scale == 3))
+				memset(&tmp[1], 0, 63 * sizeof (int16_t));	/* Initialize all AC elements */
 			z = 1;		/* Top of the AC elements (in zigzag-order) */
 			do {
 				d = huffext(jd, id, 1);				/* Extract a huffman coded value (zero runs and bit length) */
@@ -758,14 +837,22 @@ static JRESULT mcu_load (
 						bc = 1 << (bc - 1);				/* MSB position */
 						if (!(d & bc)) d -= (bc << 1) - 1;	/* Restore negative value if needed */
 						i = Zig[z];						/* Get raster-order index */
-						tmp[i] = d * dqf[i] >> 8;		/* De-quantize, apply scale factor of Arai algorithm and descale 8 bits */
+						if (!red)
+							tmp[i] = (int16_t)((int16_t)d * dqf[i]);	/* De-quantize (AERA: 16 x 16) */
+						else if (dqf[i])		/* (AERA) folded in, and weighed */
+							tmp[(fold[i >> 3] << fsh) + fold[i & 7]] += (int16_t)(((int32_t)(int16_t)d * dqf[i]) >> 6);
 					}
 				}
 			} while (++z < 64);		/* Next AC element */
 
 			if (JD_FORMAT != 2 || !cmp) {	/* C components may not be processed if in grayscale output */
-				if (z == 1 || (JD_USE_SCALE && jd->scale == 3)) {	/* If no AC element or scale ratio is 1/8, IDCT can be ommited and the block is filled with DC value */
-					d = (jd_yuv_t)((*tmp / 256) + 128);
+				if (red) {
+					if (jd->scale == 1)
+						idct4(tmp, bp);
+					else
+						idct2(tmp, bp);
+				} else if (z == 1 || (JD_USE_SCALE && jd->scale == 3)) {	/* If no AC element or scale ratio is 1/8, IDCT can be ommited and the block is filled with DC value */
+					d = (jd_yuv_t)(((*tmp + 16) >> 5) + 128);	/* (AERA: the fast IDCT's descaling, rounded) */
 					if (JD_USE_SCALE && jd->scale == 3) {
 						bp[0] = (jd_yuv_t)d;	/* (EContact: at 1/8 only the first is read) */
 					} else if (JD_FASTDECODE >= 1) {
@@ -792,6 +879,94 @@ static JRESULT mcu_load (
 /* Output an MCU: Convert YCrCb to RGB and output it in RGB form         */
 /*-----------------------------------------------------------------------*/
 
+#if JD_FORMAT == 0 && JD_USE_SCALE && JD_FASTDECODE >= 1
+/* AERA: Y Cb Cr to R G B from tables (libjpeg's way, jdcolor.c): no
+   multiplies for each pixel, which were most of a 68000's time; and at
+   1/2 and 1/4 the Y elements are averaged first and each pixel shown is
+   made once (ChaN made every pixel of the MCU, then averaged R G B) */
+static int16_t CrR[256], CbB[256];
+static int32_t CrG[256], CbG[256];
+static int ctab;
+
+static void color_tables (void)
+{
+	int i;
+	int32_t x;
+	for (i = 0; i < 256; i++) {
+		x = i - 128;
+		CrR[i] = (int16_t)((91881L * x + 32768L) >> 16);	/* 1.40200 */
+		CbB[i] = (int16_t)((116130L * x + 32768L) >> 16);	/* 1.77200 */
+		CrG[i] = -46802L * x;								/* 0.71414 */
+		CbG[i] = -22554L * x + 32768L;						/* 0.34414, and the rounding */
+	}
+	ctab = 1;
+}
+
+static JRESULT mcu_output (
+	JDEC* jd,			/* Pointer to the decompressor object */
+	int (*outfunc)(JDEC*, void*, JRECT*),	/* RGB output function */
+	unsigned int x,		/* MCU location in the image */
+	unsigned int y		/* MCU location in the image */
+)
+{
+	unsigned int mx, my, rx, ry, ox, oy, bw, hx, hy, sc;
+	const jd_yuv_t *cb0, *cr0;
+	uint8_t *pix;
+	JRECT rect;
+
+	if (!ctab) color_tables();
+	mx = jd->msx * 8; my = jd->msy * 8;					/* MCU size (pixel) */
+	rx = (x + mx <= jd->width) ? mx : jd->width - x;	/* clipped at right/bottom end of image */
+	ry = (y + my <= jd->height) ? my : jd->height - y;
+	sc = jd->scale;
+	rx >>= sc; ry >>= sc;
+	if (!rx || !ry) return JDR_OK;
+	x >>= sc; y >>= sc;
+	rect.left = x; rect.right = x + rx - 1;
+	rect.top = y; rect.bottom = y + ry - 1;
+
+	bw = mx >> 3;										/* Y blocks in a row of the MCU */
+	cb0 = jd->mcubuf + 64 * bw * (my >> 3);				/* the C blocks after the Y ones */
+	cr0 = cb0 + 64;
+	hx = mx == 16; hy = my == 16;						/* C at half the resolution */
+	pix = (uint8_t*)jd->workbuf;
+
+	if (sc == 3) {			/* 1/8: the DC value of each block (the first element) */
+		int cb = BYTECLIP(cb0[0]), cr = BYTECLIP(cr0[0]), yy;
+		const jd_yuv_t *py;
+		for (oy = 0; oy < ry; oy++) {
+			py = jd->mcubuf + oy * bw * 64;
+			for (ox = 0; ox < rx; ox++, py += 64) {
+				yy = *py;
+				*pix++ = BYTECLIP(yy + CrR[cr]);
+				*pix++ = BYTECLIP(yy + (int16_t)((CbG[cb] + CrG[cr]) >> 16));
+				*pix++ = BYTECLIP(yy + CbB[cb]);
+			}
+		}
+	} else {				/* each pixel; at 1/2 and 1/4 each block was made 4 x 4 or
+							   2 x 2 by mcu_load (at a stride of 8) */
+		unsigned int bsh = 3 - sc, bm = (8 >> sc) - 1, rsh = 6 + (bw >> 1);	/* bw: 1 or 2 */
+		for (oy = 0; oy < ry; oy++) {
+			const jd_yuv_t *yr = jd->mcubuf + ((oy >> bsh) << rsh) + ((oy & bm) << 3);
+			const jd_yuv_t *cbr = cb0 + ((oy >> hy) << 3), *crr = cr0 + ((oy >> hy) << 3);
+			for (ox = 0; ox < rx; ) {
+				/* a C sample's terms once, for the one or two pixels it covers */
+				int cb = BYTECLIP(cbr[ox >> hx]), cr = BYTECLIP(crr[ox >> hx]);
+				int tr = CrR[cr], tg = (int16_t)((CbG[cb] + CrG[cr]) >> 16), tb = CbB[cb];
+				unsigned int k = hx && ox + 1 < rx ? 2 : 1;
+				do {
+					int yy = yr[((ox >> bsh) << 6) + (ox & bm)];
+					*pix++ = BYTECLIP(yy + tr);
+					*pix++ = BYTECLIP(yy + tg);
+					*pix++ = BYTECLIP(yy + tb);
+					ox++;
+				} while (--k);
+			}
+		}
+	}
+	return outfunc(jd, jd->workbuf, &rect) ? JDR_OK : JDR_INTR;
+}
+#else
 static JRESULT mcu_output (
 	JDEC* jd,			/* Pointer to the decompressor object */
 	int (*outfunc)(JDEC*, void*, JRECT*),	/* RGB output function */
@@ -959,6 +1134,7 @@ static JRESULT mcu_output (
 	/* Output the rectangular */
 	return outfunc(jd, jd->workbuf, &rect) ? JDR_OK : JDR_INTR; 
 }
+#endif
 
 
 
@@ -1145,6 +1321,10 @@ JRESULT jd_decomp (
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	jd->scale = scale;
+	if (JD_USE_SCALE && (scale == 1 || scale == 2)) {	/* (AERA) the folding multipliers */
+		rc = make_qtred(jd);
+		if (rc != JDR_OK) return rc;
+	}
 
 	mx = jd->msx * 8; my = jd->msy * 8;			/* Size of the MCU (pixel) */
 

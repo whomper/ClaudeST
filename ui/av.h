@@ -41,9 +41,10 @@ const char *av_arg(const char *p, char *out, long n);	/* 0 when none is left */
    open a file with it), as a VA_START string: "" for none */
 const char *av_command(void);
 
-/* text for the program called name, with VA_START. 1 when sent, 0 when it
-   isn't running */
-int av_send(const char *name, const char *text);
+/* text for the program called names, with VA_START: the first running of
+   its editions, "EMAIL|EMAILST" ("EMAIL" is padded as appl_find wants
+   it). 1 when sent, 0 when none is running */
+int av_send(const char *names, const char *text);
 
 /* PEOPLE (0x4E43, guideline 4.1): the family's one message besides the AV
    protocol's, for asking EContact about people (people.c builds and reads

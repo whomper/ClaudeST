@@ -653,7 +653,10 @@ static INLINE boolean is_big_endian(void)
 #undef gray_rgb565_convert_internal
 #undef gray_rgb565D_convert_internal
 
-#define PACK_SHORT_565  PACK_SHORT_565_BE
+/* AERA: on a big-endian machine the pixels as the machine's own 16-bit
+   values (the Atari's screen and src/pic.c read them so), not swapped to
+   the little-endian order upstream gives every machine */
+#define PACK_SHORT_565  PACK_SHORT_565_LE
 #define PACK_TWO_PIXELS  PACK_TWO_PIXELS_BE
 #define ycc_rgb565_convert_internal  ycc_rgb565_convert_be
 #define ycc_rgb565D_convert_internal  ycc_rgb565D_convert_be

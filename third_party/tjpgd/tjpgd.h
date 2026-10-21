@@ -70,7 +70,9 @@ struct JDEC {
 	uint8_t* huffbits[2][2];	/* Huffman bit distribution tables [id][dcac] */
 	uint16_t* huffcode[2][2];	/* Huffman code word tables [id][dcac] */
 	uint8_t* huffdata[2][2];	/* Huffman decoded data tables [id][dcac] */
-	int32_t* qttbl[4];			/* Dequantizer tables [id] */
+	int16_t* qttbl[4];			/* Dequantizer tables [id] */
+	uint8_t* qtraw[4];			/* (AERA) their quantizers as they came, zigzag order undone */
+	int16_t* qtred[4];			/* (AERA) at 1/2 and 1/4: the folding multipliers */
 #if JD_FASTDECODE >= 1
 	uint32_t wreg;				/* Working shift register */
 	uint8_t marker;				/* Detected marker (0:None) */
