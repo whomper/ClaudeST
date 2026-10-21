@@ -1,4 +1,6 @@
-/* generated from rsa.a56 by dsp/mkh.py - do not edit */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 AERA | Erez Yaary
+ * generated from rsa.a56 by dsp/mkh.py - do not edit */
 static const unsigned long dsp_rsa_prog[512] = {
 	0x0af080UL, 0x000040UL, 0x000000UL, 0x000000UL, 0x000000UL, 0x000000UL,
 	0x000000UL, 0x000000UL, 0x000000UL, 0x000000UL, 0x000000UL, 0x000000UL,

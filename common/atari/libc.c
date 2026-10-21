@@ -746,9 +746,20 @@ void *realloc(void *ptr, size_t n)
 		return 0;
 	b = (BLK *)((char *)ptr - WORD);
 	s = SIZE(b);
-	if (s - WORD >= n)
-		return ptr;		/* it fits (a block never shrinks) */
 	need = block_for(n);
+	if (s >= need) {
+		/* it fits; a block asked for much less gives its end back, in
+		   place (a converter's result, cut to what it used: ECal kept
+		   three times each title's length) */
+		if (s - need >= MINBLK) {
+			BLK *t = AT(b, need);
+			b->head = need | (b->head & FLAGS);
+			t->head = (s - need) | PINUSE;	/* freed, as free() would */
+			heap_use -= (long)(s - need);
+			free_more(t);
+		}
+		return ptr;
+	}
 	nx = AT(b, s);
 	if (!(nx->head & INUSE) && (t = s + SIZE(nx)) >= need) {
 		/* grow into the free block after it */
@@ -897,12 +908,29 @@ long labs(long v) { return v < 0 ? -v : v; }
    list of thousands of contacts sorted again after every change (the
    shell sort it replaces went quadratic there). Pointers (the usual
    case) are swapped as longs */
+/* two elements swapped: by longs or shorts where both are on even
+   addresses and the size allows, else a byte at a time (ECal's reminder
+   index of 43 elements took 60 ms on an ST, byte by byte) */
 static void swap_el(char *x, char *y, size_t size)
 {
 	if (size == sizeof(long) && !(((unsigned long)x | (unsigned long)y) & 1)) {
 		long t = *(long *)x;
 		*(long *)x = *(long *)y;
 		*(long *)y = t;
+	} else if (!((size | (unsigned long)x | (unsigned long)y) & 1)) {
+		long *lx = (long *)x, *ly = (long *)y, t;
+		for (; size >= sizeof(long); size -= sizeof(long)) {
+			t = *lx;
+			*lx++ = *ly;
+			*ly++ = t;
+		}
+		for (x = (char *)lx, y = (char *)ly; size; size -= sizeof(short)) {
+			short u = *(short *)x;	/* the shorts left */
+			*(short *)x = *(short *)y;
+			*(short *)y = u;
+			x += sizeof(short);
+			y += sizeof(short);
+		}
 	} else {
 		while (size--) {
 			char t = *x;

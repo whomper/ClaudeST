@@ -13,8 +13,8 @@ editions) or Falcon-4 (4 MB, no TT RAM, TOS 4.04: ECAL.ACC and
 ECONTACT.ACC), ST by default; EHYPVIEW.ACC runs on both. --nvdi boots
 with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
-candidate's accessory (ECAL.ACC, say) in place of the release's of that name, for the hub's run
-before the release; the report names it. --accs names the accessories (all three by default);
+candidate's accessory (ECAL.ACC, say) or --prg's program (EMAIL.PRG) in place of the release's
+of that name, for the hub's run before the release; the report names it. --accs names the accessories (all three by default);
 --prg APP starts that program's latest release (EMAIL.PRG) first, as Erez works: the accessories
 are then opened from its own Desk menu, and at the end the program is quit (^Q) and must give
 the desktop back. The Atari boots to the desktop,
@@ -106,12 +106,13 @@ if prg:
     subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), prg, rel, pf], check=True,
                    stdout=subprocess.DEVNULL)
     os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
-    shutil.copy(os.path.join(rel, pf), os.path.join(hd, prg.upper(), pf))
+    shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
     auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
 versions = ", ".join("%s %s" % (a, use[f] if f in use else open(os.path.join(rel, a.upper() + ".VERSION")).read().strip())
                      for a, f in want.items())
 if prg:
-    versions += ", %s %s in front" % (prg, open(os.path.join(rel, prg.upper() + ".VERSION")).read().strip())
+    versions += ", %s %s in front" % (prg, use[pf] if pf in use else
+                                      open(os.path.join(rel, prg.upper() + ".VERSION")).read().strip())
 print("on %s%s; %s" % (m.describe(), " with NVDI" if nvdi else "", versions), flush=True)
 
 x = machines.xvfb(display)

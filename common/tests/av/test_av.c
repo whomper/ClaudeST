@@ -221,6 +221,14 @@ int main(void)
 	      !strcmp(ptr(sent[3], sent[4]), text) && ptr(sent[3], sent[4]) != text,
 	      "av_send: VA_START with a copy of the text");
 	check(av_send("EMAIL   ", longer) && strlen(ptr(sent[3], sent[4])) == 1023, "av_send: cut to 1023");
+	check(av_send("EMAIL|EMAILST", text) && sent_to == 1, "av_send to EMAIL|EMAILST: EMAIL, running");
+	running[3] = "EMAILST ";
+	running[1] = 0;
+	check(av_send("EMAIL|EMAILST", text) && sent_to == 3, "  only the ST edition running: EMAILST");
+	running[3] = 0;
+	writes = 0;
+	check(!av_send("EMAIL|EMAILST", text) && writes == 0, "  neither running: 0, nothing sent");
+	running[1] = "EMAIL   ";
 
 	/* PEOPLE out: one at a time, answered with AV_STARTED, lost after 3 s */
 	writes = 0;

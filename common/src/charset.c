@@ -18,6 +18,15 @@
 
 typedef unsigned char u8;
 
+/* the result cut to the len bytes it used and its 0: the converters
+   take room for the worst case (three bytes a character), and a string
+   kept would hold it all (libc's realloc gives the end back in place) */
+static char *fit(char *out, long len)
+{
+	char *f = realloc(out, (size_t)len + 1);
+	return f ? f : out;
+}
+
 int cs_id(const char *name)
 {
 	char n[32];
@@ -216,7 +225,7 @@ char *cs_to_atari(const char *src, long n, int cs, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 char *atari_to_utf8(const char *src, long n, long *outlen)
@@ -241,7 +250,7 @@ char *atari_to_utf8(const char *src, long n, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 int has_8bit(const char *s, long n)
@@ -291,7 +300,7 @@ char *base64_decode(const char *src, long n, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 char *base64_encode(const char *src, long n, int linelen, long *outlen)
@@ -323,7 +332,7 @@ char *base64_encode(const char *src, long n, int linelen, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 /* ---------------- quoted-printable ---------------- */
@@ -366,7 +375,7 @@ char *qp_decode(const char *src, long n, int header, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 char *qp_encode(const char *src, long n, long *outlen)
@@ -408,7 +417,7 @@ char *qp_encode(const char *src, long n, long *outlen)
 	*p = 0;
 	if (outlen)
 		*outlen = p - out;
-	return out;
+	return fit(out, p - out);
 }
 
 /* ---------------- RFC 2047 header words ---------------- */
@@ -524,7 +533,7 @@ char *hdr_decode(const char *v)
 	flush(&pd, &p);
 	free(pd.buf);
 	*p = 0;
-	return out;
+	return fit(out, p - out);
 }
 
 /* Atari text -> RFC 2047 B words of UTF-8, folded with CRLF SPACE */
@@ -562,7 +571,7 @@ char *hdr_encode(const char *atari)
 	}
 	*p = 0;
 	free(utf);
-	return out;
+	return fit(out, p - out);
 }
 
 /* ---------------- IMAP modified UTF-7 ---------------- */
@@ -614,7 +623,7 @@ char *mutf7_to_atari(const char *name)
 		}
 	}
 	*p = 0;
-	return out;
+	return fit(out, p - out);
 }
 
 char *atari_to_mutf7(const char *name)
@@ -651,5 +660,5 @@ char *atari_to_mutf7(const char *name)
 		}
 	}
 	*p = 0;
-	return out;
+	return fit(out, p - out);
 }

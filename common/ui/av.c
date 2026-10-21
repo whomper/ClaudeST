@@ -295,10 +295,13 @@ const char *av_arg(const char *p, char *out, long n)
 	return p;
 }
 
-int av_send(const char *name, const char *text)
+int av_send(const char *names, const char *text)
 {
-	short id = appl_find(name);
+	char n[9];
+	short id = -1;
 	long l;
+	while (*names && id < 0)	/* the first of "EMAIL|EMAILST" running */
+		id = appl_find((names = next_name(names, n), n));
 	if (id < 0)
 		return 0;
 	alloc();

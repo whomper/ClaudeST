@@ -81,14 +81,25 @@ int main(void)
 	a = take(3660 * KB, 0, 1536 * KB, 0, 1200, 450);
 	check(a == 1200 * KB, "HEAPKB= wins over MEMKB=");
 
+	/* a 4 MB Falcon with NVDI's fonts: 1552 KB free when the accessories
+	   load; EContact, then ECal (EMail had 0 KB beside its program) */
+	a = take(1552 * KB, 0, 2048 * KB, 0, 0, 0);
+	check(a == 388 * KB, "4 MB Falcon with NVDI, 1552 KB free: a quarter, 388 KB");
+	b = take(st_free, 0, 1536 * KB, 0, 0, 0);
+	check(b == 291 * KB, "  the second a quarter of the rest, 291 KB: 873 KB left for the program");
+
 	/* a 1 MB ST with STinG: 400 KB free; one accessory */
 	a = take(400 * KB, 0, 2048 * KB, 0, 0, 0);
 	check(a == 200 * KB, "1 MB ST, 400 KB free: half (under 2 MB free, as before)");
 	a = take(150 * KB, 0, 256 * KB, 0, 0, 0);
 	check(a == 118 * KB, "150 KB free: all but 32 KB (half is under 96 KB)");
 	acc_heap_leave = 96 * KB;
-	a = take(149 * KB, 0, 1024 * KB, 0, 0, 0);
-	check(a == 74 * KB + 512 && st_free >= 74 * KB, "149 KB free, 96 KB to leave: half, a program still starts beside it");
+	a = take(160 * KB, 0, 1024 * KB, 0, 0, 0);
+	check(a == 64 * KB && st_free == 96 * KB, "160 KB free, 96 KB to leave: 64 KB, 96 KB for a program beside it");
+	a = take(130 * KB, 0, 1024 * KB, 0, 0, 0);
+	check(a == 64 * KB, "  130 KB free: still 64 KB, the least a heap is");
+	a = take(90 * KB, 0, 1024 * KB, 0, 0, 0);
+	check(a == 58 * KB, "  90 KB free: all but 32 KB");
 	a = take(300 * KB, 0, 1024 * KB, 0, 0, 0);
 	check(a == 150 * KB, "300 KB free, 96 KB to leave: half, as ever");
 	acc_heap_leave = 32 * KB;
@@ -111,7 +122,7 @@ int main(void)
 	check(acc_mem_moved(400, 468), "468 to 400: written");
 	check(acc_mem_moved(500, 468), "more than before: written");
 	acc_heap_bytes = 256 * KB;
-	check(acc_mem_full_kb() == 512, "memory full with 256 KB: 512 KB next start");
+	check(acc_mem_full_kb() == 1024, "memory full with 256 KB: 1024 KB next start (ECal's ST, 3 x 500: 850 KB needed)");
 
 	heap_use = 52 * KB;
 	heap_peak = 95 * KB;

@@ -264,6 +264,15 @@ static void case_fixed(void)
 	x = heap_realloc(a, 5000);
 	check(x && x != a && x[0] == 'a' && x[99] == 'a', "realloc: moves when it must, bytes kept");
 	check(heap_realloc(x, (size_t)1 << 31) == 0 && x[0] == 'a', "realloc: too big: no, block kept");
+	{
+		long before = heap_use;
+		check(heap_realloc(x, 101) == x && x[0] == 'a' && x[99] == 'a' && usable(x) < 200,
+		      "realloc: much smaller: the end given back in place, bytes kept");
+		check(before - heap_use > 4800 && heap_check(0) >= 0, "  heap_use drops, the heap checks out");
+		y = heap_malloc(4000);
+		check(y && heap_check(0) >= 0, "  the end is used again");
+		heap_free(y);
+	}
 	y = heap_calloc(100, 3);
 	for (i = 0; i < 300 && y && !y[i]; i++)
 		;

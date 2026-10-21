@@ -26,6 +26,8 @@ typedef struct {
 	char name[PEOPLE_NAME];
 	char state;
 	char lost;			/* absent because the answer never came */
+	char seen;			/* looked for in EContact's file, not there */
+	char inscan;			/* waiting when the file's reading began */
 	unsigned long at;		/* asked, or found absent (tos_ms) */
 	unsigned long used;		/* for letting the oldest go */
 } ENTRY;
@@ -44,6 +46,15 @@ static const char *cur_kind = "";
 
 static int pick_open, pick_wanted;
 static char pick_text[CMD_MAX + 1];
+
+int (*people_scan_hook)(void (*line)(const char *addr, const char *name, void *ud), void *ud, int force);
+int (*people_pick_hook)(const char *partial, void (*picked)(const PERSON *list, int n));
+int (*people_busy_hook)(void);
+
+static int file_busy(void)
+{
+	return people_busy_hook && people_busy_hook();
+}
 
 static int same(const char *a, const char *b)
 {
@@ -184,8 +195,10 @@ static short econtact(void)
 int people_pick(const char *partial)
 {
 	int l;
-	if (pick_open || econtact() < 0)
+	if (pick_open)
 		return 0;
+	if (econtact() < 0)		/* EContact's file, when chosen */
+		return people_pick_hook ? people_pick_hook(partial, on_picked) : 0;
 	l = (int)strlen("pick:") + (int)strlen(av_name());
 	strcpy(pick_text, "pick:");
 	strcat(pick_text, av_name());
@@ -387,6 +400,51 @@ static int send_outbox(void)
 	return 1;
 }
 
+/* names from EContact's file, for the addresses waiting (EContact isn't
+   running), a step of it a round; 0 when there is no file */
+static void file_line(const char *addr, const char *name, void *ud)
+{
+	ENTRY *e = find(addr);
+	if (e && e->state == E_QUEUED) {
+		e->state = E_KNOWN;
+		copy(e->name, name, PEOPLE_NAME);
+		*(int *)ud = 1;
+	}
+}
+
+static int from_file(unsigned long now)
+{
+	int i, force = 0, got = 0, r, left = 0;
+	if (!file_busy())	/* a reading begins: who it is for */
+		for (i = 0; i < ncache; i++) {
+			cache[i].inscan = cache[i].state == E_QUEUED;
+			if (cache[i].inscan && !cache[i].seen)
+				force = 1;	/* new: the file is read even if unchanged */
+		}
+	r = people_scan_hook(file_line, &got, force);
+	if (r < 0)
+		return 0;
+	for (i = 0; i < ncache; i++)
+		if (cache[i].state == E_QUEUED) {
+			/* the file read to its end, or found unchanged: who it was
+			   read for isn't in it; who came since waits for a reading
+			   from the start */
+			if (r != 2 && cache[i].inscan) {
+				cache[i].state = E_ABSENT;
+				cache[i].lost = 0;
+				cache[i].seen = 1;
+				cache[i].at = now;
+				got = 1;
+			} else
+				left = 1;
+		}
+	if (r == 2 && !left)
+		people_scan_hook(0, 0, -1);	/* all found: the rest isn't read */
+	if (got && on_names)
+		on_names();
+	return 1;
+}
+
 static void ask(void)
 {
 	char q[CMD_MAX + 1];
@@ -411,6 +469,8 @@ static void ask(void)
 		return;
 	id = econtact();
 	if (id < 0) {
+		if (people_scan_hook && from_file(now))
+			return;
 		for (i = 0; i < ncache; i++)
 			if (cache[i].state == E_QUEUED) {
 				cache[i].state = E_ABSENT;

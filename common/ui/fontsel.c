@@ -984,6 +984,11 @@ static void draw_preview(void)
 		text_at(r.x + gl_wchar, r.y + 2, l1, (long)strlen(l1), cols, TX_LTR);
 		text_at(r.x + gl_wchar, r.y + 2 + gl_hchar, l2, (long)strlen(l2), cols, TX_LTR);
 	} else if (nsizes) {
+		GRECT c = r;		/* half a cell's margin at each side: the
+					   system font's sample fits whole */
+		c.x += gl_wchar / 2;
+		c.w -= gl_wchar;
+		clip_on(&c);
 		if (f->id == 1) {
 			vst_font(vdi_h, 1);
 			vst_height(vdi_h, pt >= 16 ? 13 : 6, &w, &h);
@@ -993,7 +998,7 @@ static void draw_preview(void)
 		}
 		/* (h: the cell's height) in the middle of the box, or from its
 		   top when it is taller */
-		v_gtext_n(vdi_h, r.x + gl_wchar, h < r.h ? r.y + (r.h - h) / 2 : r.y, FS_SAMPLE,
+		v_gtext_n(vdi_h, c.x, h < r.h ? r.y + (r.h - h) / 2 : r.y, FS_SAMPLE,
 			  (short)strlen(FS_SAMPLE));
 		sys_font();
 	}

@@ -34,7 +34,7 @@ These files were the same code in ECal, EContact, EMail and EFTP when they moved
 | `atari/include/` | `ctype.h` `limits.h` `stdio.h` `string.h` `strings.h` | the parts of the freestanding C library headers every app shares |
 | `src/` | `bidi.c/.h`, `ctime.c/.h`, `futil.c`, `secret.c/.h` | Hebrew right-to-left layout; dates and times; safe file writes (`pf_save` writes `NAME.IN$` and renames it over `NAME.INF`; `tests/futil`); password encryption |
 | `ui/` | `dsp.c` | checks the DSP and turns Falcon mode on |
-| `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array); `ec.a56` since 18 Oct 2026 (below) |
+| `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array); `ec.a56` since 18 Oct 2026, `jpeg.a56` since 20 Oct 2026, `dither.a56` since 21 Oct 2026 (below) |
 | `tools/` | `elf2tos.py`, `mkroots.c`, `build-hcp.sh` | ELF to TOS program header; root certificates to `ROOTS.DAT`; `build-hcp.sh DIR` builds the `hcp` help compiler (th-otto/hypview at a fixed commit) for `make help` and the Release workflow |
 | `third_party/bearssl/` | BearSSL 0.6 | TLS for Falcon mode (MIT licence) |
 | `certs/` | `CACERT.PEM` | Mozilla's root certificates (MPL 2.0) |
@@ -229,9 +229,16 @@ and EContact's integration patches go; nothing reads another app's files.
   being asked; `people_pick()`; `people_message()`; `people_poll()` each turn; a callback when names
   come or change) and EContact's (`people_question()`, `people_next()`, `people_answer()`, which cuts
   answers into whole commands of at most 1 KB). Memory is taken once, in `people_init()`.
+- `ui/people_file.c`: EContact's CONTACTS.TXT when EContact isn't loaded, an option the user turns on
+  in EMail's or ECal's Settings (guidelines 4.1, 21 Oct 2026): `people_file(folder, message)` on,
+  `people_file(0, 0)` off. Names come from the file, read in 2 KB pieces, once a round of questions
+  and not again while it is unchanged; `people_pick()` opens the people dialog on the file (Find
+  line, list with a scroll bar, a click marks, a double click takes one, Return the marked). The
+  apps that offer the option link it (with `plat.h`'s `pf_info`, `pf_load`).
 
 `tests/people`: `make test`, the asker against a pretend EContact and EContact's side (seven planted
-bugs, all caught); `tests/av` checks PEOPLE in and out.
+bugs, all caught), and the names from a CONTACTS.TXT (pieces, case, unchanged, rewritten, missing);
+`tests/av` checks PEOPLE in and out.
 
 `tests/tz`: `make test`, 83 million offsets from the kept zone-years against the rules: every built-in
 zone around each change from 1990 to 2040, random moments, a zone whose rules change at the same
@@ -338,6 +345,52 @@ Build: `-Icommon/third_party/nsgif/include`, and either `-Icommon/third_party/tj
 `jpegdc.c` and `tjpgd.c` (built with `-fwrapv`: its IDCT wraps on damaged data, as it does on the
 68000) or libjpeg-turbo's flags (its `AERA.md`) with `pic_lj8.c`. `atari/include/stdio.h` names
 `FILE` (no functions) for libjpeg's prototypes.
+
+### JPEGs and the dither on the DSP (20 and 21 Oct 2026, from EWeb)
+
+With libjpeg-turbo (`-DPIC_LIBJPEG`) the Falcon's DSP56001 can decode a baseline JPEG: libjpeg reads
+its headers, `pic.c` sends the scan's bytes as the DSP asks for them (the 0 after each `$FF` taken
+out), and the DSP unpacks the Huffman codes, transforms, makes the colours and sends each MCU's
+pixels back from its host interrupt while it decodes the next. So a stock Falcon's 68030 only copies
+bytes in and pixels out: it was the slower half when it unpacked the codes itself (the first version,
+a DSP that took the transform and colours: 8.5 s on the 68030 against 2.6 s with the DSP on a stock
+Falcon, 2.1 s and 1.1 s on a DFB1X; the stock Falcon is the one to make fast, as most have one).
+
+| File | What it does |
+|---|---|
+| `dsp/jpeg.a56`, `dsp/jpeg_prog.h` | the Huffman codes (an 8-bit lookahead table for the code, and for AC coefficients a 9-bit one, made on the DSP, giving the run and value at once when the code and value fit, as libjpeg-turbo's fast path does; longer codes by maxcode), dequantising, the transform straight to n/8 of the size (each pixel the mean of the ones it covers, any n from 2 to 8; only the rows and columns a block uses; a block of its DC alone filled at once), the colours from Y Cb Cr with the chroma repeated over the luma it covers, each channel's bits from a table at Y + its term (libjpeg's way; the tables made on the DSP for 5-6-5 or R G B), the pixels sent by the host interrupt from one buffer while the next MCU goes into the other. A picture shown smaller it shrinks too (the scaler's centre mapping): each pixel's R, G and B as sums into the box of the pixel shown it falls in, the boxes going on into the next MCU or row of MCUs carried, the rest sent as their means, rounded as the scaler does; so only the pixels shown come back, the same as the scaler's. Two parts: the bootstrap loads the first 512 words, which load the rest into external memory (`mkh.py` writes both). `cd dsp && a56 jpeg.a56 && python3 mkh.py a56.out jpeg_prog.h dsp_jpeg_prog jpeg.a56` |
+| `src/pic.c/.h` | `pic_dsp` (a `PIC_DSP` port, NULL: the 68030 does it all): JPEGs of one scan, grey or Y Cb Cr with the chroma halved at most, 8-bit, Huffman-coded, shown at 2/8 or more go to the DSP; progressive and arithmetic-coded ones of the same kinds (21 Oct 2026) have libjpeg read their scans into coefficients (`jpeg_read_coefficients`, on the 68030) and the DSP do the rest from them (each block's coefficients sent in zigzag order to its last other than 0, asked for as the scan is: `jpeg.a56`'s V_SCALE bit 1); CMYK stays with libjpeg. The first such JPEG checks the DSP on a known picture, against libjpeg's own decode; a DSP that gets it wrong or stops answering is left alone for the session. `pic_dsp_state()` says "DSP", "68030" or "-" (not tried yet) |
+| `atari/dspjpeg.c/.h` | the port, for both programs (`begin(PIC_DSP_JPEG)` or `begin(PIC_DSP_DITHER)`): Dsp_Lock for the whole picture, the bootstrap, the host port (the scan's words in one `Supexec`, two bytes a word; each MCU's pixels in another, each word waited for; so the program's polls run in user mode); a picture that ended cleanly leaves the program at its commands, and the next for the same program asks it (PING: "JPG" or "DTH") instead of loading it again |
+
+| `dsp/dither.a56`, `dsp/dither_prog.h` | (21 Oct 2026) `pic_dither`'s Floyd-Steinberg for 3 pens or more, the very pens the 68030's `dither_many` gives: serpentine, each component wanted limited to -128..383 by the accumulator's limiter, its pen from a near table of 32 x 32 x 32 cells (three to a word, worked out the first time a cell is wanted by `nearest_far`'s own search, kept while the program and the palette stay), the next row's errors written over the row's own as each is done. The rows come in by the host's receive interrupt into a ring of two while the last is dithered (the wait takes a word itself as well: Hatari 2.4.1 raises no interrupt for a word sent while the DSP had none waiting), the pens go back three to a word from the transmit interrupt. `cd dsp && a56 dither.a56 && python3 mkh.py a56.out dither_prog.h dsp_dither_prog dither.a56` |
+
+It is opt-in: an app builds `dspjpeg.c` and sets `pic_dsp = &dspjpeg_port` when `dspjpeg_present()`.
+`pic_dither` then has the DSP dither pictures of 1024 pixels or more and up to 1280 wide to 3 pens
+or more (two keep their own dither on the 68030): the 68030 sends the palette's tables once, each
+row's pixels and reads the pens of the row before; the first time, a known picture (some of it
+clear) is dithered both ways and must give the same pens, or the 68030 dithers from then on
+(`pic_dither_state()`: "DSP", "68030" or "-"); `pic_dsp_dither` (1) 0 leaves it to the 68030.
+`pic_dsp_shrink` (1) has the DSP shrink a picture shown smaller when its boxes are 16 pixels or
+fewer and its tables fit (else the R G B rows come back for the scaler); the tests set it to 0 to
+compare the two, which give the same bytes.
+`tests/pic`: `make testdsp` runs every check of `make test` with `jpeg.a56` on Hatari's DSP core
+(`dsp_sim.c`; `../ec/fetch-hatari.sh` first): 361 checks, the damaged files under AddressSanitizer
+and UBSan included. Against Pillow it is closer than libjpeg's fast transform for 4:4:4 and grey
+(its transform is exact) and a little further for 4:2:0 (it repeats the chroma, as TJpgDec does,
+where libjpeg blends it). `PIC_DSP_CYCLES=1` prints the DSP's cycles, `PIC_DSP_PROFILE=FILE` writes
+them for each address (the first part and the rest), `PIC_DSP_TRACE=ADDR` (and `PIC_DSP_FOLLOW=N`) and
+`PIC_DSP_DUMP=[x]ADDR,N` (at the end) or `PIC_DSP_DUMPAT=PC,N,[x]ADDR,LEN` (the Nth time it is at PC) show its registers and memory; `PIC_DSP_SHRINK=0` leaves shrinking to the scaler; `PIC_DSP_RELOAD=1` loads the program for every picture. `make testdsp` also dithers every picture both ways, to 4, 16 and 256 colours at its size and at 61 x 37 (`test_pic -X`): 432 dithers, the same pens to the bit. On Hatari's stock Falcon the 480 x 320 photo is dithered to 16 colours in 9.6 s on the 68030 and 1.14 s on the DSP; at 192 x 128 to 256 colours, 1.74 s and 0.23 s (the DSP takes 174 cycles a pixel). On Hatari's stock Falcon (16 MHz, its DSP;
+`PICBENCH.TTP` in EWeb, its `PHOTO.JPG`) a 480 x 320 photo takes 4.64 s on the 68030 and 0.58 s with
+the DSP (the first version: 1.40 s); shown at 192 x 128, 3.07 s and 0.45 s (0.69 s before the DSP
+shrank it); a 1024 x 683 photo shown at 600 x 400, 18.5 s and 2.0 s. A progressive JPEG's transform, colours and upsampling were two thirds of libjpeg's work on the 68030 (6.85 s for the photo saved progressive, its scans' codes the rest); they are the DSP's now. Hatari runs a stock Falcon
+about 1.8 times as fast as Erez's. The R G B tables' red is exact since (it was one below for some
+reds, and took one from green and blue).
+
+The scaler sums a JPEG's rows (solid, each pixel shown from 257 or fewer) in 16 bits, a third of the
+memory the five longs of a picture with alpha take: a third less time shrinking on the 68030.
+A `PIC_PAL`'s nearest-pen table (32 KB) is made only for more than 4 pens, by `pic_pal_init`
+(`pic_pal_free` gives it back; a `PIC_PAL` starts zeroed): monochrome and 4-colour screens work each
+pen out, and EWeb's 1 MB ST got its 32 KB back.
 
 ## Coming next
 

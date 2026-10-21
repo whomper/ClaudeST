@@ -489,7 +489,12 @@ void jdc_rgb(const JDC *j, int bx, int by, int *r, int *g, int *b)
 	int v[4], i;
 	for (i = 0; i < j->ncomp; i++) {
 		const COMP *c = &j->c[i];
-		int x = (int)((long)bx * c->h / j->hmax), y = (int)((long)by * c->v / j->vmax);
+		/* the component's block: a shift when its sampling is a half or a
+		   quarter of the most (a 68000 divides 32 bits in software) */
+		int x = c->h == j->hmax ? bx : 2 * c->h == j->hmax ? bx >> 1 : 4 * c->h == j->hmax ? bx >> 2 :
+			(int)((long)bx * c->h / j->hmax);
+		int y = c->v == j->vmax ? by : 2 * c->v == j->vmax ? by >> 1 : 4 * c->v == j->vmax ? by >> 2 :
+			(int)((long)by * c->v / j->vmax);
 		if (x >= c->bw)
 			x = c->bw - 1;
 		if (y >= c->bh)
