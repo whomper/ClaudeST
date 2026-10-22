@@ -264,6 +264,19 @@ def _event_payload(ev):
     return t, p
 
 
+def event_id(ev):
+    """A session event's id: "id", or the "uuid" of the message it carries
+    (as claude.ai's events do), at the top or under "data" or its kind"""
+    if not isinstance(ev, dict):
+        return None
+    if ev.get("id") or ev.get("uuid"):
+        return ev.get("id") or ev.get("uuid")
+    for v in ev.values():
+        if isinstance(v, dict) and (v.get("id") or v.get("uuid")):
+            return v.get("id") or v.get("uuid")
+    return None
+
+
 GREY = "\x01"       # starts a line the Atari shows in grey (atari_text.Formatter)
 
 
@@ -902,60 +915,106 @@ class ClaudeAiBackend(Backend):
                  s.get("updated_at") or s.get("created_at"), bool(s.get("unread")),
                  code_state(s)) for s in sessions]
 
-    def _code_events(self, session_id, after=None, cap=2000, want=60):
+    def _code_events(self, session_id, after=None, cap=2000, want=60, deadline=None):
         """The events after AFTER; with no AFTER, the session's latest
         events, enough for WANT messages. A long session holds tens of
         thousands of events (most of them tool calls), so it is read from
-        the newest end: the newest page, then pages back with before_id.
-        Should the server give the oldest page first, it is walked forward
-        and only the latest CAP events are kept."""
+        the newest end where the server allows (_code_recent). Pages are
+        followed by the server's last_id; self._code_tail is the last
+        event read, where the next read starts."""
         if not after:
             return self._code_recent(session_id, cap, want)
         events, params = [], {"limit": 200, "after_id": after}
+        self._code_tail = after
         while len(events) < cap:
             page = self._code("get", "/sessions/%s/events" % session_id, **params)
             batch = self._data(page)
             events += batch
-            if not (isinstance(page, dict) and page.get("has_more")) or not batch:
+            tail = batch and ((isinstance(page, dict) and page.get("last_id")) or event_id(batch[-1]))
+            if tail:
+                self._code_tail = tail
+            if not (isinstance(page, dict) and page.get("has_more")) or not tail or tail == params["after_id"]:
                 break
-            params["after_id"] = page.get("last_id") or batch[-1].get("id")
+            if deadline and time.time() > deadline:
+                break
+            params["after_id"] = tail
         return events
 
-    # pages to read at most: a forward walk through a very long session
-    CODE_PAGES = 500
+    # seconds to spend walking forward through a session served oldest
+    # first: the bridge answers nothing meanwhile, and the Atari pings
+    # every 30 seconds
+    CODE_SECONDS = 25
+    _code_tail, code_partial = None, False
 
     def _code_recent(self, session_id, cap, want):
         path = "/sessions/%s/events" % session_id
+        deadline = time.time() + self.CODE_SECONDS
+        self.code_partial = False
         page = self._code("get", path, limit=200)
         events = self._data(page)
-        if not (isinstance(page, dict) and page.get("has_more")) or not events:
+        tail = (isinstance(page, dict) and page.get("last_id")) or (events and event_id(events[-1])) or None
+        self._code_tail = tail
+        if not (isinstance(page, dict) and page.get("has_more")) or not events or not tail:
             return events
         # which end is this? Nothing after it: the newest page
-        newer = self._code_events(session_id, after=page.get("last_id") or events[-1].get("id"), cap=cap)
+        newer = self._code_events(session_id, after=tail, cap=1)     # one page
         if not newer:
-            seen = set(e.get("id") for e in events)
-            first = page.get("first_id") or events[0].get("id")
-            for _ in range(self.CODE_PAGES):
-                if len(code_messages(events)) >= want:
-                    break
+            self._code_tail = tail
+            seen = set(map(event_id, events))
+            first = page.get("first_id") or event_id(events[0])
+            while first and len(code_messages(events)) < want and time.time() < deadline:
                 page = self._code("get", path, limit=200, before_id=first)
-                older = [e for e in self._data(page) if e.get("id") not in seen]
+                older = [e for e in self._data(page) if event_id(e) not in seen]
                 if not older:       # the start, or a server without before_id
                     break
-                seen.update(e.get("id") for e in older)
+                seen.update(map(event_id, older))
                 events = older + events
-                first = page.get("first_id") or older[0].get("id")
+                first = (isinstance(page, dict) and page.get("first_id")) or event_id(older[0])
                 if not page.get("has_more"):
                     break
             return events
-        # the oldest page: walk forward, keeping the latest
+        # the oldest page: the newest end, if the server sorts on request
+        latest = self._code_newest(session_id, path, events + newer, want, deadline)
+        if latest:
+            return latest
+        # else walk forward, keeping the latest
         events = (events + newer)[-cap:]
-        for _ in range(self.CODE_PAGES):
-            more = self._code_events(session_id, after=events[-1].get("id"), cap=cap)
+        while time.time() < deadline:
+            more = self._code_events(session_id, after=self._code_tail, cap=cap, deadline=deadline)
             if not more:
-                break
+                return events
             events = (events + more)[-cap:]
+        self.code_partial = True        # out of time before the end
         return events
+
+    def _code_newest(self, session_id, path, read, want, deadline):
+        """The session's latest events with order=desc, oldest first; None
+        where the server ignores or refuses it (the same events as READ,
+        the oldest)"""
+        try:
+            page = self._code("get", path, limit=200, order="desc")
+        except RuntimeError:
+            return None
+        got = self._data(page)
+        seen = set(map(event_id, read))
+        if not got or any(event_id(e) in seen for e in got):
+            return None
+        seen = set(map(event_id, got))
+        newest = event_id(got[0])
+        while (isinstance(page, dict) and page.get("has_more") and time.time() < deadline
+               and len(code_messages(got[::-1])) < want):
+            try:
+                page = self._code("get", path, limit=200, order="desc",
+                                  after_id=page.get("last_id") or event_id(got[-1]))
+            except RuntimeError:
+                break
+            older = [e for e in self._data(page) if event_id(e) not in seen]
+            if not older:
+                break
+            seen.update(map(event_id, older))
+            got += older
+        self._code_tail = newest
+        return got[::-1]
 
     @staticmethod
     def _session_model(info):
@@ -971,7 +1030,7 @@ class ClaudeAiBackend(Backend):
                   find_effort([_event_payload(e)[1] for e in events if _event_payload(e)[0] == "system"]) or
                   self._memory().get(session_id))
         self.chat_choice = (model, effort) if model else None
-        self._code_last = {session_id: events[-1].get("id") if events else None}
+        self._code_last = {session_id: (event_id(events[-1]) or self._code_tail) if events else None}
         return info.get("title") or "Untitled session", code_messages(events)
 
     # seconds to wait for the first sign of an answer: past it, the session
@@ -988,7 +1047,7 @@ class ClaudeAiBackend(Backend):
         last = (getattr(self, "_code_last", None) or {}).get(session_id)
         if last is None:
             events = self._code_events(session_id)
-            last = events[-1].get("id") if events else None
+            last = (event_id(events[-1]) or self._code_tail) if events else None
         text, rest = with_text_files(text, files)
         content = text if not rest else [{"type": "text", "text": text or "(attached)"}] + [f.block() for f in rest]
         self._code("post", "/sessions/%s/events" % session_id, {"events": [{
@@ -1012,7 +1071,7 @@ class ClaudeAiBackend(Backend):
                 wait = min(wait * 1.5, 10.0)     # ask less often while it works
                 continue
             wait, quiet_since = poll, time.time()
-            last = new[-1].get("id") or last
+            last = event_id(new[-1]) or self._code_tail or last
             for role, body in code_messages(new):
                 if role == "A":
                     on_delta(("\n\n" if said else "") + body)
@@ -1334,7 +1393,7 @@ class ClaudeAiBackend(Backend):
             log.info("moved chat %s: could not read session %s: %s", chat_id, sid, e)
             self.chat_readonly = True
             return classic
-        self._code_last = {sid: events[-1].get("id") if events else None}
+        self._code_last = {sid: (event_id(events[-1]) or self._code_tail) if events else None}
         return merge_moved(classic, code_messages(events))
 
     def send_moved(self, chat_id, sid, text, on_delta, files=None):

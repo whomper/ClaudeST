@@ -523,6 +523,9 @@ class Session:
                 msgs = msgs[-HISTORY_MESSAGES:]
             for role, body in msgs:
                 self.message(role, body)
+            if getattr(self.be, "code_partial", False):
+                self.message("I", "This session is too long to read to its end in time: "
+                             "later messages are not shown. Open it on claude.ai to see them.")
             self.online()
             return
         self.notice("Loading chat...")
