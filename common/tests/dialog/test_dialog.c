@@ -417,6 +417,13 @@ static void test_long_fields(void)
 	lf_edit(&g, 0x4b00, 0, 0);
 	lf_edit(&g, 0x4b00, 0, 0);
 	check(g.cur == 0, "lf: Left stops at the start");
+	g.mask = 0;
+	lf_edit(&g, 0x4d36, '6', 0);
+	check(g.cur == 4 && !strcmp(big, "Zbcd"), "lf: Shift+Right by its '6' alone (TOS 1.04: kstate 0), to the end");
+	lf_edit(&g, 0x4b34, '4', 0);
+	check(g.cur == 0, "lf: Shift+Left by its '4' alone, to the start");
+	lf_edit(&g, 0x4737, '7', 0);
+	check(g.cur == 4 && !strcmp(big, "Zbcd"), "lf: Shift+ClrHome by its '7' alone, to the end");
 
 	/* a 93-character token typed into a field 20 wide, in dlg_do */
 	setup();

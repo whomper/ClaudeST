@@ -171,6 +171,12 @@ try:
     desk = shot("0-desktop")
     check(hatari.poll() is None and os.path.getsize(desk) > 0,
           "%s's window came" % prg if prg else "the desktop came")
+    if prg:
+        # the program's own "can't open its screen" (guideline 2.1) is right
+        # when the accessories hold the memory, but then it never ran: say so
+        if "v_opnvwk -> 0" in open(work + "/hatari.log", errors="replace").read():
+            print("NOTE  %s couldn't open its screen (v_opnvwk 0): the accessories hold the memory; "
+                  "its own alert, see 0-desktop.png" % prg)
     if prg and prg.upper() == "EMAIL":
         # a first start's welcome (EMail's "Let's set up your mail account")
         # waits for OK, then the account dialog: Esc declines (only EMail's:

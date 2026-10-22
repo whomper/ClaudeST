@@ -23,12 +23,11 @@ short icon_kind(short kind)
 	return can ? kind | SMALLER : kind;
 }
 
-/* The desktop's palette is everyone's, so the colour icon is drawn in
-   the standard pens: white, black, red, green, the greys */
+/* The desktop's palette is everyone's: the colour icon is in TOS's 16
+   standard pens (common/tools/appicon.py), drawn as they are */
 void icon_draw(const GRECT *work, const GRECT *clip, const unsigned short *icon,
 	       const unsigned char *icon16, const char *status)
 {
-	static const short std[16] = { 0, 1, 0, 0, 0, 0, 0, 0, 8, 9, 1, 1, 0, 2, 3, 9 };
 	GRECT c = *clip, all = *work, r;
 	short n = status ? (short)strlen(status) : 0, x, y, room, sw, sh;
 	font_sys_push();
@@ -42,7 +41,7 @@ void icon_draw(const GRECT *work, const GRECT *clip, const unsigned short *icon,
 	clip_on(&c);
 	fill(&all, 0);
 	if (planes >= 4 && icon16) {
-		about_icon16(icon16, x, y, 1, 1, std);
+		about_icon16(icon16, x, y, 1, 1, 0);
 	} else if (icon) {
 		/* in runs of fills, which keep to the clip as a raster copy wouldn't */
 		short row, col, e;

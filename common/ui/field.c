@@ -59,8 +59,11 @@ void lf_end(LFIELD *f)
 int lf_edit(LFIELD *f, short key, short ch, short kstate)
 {
 	short scan = (short)((key >> 8) & 0xff), len = (short)strlen(f->text);
-	int shift = (kstate & 3) != 0;
 	unsigned char c = (unsigned char)ch;
+	/* Shift: TOS's keyboard gives the shifted arrows and ClrHome a
+	   character ('4', '6', '7'), and TOS 1.04's AES sends the key with
+	   kstate 0 */
+	int shift = (kstate & 3) != 0 || ((scan == SC_LEFT || scan == SC_RIGHT || scan == SC_CLRHOME) && c);
 	switch (scan) {
 	case SC_LEFT:
 		f->cur = shift ? 0 : f->cur - 1;
