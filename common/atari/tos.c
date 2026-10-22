@@ -74,7 +74,13 @@ u32 tos_hz200(void)
  * which runs off the MFP's 2.4576 MHz crystal however the timer is set,
  * for CLOCK_STEPS of the counter's steps (30 ms when all is well; it
  * busy-waits that long once, so keep it short); more than 3%
- * off, tos_ms() is scaled. */
+ * off, tos_ms() is scaled. The count-down's reload value is read with
+ * timer C's interrupt masked in the MFP for a round: with it taken, TOS's
+ * handler runs while the first counts go by, the largest one seen fell
+ * short (185 of 192 on an ST's accessory at boot) and every wrap with it,
+ * which read a 200 Hz clock as 206 to 222 Hz (EContact's rigs, 21 Oct
+ * 2026). The pending interrupt is taken when it is unmasked: no step is
+ * lost. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed hardware addresses */
 #define CLOCK_STEPS 6			/* 0.1% resolution at 200 Hz: plenty for a 3% test */
@@ -86,27 +92,35 @@ static void sup_clock(void)
 	static const unsigned short pre[8] = { 0, 4, 10, 16, 50, 64, 100, 200 };
 	volatile unsigned char *tcdcr = (volatile unsigned char *)0xfffffa1dL;
 	volatile unsigned char *tcdr = (volatile unsigned char *)0xfffffa23L;
+	volatile unsigned char *imrb = (volatile unsigned char *)0xfffffa15L;
 	volatile u32 *hz = (volatile u32 *)0x4baL;
 	u32 p = pre[(*tcdcr >> 4) & 7], acc = 0, h, n = 0, top = 0, r, limit;
-	unsigned char prev, cur;
+	unsigned char prev, cur, mask;
+	int i;
 	clock_hz10 = -1;
 	if (!p)
 		return;				/* timer C stopped */
 	limit = 2457600UL / p;			/* a second of count-down: give up after it */
-	/* the value the timer starts each round from: the largest seen in
-	   two steps of the counter (a round is one step when all is well) */
-	h = *hz;
+	/* the value the timer starts each round from: read just after it
+	   reloads, with timer C's interrupt masked (bit 5 of IMRB) so that
+	   nothing runs between; a round at most */
+	mask = *imrb;
+	*imrb = mask & ~0x20;
 	prev = *tcdr;
-	while (*hz < h + 2 && acc < limit) {
-		cur = *tcdr;
-		if (cur > top)
-			top = cur;
-		acc += cur <= prev ? prev - cur : 1;	/* only to give up in time */
+	while ((cur = *tcdr) <= prev && acc < limit && n < 200000UL) {
+		acc += prev - cur;
 		prev = cur;
+		n++;
 	}
-	if (acc >= limit)
+	top = cur;
+	for (i = 0; i < 4; i++)
+		if ((cur = *tcdr) > top)
+			top = cur;
+	*imrb = mask;
+	if (acc >= limit || n >= 200000UL)
 		return;				/* the counter doesn't move */
 	r = top ? top : 256;
+	n = 0;
 	/* CLOCK_STEPS steps of the counter, in count-down ticks */
 	h = *hz;
 	while (*hz == h && n < 1000000UL)

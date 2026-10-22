@@ -33,9 +33,11 @@ extern void (*crash_report)(const char *text, long n);
 const char *crash_previous(void);
 /* where CRASH.LOG is ("" before crash_install, or when it does nothing) */
 const char *crash_log(void);
-/* test builds (-DCRASH_TEST) only: F1 to F4 (the scancode) crash on
-   purpose: a bus error in the program, one in supervisor mode, an
-   illegal instruction, an address error (68000). 0 for other keys */
+/* test builds (-DCRASH_TEST) only: F1 to F5 (the scancode) crash on
+   purpose: a bus error in the program, one in its code in supervisor
+   mode (a Supexec of its), an illegal instruction, an address error
+   (68000), a bus error in supervisor mode outside the program (TOS's
+   bombs, recorded for the next start). 0 for other keys */
 int crash_test(short scan);
 
 #endif

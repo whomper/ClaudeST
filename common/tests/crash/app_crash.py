@@ -6,15 +6,16 @@
 
   1. F1, a bus error in the program: the app's alert, CRASH.LOG, and
      back to the desktop with the emulator still running;
-  2. F2, a bus error in supervisor mode: the bombs; after a warm reset
-     the app starts again, says it crashed last time and, with Return
-     (Show), shows the report.
+  2. F2, a bus error in the program's code in supervisor mode: the same;
+  3. F5, a bus error in supervisor mode outside the program: the bombs;
+     after a warm reset the app starts again and CRASH.LOG has TOS's
+     record of them.
 
     app_crash.py WORK EMUTOS.IMG APP.PRG NAME [--machine falcon|st] [--memsize MB]
                  [--wait SECONDS] [--log DIR] [--copy FILE ...]
 
 EmuTOS 1.4 or later: 1.3 overwrites TOS's record of the bombs at every
-boot, so step 2 fails there.
+boot, so step 3 fails there.
 
 NAME is the program's name in the report ("ECal"); --log is the folder
 of CRASH.LOG on drive C:, relative to it (default: the root); --copy
@@ -122,27 +123,41 @@ try:
 finally:
     r.end()
 
-# 2: a crash in supervisor mode, then the next start
+# 2: a crash in the program's own code in supervisor mode (a Supexec of
+# its): caught as F1 is
 r = Run("f2")
 try:
     time.sleep(a.wait)
-    r.key(0x3c)				# F2: the bombs
+    r.key(0x3c)				# F2
+    time.sleep(4)
+    r.shot()				# its alert
+    rep = r.log()
+    check("%s " % a.name in rep and ": bus error, 2 bombs" in rep, "F2: CRASH.LOG names the crash")
+    check("(%s+$" % a.name in rep, "F2: where, as an offset into the program")
+    r.key(0x1c)				# Return: Quit
+    time.sleep(4)
+    r.shot()				# the desktop
+    check(r.alive(), "F2: the emulator still runs")
+finally:
+    r.end()
+
+# 3: a crash in supervisor mode outside the program: TOS's bombs, then
+# the next start finds TOS's record (not the program's: no alert)
+r = Run("f5")
+try:
+    time.sleep(a.wait)
+    r.key(0x3f)				# F5: the bombs
     time.sleep(5)
     r.shot()
     r.cmd(WARM_MAGIC)
     time.sleep(0.5)
     r.cmd("hatari-shortcut warmreset")
     time.sleep(a.wait + 3)
-    r.shot()				# "crashed last time", offering to show it
-    r.key(0x1c)				# Return: Show, the default
-    time.sleep(3)
-    r.shot()				# the report, in a box (crash_offer)
-    r.key(0x1c)				# OK
-    time.sleep(2)
+    r.shot()				# the app again
     rep = r.log()
     check("found TOS's record of a crash before this run" in rep and "bus error, 2 bombs at" in rep,
-          "F2: CRASH.LOG has TOS's record after the reset")
-    check(r.alive(), "F2: the emulator still runs")
+          "F5: CRASH.LOG has TOS's record after the reset")
+    check(r.alive(), "F5: the emulator still runs")
 finally:
     r.end()
 print("%d failed; screenshots in %s" % (failed, os.path.abspath(a.work)))

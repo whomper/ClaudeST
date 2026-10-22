@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-# The shared dialog loop (ui/dialog.c) on the build machine, against a
+# The shared dialog loop (ui/dialog.c) and its long fields (ui/field.c) on the build machine, against a
 # stand-in AES, with AddressSanitizer: make test
 CFLAGS := -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
           -Istub -I../../ui -I../../atari
 B      := build
 
-$(B)/test_dialog: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h | $(B)
-	cc $(CFLAGS) -o $@ test_dialog.c ../../ui/dialog.c
+$(B)/test_dialog: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h | $(B)
+	cc $(CFLAGS) -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c
 $(B):
 	mkdir -p $@
 test: $(B)/test_dialog

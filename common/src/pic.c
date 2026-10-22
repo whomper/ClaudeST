@@ -1788,9 +1788,21 @@ typedef struct {
 	unsigned char px[1];		/* w * h * 4 */
 } GBMP;
 
+/* the most pixels a GIF's canvas may have (pic_decode's max_px): libnsgif
+   makes it as big as its frames say, which a damaged file can make far
+   bigger than its header (and w * h * 4 would wrap a 32-bit size_t: a
+   small block, overrun; found by tests/pic's fuzzing) */
+static long gb_max;
+static int gb_big;		/* a canvas was refused for it */
+
 static nsgif_bitmap_t *gb_create(int w, int h)
 {
-	GBMP *b = calloc(1, sizeof *b + (size_t) w * (size_t) h * 4);
+	GBMP *b;
+	if (w <= 0 || h <= 0 || w > gb_max / h) {
+		gb_big = 1;
+		return NULL;
+	}
+	b = calloc(1, sizeof *b + (size_t) w * (size_t) h * 4);
 	if (b != NULL) {
 		b->w = w;
 		b->h = h;
@@ -1809,7 +1821,7 @@ static uint8_t *gb_buffer(nsgif_bitmap_t *b)
 	return ((GBMP *) b)->px;
 }
 
-static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, int *why)
+static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, long max_px, int *why)
 {
 	static const nsgif_bitmap_cb_vt vt = { gb_create, gb_destroy, gb_buffer, NULL, NULL, NULL, NULL };
 	nsgif_t *g;
@@ -1817,6 +1829,8 @@ static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, int *w
 	const nsgif_info_t *info;
 	nsgif_error e;
 	long y;
+	gb_max = max_px;
+	gb_big = 0;
 	if (nsgif_create(&vt, NSGIF_BITMAP_FMT_R8G8B8A8, &g) != NSGIF_OK) {
 		*why = PIC_MEMORY;
 		return 0;
@@ -1826,13 +1840,13 @@ static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, int *w
 	info = nsgif_get_info(g);
 	if (info == NULL || info->frame_count == 0) {
 		nsgif_destroy(g);
-		*why = e == NSGIF_ERR_OOM ? PIC_MEMORY : PIC_DAMAGED;
+		*why = gb_big ? PIC_TOO_BIG : e == NSGIF_ERR_OOM ? PIC_MEMORY : PIC_DAMAGED;
 		return 0;
 	}
 	e = nsgif_frame_decode(g, 0, &bmp);
 	if (e != NSGIF_OK || bmp == NULL) {
 		nsgif_destroy(g);
-		*why = e == NSGIF_ERR_OOM ? PIC_MEMORY : PIC_DAMAGED;
+		*why = gb_big ? PIC_TOO_BIG : e == NSGIF_ERR_OOM ? PIC_MEMORY : PIC_DAMAGED;
 		return 0;
 	}
 	if (!sc_init(sc, p, ((GBMP *) bmp)->w, ((GBMP *) bmp)->h)) {
@@ -1917,7 +1931,7 @@ PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *
 		switch (kind) {
 		case PIC_JPEG: ok = decode_jpeg(d, n, p, &sc, why); break;
 		case PIC_PNG: ok = decode_png(d, n, p, &sc, max_px, why); break;
-		default: ok = decode_gif(d, n, p, &sc, why); break;
+		default: ok = decode_gif(d, n, p, &sc, max_px, why); break;
 		}
 	}
 	if (ok && sc.down_y && sc.y < sc.sh && sc.dy >= 0) {
