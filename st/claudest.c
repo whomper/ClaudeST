@@ -48,6 +48,7 @@
 #undef gl_hchar
 #include "icon.h"
 #include "icon16.h"
+#include "icon256.h"
 
 /* copy at most n-1 characters and always end the string (ClaudeST's own;
    the shared C library has none) */
@@ -3545,7 +3546,7 @@ static void about(void)
 		    { "Unofficial client, not affiliated with Anthropic or Atari.",
 		      "Claude is a trademark of Anthropic PBC.",
 		      "Atari is a trademark of Atari Interactive." },
-		    icon_bits, icon16_px, icon16_rgb };
+		    icon_bits, icon16_px, icon16_rgb, icon256_px, icon256_rgb };
 	if (link == LINK_TCP && tcp_ip) {
 		char *p;
 		strcpy(conn, "Gateway ");
