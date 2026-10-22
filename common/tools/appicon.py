@@ -27,9 +27,11 @@ It writes, each when asked:
              in Thing or Teradesk.
   --icn      the monochrome image, ICN text (resource editors read it);
   --mask     its mask, ICN text;
-  --headers  icon.h (icon_bits, one plane) and icon16.h (icon16_px in VDI
-             pens, 0 not drawn; icon16_rgb, pens 8-15 as TOS has them) for
-             the About box and the iconified window (common/ui);
+  --headers  icon.h (icon_bits, one plane), icon16.h (icon16_px in VDI
+             pens, 0 not drawn; icon16_rgb, pens 8-15 as TOS has them) and
+             icon256.h (icon256_px, a byte a pixel in VDI pens 16-255;
+             icon256_rgb, those pens' colours) for the About box and the
+             iconified window (common/ui);
   --docs     icon.png (256 colours), icon16.png and icon2.png, each 8 times
              bigger, clear round it, for the README;
   --png      the 256-colour icon alone, 8 times bigger, clear round it
@@ -222,6 +224,21 @@ def write_headers(dirname, name, d):
             c = hx(next(v[2] for v in C16.values() if v[1] == p))
             f.write("\t{ %d, %d, %d },\n" % tuple(round(x * 1000 / 255) for x in c))
         f.write("};\n")
+    with open(os.path.join(dirname, "icon256.h"), "w") as f:
+        f.write(HEAD + "/* %s's icon, 32x32 in 256 colours (VDI pens, a byte a pixel; 0 isn't\n"
+                " * drawn), from common/icons/%s.txt by common/tools/appicon.py:\n"
+                " * don't edit. Used with 256 colours or more (the About box) */\n" % (name, name))
+        f.write("static const unsigned char icon256_px[32 * 32] = {\n")
+        for r in d[256]:
+            f.write("\t" + ", ".join("%d" % (REG256[c] if c != "." else 0) for c in r) + ",\n")
+        f.write("};\n")
+        used = sorted({c for r in d[256] for c in r} - {"."}, key=lambda c: REG256[c])
+        f.write("/* its pens and their colours in TOS's 256: the About box draws with\n"
+                " * the pen that has the colour now (an app's theme may have taken some) */\n"
+                "static const short icon256_rgb[%d][4] = {\n" % (len(used) + 1))
+        for c in used:
+            f.write("\t{ %d, %d, %d, %d },\n" % ((REG256[c],) + tuple(round(x * 1000 / 255) for x in hx(C256[c]))))
+        f.write("\t{ 0, 0, 0, 0 }\n};\n")
 
 
 # ---- pictures ---------------------------------------------------------------

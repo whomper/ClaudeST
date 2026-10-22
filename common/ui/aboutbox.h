@@ -12,7 +12,8 @@
  * primitives (gemui.h).
  *
  *   ABOUT a = { "ECal", cal_version, "A calendar for the Atari ST, TT and Falcon",
- *               { status, 0, 0 }, { 0, 0, 0 }, icon_bits, icon16_px, icon16_rgb };
+ *               { status, 0, 0 }, { 0, 0, 0 }, icon_bits, icon16_px, icon16_rgb,
+ *               icon256_px, icon256_rgb };
  */
 #ifndef AERA_ABOUTBOX_H
 #define AERA_ABOUTBOX_H
@@ -26,6 +27,13 @@ typedef struct {
 	const unsigned short *icon;	/* 32x32, one plane: icon.h's icon_bits */
 	const unsigned char *icon16;	/* 32x32, 4 bits a pixel: icon16.h's icon16_px */
 	const short (*icon16_rgb)[3];	/* its colours for pens 8-15: icon16_rgb */
+	const unsigned char *icon256;	/* 32x32, a byte a pixel (VDI pens, 0 not drawn):
+					   icon256.h's icon256_px, used with 256 colours
+					   or more; 0 for none */
+	const short (*icon256_rgb)[4];	/* its pens' colours in TOS's 256, { pen, r, g,
+					   b }, ending with pen 0: icon256_rgb (a pen
+					   that has another colour now is replaced by
+					   the nearest) */
 } ABOUT;
 
 void about_show(const ABOUT *a);
