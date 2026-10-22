@@ -6,7 +6,8 @@
 # decoders: TJpgDec (test_pic, the 68000 programs') and libjpeg-turbo
 # (test_pic_lj, -DPIC_LIBJPEG: EWeb's); make testdsp, EWeb's with the
 # transform and colours on the Falcon's DSP (dsp/jpeg.a56 on Hatari's core),
-# and the dither on it (dsp/dither.a56) against the 68030's
+# and the dither on it (dsp/dither.a56) against the 68030's; make pens,
+# aerapens (tools/pens) against the Atari's own code
 S      := ../../src
 T      := ../../third_party
 SRC    := test_pic.c $(S)/pic.c $(S)/png.c $(S)/jpegdc.c $(S)/inflate.c $(S)/util.c \
@@ -54,6 +55,25 @@ $(B)/test_pic_dsp: $(SRC_LJ) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_pr
 		$(B)/libjpeg.a $(B)/hatari.a
 $(B):
 	mkdir -p $@
+# aerapens (../../tools/pens), the Pi gateway's pens, against the Atari's
+# code under qemu-m68k: here, arm64 and armhf, every picture and screen
+pens:
+	python3 pens.py -q
+# aerapens' requests fuzzed (clang's libFuzzer, AddressSanitizer, UBSan),
+# from fuzz/pens (its seeds: requests for the pictures here, both builds,
+# each depth): FUZZ_TIME seconds; what it finds goes in fuzz/pens too
+FUZZ_TIME ?= 600
+$(B)/fuzz/aerapens: ../../tools/pens/aerapens.c $(wildcard $(S)/*.c) | $(B)
+	$(MAKE) -s -C ../../tools/pens CC=clang B=$(CURDIR)/$(B)/fuzz PENS_BUILD=fuzz \
+		EXTRA="-g -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -DPENS_FUZZ" \
+		LDFLAGS="-fsanitize=fuzzer,address,undefined"
+fuzzpens: $(B)/fuzz/aerapens
+	mkdir -p $(B)/fuzz/corpus
+	$(B)/fuzz/aerapens -max_total_time=$(FUZZ_TIME) -max_len=65536 -rss_limit_mb=1024 \
+		-artifact_prefix=fuzz/pens/crash- $(B)/fuzz/corpus fuzz/pens
+# the seeds again on any build (each must run clean): make pensseeds
+pensseeds: $(B)/fuzz/aerapens
+	$(B)/fuzz/aerapens -runs=0 fuzz/pens
 testdsp: $(B)/test_pic_dsp
 	python3 run.py $(B)/test_pic_dsp
 test: $(B)/test_pic $(B)/test_pic_lj
@@ -64,4 +84,4 @@ test68k: $(B)/test_pic $(B)/test_pic68k $(B)/test_pic_lj $(B)/test_pic_lj68k
 	python3 run.py --same $(B)/test_pic_lj "qemu-m68k -cpu m68030 $(B)/test_pic_lj68k"
 clean:
 	rm -rf $(B)
-.PHONY: test test68k testdsp clean
+.PHONY: test test68k testdsp pens fuzzpens pensseeds clean

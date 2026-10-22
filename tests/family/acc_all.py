@@ -171,9 +171,10 @@ try:
     desk = shot("0-desktop")
     check(hatari.poll() is None and os.path.getsize(desk) > 0,
           "%s's window came" % prg if prg else "the desktop came")
-    if prg:
+    if prg and prg.upper() == "EMAIL":
         # a first start's welcome (EMail's "Let's set up your mail account")
-        # waits for OK, then the account dialog: Esc declines
+        # waits for OK, then the account dialog: Esc declines (only EMail's:
+        # in EFTP, Return opens the drive row A:, and TOS asks for a disk)
         xdo("key", "Return")
         time.sleep(3)
         xdo("key", "Escape")
@@ -181,10 +182,15 @@ try:
         desk = shot("0b-%s-ready" % prg.lower())
     click(18, 8)                                     # the Desk menu
     menu = shot("1-desk-menu")
-    check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: three accessories)")
+    check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
     click(300, 300)                                  # closed again
     time.sleep(1)
     for rnd in (1, 2):
+        if rnd == 2 and len(want) == 1:
+            # its window is still on top: closed (^W), so that opening it
+            # again draws it
+            xdo("key", "ctrl+w")
+            time.sleep(3)
         for i in range(len(want)):            # the Desk menu's order is the loading order
             before = shot("%d-%d-before" % (rnd, i))
             click(18, 8)

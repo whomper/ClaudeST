@@ -13,6 +13,13 @@
 #include "tos.h"
 #include "gem.h"
 #include "dialog.h"
+#include "field.h"
+
+/* the fields that hold more than they show (field.c), in an app that
+   has field.c; weak, so an app without it needn't build it */
+LFIELD *lf_of(OBJECT *tree, short obj) __attribute__((weak));
+void lf_enter(LFIELD *f, short *idx) __attribute__((weak));
+int lf_key(LFIELD *f, short key, short ch, short kstate, short *idx) __attribute__((weak));
 
 #define BEG_MCTRL 3
 #define END_MCTRL 2
@@ -64,14 +71,22 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 	flush_keys();
 	next = start > 0 ? start : first_field(tree);
 	while (cont) {
+		LFIELD *lf;
 		if (next > 0 && next != edit) {
 			edit = next;
 			next = 0;
-			objc_edit(tree, edit, 0, &idx, ED_INIT);
+			lf = lf_of ? lf_of(tree, edit) : 0;
+			if (lf)
+				lf_enter(lf, &idx);
+			else
+				objc_edit(tree, edit, 0, &idx, ED_INIT);
 		}
+		lf = lf_of && edit > 0 ? lf_of(tree, edit) : 0;
 		evnt_multi_(MU_KEYBD | MU_BUTTON, 2, 1, 1, 0, m, &e);
 		if (e.which & MU_KEYBD) {
-			if (dlg_esc(e.kreturn)) {
+			if (lf && !dlg_esc(e.kreturn) && lf_key(lf, e.kreturn, e.kreturn & 0xff, e.kstate, &idx)) {
+				/* the long field took it */
+			} else if (dlg_esc(e.kreturn)) {
 				/* Cancel: the field isn't given the key, so it keeps its text */
 				next = cancel;
 				cont = 0;
@@ -82,7 +97,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 			} else {
 				short kr;
 				cont = form_keybd(tree, edit, next, e.kreturn, &next, &kr);
-				if (kr && edit > 0)
+				if (kr && edit > 0 && !lf)	/* a long field's text isn't objc_edit's */
 					objc_edit(tree, edit, kr, &idx, ED_CHAR);
 			}
 		}

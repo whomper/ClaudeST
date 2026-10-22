@@ -14,6 +14,8 @@
 #include <string.h>
 #include "gem.h"
 #include "dialog.h"
+#include "clip.h"
+#include "field.h"
 
 #define KEY_RETURN 0x1c0d
 #define KEY_ESC    0x011b
@@ -132,6 +134,43 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 	return ev->which;
 }
 
+/* the clipboard (clip.c) */
+static char clipboard[256];
+static int clip_puts;
+
+int clip_key(short key)
+{
+	switch (key & 0xff) {
+	case 3: return CLIP_COPY;
+	case 24: return CLIP_CUT;
+	case 22: return CLIP_PASTE;
+	}
+	return CLIP_NONE;
+}
+
+int clip_put(const char *text, long n)
+{
+	clip_puts++;
+	memcpy(clipboard, text, (size_t)n);
+	clipboard[n] = 0;
+	return 1;
+}
+
+long clip_get(char *buf, long size)
+{
+	strncpy(buf, clipboard, (size_t)size - 1);
+	buf[size - 1] = 0;
+	return (long)strlen(buf);
+}
+
+char *clip_line(char *buf)
+{
+	char *e = strchr(buf, '\n');
+	if (e)
+		*e = 0;
+	return buf;
+}
+
 static short find(short from, short inc, unsigned short flag)
 {
 	short i = from + inc;
@@ -188,13 +227,12 @@ short form_button(OBJECT *t, short obj, short clicks, short *onext)
 short objc_edit(OBJECT *t, short obj, short ch, short *idx, short kind)
 {
 	char *s;
-	(void)t;
 	if (obj != F1 && obj != F2) {
 		checks++, failed++;
 		printf("FAIL objc_edit on object %d, not a field\n", obj);
 		return 0;
 	}
-	s = text[obj - F1];
+	s = ((TEDINFO *)t[obj].ob_spec)->te_ptext;
 	if (kind == ED_INIT) {
 		*idx = (short)strlen(s);
 		cursor++;
@@ -205,6 +243,9 @@ short objc_edit(OBJECT *t, short obj, short ch, short *idx, short kind)
 			ed_char_esc++;
 			s[0] = 0;		/* what TOS does with Esc in a field */
 			*idx = 0;
+		} else if (ch == 0x4b00) {	/* the cursor left */
+			if (*idx > 0)
+				(*idx)--;
 		} else if ((ch & 0xff) >= ' ' && *idx < 30) {
 			s[(*idx)++] = (char)ch;
 			s[*idx] = 0;
@@ -332,6 +373,99 @@ static void tidy(const char *what)
 	char b[160];
 	snprintf(b, sizeof(b), "%s: the cursor gone, the screen and mouse given back", what);
 	check(cursor == 0 && updates == 0 && update_low >= 0 && mouse_off == 0, b);
+}
+
+/* ---------------- fields that hold more than they show (field.c) ---------------- */
+
+#define TOKEN "github_pat_11ABCDEFG0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789a"
+
+static void test_long_fields(void)
+{
+	static char big[100], tmpl[] = "____________________";	/* shows 20 */
+	static STEP s[120];
+	LFIELD f, g;
+	short r, i, n = 0;
+
+	/* the editing alone */
+	memset(&g, 0, sizeof(g));
+	strcpy(big, "abc");
+	g.text = big;
+	g.cap = 5;
+	g.show = 3;
+	lf_end(&g);
+	check(g.cur == 3 && !strcmp(g.view, "abc"), "lf: the cursor at the end, the text shown");
+	lf_edit(&g, K('d'), 'd', 0);
+	check(!strcmp(big, "abcd") && !strcmp(g.view, "bcd") && g.off == 1, "lf: typing past the width scrolls");
+	lf_edit(&g, K('e'), 'e', 0);
+	lf_edit(&g, K('f'), 'f', 0);
+	check(!strcmp(big, "abcde"), "lf: no more than it holds");
+	lf_edit(&g, 0x4b00, 0, 1);
+	check(g.cur == 0 && g.off == 0 && !strcmp(g.view, "abc"), "lf: Shift+Left to the start, shown from there");
+	lf_edit(&g, 0x5300, 0, 0);
+	check(!strcmp(big, "bcde") && g.cur == 0, "lf: Delete takes the letter at the cursor");
+	lf_edit(&g, 0x4d00, 0, 1);
+	lf_edit(&g, 0x0e08, 8, 0);
+	check(!strcmp(big, "bcd") && g.cur == 3 && !strcmp(g.view, "bcd"), "lf: Backspace at the end");
+	lf_edit(&g, 0x4700, 0, 0);
+	lf_edit(&g, K('Z'), 'Z', 0);
+	check(!strcmp(big, "Zbcd") && g.cur == 1 && g.off == 0, "lf: ClrHome, then typing in front");
+	check(!lf_edit(&g, KEY_RETURN, 13, 0) && !lf_edit(&g, KEY_TAB, 9, 0) && !lf_edit(&g, 0x3b00, 0, 0),
+	      "lf: Return, Tab and a function key are the dialog's");
+	g.mask = '*';
+	lf_view(&g);
+	check(!strcmp(g.view, "***"), "lf: a password shows stars");
+	lf_edit(&g, 0x4b00, 0, 0);
+	lf_edit(&g, 0x4b00, 0, 0);
+	check(g.cur == 0, "lf: Left stops at the start");
+
+	/* a 93-character token typed into a field 20 wide, in dlg_do */
+	setup();
+	ted[0].te_ptmplt = tmpl;
+	big[0] = 0;
+	lf_init(&f, tree, F1, big, 99, 0);
+	check(lf_of(tree, F1) == &f && !lf_of(tree, F2) && ted[0].te_ptext == f.view && ted[0].te_txtlen == 21,
+	      "lf_init: the field shows its view, 20 wide");
+	for (i = 0; TOKEN[i]; i++)
+		s[n++] = (STEP)KEY(K(TOKEN[i]));
+	s[n++] = (STEP)KEY(KEY_RETURN);
+	s[n] = (STEP)END;
+	r = run(F1, CANCEL, s);
+	check(r == OK && !strcmp(big, TOKEN) && strlen(TOKEN) == 93,
+	      "a 93-character token typed into a field showing 20: all of it kept");
+	check(!strcmp(f.view, TOKEN + 73) && f.cur == 93, "... the field shows its last 20, the cursor after them");
+	tidy("a long field");
+
+	/* the cursor moved back, a letter put in there, Esc keeps it all */
+	setup();
+	ted[0].te_ptmplt = tmpl;
+	strcpy(big, TOKEN);
+	lf_init(&f, tree, F1, big, 99, 0);
+	n = 0;
+	for (i = 0; i < 30; i++)
+		s[n++] = (STEP)KEY(0x4b00);
+	s[n++] = (STEP)KEY(K('#'));
+	s[n++] = (STEP)KEY(KEY_ESC);
+	s[n] = (STEP)END;
+	r = run(F1, CANCEL, s);
+	check(r == CANCEL && big[63] == '#' && !strcmp(big + 64, TOKEN + 63) && strlen(big) == 94,
+	      "Left 30 times, then a letter: put in there; Esc cancels and the text stays");
+	check(ed_char_esc == 0 && cursor == 0, "... Esc never reached objc_edit");
+
+	/* the clipboard: a paste takes the whole token; a password is never copied out */
+	setup();
+	ted[0].te_ptmplt = tmpl;
+	big[0] = 0;
+	strcpy(clipboard, TOKEN "\nsecond line");
+	clip_puts = 0;
+	lf_init(&f, tree, F1, big, 99, '*');
+	{
+		static const STEP p[] = { KEY(0x2f16), KEY(0x2e03), KEY(0x2d18), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, p);
+	}
+	check(r == OK && !strcmp(big, TOKEN), "^V into a long password field: the whole first line");
+	check(clip_puts == 0 && !strcmp(f.view, "********************"), "... ^C and ^X take nothing out of it, stars shown");
+	lf_forget(tree);
+	check(!lf_of(tree, F1), "lf_forget: the dialog's fields let go");
 }
 
 int main(void)
@@ -556,6 +690,8 @@ int main(void)
 		      "dlg_modal_save without a workstation: form_dial's redraw instead");
 		tidy("no workstation");
 	}
+
+	test_long_fields();
 
 	check(dlg_esc(KEY_ESC) && dlg_esc(KEY_UNDO) && !dlg_esc(KEY_RETURN) && !dlg_esc(K('a')) &&
 	      !dlg_esc(0x0e08), "dlg_esc: Esc and Undo only");

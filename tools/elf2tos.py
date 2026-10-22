@@ -5,7 +5,9 @@
 into an Atari TOS executable (.PRG / .APP) with a GEMDOS fixup table.
 
 Only absolute 32-bit relocations (R_68K_32) need fixups; PC-relative
-ones are position independent already.
+ones are position independent already. One against an undefined weak
+symbol gets none: the linker left 0 there, and it must stay 0 when TOS
+loads the program, so that `if (fn)` still finds the function missing.
 """
 import os
 import struct
@@ -64,9 +66,14 @@ def main():
         target = secs[s["info"]]
         if target["name"] not in (".text", ".data"):
             continue
+        symtab = secs[s["link"]]
         for i in range(s["size"] // 12):
             r_off, r_info, _ = struct.unpack_from(">IIi", data, s["off"] + i * 12)
             if r_info & 0xFF != R_68K_32:
+                continue
+            # Elf32_Sym: name, value, size, info, other, shndx
+            shndx = struct.unpack_from(">H", data, symtab["off"] + (r_info >> 8) * 16 + 14)[0]
+            if r_info >> 8 and shndx == 0:      # SHN_UNDEF: a weak symbol nothing defines
                 continue
             # in a linked (ET_EXEC) file r_offset is already the address
             addr = r_off
