@@ -7,7 +7,7 @@
 #   make help       binary/CLAUDEST.HYP and .REF (needs hcp:
 #                   common/tools/build-hcp.sh builds it; HCP=/path/to/hcp)
 #   make test       the bridge's tests and the right-to-left layout's
-#   make icons      the desktop icon again: icons/ (tools/icon)
+#   make icons      the icon again, from common/icons/CLAUDEST.txt: icons/, st/icon*.h, docs/icon*.png
 #   make dist       a release's files in dist/: each file, and CLAUDEST-x.y.zip
 #
 # binary/ is what make builds, never committed: releases carry the
@@ -30,7 +30,8 @@ test:
 	$(MAKE) -C st test
 
 icons:
-	python3 tools/icon/make_rsc.py
+	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --icn icons/CLAUDEST.ICN \
+	    --mask icons/CLAUDSMK.ICN --headers st --docs docs
 
 # a release's files: each one in dist/, and all of them in
 # dist/CLAUDEST-x.y.zip (the icons in icons/), for the release workflow.

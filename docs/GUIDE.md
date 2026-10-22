@@ -535,12 +535,15 @@ colour icon on screens with 16 colours or more.
 
 ![The About box in colour, on a Falcon](about-colour.png)
 
-The icon is original 32×32 pixel art: an SM124-style monitor with a
-spark and a GEM prompt. The release has it for the desktop (in the zip, in `icons/`):
+The icon is 32×32 pixel art, the family's way (each app its own object):
+a terminal window with Claude's orange spark and a green prompt, drawn
+in 256 colours, in TOS's 16 and in black and white. Picked on the
+desktop, the colour one turns a step lighter with a yellow glow round
+it. The release has it for the desktop (in the zip, in `icons/`):
 
 | File | What it is |
 |------|-----------|
-| `CLAUDEST.RSC` | a resource file with a black-and-white and a 16-colour icon |
+| `CLAUDEST.RSC` | a resource file with a black-and-white icon (TOS 1 and 2) and a colour one in 16 and 256 colours (TOS 4) |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white image and its mask |
 
 Copy the icon from `CLAUDEST.RSC` into `DESKICON.RSC` (or `DESKCICN.RSC`
@@ -655,7 +658,8 @@ tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
            desktop icon), reel/ (the demo video)
 tests/     hatari/: disk_budget.sh, font_gdos.py and long_field.sh
            (README, Tests)
-icons/     the desktop icon files (from tools/icon)
+icons/     the desktop icon files (make icons, from
+           common/icons/CLAUDEST.txt)
 docs/      this guide, its screenshots, the demo recording and the help's
            front page (front.json, help/WINDOW.IMG)
 binary/    what make builds for the Atari (not committed: the releases

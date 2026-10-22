@@ -1,6 +1,6 @@
 # ClaudeST
 
-<img src="docs/icon16.png" width="96" align="right" alt="ClaudeST icon: an Atari SM124-style monitor showing a spark and a prompt">
+<img src="docs/icon.png" width="96" align="right" alt="ClaudeST icon: a terminal window with Claude's orange spark and a green prompt">
 
 A native GEM client for [claude.ai](https://claude.ai) on the Atari ST, STE, Mega ST/STE, TT and
 Falcon, through a Raspberry Pi bridge.
@@ -88,7 +88,7 @@ own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folde
 |---|---|
 | `CLAUDEST.PRG` | the program |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
-| `CLAUDEST.RSC` | the desktop icon, black-and-white and 16-colour |
+| `CLAUDEST.RSC` | the desktop icon: black-and-white, and in 16 and 256 colours |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 
 1. Load **STinG** and check that the network works, for example by pinging the Pi.
@@ -264,7 +264,7 @@ tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_versi
            docshots.py (the screenshots), icon/ (the desktop icon), reel/ (the demo video)
 tests/     hatari/: disk_budget.sh (the disk-access check), font_gdos.py (a GDOS font) and
            long_field.sh (a name longer than its box)
-icons/     the desktop icon files (from tools/icon)
+icons/     the desktop icon files (make icons, from common/icons/CLAUDEST.txt)
 docs/      the user guide (GUIDE.md), its screenshots, the demo recording and the help's front
            page (front.json, help/WINDOW.IMG: help/Makefile adds it with common/tools/helpfront.py)
 ```
