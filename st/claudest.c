@@ -4346,6 +4346,8 @@ static void settings_dialog(void)
 				res = 0;
 			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
 				focus ^= 1;
+			else if (sc == 0x47)		/* Clr/Home clears */
+				len[focus] = cur[focus] = start[focus] = 0;
 			else if (clip_key(e.kreturn))
 				field_clip(clip_key(e.kreturn), f[focus], &len[focus], &cur[focus],
 					   (focus ? 5 : 15));
