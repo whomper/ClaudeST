@@ -1,8 +1,8 @@
 # ClaudeST user guide
 
 This guide covers installing, then each part of ClaudeST, then
-troubleshooting, settings and building. The screenshots use the
-bridge's demo backend, so they show sample chats.
+troubleshooting, settings and building. The screenshots show sample
+chats from the bridge's demo backend (`tools/docshots.py` takes them).
 
 - [Installing](#installing)
 - [The window](#the-window)
@@ -39,6 +39,17 @@ sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
 Put the Atari's address in place of `192.168.1.20`. The installer asks
 for the session key and runs the bridge as a service that starts at
 every boot.
+
+Or the short way, every AERA gateway on the Pi in one line, ClaudeST's
+bridge among them (it also sets up the gateways of ECal and EContact,
+EFTP and EWeb, which do nothing until those apps use them):
+
+```sh
+sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && ~/AERA-Gateway/update-pi.sh --allow 192.168.1.20
+```
+
+`update-pi.sh` makes `aera-gateway` a command, so from then on
+`sudo aera-gateway` works in any folder.
 
 - **To update** the Pi, when a release's notes say the bridge changed:
   `cd ~/AERA-Gateway && ./update-pi.sh`. It keeps every setting.
@@ -144,7 +155,9 @@ and moves the chat into it.
 ![Move to project, with New project at the top](move-to-project.png)
 
 **Rename…** opens a dialog with the current name: edit it and press
-`Return`, or `Esc` to cancel. **Delete…** always asks first. In menus,
+`Return`, or `Esc` to cancel. A name can be longer than the box, up to
+71 characters: the text scrolls with the cursor, and `Shift+←` and
+`Shift+→` go to its start and end. **Delete…** always asks first. In menus,
 the arrow keys and `Return` work too, and `Esc` closes them.
 
 ## Model and effort
@@ -194,6 +207,9 @@ about every 20 seconds and its dot follows.
   run of tool calls is one grey line: the step's own description
   ("Waiting for the Release workflow"), or what was done ("Ran 2
   commands, used 2 tools", "Read claudest.c"). Tool output is left out.
+  A long session shows its last 40 messages. One too long for the bridge
+  to read in about 25 seconds shows what it read, with a note that later
+  messages are not shown; claude.ai has them all.
 - **Replying:** what you type goes to the open session, and Claude
   Code's replies appear as it works. If it's still working after 15
   minutes, ClaudeST stops waiting; open the session again later to see
@@ -239,7 +255,7 @@ Press `F8`, click the status line, or choose **Options ▸ Account…**.
   current 5-hour session, this week's usage, and any included cloud
   session credit, each with when it resets or expires, in the Pi's time
   zone.
-- **Account:** your name, email, organization and the date you joined.
+- **Account:** your name, email, organisation and the date you joined.
 
 With the API backend, the page shows the tokens used since the bridge
 started instead.
@@ -289,7 +305,8 @@ clipboard, which other programs share:
 - **With the reply line empty,** `Ctrl+C` copies Claude's last answer, a
   line for each paragraph, ready to paste into EMail or a text editor.
   **Edit > Copy Claude's answer** does the same.
-- **In the rename and new project boxes,** the same keys work on the name.
+- **In the rename and new project boxes, and the Settings fields,** the
+  same keys work on the whole text, even where it is longer than the box.
 
 ## Hebrew
 
@@ -393,7 +410,8 @@ sets the gateway address, and `/serial` switches to the serial port.
 **Network** (through STinG) with the gateway's address and port, or
 **Serial** with the speed, and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
-moves between the two fields; Return is OK.
+moves between the two fields, `Clr/Home` clears the one with the
+cursor, and Return is OK.
 
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
 (strictly, in the folder that is current when ClaudeST starts, which the
@@ -609,6 +627,15 @@ chats and answer are scripted demo content. `tools/icon/add_to_emuicon.py` adds 
 ST icon to EmuTOS's `EMUICON.RSC`, which also works on a real Atari
 running EmuTOS.
 
+### Retaking the screenshots
+
+`tools/docshots.py` (after `make`) boots the family's ST in high and
+medium resolution with the demo backend, and the Falcon in 16 colours
+with the showcase account, and takes this guide's and the README's
+pictures into `docs/`, and the help front page's into
+`docs/help/WINDOW.IMG`. `--only about,code` takes just those. Look at
+them before committing: a slow machine can leave one half drawn.
+
 ### Source layout
 
 ```
@@ -624,8 +651,10 @@ common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            src/bidi.c (right-to-left), tools/ (elf2tos.py, machines.py,
            fakesting/, helpfront.py)
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
-           check_version.sh, icon/ (the desktop icon), reel/ (the demo video)
-tests/     hatari/: disk_budget.sh and font_gdos.py (README, Tests)
+           check_version.sh, docshots.py (the screenshots), icon/ (the
+           desktop icon), reel/ (the demo video)
+tests/     hatari/: disk_budget.sh, font_gdos.py and long_field.sh
+           (README, Tests)
 icons/     the desktop icon files (from tools/icon)
 docs/      this guide, its screenshots, the demo recording and the help's
            front page (front.json, help/WINDOW.IMG)

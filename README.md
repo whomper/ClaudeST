@@ -68,6 +68,17 @@ starts at every boot and accepts connections only from the Atari's address. Use 
 several Ataris, or `--atari any` to accept any address on your network. If the `ufw` firewall is on,
 the installer opens port 2323 for them.
 
+Or the short way, which sets up every AERA gateway on the Pi in one line, ClaudeST's bridge among
+them (over the network, for the Atari's address):
+
+```sh
+sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && ~/AERA-Gateway/update-pi.sh --allow 192.168.1.20
+```
+
+It also installs the gateways of ECal and EContact, EFTP and EWeb, which do nothing until those apps
+use them; for the bridge alone, use the steps above. `update-pi.sh` makes `aera-gateway` a command, so
+from then on `sudo aera-gateway` works in any folder.
+
 ### 3. Set up the Atari
 
 The [latest release](https://github.com/whomper/ClaudeST/releases/latest) has these files, each on its
@@ -125,7 +136,7 @@ instead of in your claude.ai account. `--backend demo` gives sample chats withou
 the setup.
 
 **Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or newer, EmuTOS or MiNT; a 640×200 or
-larger screen; about 250 KB of free RAM; STinG with a working network, or a null-modem serial cable; a
+larger screen; about 370 KB of free RAM (ClaudeST makes do with 260 KB, keeping less of a long chat); STinG with a working network, or a null-modem serial cable; a
 Raspberry Pi, or any Linux computer, on the same network; a claude.ai account, or an Anthropic API key.
 
 **Under TOS, put Atari's `FOLDR100.PRG` first in `AUTO`**, renamed for more room (`FOLDR400.PRG`).
@@ -235,7 +246,7 @@ builds, tags the commit `vX.Y` and publishes each file and the zip on the Releas
 page. Pushing a tag `vX.Y` made with `git tag -a` does the same, with the tag's message as the notes.
 
 The guide's [Building](docs/GUIDE.md#building) section has more: the shared code, other toolchains,
-running ClaudeST in Hatari and recording the demo video.
+running ClaudeST in Hatari, recording the demo video and retaking the screenshots.
 
 ## Source
 
@@ -250,8 +261,9 @@ gateway/   the AERA gateways for the Pi and aera-gateway, their installer, which
 common/    the AERA programs' shared code, a git subtree of AERA-Atari: start-up, C library,
            TOS, AES/VDI, STinG, the right-to-left layout, elf2tos.py
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py, check_version.sh,
-           icon/ (the desktop icon), reel/ (the demo video)
-tests/     hatari/: disk_budget.sh (the disk-access check) and font_gdos.py (a GDOS font)
+           docshots.py (the screenshots), icon/ (the desktop icon), reel/ (the demo video)
+tests/     hatari/: disk_budget.sh (the disk-access check), font_gdos.py (a GDOS font) and
+           long_field.sh (a name longer than its box)
 icons/     the desktop icon files (from tools/icon)
 docs/      the user guide (GUIDE.md), its screenshots, the demo recording and the help's front
            page (front.json, help/WINDOW.IMG: help/Makefile adds it with common/tools/helpfront.py)
@@ -297,6 +309,10 @@ few big reads or writes (`MACHINE=ST-1` or `TT` for the other machines).
 that the window redraws in it with no dialog left, that `CLAUDEST.INF` keeps it, and that a Hebrew
 chat draws the same after a restart. It needs GDOS fonts (NVDI: `AERA_WITH_NVDI=1` on the Falcons,
 see `common/tools/machines.py`) and skips without them; `--release v1.49` tests a release.
+
+`tests/hatari/long_field.sh` types a 62-character name into Rename, whose box shows 43, going to the
+start and the end of it with `Shift+←` and `Shift+→`, and checks that the bridge gets all of it (the
+guidelines, 5.4; `MACHINE=` as above).
 
 ## Licence
 
