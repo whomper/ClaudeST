@@ -114,6 +114,48 @@ void about_icon16(const unsigned char *px, short x, short y, short sx, short sy,
 	}
 }
 
+/* the 256-colour icon, a byte a pixel, as runs of VDI fills; map[] turns
+   its pens into the screen's */
+static void icon256_draw(const unsigned char *px, const unsigned char *map, short x, short y, short sx, short sy)
+{
+	short r, c, e;
+	for (r = 0; r < ICON_H; r++)
+		for (c = 0; c < ICON_W; c = e) {
+			unsigned char pen = px[r * ICON_W + c];
+			for (e = c + 1; e < ICON_W && px[r * ICON_W + e] == pen; e++)
+				;
+			if (pen)
+				rect_fill(x + c * sx, y + r * sy, x + e * sx - 1, y + r * sy + sy - 1, map[pen]);
+		}
+}
+
+/* for each colour of the icon, the pen that has it now: its own when the
+   palette is TOS's, else the nearest (an app's theme may have taken pens
+   16 and up: EMail's). Nothing is lent, so nothing else on the screen
+   changes colour while the box is open. */
+static void icon256_pens(const short (*rgb)[4], unsigned char *map)
+{
+	short i, p, have[3];
+	for (i = 0; rgb[i][0]; i++) {
+		long best = -1;
+		short pen = rgb[i][0];
+		vq_color(vdi_h, pen, have);
+		if (abs(have[0] - rgb[i][1]) + abs(have[1] - rgb[i][2]) + abs(have[2] - rgb[i][3]) > 24)
+			for (p = 0; p < 256; p++) {
+				long d;
+				vq_color(vdi_h, p, have);
+				d = (long)(have[0] - rgb[i][1]) * (have[0] - rgb[i][1]) +
+				    (long)(have[1] - rgb[i][2]) * (have[1] - rgb[i][2]) +
+				    (long)(have[2] - rgb[i][3]) * (have[2] - rgb[i][3]);
+				if (best < 0 || d < best) {
+					best = d;
+					pen = p;
+				}
+			}
+		map[rgb[i][0]] = (unsigned char)pen;
+	}
+}
+
 const char *about_ram(void)
 {
 	/* TT/Fast RAM starts at 16 MB: where TOS loaded the program and
@@ -182,12 +224,15 @@ void about_show(const ABOUT *a)
 	short sx = 2, sy = gl_hchar >= 16 ? 2 : 1;
 	short ih, lh, y, i, nst = 0, widest = 0, nfine, fcw, fch, fstep;
 	short saved_rgb[8][3], colour;
+	static unsigned char map256[256];	/* the icon's pens to the screen's */
 	short bw, bh, by;
 
 	font_sys_push();
 	ih = ICON_H * sy;
 	lh = ch + (ch >= 16 ? 2 : 1);
 	colour = planes >= 4 && a->icon16 && a->icon16_rgb;
+	if (planes >= 8 && a->icon256 && a->icon256_rgb)
+		colour = 2;
 	bw = 10 * cw;
 	bh = ch + 6;
 	for (i = 0; i < 3 && a->status[i]; i++) {
@@ -231,7 +276,10 @@ void about_show(const ABOUT *a)
 	box(dx, dy, dw, dh);
 
 	y = dy + lh;
-	if (colour) {
+	if (colour == 2) {
+		icon256_pens(a->icon256_rgb, map256);
+		icon256_draw(a->icon256, map256, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
+	} else if (colour) {
 		for (i = 0; i < 8; i++) {
 			vq_color(vdi_h, 8 + i, saved_rgb[i]);
 			vs_color(vdi_h, 8 + i, a->icon16_rgb[i]);
@@ -277,7 +325,7 @@ void about_show(const ABOUT *a)
 	}
 	graf_mouse(M_ON, 0);
 	wait_close();
-	if (colour)
+	if (colour == 1)
 		for (i = 0; i < 8; i++)
 			vs_color(vdi_h, 8 + i, saved_rgb[i]);
 	wind_update(2);

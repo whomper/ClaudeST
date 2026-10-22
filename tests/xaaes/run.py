@@ -47,7 +47,9 @@ import argparse, os, shutil, signal, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 import fatimg  # noqa: E402
+import machines  # noqa: E402
 
 BASE = os.path.join(HERE, "build", "base")
 
@@ -107,14 +109,7 @@ def run(a):
     fatimg.build(hd, img, a.size)
 
     env = dict(os.environ, DISPLAY=a.display, SDL_AUDIODRIVER="dummy")
-    xvfb = None
-    if subprocess.run(["xdpyinfo"], env=env, capture_output=True).returncode:
-        xvfb = subprocess.Popen(["Xvfb", a.display, "-screen", "0", "1024x768x24"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(50):
-            time.sleep(0.1)
-            if not subprocess.run(["xdpyinfo"], env=env, capture_output=True).returncode:
-                break
+    xvfb = machines.xvfb(a.display)    # works without xdpyinfo too (EUpdate found it)
     fifo = os.path.join(work, "cmd.fifo")
     logp = os.path.join(work, "hatari.log")
     log = open(logp, "w")
