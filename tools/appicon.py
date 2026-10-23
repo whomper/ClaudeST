@@ -4,7 +4,7 @@
 """appicon.py - an AERA app's icon, from its drawing in common/icons/NAME.txt
 (the guidelines, 5.6; Erez, 22 Oct 2026):
 
-    python3 common/tools/appicon.py NAME [--rsc icons/NAME.RSC] [--icn icons/NAME.ICN]
+    python3 common/tools/appicon.py NAME [--rsc icons/NAME.RSC] [--rscnv icons/NAMENV.RSC] [--icn icons/NAME.ICN]
             [--mask icons/NAMEMK.ICN] [--headers DIR] [--docs DIR] [--label TEXT]
     python3 common/tools/appicon.py --sheet FILE.png      (all of them, for review)
 
@@ -25,6 +25,14 @@ It writes, each when asked:
              screen's standard palette. Copy it into DESKCICN.RSC with a
              resource editor (Interface, ORCS, RSM...), or use it as it is
              in Thing or Teradesk.
+  --rscnv    the same for NVDI's own 256 colours (Erez, 23 Oct 2026): the
+             desktop draws a pixel as a hardware register, and NVDI's 256
+             colours share only 4 registers with TOS's, so --rsc's
+             256-colour image comes out in other colours there. This one
+             has each colour on NVDI's nearest register
+             (brand/tools/nvdi256.txt). --rsc is for TOS, EmuTOS, and NVDI
+             with TOS's palette loaded (COLORVDI.CPX); --rscnv for NVDI
+             with its own.
   --icn      the monochrome image, ICN text (resource editors read it);
   --mask     its mask, ICN text;
   --headers  icon.h (icon_bits, one plane), icon16.h (icon16_px in VDI
@@ -72,6 +80,10 @@ PAL256 = [hx(h) for h in open(os.path.join(HERE, "..", "..", "brand", "tools", "
 # written here so that the apps' copies of common/ need no brand/)
 REG256 = dict(K=29, W=16, w=17, l=19, g=21, m=23, d=26, R=120, r=187, q=229, T=119, O=116, o=184, p=228,
               Y=110, A=112, B=181, b=226, U=69, u=149, n=205, N=240, S=73, s=152, E=88, e=163, f=214)
+# the same letters on NVDI 5.03's own 256 colours, each its nearest register
+# (brand/tools/nvdi256.txt, read from the hardware under NVDI, 23 Oct 2026)
+REGNV = dict(K=15, W=0, w=250, l=187, g=253, m=8, d=254, R=201, r=232, q=9, T=201, O=207, o=165, p=93,
+             Y=219, A=213, B=171, b=93, U=32, u=31, n=23, N=22, S=44, s=37, E=46, e=40, f=28)
 
 
 def load(name):
@@ -135,7 +147,7 @@ def planes(rows, reg, n):
     return b"".join(plane([[(p >> k) & 1 for p in r] for r in pix]) for k in range(n))
 
 
-def write_rsc(path, label, d):
+def write_rsc(path, label, d, reg256=None):
     """one tree: a box with the monochrome G_ICON (TOS 1 and 2 know no
     other) and the G_CICON side by side"""
     mono = [[1 if c == "X" else 0 for c in r] for r in d[2]]
@@ -170,8 +182,8 @@ def write_rsc(path, label, d):
     ciconblk = (iconblk(0, 0, 0) + struct.pack(">l", 2) + plane(mono) + plane(mmask) + text +
                 struct.pack(">hlllll", 4, 1, 1, 1, 1, 1) + planes(d[16], reg16, 4) + plane(mask(d[16])) +
                 planes(s16, reg16, 4) + plane(mask(s16)) +
-                struct.pack(">hlllll", 8, 1, 1, 1, 1, 0) + planes(d[256], REG256, 8) + plane(mask(d[256])) +
-                planes(s256, REG256, 8) + plane(mask(s256)))
+                struct.pack(">hlllll", 8, 1, 1, 1, 1, 0) + planes(d[256], reg256 or REG256, 8) + plane(mask(d[256])) +
+                planes(s256, reg256 or REG256, 8) + plane(mask(s256)))
     total = rssize + 12 + 8 + len(ciconblk)
     hdr = struct.pack(">18H", 0x0004, off_obj, rssize, off_ib, rssize, off_trindex, off_text, off_imdata,
                       off_trindex, off_trindex, nobs, 1, 0, 1, 0, 0, 0, rssize)
@@ -303,6 +315,7 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("name", nargs="?")
     ap.add_argument("--rsc")
+    ap.add_argument("--rscnv")
     ap.add_argument("--icn")
     ap.add_argument("--mask")
     ap.add_argument("--headers")
@@ -321,6 +334,8 @@ def main(argv):
     d = load(a.name)
     if a.rsc:
         write_rsc(a.rsc, a.label or a.name, d)
+    if a.rscnv:
+        write_rsc(a.rscnv, a.label or a.name, d, REGNV)
     if a.icn:
         write_icn(a.icn, [[1 if c == "X" else 0 for c in r] for r in d[2]])
     if a.mask:
