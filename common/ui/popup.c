@@ -13,7 +13,32 @@
 #include "gemui.h"
 #include "popup.h"
 
-static short px, py, pw, ih;
+#define MAXROWS 64
+
+static short px, py, pw, ih, sh;
+static short rowy[MAXROWS];		/* each row's top, from the box's */
+
+static short rowh(const char *const *lab, short i)
+{
+	return lab[i][0] == '-' ? sh : ih;
+}
+
+/* the rows' places and the box's height: rows of ch + 2 and separators
+   as tall as a row; when that runs past the desktop (ECal's accessory
+   menu, 24 rows, on an ST: Help and About off the screen), rows of ch
+   and separators of 4 pixels */
+static short layout(const char *const *lab, short n)
+{
+	short i, y;
+	for (ih = ch + 2, sh = ih;; ih = ch, sh = 4) {
+		for (i = 0, y = 2; i < n; i++) {
+			rowy[i] = y;
+			y += rowh(lab, i);
+		}
+		if (y + 2 + 2 <= desk_h || ih == ch)
+			return y + 2;
+	}
+}
 
 static void pframe(short x, short y, short w, short h)
 {
@@ -34,14 +59,14 @@ static void item(const char *const *lab, short i, short on)
 {
 	GRECT r;
 	const char *l = lab[i];
-	short y = py + 2 + i * ih, x0 = px + 2 * cw;
+	short y = py + rowy[i], x0 = px + 2 * cw;
 	r.x = px + 1;
 	r.y = y;
 	r.w = pw - 2;
-	r.h = ih;
+	r.h = rowh(lab, i);
 	if (l[0] == '-') {
 		fill(&r, 0);
-		hline(px + 3, px + pw - 4, y + ih / 2);
+		hline(px + 3, px + pw - 4, y + r.h / 2);
 		return;
 	}
 	fill(&r, on ? 1 : 0);
@@ -95,14 +120,15 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 	AEVENT e;
 
 	font_sys_push();
+	if (n > MAXROWS)
+		n = MAXROWS;
 	for (i = 0; i < n; i++) {
 		short l = (short)strlen(lab[i]) - (lab[i][0] == '~');
 		if (l > w)
 			w = l;
 	}
-	ih = ch + 2;
 	pw = (w + 4) * cw;
-	bh = n * ih + 4;
+	bh = layout(lab, n);
 	if (x + pw + 2 > desk_x + desk_w)
 		x = desk_x + desk_w - pw - 2;
 	if (x < desk_x)
@@ -155,8 +181,9 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 		ey = (e.which & MU_BUTTON) ? e.my : my;
 		if (ex - ox > 3 || ox - ex > 3 || ey - oy > 3 || oy - ey > 3)
 			moved = 1;
-		if (ex >= px && ex < px + pw && ey >= py + 2 && ey < py + 2 + n * ih) {
-			hit = (ey - py - 2) / ih;
+		if (ex >= px && ex < px + pw && ey >= py + 2 && ey < py + bh - 2) {
+			for (hit = n - 1; hit > 0 && ey < py + rowy[hit]; hit--)
+				;
 			if (!selectable(lab[hit]))
 				hit = -1;
 		}

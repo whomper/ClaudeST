@@ -30,7 +30,8 @@ It writes, each when asked:
   --headers  icon.h (icon_bits, one plane), icon16.h (icon16_px in VDI
              pens, 0 not drawn; icon16_rgb, pens 8-15 as TOS has them) and
              icon256.h (icon256_px, a byte a pixel in VDI pens 16-255;
-             icon256_rgb, those pens' colours) for the About box and the
+             icon256_rgb, those pens' colours; both 0 when NO_ICON256 is
+             defined, for an ST edition) for the About box and the
              iconified window (common/ui);
   --docs     icon.png (256 colours), icon16.png and icon2.png, each 8 times
              bigger, clear round it, for the README;
@@ -228,6 +229,9 @@ def write_headers(dirname, name, d):
         f.write(HEAD + "/* %s's icon, 32x32 in 256 colours (VDI pens, a byte a pixel; 0 isn't\n"
                 " * drawn), from common/icons/%s.txt by common/tools/appicon.py:\n"
                 " * don't edit. Used with 256 colours or more (the About box) */\n" % (name, name))
+        f.write("#ifdef NO_ICON256\t/* an ST edition: never 256 colours, 2 KB kept */\n"
+                "#define icon256_px ((const unsigned char *)0)\n"
+                "#define icon256_rgb ((const short (*)[4])0)\n#else\n")
         f.write("static const unsigned char icon256_px[32 * 32] = {\n")
         for r in d[256]:
             f.write("\t" + ", ".join("%d" % (REG256[c] if c != "." else 0) for c in r) + ",\n")
@@ -238,7 +242,7 @@ def write_headers(dirname, name, d):
                 "static const short icon256_rgb[%d][4] = {\n" % (len(used) + 1))
         for c in used:
             f.write("\t{ %d, %d, %d, %d },\n" % ((REG256[c],) + tuple(round(x * 1000 / 255) for x in hx(C256[c]))))
-        f.write("\t{ 0, 0, 0, 0 }\n};\n")
+        f.write("\t{ 0, 0, 0, 0 }\n};\n#endif\n")
 
 
 # ---- pictures ---------------------------------------------------------------

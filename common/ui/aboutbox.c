@@ -34,6 +34,21 @@ static void rect_fill(short x1, short y1, short x2, short y2, short color)
 	fill(&r, color);
 }
 
+/* clip to the screen, never off: a box clamped to the desk has its
+   shadow one row past the screen's foot, and with clipping off the VDI
+   writes it past the screen's end (in the Falcon's 640x200 true colour
+   the screen ends where ST RAM does: a bus error, two bombs; EWeb found
+   it) */
+static void clip_screen(void)
+{
+	GRECT s;
+	s.x = 0;
+	s.y = 0;
+	s.w = desk_x + desk_w;
+	s.h = desk_y + desk_h;
+	clip_on(&s);
+}
+
 static void box(short x, short y, short w, short h)
 {
 	rect_fill(x + 3, y + 3, x + w + 2, y + h + 2, 1);	/* shadow */
@@ -114,6 +129,7 @@ void about_icon16(const unsigned char *px, short x, short y, short sx, short sy,
 	}
 }
 
+#ifndef NO_ICON256
 /* the 256-colour icon, a byte a pixel, as runs of VDI fills; map[] turns
    its pens into the screen's */
 static void icon256_draw(const unsigned char *px, const unsigned char *map, short x, short y, short sx, short sy)
@@ -155,6 +171,7 @@ static void icon256_pens(const short (*rgb)[4], unsigned char *map)
 		map[rgb[i][0]] = (unsigned char)pen;
 	}
 }
+#endif
 
 const char *about_ram(void)
 {
@@ -222,17 +239,21 @@ void about_show(const ABOUT *a)
 {
 	char v[40];
 	short sx = 2, sy = gl_hchar >= 16 ? 2 : 1;
-	short ih, lh, y, i, nst = 0, widest = 0, nfine, fcw, fch, fstep;
+	short ih, lh, y, i, nst = 0, widest = 0, nfine, fcw, fch, fstep, g;
 	short saved_rgb[8][3], colour;
+#ifndef NO_ICON256
 	static unsigned char map256[256];	/* the icon's pens to the screen's */
+#endif
 	short bw, bh, by;
 
 	font_sys_push();
 	ih = ICON_H * sy;
 	lh = ch + (ch >= 16 ? 2 : 1);
 	colour = planes >= 4 && a->icon16 && a->icon16_rgb;
+#ifndef NO_ICON256
 	if (planes >= 8 && a->icon256 && a->icon256_rgb)
 		colour = 2;
+#endif
 	bw = 10 * cw;
 	bh = ch + 6;
 	for (i = 0; i < 3 && a->status[i]; i++) {
@@ -260,10 +281,17 @@ void about_show(const ABOUT *a)
 		dw = (widest + 2) * fcw;
 	if (dw > desk_w - 2 * cw)
 		dw = desk_w - 2 * cw;
-	dh = lh + ih + lh / 2 + lh + (lh + lh / 2) + (lh + lh / 2) + lh / 4 + lh + (lh + lh / 2) +
-	     (nst ? nst * lh + lh / 2 : 0) + lh / 2 + nfine * fstep + lh / 2 + bh + lh;
-	if (dh > desk_h - 4)
-		dh = desk_h - 4;
+	/* the gaps between the parts: half a line, less on a short screen
+	   (640x200: the fine print ran into OK), so that the box and its
+	   3-pixel shadow fit the desk */
+	for (g = lh / 2;; g = g > 1 ? g / 2 : 0) {
+		dh = lh + ih + g + lh + (lh + g) + (lh + g) + lh / 4 + lh + (lh + g) +
+		     (nst ? nst * lh + g : 0) + g + nfine * fstep + g + bh + lh;
+		if (dh <= desk_h - 6 || !g)
+			break;
+	}
+	if (dh > desk_h - 6)
+		dh = desk_h - 6;
 	dx = desk_x + (desk_w - dw) / 2;
 	dy = desk_y + (desk_h - dh) / 2;
 	by = dy + dh - bh - lh;
@@ -272,14 +300,17 @@ void about_show(const ABOUT *a)
 	wind_update(3);
 	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
 	graf_mouse(M_OFF, 0);
-	clip_off();
+	clip_screen();
 	box(dx, dy, dw, dh);
 
 	y = dy + lh;
+#ifndef NO_ICON256
 	if (colour == 2) {
 		icon256_pens(a->icon256_rgb, map256);
 		icon256_draw(a->icon256, map256, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
-	} else if (colour) {
+	} else
+#endif
+	if (colour) {
 		for (i = 0; i < 8; i++) {
 			vq_color(vdi_h, 8 + i, saved_rgb[i]);
 			vs_color(vdi_h, 8 + i, a->icon16_rgb[i]);
@@ -288,7 +319,7 @@ void about_show(const ABOUT *a)
 	} else if (a->icon) {
 		draw_icon(a->icon, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
 	}
-	y += ih + lh / 2;
+	y += ih + g;
 	center(y, a->name, TX_BOLD);
 	{
 		/* underlined, like EMail's and Claude ST's names */
@@ -298,22 +329,22 @@ void about_show(const ABOUT *a)
 	y += lh;
 	snprintf(v, sizeof(v), "Version %s", a->version);
 	center(y, v, 0);
-	y += lh + lh / 2;
+	y += lh + g;
 	center(y, a->tagline, 0);
-	y += lh + lh / 2;
+	y += lh + g;
 	line(dx + 4 * cw, y - lh / 4, dx + dw - 4 * cw, y - lh / 4);
 	y += lh / 4;
 	center(y, "Created by AERA | Erez Yaary", TX_BOLD);
 	y += lh;
 	center(y, "\xBD 2026 AERA | Erez Yaary", 0);
-	y += lh + lh / 2;
+	y += lh + g;
 	for (i = 0; i < nst; i++, y += lh)
 		center(y, a->status[i], 0);
 	if (nst)
-		y += lh / 2;
+		y += g;
 	button(dx + (dw - bw) / 2, by, bw, bh, "OK");
 	/* the fine print, last: the small size stays until font_sys_pop */
-	y += lh / 2;
+	y += g;
 	vst_height(vdi_h, ch >= 16 ? 6 : 4, &fcw, &fch);
 	vswr_mode(vdi_h, MD_TRANS);
 	vst_color(vdi_h, 1);
@@ -381,8 +412,8 @@ void text_box(const char *title, const char *text)
 	lh = ch + (ch >= 16 ? 1 : 0);
 	bw = 10 * cw;
 	bh = ch + 6;
-	if (n > (desk_h - 4 * lh - bh) / lh)
-		n = (desk_h - 4 * lh - bh) / lh;
+	if (n > (desk_h - 6 - 4 * lh - lh / 2 - bh) / lh)	/* the box and its shadow fit */
+		n = (desk_h - 6 - 4 * lh - lh / 2 - bh) / lh;
 	dw = (widest + 4) * cw;
 	if (dw < 30 * cw)
 		dw = 30 * cw;
@@ -394,7 +425,7 @@ void text_box(const char *title, const char *text)
 	wind_update(3);
 	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
 	graf_mouse(M_OFF, 0);
-	clip_off();
+	clip_screen();
 	box(dx, dy, dw, dh);
 	y = dy + lh;
 	center(y, title, TX_BOLD);
