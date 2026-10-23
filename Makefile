@@ -30,13 +30,13 @@ test:
 	$(MAKE) -C st test
 
 icons:
-	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --icn icons/CLAUDEST.ICN \
-	    --mask icons/CLAUDSMK.ICN --headers st --docs docs
+	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --rscnv icons/CLSTNV.RSC \
+	    --icn icons/CLAUDEST.ICN --mask icons/CLAUDSMK.ICN --headers st --docs docs
 
 # a release's files: each one in dist/, and all of them in
 # dist/CLAUDEST-x.y.zip (the icons in icons/), for the release workflow.
 DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
-ICONS   := icons/CLAUDEST.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
+ICONS   := icons/CLAUDEST.RSC icons/CLSTNV.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
 dist: all help
 	rm -rf dist
 	mkdir -p dist/zip/icons

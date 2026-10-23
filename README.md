@@ -88,7 +88,8 @@ own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folde
 |---|---|
 | `CLAUDEST.PRG` | the program |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
-| `CLAUDEST.RSC` | the desktop icon: black-and-white, and in 16 and 256 colours |
+| `CLAUDEST.RSC` | the desktop icon: black-and-white, and in 16 and 256 colours. Take it under TOS, EmuTOS, or NVDI with COLORVDI |
+| `CLSTNV.RSC` | the same for NVDI with its own palette, whose 256 colours differ from TOS's |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
 
 1. Load **STinG** and check that the network works, for example by pinging the Pi.

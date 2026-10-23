@@ -543,7 +543,8 @@ it. The release has it for the desktop (in the zip, in `icons/`):
 
 | File | What it is |
 |------|-----------|
-| `CLAUDEST.RSC` | a resource file with a black-and-white icon (TOS 1 and 2) and a colour one in 16 and 256 colours (TOS 4) |
+| `CLAUDEST.RSC` | a resource file with a black-and-white icon (TOS 1 and 2) and a colour one in 16 and 256 colours (TOS 4), for TOS, EmuTOS, or NVDI with COLORVDI |
+| `CLSTNV.RSC` | the same for NVDI with its own palette: its 256 colours differ from TOS's, so the colour icon is drawn on NVDI's |
 | `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white image and its mask |
 
 Copy the icon from `CLAUDEST.RSC` into `DESKICON.RSC` (or `DESKCICN.RSC`
