@@ -920,22 +920,53 @@ static short text_bidi(short x, short y, const char *s, short n, short fx, short
 	return x;
 }
 
+/* the pens of TOS's standard colours (red 2 to dark grey 9), as the
+ * sixteen system pens hold them now (guideline 5.2): another palette,
+ * NVDI's say, can have them elsewhere. Pens above 15 are never read:
+ * others' pictures set them, whatever the VDI's table says */
+static short pen[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
+static void pens_init(void)
+{
+	static const short tos[10][3] = {
+		{ 1000, 1000, 1000 }, { 0, 0, 0 }, { 1000, 0, 0 }, { 0, 1000, 0 },
+		{ 0, 0, 1000 }, { 0, 1000, 1000 }, { 1000, 1000, 0 }, { 1000, 0, 1000 },
+		{ 714, 714, 714 }, { 428, 428, 428 }
+	};
+	short n = ncolors < 16 ? ncolors : 16, k, p, have[3];
+
+	for (k = 2; k < 10 && k < n; k++) {
+		long best = -1;
+		for (p = 2; p < n; p++) {	/* not white or black, the background and text */
+			long d;
+			vq_color(vh, p, have);
+			d = (long)(have[0] - tos[k][0]) * (have[0] - tos[k][0]) +
+			    (long)(have[1] - tos[k][1]) * (have[1] - tos[k][1]) +
+			    (long)(have[2] - tos[k][2]) * (have[2] - tos[k][2]);
+			if (best < 0 || d < best || (d == best && p == k)) {
+				best = d;
+				pen[k] = p;
+			}
+		}
+	}
+}
+
 static short accent(void)
 {
-	return ncolors >= 4 ? 2 : 1;	/* red where we have colour, else black */
+	return ncolors >= 4 ? pen[2] : 1;	/* red where we have colour, else black */
 }
 
 /* code blocks in blue, as on claude.ai; four colours have no blue */
 static short code_colour(void)
 {
-	return ncolors >= 16 ? 4 : ncolors >= 4 ? 3 : 1;
+	return ncolors >= 16 ? pen[4] : ncolors >= 4 ? pen[3] : 1;
 }
 
 /* inline code: red, the standard colours' nearest to claude.ai's
    burgundy, or underlined in black and white */
 static short inl_colour(void)
 {
-	return ncolors >= 4 ? 2 : 1;
+	return ncolors >= 4 ? pen[2] : 1;
 }
 
 static short inl_fx(void)
@@ -1158,16 +1189,16 @@ static void draw_status(short full)
 	}
 	if (usage_pct >= 0) {
 		short ry = rry, rx = rrx;
-		short fc = usage_pct >= 90 ? accent() : colour ? 4 : 1;
+		short fc = usage_pct >= 90 ? accent() : colour ? pen[4] : 1;
 		ring(x + rx, status_y + row_h - 1, rx, ry, rx / 6 + 1, usage_pct,
-		     fc, colour ? 8 : 1, !colour, 1);
+		     fc, colour ? pen[8] : 1, !colour, 1);
 	}
 	room = (wx + sb_w - 4 - tx) / cw;
 	if (room > (short)sizeof(t) - 1)
 		room = sizeof(t) - 1;
 	if (ncolors >= 4)
 		ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
-		     online ? 3 : 2, 0, 0, 1);
+		     online ? pen[3] : pen[2], 0, 0, 1);
 	else
 		ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
 		     1, 0, 0, 1);
@@ -1286,11 +1317,11 @@ static void draw_sidebar(void)
 				short colour = ncolors >= 16;
 				if (it->state == 'W') {
 					if (dot_pulse)
-						ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? 9 : 1, 0, 0, 0);
+						ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? pen[9] : 1, 0, 0, 0);
 				} else if (it->state == 'A')
-					ring(dx, dy, 3, ry + 1, 3, 100, sel ? 0 : colour ? 6 : 1, 0, 0, 0);
+					ring(dx, dy, 3, ry + 1, 3, 100, sel ? 0 : colour ? pen[6] : 1, 0, 0, 0);
 				else
-					ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? 4 : accent(), 0, 0, 0);
+					ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? pen[4] : accent(), 0, 0, 0);
 			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
@@ -4889,6 +4920,7 @@ int main(void)
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
 	ncolors = work_out[13];
+	pens_init();
 	if (!screen_check("ClaudeST", scr_w)) {	/* not in ST low */
 		v_clsvwk(vh);
 		appl_exit();
