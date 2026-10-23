@@ -15,7 +15,8 @@ with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
 candidate's accessory (ECAL.ACC, say) or --prg's program (EMAIL.PRG) in place of the release's
 of that name, for the hub's run before the release; the report names it. --accs names the accessories (all three by default);
---prg APP starts that program's latest release (EMAIL.PRG) first, as Erez works: the accessories
+--prg APP starts that program's latest release (EMAIL.PRG; APP:FILE[:MORE...] for another
+edition and the files it needs, as EWeb:EWEBST.PRG:EWEB.FNT on an ST) first, as Erez works: the accessories
 are then opened from its own Desk menu, and at the end the program is quit (^Q) and must give
 the desktop back. The Atari boots to the desktop,
 each accessory is opened from the Desk menu in turn, the three windows
@@ -102,11 +103,16 @@ if font:
         f.write("FOLDER=C:\\\r\nFONT=Courier 10 Pitch\r\nPOINT=10\r\n")
 auto = []
 if prg:
-    pf = prg.upper() + ".PRG"
-    subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), prg, rel, pf], check=True,
+    # APP:FILE[:MORE...] names an edition and the files it needs beside it
+    # (EWeb:EWEBST.PRG:EWEB.FNT on an ST); else APP.PRG alone
+    parts = prg.split(":")
+    prg, pf, more = (parts[0], parts[1], parts[2:]) if len(parts) > 1 else (prg, prg.upper() + ".PRG", [])
+    subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), prg, rel, pf] + more, check=True,
                    stdout=subprocess.DEVNULL)
     os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
     shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
+    for f in more:
+        shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
     auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
 versions = ", ".join("%s %s" % (a, use[f] if f in use else open(os.path.join(rel, a.upper() + ".VERSION")).read().strip())
                      for a, f in want.items())
@@ -169,8 +175,14 @@ try:
             break
         prev = shutil.copy(cur, os.path.join(shots, "boot-prev.png"))
     desk = shot("0-desktop")
-    check(hatari.poll() is None and os.path.getsize(desk) > 0,
-          "%s's window came" % prg if prg else "the desktop came")
+    # a program that says in the log that it started: without that line
+    # TOS's "not enough memory" alert over the desktop passed for its
+    # window (EWeb found it on a 4 MB Falcon)
+    said = {"EWEB": "EWEB ready", "EMAIL": "EMail: v_opnvwk"}.get(prg.upper() if prg else "")
+    ran = not said or said in open(work + "/hatari.log", errors="replace").read()
+    check(hatari.poll() is None and os.path.getsize(desk) > 0 and ran,
+          ("%s's window came" % prg if ran else "%s started (no \"%s\" in the log: see 0-desktop.png, "
+           "TOS's memory alert?)" % (prg, said)) if prg else "the desktop came")
     if prg:
         # the program's own "can't open its screen" (guideline 2.1) is right
         # when the accessories hold the memory, but then it never ran: say so
@@ -186,7 +198,8 @@ try:
         xdo("key", "Escape")
         time.sleep(3)
         desk = shot("0b-%s-ready" % prg.lower())
-    click(18, 8)                                     # the Desk menu
+    click(30, 8)                                     # the Desk menu (the first title's middle:
+    time.sleep(1)                                    # EWeb's "EWeb" starts past x 18)
     menu = shot("1-desk-menu")
     check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
     click(300, 300)                                  # closed again
@@ -199,7 +212,7 @@ try:
             time.sleep(3)
         for i in range(len(want)):            # the Desk menu's order is the loading order
             before = shot("%d-%d-before" % (rnd, i))
-            click(18, 8)
+            click(30, 8)
             click(60, 64 + 16 * i)                   # its row, under About and the line
             time.sleep(8 if st else 5)
             after = shot("%d-%d-opened" % (rnd, i))

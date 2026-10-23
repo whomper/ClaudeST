@@ -1161,6 +1161,10 @@ static int on_key(short k, short kstate)
 {
 	short sc = (k >> 8) & 0xff, as = k & 0xff, shift = kstate & (K_LSHIFT | K_RSHIFT), i;
 	LIST *l = &lists[focus];
+	/* the shifted Up, Down and ClrHome give a character ('8', '2', '7'):
+	   a key typed while busy comes with kstate 0 (as field.c) */
+	if ((sc == 0x48 || sc == 0x50 || sc == 0x47) && as)
+		shift = 1;
 	if (dlg_esc(k))
 		return -1;
 	if (as == 0x0d || sc == 0x72 || sc == 0x1c)
