@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""All three AERA accessories at once (Erez, 19 Oct 2026): ECal, EContact
-and EHypView, their latest releases (getrelease.py), loaded together on a
-4 MB machine, as on Erez's own:
+"""All the AERA accessories at once (Erez, 19 Oct 2026): ECal, EContact
+and EHypView, and EMail's EMail check (EMAILCHK.ACC, from EMail's release,
+--accs ...,EMailCheck), their latest releases (getrelease.py), loaded
+together on a 4 MB machine, as on Erez's own:
 
     common/tests/family/acc_all.py WORK [MACHINE] [--nvdi [--font]] [--display :N] [--use FILE]...
                                    [--accs ECal,EContact] [--prg EMail]
@@ -97,11 +98,16 @@ def get(app, names):
 # on an ST the ST edition, while a release has one: from TLS.OVL on (the
 # guidelines, 7.4) the one ACC runs on every Atari
 want = {"ECal": ("ECALST.ACC", "ECAL.ACC"), "EContact": ("ECONTST.ACC", "ECONTACT.ACC"),
-        "EHypView": ("EHYPVIEW.ACC", "EHYPVIEW.ACC")}
+        "EHypView": ("EHYPVIEW.ACC", "EHYPVIEW.ACC"), "EMailCheck": ("EMAILCHK.ACC", "EMAILCHK.ACC")}
+# the release an accessory comes in, where it isn't its own app's name
+repo = {"EMailCheck": "EMail"}
+# accessories whose Desk entry shows an alert rather than a window: Esc
+# closes it again, each round (EMail check's [Check now|About|OK])
+alerts = {"EMailCheck"}
 want = {a: (f[0] if st and f[1] not in use else f[1], f[1]) for a, f in want.items() if a in accs}
 for app, (f, one) in list(want.items()):
-    if not get(app, [f]):
-        if f == one or not get(app, [one]):
+    if not get(repo.get(app, app), [f]):
+        if f == one or not get(repo.get(app, app), [one]):
             sys.exit("acc_all: %s's release has no %s" % (app, f))
         f = one
     want[app] = f
@@ -112,6 +118,12 @@ for name in ("ECAL", "ECONTACT"):
     os.makedirs(os.path.join(hd, name))
     with open(os.path.join(hd, name + ".INF"), "w", newline="") as f:
         f.write("[OPTIONS]\r\nFOLDER=C:\\%s\r\n" % name)
+if "EMailCheck" in want:
+    # EMail check told where EMail is (C:\EMAIL, --prg EMail's folder), so
+    # that its first-time question doesn't hold the Desk menu
+    os.makedirs(os.path.join(hd, "EMAIL"), exist_ok=True)
+    with open(os.path.join(hd, "EMAILCHK.INF"), "w", newline="") as f:
+        f.write("; EMail's folder, where EMAIL.PRG and EMAIL.INF are\r\nFOLDER=C:\\EMAIL\r\n\r\n")
 if font:
     with open(os.path.join(hd, "EHYPVIEW.INF"), "w", newline="") as f:
         f.write("FOLDER=C:\\\r\nFONT=Courier 10 Pitch\r\nPOINT=10\r\n")
@@ -128,7 +140,8 @@ if prg:
     for f in more:
         shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
     auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
-versions = ", ".join("%s %s" % (a, use[f] if f in use else open(os.path.join(rel, a.upper() + ".VERSION")).read().strip())
+versions = ", ".join("%s %s" % (a, use[f] if f in use else
+                                 open(os.path.join(rel, repo.get(a, a).upper() + ".VERSION")).read().strip())
                      for a, f in want.items())
 if prg:
     versions += ", %s %s in front" % (prg, use[pf] if pf in use else
@@ -232,6 +245,23 @@ try:
     time.sleep(1)                                    # EWeb's "EWeb" starts past x 18)
     menu = shot("1-desk-menu")
     check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
+    alert_rows = set()
+    if alerts & set(want):
+        # which rows open an alert: the TOS orders the Desk menu as it
+        # likes (TOS 1.04 the last loaded first), so EMail check's row is
+        # told by its name, the longest ("  EMail check")
+        from PIL import Image
+        im = Image.open(menu).convert("L")
+
+        def extent(i):
+            # (its row's text, inside the menu's box: the longest name ends
+            # near x 120, the box's edge is past 160)
+            y0 = 64 + 16 * i
+            xs = [x for x in range(30, 160) for y in range(y0 - 6, y0 + 3) if im.getpixel((x, y)) < 100]
+            return max(xs) if xs else 0
+        ext = [extent(i) for i in range(len(want))]
+        alert_rows = {ext.index(max(ext))}
+        print("note  EMail check's row in the Desk menu: %d (text to x %s)" % (min(alert_rows) + 1, ext), flush=True)
     click(300, 300)                                  # closed again
     time.sleep(1)
     for rnd in (1, 2):
@@ -247,7 +277,11 @@ try:
             time.sleep(8 if st else 5)
             after = shot("%d-%d-opened" % (rnd, i))
             n = differs(before, after)
-            if rnd == 1:            # a first start's welcome (EContact's) waits for OK,
+            if i in alert_rows:
+                xdo("key", "Escape")
+                time.sleep(2)
+                shot("%d-%d-closed" % (rnd, i))
+            elif rnd == 1:          # a first start's welcome (EContact's) waits for OK,
                 xdo("key", "Return")  # then offers to add an account: Esc declines
                 time.sleep(2)
                 xdo("key", "Escape")
@@ -257,7 +291,7 @@ try:
     if prg:
         # the accessories' windows closed (^W, the top one each time), then
         # the program quit: the desktop must come back
-        for i in range(len(want)):
+        for i in range(len(want) - len(alerts & set(want))):
             xdo("key", "ctrl+w")
             time.sleep(3)
         before = shot("8-accessories-closed")

@@ -495,27 +495,42 @@ static void test_long_fields(void)
 }
 
 /* dlg_3d: the AES's 3D flags (0x0200 indicator, 0x0400 background, 0x0600
-   activator) on each kind of object, and none when the setting says flat */
+   activator) on each kind of object, none in a list (a white framed box)
+   and none when the setting says flat */
 static void test_3d(void)
 {
-	enum { T_BOX, T_LABEL, T_FIELD, T_OK, T_RADIO, T_TOGGLE, T_ARROW, T_CHAR, N3 };
-	static const unsigned short type[N3] = { G_BOX, G_STRING, G_FTEXT, G_BUTTON, G_BUTTON, G_BUTTON, G_BOXCHAR, G_BOXCHAR };
+	enum { T_BOX, T_LABEL, T_FIELD, T_OK, T_RADIO, T_TOGGLE, T_ARROW, T_CHAR, T_LINE, T_LIST, T_ROW, T_UP, N3 };
+	static const unsigned short type[N3] = { G_BOX, G_STRING, G_FTEXT, G_BUTTON, G_BUTTON, G_BUTTON, G_BOXCHAR,
+		G_BOXCHAR, G_BOX, G_BOX, G_STRING, G_BOXCHAR };
 	static const unsigned short flags[N3] = { 0, 0, EDITABLE, SELECTABLE | DEFAULT | EXIT, SELECTABLE | RBUTTON,
-		SELECTABLE, TOUCHEXIT, 0 };
-	static const unsigned short want[N3] = { 0x0400, 0x0400, 0, 0x0600, 0x0200, 0x0200, 0x0600, 0x0400 };
+		SELECTABLE, TOUCHEXIT, 0, 0, 0, TOUCHEXIT, TOUCHEXIT };
+	/* the root, a separator line (black), a list (white, framed) */
+	static const long spec[N3] = { 0x00021100L, 0, 0, 0, 0, 0, 0, 0, 0x00001171L, 0x00FF1100L, 0, 0 };
+	static const unsigned short want[N3] = { 0x0400, 0x0400, 0, 0x0600, 0x0200, 0x0200, 0x0600, 0x0400, 0x0400, 0,
+		0, 0x0600 };
 	OBJECT t[N3];
 	int i, ok = 1;
 	memset(t, 0, sizeof t);
 	for (i = 0; i < N3; i++) {
 		t[i].ob_type = type[i];
 		t[i].ob_flags = flags[i] | (i == N3 - 1 ? LASTOB : 0);
+		t[i].ob_spec = spec[i];
+		t[i].ob_head = t[i].ob_tail = -1;
+		/* the root's children: all but the list's row, in the list */
+		t[i].ob_next = i == 0 ? -1 : i == T_LIST - 1 ? T_LIST : i == T_LIST ? T_UP : i == N3 - 1 ? 0 : i + 1;
 	}
+	t[T_ROW].ob_next = T_LIST;
+	t[T_LIST].ob_head = t[T_LIST].ob_tail = T_ROW;
+	t[0].ob_head = 1;
+	t[0].ob_tail = N3 - 1;
 	check(dlg_3d_ok(), "dlg_3d_ok: an AES 4.1 that has 3D objects");
 	dlg_3d(t);
 	for (i = 0; i < N3; i++)
 		if ((t[i].ob_flags & 0x0600) != want[i] || (t[i].ob_flags & ~0x0600) != (flags[i] | (i == N3 - 1 ? LASTOB : 0)))
 			ok = 0;
 	check(ok, "dlg_3d: box and labels background, the field none, OK and a touch-exit box activators, radio and toggle indicators");
+	check(!(t[T_LIST].ob_flags & 0x0600) && !(t[T_ROW].ob_flags & 0x0600),
+	      "... a list (a white framed box) and its rows none: they stay white");
 	dlg_3d(t);
 	for (i = 0; i < N3; i++)
 		if ((t[i].ob_flags & 0x0600) != want[i])

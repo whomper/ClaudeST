@@ -240,6 +240,37 @@ int dlg_3d_ok(void)
 
 int dlg_3d_on = 1;
 
+/* the object that holds i (objc_parent's way: along its brothers to the
+   one whose last child it is) */
+static short parent_of(OBJECT *tree, short i)
+{
+	short p;
+	for (;;) {
+		p = tree[i].ob_next;
+		if (p < 0 || tree[p].ob_tail == i)
+			return p;
+		i = p;
+	}
+}
+
+/* a white box with a frame, not the dialog's own: a list or a text area
+   (EFTP's Sites, EMail's signature), which stays white in 3D, as fields
+   and the Font dialog's lists do, and so does what is in it */
+static int is_well(OBJECT *tree, short i)
+{
+	long spec = tree[i].ob_spec;
+	return i > 0 && (tree[i].ob_type & 0xff) == G_BOX && (signed char)(spec >> 16) != 0 &&
+	       ((spec & 0x70) == 0 || (spec & 0x0f) == 0);
+}
+
+static int in_well(OBJECT *tree, short i)
+{
+	for (i = parent_of(tree, i); i > 0; i = parent_of(tree, i))
+		if (is_well(tree, i))
+			return 1;
+	return 0;
+}
+
 void dlg_3d(OBJECT *tree)
 {
 	short i, t, f;
@@ -252,7 +283,7 @@ void dlg_3d(OBJECT *tree)
 			t = -1;
 		if (t == G_BUTTON || (t == G_BOXCHAR && (f & (EXIT | TOUCHEXIT))))
 			f |= (f & (EXIT | TOUCHEXIT)) && !(f & RBUTTON) ? FL3DACT : FL3DIND;
-		else if (t >= 0 && t != G_FTEXT && t != G_FBOXTEXT)
+		else if (t >= 0 && t != G_FTEXT && t != G_FBOXTEXT && (i == 0 || (!is_well(tree, i) && !in_well(tree, i))))
 			f |= FL3DBAK;		/* the box, its text, its pictures */
 		tree[i].ob_flags = f;
 		if (tree[i].ob_flags & LASTOB)
