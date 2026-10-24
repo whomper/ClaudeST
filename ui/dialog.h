@@ -51,7 +51,7 @@ int dlg_esc(short key);
    background, exit buttons as activators, radio buttons and toggles as
    indicators, editable fields left white. Call it once a tree is built,
    before it is drawn; dlg_modal calls it itself. Nothing changes on an
-   AES without 3D (TOS 1 to 3, EmuTOS). */
+   AES without 3D (TOS 1 to 3; EmuTOS in fewer than 16 colours). */
 void dlg_3d(OBJECT *tree);
 /* 1 where the AES draws 3D objects: the app's Settings tick is greyed
    where it doesn't */
