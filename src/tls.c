@@ -24,6 +24,7 @@
 #include "plat.h"
 #include "util.h"
 #include "tls.h"
+#include "tlsovl.h"
 
 /* from BearSSL's inner.h */
 #define BR_MAX_RSA_SIZE 4096
@@ -42,6 +43,16 @@ void (*tls_note)(const char *msg);
 void (*tls_log)(const char *msg);
 int (*tls_rsa_accel)(unsigned char *x, size_t xlen, const unsigned char *n, size_t nlen,
 		     const unsigned char *e, size_t elen);
+
+#ifndef TLSOVL_BUILD
+/* tlsovl.h's calls in a program with the TLS built in (EWeb, the tests
+   on the build machine): nothing to load */
+char tls_ovl_path[200];
+int tls_ovl_load(char *err, int errlen) { (void)err; (void)errlen; return 1; }
+int tls_ovl_loaded(void) { return 1; }
+const char *tls_ovl_version(void) { return ""; }
+void tls_ovl_unload(void) { }
+#endif
 
 /* the elliptic curves: BearSSL's own, or ecdsp.c's on the DSP */
 static const br_ec_impl *ec_impl = &br_ec_all_m31;

@@ -11,7 +11,9 @@
  * when the picture is shown that small, which is much quicker; the kinds
  * it won't take (progressive, SOF1, CMYK...) from their blocks' averages
  * (jpegdc.c), an eighth of their size. PNG: png.c. GIF: NetSurf's
- * libnsgif (third_party/nsgif), its first frame.
+ * libnsgif (third_party/nsgif), its first frame. WebP (a build with
+ * PIC_LIBWEBP: EWeb's): Google's libwebp (third_party/libwebp), lossy and
+ * lossless, with alpha; not an animation.
  */
 #ifndef PIC_H
 #define PIC_H
@@ -22,8 +24,8 @@ int pic_kind(const unsigned char *d, long n);
 /* the name of a kind, for messages: "JPEG" */
 const char *pic_kind_name(int kind);
 
-/* 1 and its size in pixels, from its header (JPEG, PNG, GIF); 0 when
-   it can't be told */
+/* 1 and its size in pixels, from its header (JPEG, PNG, GIF; WebP
+   with PIC_LIBWEBP); 0 when it can't be told */
 int pic_size(const unsigned char *d, long n, long *w, long *h);
 
 typedef struct {

@@ -9,7 +9,8 @@ and EHypView, their latest releases (getrelease.py), loaded together on a
                                    [--accs ECal,EContact] [--prg EMail]
 
 MACHINE is ST (4 MB, TOS 1.04: ECALST.ACC and ECONTST.ACC, the ST
-editions) or Falcon-4 (4 MB, no TT RAM, TOS 4.04: ECAL.ACC and
+editions, while a release has them; ECAL.ACC and ECONTACT.ACC when it
+doesn't, or when --use gives them, as from TLS.OVL on) or Falcon-4 (4 MB, no TT RAM, TOS 4.04: ECAL.ACC and
 ECONTACT.ACC), ST by default; EHYPVIEW.ACC runs on both. --nvdi boots
 with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
@@ -84,13 +85,26 @@ for d in (hd, shots, rel):
 m = machines.Machine(machine + ("" if ":" in machine or not st else ":mono"), hd)
 if nvdi and not m.nvdi():
     sys.exit("acc_all: no NVDI here (machines.py, AERA_NVDI)")
-want = {"ECal": "ECALST.ACC" if st else "ECAL.ACC",
-        "EContact": "ECONTST.ACC" if st else "ECONTACT.ACC",
-        "EHypView": "EHYPVIEW.ACC"}
-want = {a: f for a, f in want.items() if a in accs}
-for app, f in want.items():
-    subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), app, rel, f], check=True,
-                   stdout=subprocess.DEVNULL)
+def get(app, names):
+    """the release's files that --use doesn't give; True if it has them"""
+    need = [n for n in names if n not in use]
+    if not need:
+        return True
+    return subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), app, rel] + need,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+# on an ST the ST edition, while a release has one: from TLS.OVL on (the
+# guidelines, 7.4) the one ACC runs on every Atari
+want = {"ECal": ("ECALST.ACC", "ECAL.ACC"), "EContact": ("ECONTST.ACC", "ECONTACT.ACC"),
+        "EHypView": ("EHYPVIEW.ACC", "EHYPVIEW.ACC")}
+want = {a: (f[0] if st and f[1] not in use else f[1], f[1]) for a, f in want.items() if a in accs}
+for app, (f, one) in list(want.items()):
+    if not get(app, [f]):
+        if f == one or not get(app, [one]):
+            sys.exit("acc_all: %s's release has no %s" % (app, f))
+        f = one
+    want[app] = f
     shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, f))
 # ECal and EContact as set up already (their folders, named in C:\NAME.INF),
 # so that no first-time question holds the Desk menu
@@ -107,8 +121,8 @@ if prg:
     # (EWeb:EWEBST.PRG:EWEB.FNT on an ST); else APP.PRG alone
     parts = prg.split(":")
     prg, pf, more = (parts[0], parts[1], parts[2:]) if len(parts) > 1 else (prg, prg.upper() + ".PRG", [])
-    subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), prg, rel, pf] + more, check=True,
-                   stdout=subprocess.DEVNULL)
+    if not get(prg, [pf] + more):
+        sys.exit("acc_all: %s's release has no %s" % (prg, " ".join(n for n in [pf] + more if n not in use)))
     os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
     shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
     for f in more:
@@ -190,13 +204,29 @@ try:
             print("NOTE  %s couldn't open its screen (v_opnvwk 0): the accessories hold the memory; "
                   "its own alert, see 0-desktop.png" % prg)
     if prg and prg.upper() == "EMAIL":
-        # a first start's welcome (EMail's "Let's set up your mail account")
-        # waits for OK, then the account dialog: Esc declines (only EMail's:
-        # in EFTP, Return opens the drive row A:, and TOS asks for a disk)
-        xdo("key", "Return")
-        time.sleep(3)
-        xdo("key", "Escape")
-        time.sleep(3)
+        # a first start's welcome (EMail's "Let's set up your mail account"),
+        # then the account dialog: Esc closes each (only EMail's: in EFTP,
+        # Return opens the drive row A:, and TOS asks for a disk). On a slow
+        # machine (a 4 MB Falcon with NVDI) each came later than the keys
+        # were sent, and a Return on the dialog would save an empty account:
+        # Esc once the screen is still, again until two Escs change nothing
+        def still(name, most=10):
+            prev = shot(name)
+            for _ in range(most):
+                time.sleep(2)
+                cur = shot(name + "-next")
+                if differs(prev, cur) == 0:
+                    return cur
+                prev = shutil.copy(cur, os.path.join(shots, name + ".png"))
+            return prev
+        idle = 0
+        for k in range(6):
+            before = still("0a-%d" % k)
+            xdo("key", "Escape")
+            time.sleep(3)
+            idle = idle + 1 if differs(before, still("0a-%d-esc" % k)) < 500 else 0
+            if idle == 2:
+                break
         desk = shot("0b-%s-ready" % prg.lower())
     click(30, 8)                                     # the Desk menu (the first title's middle:
     time.sleep(1)                                    # EWeb's "EWeb" starts past x 18)

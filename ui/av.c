@@ -123,7 +123,7 @@ static short find_server(void)
 	return -1;
 }
 
-/* the next name off "ECONTACT|ECONTST", as appl_find wants it */
+/* the next name off "EWEB|EWEBST", as appl_find wants it */
 static const char *next_name(const char *p, char *n)
 {
 	short i = 0;
@@ -300,7 +300,7 @@ int av_send(const char *names, const char *text)
 	char n[9];
 	short id = -1;
 	long l;
-	while (*names && id < 0)	/* the first of "EMAIL|EMAILST" running */
+	while (*names && id < 0)	/* the first of "EWEB|EWEBST" running */
 		id = appl_find((names = next_name(names, n), n));
 	if (id < 0)
 		return 0;

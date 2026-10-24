@@ -45,4 +45,19 @@ short dlg_modal_save(OBJECT *tree, short start, short cancel);
    byte) */
 int dlg_esc(short key);
 
+/* the AES's own 3D look (the guidelines, 5.x; Erez, 24 Oct 2026), where it
+   has one (AES 3.4 and newer: TOS 4, MagiC, N.AES, XaAES; asked through
+   appl_getinfo(13) where it can be): the box and its text on the 3D
+   background, exit buttons as activators, radio buttons and toggles as
+   indicators, editable fields left white. Call it once a tree is built,
+   before it is drawn; dlg_modal calls it itself. Nothing changes on an
+   AES without 3D (TOS 1 to 3, EmuTOS). */
+void dlg_3d(OBJECT *tree);
+/* 1 where the AES draws 3D objects: the app's Settings tick is greyed
+   where it doesn't */
+int dlg_3d_ok(void);
+/* the app's setting, DIALOGS3D= in its INF (1, the default: 3D where the
+   AES has it; 0: flat everywhere), taken by every dlg_3d after it is set */
+extern int dlg_3d_on;
+
 #endif

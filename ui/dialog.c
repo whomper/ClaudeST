@@ -218,10 +218,53 @@ static void trace(OBJECT *tree)
 #define trace(tree) ((void)0)
 #endif
 
+#define FL3DIND 0x0200
+#define FL3DBAK 0x0400
+#define FL3DACT 0x0600
+#define FL3DMASK 0x0600
+
+int dlg_3d_ok(void)
+{
+	static int ok = -1;
+	short v, a, b, c, d;
+	if (ok < 0) {
+		v = aes_version();
+		ok = v >= 0x0340;
+		/* appl_getinfo(13): 3D objects; asked only where it exists (an
+		   AES 4, or ?AGI): EmuTOS's hangs */
+		if (ok && (v >= 0x0400 || get_cookie(0x3F414749L)) && appl_getinfo(13, &a, &b, &c, &d))
+			ok = a != 0;
+	}
+	return ok;
+}
+
+int dlg_3d_on = 1;
+
+void dlg_3d(OBJECT *tree)
+{
+	short i, t, f;
+	if (!dlg_3d_ok())
+		return;
+	for (i = 0;; i++) {
+		t = tree[i].ob_type & 0xff;
+		f = tree[i].ob_flags & ~FL3DMASK;
+		if (!dlg_3d_on)		/* flat, as asked (the setting) */
+			t = -1;
+		if (t == G_BUTTON || (t == G_BOXCHAR && (f & (EXIT | TOUCHEXIT))))
+			f |= (f & (EXIT | TOUCHEXIT)) && !(f & RBUTTON) ? FL3DACT : FL3DIND;
+		else if (t >= 0 && t != G_FTEXT && t != G_FBOXTEXT)
+			f |= FL3DBAK;		/* the box, its text, its pictures */
+		tree[i].ob_flags = f;
+		if (tree[i].ob_flags & LASTOB)
+			break;
+	}
+}
+
 static short modal(OBJECT *tree, short start, short cancel, int save)
 {
 	short x, y, w, h, r;
 	SAVED s;
+	dlg_3d(tree);
 	wind_update(BEG_UPDATE);
 	wind_update(BEG_MCTRL);
 	form_center(tree, &x, &y, &w, &h);

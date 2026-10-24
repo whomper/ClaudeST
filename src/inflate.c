@@ -8,18 +8,19 @@
  * Every byte from a server is decrypted on the 68030, and that costs far
  * more than unpacking: CalDAV answers and web pages shrink four to eight
  * times when the server compresses them. The decoder is table driven: a
- * 9-bit lookup for most codes, and a bit at a time only for the rare long
- * ones. It reads a byte at a time, so it runs on a 68000 too.
+ * 10-bit lookup for most codes, the longer ones read off the bits already
+ * there, its state in locals (codes). It reads a byte at a time, so it
+ * runs on a 68000 too.
  */
 #include <string.h>
 #include "inflate.h"
 
-#define FAST 9				/* bits looked up at once */
+#define FAST 10				/* bits looked up at once */
 
 typedef struct {
 	short count[16];		/* codes of each length */
 	short sym[320];			/* symbols by code */
-	unsigned short fast[1 << FAST];	/* (len << 9) | sym, 0: longer code */
+	unsigned short fast[1 << FAST];	/* (len << 9) | sym, 0: longer code (2 KB) */
 } HUFF;
 
 typedef struct {
@@ -145,51 +146,132 @@ static const unsigned short dbase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 4
 static const unsigned char dext[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
 					7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13 };
 
+/* a block's codes to the end of the block. The hot loop: the bits and
+   the output kept in locals, each symbol looked up in the 10-bit table or,
+   for a longer code, read off the bits already there (a font face of
+   EWeb's or a PNG has many); reading past the input's end only as
+   zeros, counted, so that a block that ends near it decodes and one that
+   runs past it is damaged */
 static int codes(ST *s, const HUFF *lc, const HUFF *dc)
 {
 	SBUF *o = s->out;
+	const unsigned char *in = s->in, *end = s->end;
+	unsigned long bits = s->bits;
+	int nbits = s->nbits, pad = 0, r = -1;
+	long olen = o->len, lim;
+	char *op = o->s;
+
+#define NEED(n) \
+	while (nbits < (n)) { \
+		if (in < end) \
+			bits |= (unsigned long) *in++ << nbits; \
+		else \
+			pad++; \
+		nbits += 8; \
+	}
+#define DECODE(H, SYM) \
+	do { \
+		unsigned e_; \
+		NEED(15); \
+		e_ = (H)->fast[bits & ((1 << FAST) - 1)]; \
+		if (e_) { \
+			bits >>= e_ >> 9; \
+			nbits -= e_ >> 9; \
+			SYM = (int) (e_ & 511); \
+		} else { \
+			int code_ = 0, first_ = 0, index_ = 0, l_, count_; \
+			SYM = -1; \
+			for (l_ = 1; l_ < 16; l_++) { \
+				code_ |= (int) (bits >> (l_ - 1)) & 1; \
+				count_ = (H)->count[l_]; \
+				if (code_ - count_ < first_) { \
+					SYM = (H)->sym[index_ + (code_ - first_)]; \
+					bits >>= l_; \
+					nbits -= l_; \
+					break; \
+				} \
+				index_ += count_; \
+				first_ = (first_ + count_) << 1; \
+				code_ <<= 1; \
+			} \
+		} \
+	} while (0)
+
+	/* lim: where the output may go before it needs room (or is too big) */
+	lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
 	for (;;) {
-		int sym = decode(s, lc), len, d;
+		int sym, len, d;
 		unsigned long dist;
-		if (sym < 0)
-			return -1;
+		DECODE(lc, sym);
+		if (sym < 0 || nbits < 8 * pad)
+			break;			/* damaged, or past the input's end */
 		if (sym < 256) {
-			if (o->len >= s->max || (o->len + 1 >= o->cap && !sb_room(o, 4096))) {
-				s->bad = 2;
-				return -1;
+			if (olen >= lim) {
+				o->len = olen;
+				if (olen >= s->max || !sb_room(o, 4096)) {
+					s->bad = 2;
+					break;
+				}
+				op = o->s;
+				lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
 			}
-			o->s[o->len++] = (char)sym;
+			op[olen++] = (char) sym;
 			continue;
 		}
 		if (sym == 256) {
-			if (o->s)
-				o->s[o->len] = 0;
-			return 0;
+			r = 0;
+			break;
 		}
 		sym -= 257;
 		if (sym >= 29)
-			return -1;
-		len = lbase[sym] + (int)take(s, lext[sym]);
-		d = decode(s, dc);
+			break;
+		NEED(5);
+		len = lbase[sym] + (int) (bits & ((1UL << lext[sym]) - 1));
+		bits >>= lext[sym];
+		nbits -= lext[sym];
+		DECODE(dc, d);
 		if (d < 0 || d >= 30)
-			return -1;
-		dist = dbase[d] + take(s, dext[d]);
-		if (s->bad || dist > (unsigned long)o->len)
-			return -1;
-		/* the copy may overlap itself: byte by byte, after making room */
-		if (o->len + len > s->max || !sb_room(o, len)) {
-			s->bad = 2;
-			return -1;
+			break;
+		NEED(13);
+		dist = dbase[d] + (bits & ((1UL << dext[d]) - 1));
+		bits >>= dext[d];
+		nbits -= dext[d];
+		if (nbits < 8 * pad || dist > (unsigned long) olen)
+			break;
+		if (olen + len > lim) {
+			o->len = olen;
+			if (olen + len > s->max || !sb_room(o, len)) {
+				s->bad = 2;
+				break;
+			}
+			op = o->s;
+			lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
 		}
 		{
-			char *p = o->s + o->len, *q = p - dist;
-			long k;
-			for (k = 0; k < len; k++)
-				p[k] = q[k];
-			o->len += len;
-			o->s[o->len] = 0;
+			/* the copy may overlap itself: byte by byte */
+			char *p = op + olen, *q = p - dist, *e = p + len;
+			while (p < e)
+				*p++ = *q++;
+			olen += len;
 		}
 	}
+#undef DECODE
+#undef NEED
+	o->len = olen;
+	if (op != NULL)
+		op[olen] = 0;
+	/* the zeros read past the end given back: they were never there */
+	if (nbits < 8 * pad) {
+		s->bad = s->bad ? s->bad : 1;
+		r = -1;
+	} else {
+		nbits -= 8 * pad;
+		bits &= nbits ? (1UL << nbits) - 1 : 0;
+	}
+	s->in = in;
+	s->bits = bits;
+	s->nbits = nbits;
+	return r;
 }
 
 static HUFF lit, dst;
@@ -264,7 +346,11 @@ static int dynamic(ST *s)
 static int stored(ST *s)
 {
 	unsigned n, nn;
-	s->bits = 0;			/* to the byte boundary */
+	/* to the byte boundary: the whole bytes the decoder read ahead given
+	   back (dropping them lost data when a stored block followed a
+	   compressed one) */
+	s->in -= s->nbits / 8;
+	s->bits = 0;
 	s->nbits = 0;
 	if (s->end - s->in < 4)
 		return -1;

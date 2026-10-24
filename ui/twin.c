@@ -48,7 +48,7 @@ static int can_search(void)
 	return searching;
 }
 
-/* the next name off "ECAL|ECALST", blank-padded to 8 as the AES keeps it */
+/* the next name off "EWEB|EWEBST", blank-padded to 8 as the AES keeps it */
 static const char *next_name(const char *p, char *n)
 {
 	short i = 0;
