@@ -263,6 +263,15 @@ static int is_well(OBJECT *tree, short i)
 	       ((spec & 0x70) == 0 || (spec & 0x0f) == 0);
 }
 
+/* a G_BOXTEXT or G_BOX with a frame */
+static int framed(OBJECT *tree, short i)
+{
+	short t = tree[i].ob_type & 0xff;
+	if (t == G_BOXTEXT)
+		return ((TEDINFO *)tree[i].ob_spec)->te_thickness != 0;
+	return t == G_BOX && (signed char)(tree[i].ob_spec >> 16) != 0;
+}
+
 static int in_well(OBJECT *tree, short i)
 {
 	for (i = parent_of(tree, i); i > 0; i = parent_of(tree, i))
@@ -281,7 +290,12 @@ void dlg_3d(OBJECT *tree)
 		f = tree[i].ob_flags & ~FL3DMASK;
 		if (!dlg_3d_on)		/* flat, as asked (the setting) */
 			t = -1;
-		if (t == G_BUTTON || (t == G_BOXCHAR && (f & (EXIT | TOUCHEXIT))))
+		/* buttons, and what is clicked to act or to choose (a pop-up, an
+		   arrow box), out of a list, raised as the AES's buttons; a box
+		   only with a frame (a pop-up has one: a page in a sidebar has
+		   none and stays on the background; EHypView) */
+		if (t == G_BUTTON ||
+		    (t >= 0 && (t == G_BOXCHAR || framed(tree, i)) && (f & (EXIT | TOUCHEXIT)) && !in_well(tree, i)))
 			f |= (f & (EXIT | TOUCHEXIT)) && !(f & RBUTTON) ? FL3DACT : FL3DIND;
 		else if (t >= 0 && t != G_FTEXT && t != G_FBOXTEXT && (i == 0 || (!is_well(tree, i) && !in_well(tree, i))))
 			f |= FL3DBAK;		/* the box, its text, its pictures */

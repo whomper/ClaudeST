@@ -499,22 +499,27 @@ static void test_long_fields(void)
    and none when the setting says flat */
 static void test_3d(void)
 {
-	enum { T_BOX, T_LABEL, T_FIELD, T_OK, T_RADIO, T_TOGGLE, T_ARROW, T_CHAR, T_LINE, T_LIST, T_ROW, T_UP, N3 };
+	enum { T_BOX, T_LABEL, T_FIELD, T_OK, T_RADIO, T_TOGGLE, T_ARROW, T_CHAR, T_LINE, T_POPUP, T_PAGE, T_LIST,
+		T_ROW, T_UP, N3 };
 	static const unsigned short type[N3] = { G_BOX, G_STRING, G_FTEXT, G_BUTTON, G_BUTTON, G_BUTTON, G_BOXCHAR,
-		G_BOXCHAR, G_BOX, G_BOX, G_STRING, G_BOXCHAR };
+		G_BOXCHAR, G_BOX, G_BOXTEXT, G_BOXTEXT, G_BOX, G_STRING, G_BOXCHAR };
 	static const unsigned short flags[N3] = { 0, 0, EDITABLE, SELECTABLE | DEFAULT | EXIT, SELECTABLE | RBUTTON,
-		SELECTABLE, TOUCHEXIT, 0, 0, 0, TOUCHEXIT, TOUCHEXIT };
+		SELECTABLE, TOUCHEXIT, 0, 0, TOUCHEXIT, TOUCHEXIT, 0, TOUCHEXIT, TOUCHEXIT };
 	/* the root, a separator line (black), a list (white, framed) */
-	static const long spec[N3] = { 0x00021100L, 0, 0, 0, 0, 0, 0, 0, 0x00001171L, 0x00FF1100L, 0, 0 };
-	static const unsigned short want[N3] = { 0x0400, 0x0400, 0, 0x0600, 0x0200, 0x0200, 0x0600, 0x0400, 0x0400, 0,
-		0, 0x0600 };
+	static const long spec[N3] = { 0x00021100L, 0, 0, 0, 0, 0, 0, 0, 0x00001171L, 0, 0, 0x00FF1100L, 0, 0 };
+	/* a pop-up (framed) raised, a sidebar's page (no frame) on the ground */
+	static const unsigned short want[N3] = { 0x0400, 0x0400, 0, 0x0600, 0x0200, 0x0200, 0x0600, 0x0400, 0x0400,
+		0x0600, 0x0400, 0, 0, 0x0600 };
+	static TEDINFO popup, page;
 	OBJECT t[N3];
 	int i, ok = 1;
 	memset(t, 0, sizeof t);
+	popup.te_thickness = -1;
+	page.te_thickness = 0;
 	for (i = 0; i < N3; i++) {
 		t[i].ob_type = type[i];
 		t[i].ob_flags = flags[i] | (i == N3 - 1 ? LASTOB : 0);
-		t[i].ob_spec = spec[i];
+		t[i].ob_spec = i == T_POPUP ? (long)&popup : i == T_PAGE ? (long)&page : spec[i];
 		t[i].ob_head = t[i].ob_tail = -1;
 		/* the root's children: all but the list's row, in the list */
 		t[i].ob_next = i == 0 ? -1 : i == T_LIST - 1 ? T_LIST : i == T_LIST ? T_UP : i == N3 - 1 ? 0 : i + 1;
@@ -528,7 +533,8 @@ static void test_3d(void)
 	for (i = 0; i < N3; i++)
 		if ((t[i].ob_flags & 0x0600) != want[i] || (t[i].ob_flags & ~0x0600) != (flags[i] | (i == N3 - 1 ? LASTOB : 0)))
 			ok = 0;
-	check(ok, "dlg_3d: box and labels background, the field none, OK and a touch-exit box activators, radio and toggle indicators");
+	check(ok, "dlg_3d: box, labels and a sidebar's page background, the field none, OK, a touch-exit box and a "
+	      "pop-up activators, radio and toggle indicators");
 	check(!(t[T_LIST].ob_flags & 0x0600) && !(t[T_ROW].ob_flags & 0x0600),
 	      "... a list (a white framed box) and its rows none: they stay white");
 	dlg_3d(t);
