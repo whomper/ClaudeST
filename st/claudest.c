@@ -30,6 +30,7 @@
 #include "dd.h"
 #include "bigbuf.h"
 #include "fontsel.h"
+#include "dialog.h"
 #include "plat.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -2443,7 +2444,9 @@ static short inf_setting(const char *l)
 	} else if (inf_key(l, "HEBFONT", &v)) {
 		u16 n = inf_num(&v);
 		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
-	} else if (inf_key(l, "SIDEBAR", &v))
+	} else if (inf_key(l, "DIALOGS3D", &v))
+		dlg_3d_on = *v != '0';
+	else if (inf_key(l, "SIDEBAR", &v))
 		sb_user = inf_num(&v);
 	else if (inf_key(l, "MODEL", &v)) {
 		short k = 0;
@@ -2612,6 +2615,8 @@ static void save_config(void)
 		    "FONT", v);
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
+	p = inf_put_num(p, "1 = dialogs and alerts in 3D where the AES draws it (TOS 4, MagiC, XaAES), 0 = flat",
+			"DIALOGS3D", dlg_3d_on);
 	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
 	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
@@ -4258,7 +4263,8 @@ static void move_cursor(short d)
 /* Options > Settings... (^,), as in the other AERA programs: how
  * ClaudeST reaches its gateway. Network: the gateway's address and port;
  * serial: the speed. Tab moves between the two fields, Return is OK, Esc
- * or Undo Cancel. */
+ * or Undo Cancel. The 3D dialogs tick (guideline 5.6) sits on the buttons'
+ * row, greyed where the AES draws no 3D. */
 static void settings_dialog(void)
 {
 	static const char *const sp_label[3] = { "4800", "9600", "19200" };
@@ -4270,6 +4276,7 @@ static void settings_dialog(void)
 	short len[2], cur[2], start[2] = { 0, 0 }, cols[2] = { 17, 7 }, fx[2], fy[2];
 	short nl = link, nb = baud, nh = hebfont, focus = 0, res = -1, clipr[4], m[8], i;
 	short lh, cx, ly[5], chw, ch_x[2], sp_w, sp_x[3], hb_w, hb_x[3];
+	short n3 = dlg_3d_on != 0, ok3 = dlg_3d_ok(), tk_x, tk_y;
 	AEVENT e;
 
 	f[0][0] = 0;
@@ -4309,6 +4316,8 @@ static void settings_dialog(void)
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
+	tk_x = dlg_x + 2 * cw;			/* the tick: a box two characters wide */
+	tk_y = btn_y + (btn_h - ch) / 2;
 
 	wind_update(BEG_UPDATE);
 	wind_update(3);		/* BEG_MCTRL */
@@ -4324,6 +4333,7 @@ static void settings_dialog(void)
 	vs_clip(vh, 1, clipr);
 	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
 	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
+	text(tk_x + 3 * cw, tk_y, "3D dialogs", 10, ok3 ? 0 : 2, 1);	/* 2: light, greyed */
 	text(dlg_x + 2 * cw, ly[0], "Connect through", 15, 0, 1);
 	text(dlg_x + 2 * cw, ly[1], "Gateway address", 15, 0, 1);
 	text(dlg_x + 2 * cw, ly[2], "Gateway port", 12, 0, 1);
@@ -4346,6 +4356,16 @@ static void settings_dialog(void)
 			line(x + w - 1, y + ch + 5, x, y + ch + 5, 1);
 			line(x, y + ch + 5, x, y, 1);
 			text(x + (w - n * cw) / 2, y + 3, l, n, 0, on ? 0 : 1);
+		}
+		/* the tick: crossed when on */
+		fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 0);
+		line(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y, 1);
+		line(tk_x + 2 * cw - 1, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
+		line(tk_x + 2 * cw - 1, tk_y + ch - 1, tk_x, tk_y + ch - 1, 1);
+		line(tk_x, tk_y + ch - 1, tk_x, tk_y, 1);
+		if (n3) {
+			line(tk_x + 2, tk_y + 2, tk_x + 2 * cw - 3, tk_y + ch - 3, 1);
+			line(tk_x + 2 * cw - 3, tk_y + 2, tk_x + 2, tk_y + ch - 3, 1);
 		}
 		/* the fields: the one with the cursor is edited */
 		for (i = 0; i < 2; i++) {
@@ -4406,6 +4426,8 @@ static void settings_dialog(void)
 					res = 1;
 				else if (mx >= cancel_x && mx < cancel_x + btn_w)
 					res = 0;
+				else if (ok3 && mx >= tk_x && mx < tk_x + 13 * cw)
+					n3 = !n3;
 			}
 		}
 		/* an address that doesn't read as one: back to it */
@@ -4446,6 +4468,7 @@ static void settings_dialog(void)
 		tcp_port = port;
 		if (nb != baud)
 			set_baud(nb);
+		dlg_3d_on = n3;			/* the next dialog follows it */
 		if (nh != hebfont) {	/* the window's Hebrew, drawn anew */
 			hebfont = nh;
 			on_resize();
@@ -4901,6 +4924,7 @@ int main(void)
 			strcat(home_dir, "\\");
 	}
 	pf_size_open = pf_handle_size;	/* futil.c's pf_load: open, then ask */
+	load_config();		/* before the first alert: DIALOGS3D (5.6) */
 	crash_install(home_dir, "ClaudeST", APP_VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */
@@ -4962,7 +4986,6 @@ int main(void)
 	set_window_name();
 	wind_open(win, dx, dy, dw, dh);
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
-	load_config();
 	font_apply();		/* the text font saved in CLAUDEST.INF */
 	layout();
 	set_divider_watch();

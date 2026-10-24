@@ -411,7 +411,10 @@ sets the gateway address, and `/serial` switches to the serial port.
 **Serial** with the speed, and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
 moves between the two fields, `Clr/Home` clears the one with the
-cursor, and Return is OK.
+cursor, and Return is OK. **3D dialogs**, next to the buttons, gives the
+alerts and the Font dialog the AES's 3D look where it has one (TOS 4,
+MagiC, XaAES); untick it for the flat look. It is greyed where the AES
+has no 3D look.
 
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
 (strictly, in the folder that is current when ClaudeST starts, which the
@@ -430,6 +433,7 @@ on) is still read, and written in the new form the next time.
 | `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
 | `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `DIALOGS3D=1` | Options ▸ Settings, *3D dialogs*: 1 (the default) for the AES's 3D look where it has one, 0 for flat |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
