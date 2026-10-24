@@ -12,7 +12,9 @@
  */
 #include <string.h>
 #include <stdio.h>
+#ifndef TLSOVL_BUILD
 #include "ui.h"
+#endif
 #include "../src/tls.h"
 #include "../src/conn.h"
 #include "../src/plat.h"
@@ -81,11 +83,19 @@ static int accel(unsigned char *x, size_t xlen, const unsigned char *n, size_t n
 	return ok;
 }
 
-void falcon_dsp_init(void)
+/* use: a Direct connection, with the DSP ticked; TLS.OVL's entry */
+void falcon_dsp_use(int use)
 {
-	have_dsp = opt.falcon && opt.dsp && dsp_rsa_present();
+	have_dsp = use && dsp_rsa_present();
 	tls_rsa_accel = have_dsp ? accel : 0;
 }
+
+#ifndef TLSOVL_BUILD
+void falcon_dsp_init(void)
+{
+	falcon_dsp_use(opt.falcon && opt.dsp);
+}
+#endif
 
 const char *falcon_dsp_state(void)
 {

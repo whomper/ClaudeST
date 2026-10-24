@@ -10,13 +10,16 @@ and more made from them here.
     run.py --same TEST_PIC OTHER    OTHER (the 68030 build under QEMU) must
                                     give the very same bytes (make test68k)
 
-Each picture is decoded at its own size and compared with Pillow's: PNG and
-GIF must be the same in every pixel (to the Falcon's 5-6-5 colours), JPEG
-close (TJpgDec's IDCT and its chroma, nearest rather than smoothed, differ
-a little from libjpeg's). Then shrunk to a third and enlarged by half,
-compared with Pillow's box filter and nearest neighbour, and dithered to 16
-colours (the mean colour kept). Last, every file cut short and with bytes
-changed, under AddressSanitizer and UBSan. Needs Pillow and numpy."""
+Each picture is decoded at its own size and compared with Pillow's: PNG,
+GIF and lossless WebP must be the same in every pixel (to the Falcon's
+5-6-5 colours), JPEG and lossy WebP close (TJpgDec's IDCT and its chroma,
+nearest rather than smoothed, differ a little from libjpeg's; a lossy
+WebP's chroma too, from Pillow's libwebp's). WebP only in EWeb's builds
+(libjpeg-turbo's and the DSP's: -DPIC_LIBWEBP); the others refuse it. Then
+shrunk to a third and enlarged by half, compared with Pillow's box filter
+and nearest neighbour, and dithered to 16 colours (the mean colour kept).
+Last, every file cut short and with bytes changed, under AddressSanitizer
+and UBSan. Needs Pillow and numpy."""
 import glob
 import os
 import shlex
@@ -33,7 +36,12 @@ OUT = os.path.join(HERE, "build", "out")
 # arithmetic coding: neither TJpgDec nor jpegdc reads it (nor do browsers
 # meet it: libjpeg left it out for years over its patents); libjpeg-turbo
 # does, and is compared as the rest
-UNSUPPORTED = {"testimgari.jpg"}
+UNSUPPORTED = {"testimgari.jpg", "animated.webp"}
+
+
+def has_webp(cmd):
+    """EWeb's builds (libjpeg-turbo's, the DSP's) have libwebp"""
+    return any(k in os.path.basename(shlex.split(cmd)[0]) for k in ("_lj", "_dsp"))
 
 
 def make_more():
@@ -64,6 +72,21 @@ def make_more():
     p.save(os.path.join(GEN, "trans.gif"), transparency=0)
     frames = [p, p.rotate(90), p.rotate(180)]
     frames[0].save(os.path.join(GEN, "anim.gif"), save_all=True, append_images=frames[1:], duration=100, loop=0)
+    # WebP: lossy and lossless, with alpha or not, an odd size, a big one
+    # (shrunk), and an animation (not taken)
+    for name, im, kw in [
+        ("lossy.webp", src, dict(quality=80)),
+        ("lossy_alpha.webp", rgba, dict(quality=80)),
+        ("lossy_odd.webp", src.crop((0, 0, 221, 143)), dict(quality=80)),
+        ("lossy_big.webp", big, dict(quality=75)),
+        ("lossless.webp", src, dict(lossless=True)),
+        ("lossless_alpha.webp", rgba, dict(lossless=True)),
+        ("lossless_pal.webp", p.convert("RGB"), dict(lossless=True)),
+    ]:
+        im.save(os.path.join(GEN, name), "WEBP", **kw)
+    frames = [src, src.rotate(90), src.rotate(180)]
+    frames[0].save(os.path.join(GEN, "animated.webp"), save_all=True, append_images=frames[1:], duration=100, loop=0,
+                   quality=80)
 
 
 def reference(path):
@@ -178,7 +201,7 @@ def nearest(ref, w, h):
 
 def pictures():
     files = sorted(glob.glob(os.path.join(IMG, "*")) + glob.glob(os.path.join(GEN, "*")))
-    return [f for f in files if f.lower().endswith((".png", ".jpg", ".gif"))]
+    return [f for f in files if f.lower().endswith((".png", ".jpg", ".gif", ".webp"))]
 
 
 def main():
@@ -200,6 +223,11 @@ def main():
             continue
         res, why = decode(cmd, path, 0, 0)
         checks += 1
+        if name.endswith(".webp") and not has_webp(cmd):
+            ok = res is None and "can't be shown" in why
+            print("%s %-22s refused (no libwebp in this build), as it should be" % ("ok  " if ok else "FAIL", name))
+            fails += not ok
+            continue
         if name in UNSUPPORTED and res is None:
             ok = "can't be shown" in why
             print("%s %-22s refused, as it should be" % ("ok  " if ok else "FAIL", name))
@@ -210,7 +238,8 @@ def main():
             print("FAIL %s: not decoded: %s" % (name, why))
             continue
         ours, how, scale = res
-        jpeg = name.endswith(".jpg")
+        # (lossy: compared as a JPEG is)
+        jpeg = name.endswith(".jpg") or (name.endswith(".webp") and "lossless" not in name)
         if how == 100:
             # the averages of 8x8 blocks, enlarged: compared at an eighth
             hb, wb = (ref.shape[0] + 7) // 8, (ref.shape[1] + 7) // 8

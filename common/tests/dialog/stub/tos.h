@@ -4,3 +4,4 @@
 void fake_bconout(short dev, short c);
 #define Bconout(d, c) fake_bconout((d), (c))
 void nf_debug(const char *s);
+long get_cookie(long id);

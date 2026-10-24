@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * pic.c - pictures (pic.h): JPEG, PNG and GIF decoded to the size they
- * are shown at, and the screen's own colours for them.
+ * pic.c - pictures (pic.h): JPEG, PNG and GIF (and WebP, built with
+ * PIC_LIBWEBP) decoded to the size they are shown at, and the screen's own
+ * colours for them.
  *
  * Each decoder gives its rows in turn, at its own size, to the scaler,
  * which makes the picture's rows as they come: a shrinking picture is
@@ -32,6 +33,14 @@
 #else
 #include "jpegdc.h"
 #include "tjpgd.h"
+#endif
+#ifdef PIC_LIBWEBP
+/* libwebp's decoder (third_party/libwebp): its own calls too, for a lossy
+   picture's rows as they come */
+#include "src/dec/vp8i_dec.h"
+#include "src/dec/webpi_dec.h"
+#include "src/dsp/dsp.h"
+#include "src/webp/decode.h"
 #endif
 
 int (*pic_poll)(void);
@@ -137,6 +146,16 @@ int pic_size(const unsigned char *d, long n, long *w, long *h)
 		*w = d[6] | ((long) d[7] << 8);
 		*h = d[8] | ((long) d[9] << 8);
 		return *w > 0 && *h > 0;
+#ifdef PIC_LIBWEBP
+	case PIC_WEBP: {
+		int ww, hh;
+		if (!WebPGetInfo(d, (size_t) n, &ww, &hh))
+			return 0;
+		*w = ww;
+		*h = hh;
+		return *w > 0 && *h > 0;
+	}
+#endif
 	}
 	return 0;
 }
@@ -1865,6 +1884,151 @@ static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, long m
 	return 1;
 }
 
+/* ---------------------------------------------------------------- WebP */
+
+#ifdef PIC_LIBWEBP
+
+/* a lossy picture's rows, as libwebp makes them (its VP8Io: a band at a
+   time, each row its Y and the U and V of its pair of rows, and its
+   alpha), each to the scaler as it comes: nothing of the picture is kept
+   but the bands libwebp keeps for its filters, and its alpha */
+typedef struct {
+	SCALER *sc;
+	unsigned char *row;		/* a row's R G B, or R G B A */
+	int stopped;
+} WPIO;
+
+static int wp_put(const VP8Io *io)
+{
+	WPIO *c = (WPIO *) io->opaque;
+	const uint8_t *y = io->y, *u = io->u, *v = io->v, *a = io->a;
+	unsigned char *r = c->row;
+	int j, x, w = io->mb_w, ok;
+	for (j = 0; j < io->mb_h; j++) {
+		/* (its chroma at half size, each value for two pixels across:
+		   libwebp's simple sampler, as libjpeg's for a JPEG) */
+		WebPSamplers[MODE_RGB](y, u, v, r, w);
+		if (a != NULL) {
+			/* R G B made R G B A where it is, from the end */
+			for (x = w - 1; x >= 0; x--) {
+				r[4 * x + 3] = a[x];
+				r[4 * x + 2] = r[3 * x + 2];
+				r[4 * x + 1] = r[3 * x + 1];
+				r[4 * x] = r[3 * x];
+			}
+			ok = sc_row(c->sc, r);
+			a += io->width;
+		} else {
+			ok = sc_row_rgb(c->sc, r);
+		}
+		if (!ok) {
+			c->stopped = 1;
+			return 0;
+		}
+		y += io->y_stride;
+		if (j & 1) {
+			u += io->uv_stride;
+			v += io->uv_stride;
+		}
+	}
+	return 1;
+}
+
+static int webp_why(VP8StatusCode s)
+{
+	return s == VP8_STATUS_OUT_OF_MEMORY ? PIC_MEMORY :
+	       s == VP8_STATUS_UNSUPPORTED_FEATURE ? PIC_UNSUPPORTED : PIC_DAMAGED;
+}
+
+/* a lossless picture: libwebp's decoder keeps it whole as it goes (a
+   pixel can repeat any before it), 4 bytes a pixel, and gives it whole,
+   R G B A, 4 more; then its rows to the scaler */
+static int webp_whole(const unsigned char *d, long n, SCALER *sc, int *why)
+{
+	WebPDecoderConfig cf;
+	VP8StatusCode st;
+	long y;
+	if (!WebPInitDecoderConfig(&cf)) {
+		*why = PIC_DAMAGED;
+		return 0;
+	}
+	cf.output.colorspace = MODE_RGBA;
+	st = WebPDecode(d, (size_t) n, &cf);
+	if (st != VP8_STATUS_OK) {
+		*why = webp_why(st);
+		return 0;
+	}
+	for (y = 0; y < cf.output.height; y++)
+		if (!sc_row(sc, cf.output.u.RGBA.rgba + y * cf.output.u.RGBA.stride)) {
+			WebPFreeDecBuffer(&cf.output);
+			*why = PIC_STOPPED;
+			return 0;
+		}
+	WebPFreeDecBuffer(&cf.output);
+	return 1;
+}
+
+static int decode_webp(const unsigned char *d, long n, PIC *p, SCALER *sc, int *why)
+{
+	WebPBitstreamFeatures f;
+	WebPHeaderStructure hd;
+	VP8StatusCode st;
+	VP8Decoder *dec;
+	VP8Io io;
+	WPIO c;
+	int ok;
+	st = WebPGetFeatures(d, (size_t) n, &f);
+	if (st != VP8_STATUS_OK || f.width <= 0 || f.height <= 0) {
+		*why = st == VP8_STATUS_OK ? PIC_DAMAGED : webp_why(st);
+		return 0;
+	}
+	if (f.has_animation) {
+		*why = PIC_UNSUPPORTED;	/* (its first frame: not yet) */
+		return 0;
+	}
+	if (!sc_init(sc, p, f.width, f.height)) {
+		*why = PIC_MEMORY;
+		return 0;
+	}
+	p->how = PIC_WEBP;
+	memset(&hd, 0, sizeof hd);
+	hd.data = d;
+	hd.data_size = (size_t) n;
+	hd.have_all_data = 1;
+	st = WebPParseHeaders(&hd);
+	if (st != VP8_STATUS_OK) {
+		*why = webp_why(st);
+		return 0;
+	}
+	if (hd.is_lossless)
+		return webp_whole(d, n, sc, why);
+	memset(&c, 0, sizeof c);
+	c.sc = sc;
+	c.row = malloc((size_t) f.width * 4);
+	dec = VP8New();
+	if (c.row == NULL || dec == NULL || !VP8InitIo(&io)) {
+		free(c.row);
+		VP8Delete(dec);
+		*why = PIC_MEMORY;
+		return 0;
+	}
+	io.data = hd.data + hd.offset;
+	io.data_size = hd.data_size - hd.offset;
+	io.opaque = &c;
+	io.put = wp_put;
+	dec->alpha_data = hd.alpha_data;
+	dec->alpha_data_size = hd.alpha_data_size;
+	WebPInitSamplers();
+	ok = VP8GetHeaders(dec, &io) && VP8Decode(dec, &io);
+	if (!ok)
+		*why = c.stopped ? PIC_STOPPED : webp_why(dec->status);
+	VP8Delete(dec);
+	free(c.row);
+	return ok;
+}
+
+#endif
+
 /* ---------------------------------------------------------------- decoding */
 
 void pic_free(PIC *p)
@@ -1885,7 +2049,11 @@ PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *
 	if (why == NULL)
 		why = &dummy;
 	*why = PIC_OK;
-	if (kind != PIC_JPEG && kind != PIC_PNG && kind != PIC_GIF) {
+	if (kind != PIC_JPEG && kind != PIC_PNG && kind != PIC_GIF
+#ifdef PIC_LIBWEBP
+	    && kind != PIC_WEBP
+#endif
+	    ) {
 		*why = PIC_UNSUPPORTED;
 		return NULL;
 	}
@@ -1931,6 +2099,9 @@ PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *
 		switch (kind) {
 		case PIC_JPEG: ok = decode_jpeg(d, n, p, &sc, why); break;
 		case PIC_PNG: ok = decode_png(d, n, p, &sc, max_px, why); break;
+#ifdef PIC_LIBWEBP
+		case PIC_WEBP: ok = decode_webp(d, n, p, &sc, why); break;
+#endif
 		default: ok = decode_gif(d, n, p, &sc, max_px, why); break;
 		}
 	}

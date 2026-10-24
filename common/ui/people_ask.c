@@ -188,8 +188,7 @@ const char *people_name(const char *addr)
 
 static short econtact(void)
 {
-	short id = appl_find("ECONTACT");
-	return id >= 0 ? id : appl_find("ECONTST ");
+	return appl_find("ECONTACT");
 }
 
 int people_pick(const char *partial)

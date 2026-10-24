@@ -283,7 +283,7 @@ def write_docs(dirname, d, z=8):
         image(d[depth], depth).resize((W * z, H * z), Image.NEAREST).save(os.path.join(dirname, fn))
 
 
-NAMES = ["ECAL", "ECONTACT", "EMAIL", "EFTP", "EHYPVIEW", "CLAUDEST", "EWEB", "EUPDATE"]
+NAMES = ["ECAL", "ECONTACT", "EMAIL", "EFTP", "EHYPVIEW", "CLAUDEST", "EWEB", "EUPDATE", "EDOS", "EFTPXL", "GATEWAY"]
 
 
 def write_sheet(path, z=4):

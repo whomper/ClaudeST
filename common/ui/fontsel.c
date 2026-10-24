@@ -758,6 +758,7 @@ static void tr_end(void)
 	fs_tree[nobj - 1].ob_flags |= LASTOB;
 	for (i = 0; i < nobj; i++)
 		rsrc_obfix(fs_tree, i);
+	dlg_3d(fs_tree);
 }
 
 /* ---------------- a list ---------------- */

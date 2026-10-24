@@ -33,10 +33,10 @@ These files were the same code in ECal, EContact, EMail and EFTP when they moved
 | `atari/` | `link.ld`, `nf.S`, `sting.S`, `dsprsa.c/.h` | linker script; NatFeats; STinG's calling glue; RSA on the Falcon's DSP |
 | `atari/include/` | `ctype.h` `limits.h` `stdio.h` `string.h` `strings.h` | the parts of the freestanding C library headers every app shares |
 | `src/` | `bidi.c/.h`, `ctime.c/.h`, `futil.c`, `secret.c/.h` | Hebrew right-to-left layout; dates and times; safe file writes (`pf_save` writes `NAME.IN$` and renames it over `NAME.INF`; `tests/futil`); password encryption |
-| `ui/` | `dsp.c` | checks the DSP and turns Falcon mode on |
+| `ui/` | `dsp.c` | checks the DSP and turns it on for a Direct connection |
 | `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array); `ec.a56` since 18 Oct 2026, `jpeg.a56` since 20 Oct 2026, `dither.a56` since 21 Oct 2026 (below) |
 | `tools/` | `elf2tos.py`, `mkroots.c`, `build-hcp.sh` | ELF to TOS program header; root certificates to `ROOTS.DAT`; `build-hcp.sh DIR` builds the `hcp` help compiler (th-otto/hypview at a fixed commit) for `make help` and the Release workflow |
-| `third_party/bearssl/` | BearSSL 0.6 | TLS for Falcon mode (MIT licence) |
+| `third_party/bearssl/` | BearSSL 0.6 | TLS for a Direct connection (MIT licence) |
 | `certs/` | `CACERT.PEM` | Mozilla's root certificates (MPL 2.0) |
 
 ### What the app provides
@@ -79,7 +79,7 @@ These had drifted between the apps; each is now the most complete copy, with eve
 | Files | Taken from | What the others gain |
 |---|---|---|
 | `src/tls.c/.h` | EFTP (itself ECal + EMail) | ECal's TLS session resumption for EMail; EMail's ChaCha20-first handshake (twice as fast as AES-GCM on a 68030) for ECal and EContact |
-| `src/tls_none.c` | EFTP | the ST editions' stand-in; names the Falcon edition from `TLS_FULL_EDITION` |
+| `src/tls_none.c` | EFTP | the ST editions' stand-in, until TLS.OVL (below); names the Falcon edition from `TLS_FULL_EDITION` |
 | `src/conn.c/.h` | EFTP + EMail | one API: `conn_open(name, host, port, bufsize, sec, err, errlen)` with `bufsize` 0 for `conn_bufsize` (16 KB; EMail lowers it on a small Atari); `SEC_STARTTLS`; EFTP's Stop (`conn_stop`), raw reads (`conn_read`: 0 = closed, -1 = timeout/stopped), `conn_pending`, `conn_close_flush`; ECal's handshake timing; a block-buffered log flushed at each milestone |
 
 An app provides `net_close_wait()` in its `plat.h` (declared; the code is in `atari/net_tos.c`).
@@ -120,7 +120,7 @@ same as before.
 | `tools/pens/` | EWeb (webgate, AERA-Gateway's `pens/`) | `aerapens`: a picture made into an Atari screen's pens on the Pi's gateway with the Atari's own `src/pic.c` (decode, scaler, dither), so the pens are the very ones the Atari would make; both of EWeb's builds in one program (libjpeg-turbo as EWEB.PRG, TJpgDec as EWEBST.PRG: pic.c again with `pens_tj.h`'s names). One length-prefixed request on stdin (`AEPQ`), EWeb's `EWPN` pens on stdout after a line naming the AERA-Atari commit and the build; nothing else opened (systemd runs one a connection on webgate's socket); pictures of 16 million pixels at most, made 4 million at most. The forms are in `aerapens.c`. `make -C common/tools/pens` for this machine, `make pi` for a Pi (arm64, armhf, static); AERA-Gateway builds it on the Pi from its `pens/common/` copy. `tests/pic/pens.py` (`make pens` there) checks every build, under QEMU, against the same code as 68030 and 68000 code; `make fuzzpens` fuzzes its requests (libFuzzer, ASan, UBSan; seeds and finds in `tests/pic/fuzz/pens`) |
 | `tools/fakesting/` | every app's network rigs (`machines.py` `network()`) | the Hatari rigs' network (Hatari has no network card): `FAKESTNG.PRG` (`make -C common/tools/fakesting`, then into `C:\AUTO`) stands in for STinG (on TOS 1.04 too: it makes the cookie jar that TOS lacks and turns off its XON/XOFF) and carries up to four TCP connections over the emulated serial port to `serial_bridge.py FROM_ATARI TO_ATARI`, which makes the real ones. Never on a real Atari. As real STinG it never holds the machine: sends wait in a queue, received bytes are filed as they come, read straight from the serial buffer for at most 20 ms a call (ECal's background syncing measures its gaps through it: a Mega ST stays within 100 ms), and the bridge sends no more than the Atari has said it has room for (EFTP's downloads). `C:\FASTCLK` sets timer C to 312 Hz, a 200 Hz clock 1.56 times too fast, as on Erez's Falcon (EFTP's `clock_test.py`). EFTP's `net_test.py` passes with it (Falcon, and the ST edition on 1 MB), its downloads twice as fast as with EFTP's own copy. A connection's number used again at once (a page stopped with Esc, then the next) no longer gets the last of the old one's data: the bridge sends nothing of a socket that is no longer the connection's, and FAKESTNG files data only for a connection open (19 Oct 2026, found by EWeb's pictures rig) |
 | `ui/help.c/.h` | ECal + EContact | the Help key: `help_show(dir, "ECAL.HYP", page)` sends `VA_START "DIR\ECAL.HYP page"` when the guide is in the app's folder `DIR` (wherever that is), else `"*:\ECAL.HYP page"` to the viewer that runs, EHypView first, then ST-Guide and HypView; 0 when none runs. The string is in memory the viewer may read (`av_shared()`); `help_init()` takes it at start-up. `tests/help/app_help.py` checks an app's Help key in Hatari with a stand-in viewer. `help_key(dir, hyp, page, "Keys")` is the Help key: the viewer, else an alert saying to install EHypView or ST-Guide, with a button for what the app shows itself (guidelines 4.3) |
-| `ui/av.c/.h` | EHypView + EContact | the AV protocol (guidelines 4.1): `av_init("ECONTACT\|ECONTST")` tells the desktop's AV server (`AVSERVER`, else Thing, jinnee or Gemini) that we take VA_START, under the name the AES knows us by; `av_message()` takes a VA_START, keeps its own copy and answers AV_STARTED; `av_arg()` takes the next (quoted) file name off it; `av_exit()` says AV_EXIT when a program quits; `av_send(name, text)` hands another program a string (EContact's `mailto:` to EMail), in memory it may read (`av_shared()`: Mxalloc 0x2B under MiNT and MagiC, static on plain TOS). `av_window(h, 1)` tells the desktop an accessory opened a window (AV_ACCWINDOPEN), so files dropped on it come as VA_DRAGACCWIND. `av_command()` is the command line a program was started with (the desktop's way to open a file with it), as a VA_START string. `tests/av` checks it on the build machine, and `app_av.py` checks an app in Hatari with a stand-in AV server, `THING.ACC`, which also drops files (`dropfiles`) and text (`drop`, AP_DRAGDROP under MiNT), puts text on the clipboard (`clip`) and writes down what is there (`clipshow`) |
+| `ui/av.c/.h` | EHypView + EContact | the AV protocol (guidelines 4.1): `av_init("EWEB\|EWEBST")` tells the desktop's AV server (`AVSERVER`, else Thing, jinnee or Gemini) that we take VA_START, under the name the AES knows us by; `av_message()` takes a VA_START, keeps its own copy and answers AV_STARTED; `av_arg()` takes the next (quoted) file name off it; `av_exit()` says AV_EXIT when a program quits; `av_send(name, text)` hands another program a string (EContact's `mailto:` to EMail), in memory it may read (`av_shared()`: Mxalloc 0x2B under MiNT and MagiC, static on plain TOS). `av_window(h, 1)` tells the desktop an accessory opened a window (AV_ACCWINDOPEN), so files dropped on it come as VA_DRAGACCWIND. `av_command()` is the command line a program was started with (the desktop's way to open a file with it), as a VA_START string. `tests/av` checks it on the build machine, and `app_av.py` checks an app in Hatari with a stand-in AV server, `THING.ACC`, which also drops files (`dropfiles`) and text (`drop`, AP_DRAGDROP under MiNT), puts text on the clipboard (`clip`) and writes down what is there (`clipshow`) |
 | `ui/alert.c/.h` | ECal + EContact | `alert(def, "[3][Can't reach %s.|...][ OK ]", host)`: form_alert's string with printf formatting, words wrapped into lines of 30 characters, at most 5 lines, brackets in the text made parentheses, an empty line kept (EmuTOS reads `||` as `|`), Hebrew put into display order; `alert_hebrew` lets an app map the letters for its font. Since 17 Oct 2026 the box is our own, built as EmuTOS's `fm_alert` builds it (the icon, our own 32 by 32 drawings of `!`, `?` and stop; the lines; up to 3 buttons, the default one marked) in the system font's cells, and run by `ui/dialog.c` with the screen under it saved and put back: Return gives the default button, **Esc and Undo the last one** (guidelines 3.5, 6.2), on every AES. What it can't show that way (4 buttons, one over 20 characters, a screen too small) goes to form_alert. It returns 1 to 3 as before; an app links `dialog.o` too. `tests/alert` checks the text and the tree's layout in five screen modes on the build machine. `screen_check(app, width)`: on a screen narrower than 640 pixels an alert says so (guidelines 5.2) |
 | `ui/dialog.c/.h` | | the dialog loop (guidelines 3.5): `dlg_do(tree, start, cancel)` is form_do written out with `evnt_multi`, `form_keybd`, `form_button` and `objc_edit` (Return, Tab and the arrows, clicks, the double-click bit as form_do), where **Esc and Undo end it at once with `cancel`**, the text field as it was (form_do hands Esc to the field, which clears it); `cancel` -1 for a dialog with no button that does nothing (EFTP's Skip\|Resume\|Replace during a transfer): Esc then gives -1. `dlg_modal(tree, start, cancel)` does the rest of the modal dance (`wind_update`, `form_center`, `form_dial`, drawing, the exit object deselected) and returns the object; `dlg_modal_save` puts the screen back itself, as form_alert does. (Not `dlg_run`: ECal's and EContact's FIELD engine has one.) An app moves over by `form_do(tree, 0)` becoming `dlg_do(tree, 0, CANCEL)`, or its whole dialog function `dlg_modal(tree, 0, CANCEL)`. `tests/dialog`: `make test` against a stand-in AES that clears a field on Esc as TOS's does; `make prg` and `run.py etos512us.img` run DLGT.PRG in Hatari with EmuTOS in ST high, medium, low and the Falcon's VGA mode, and `--xaaes` under FreeMiNT and XaAES (`../xaaes`): alerts answered with Return, Esc, Undo and a click, a dialog's field typed into, then Esc, Undo, Return and a click. Built with `-DDLG_TRACE`, `dlg_modal` says where each exit button is on the emulator's console, for a rig to click |
 | `ui/mbar.c/.h` | EHypView | the menu bar, built at run time from the app's table of titles and items (`{ "Open...", "^O", C_OPEN }`): no resource file, the system font's size, shortcuts right-aligned, the Desk menu's separator and accessory slots added. `mbar_object()` and `mbar_command()` map between commands and objects. `tests/menu` walks the tree as the AES does, with AddressSanitizer |
@@ -334,18 +334,22 @@ EContact's photos. EContact and ECal keep their own copies until their sessions 
 | `third_party/libjpeg-turbo/`, `src/pic_lj8.c` | libjpeg-turbo 3.1.4 | the decoder only, 8-bit (`AERA.md`): every JPEG a page has, unpacked at n/8 of its size; for a 68030 with memory to spare (EWeb). On a 68030 1.4 times as quick as TJpgDec at full size, three times on a photo shown at 40%, five on a big one shown small |
 | `src/png.c/.h` | new | PNG: every colour type and depth, interlaced, `tRNS`; rows out as they are unfiltered, so a picture that isn't interlaced is never whole in memory at four bytes a pixel |
 | `third_party/nsgif/` | NetSurf | libnsgif, unchanged (`AERA.md`) |
-| `src/pic.c/.h` | new | `pic_kind`, `pic_size` from the header, `pic_decode(data, len, w, h, max_px, &why)`: JPEG, PNG or GIF straight to the size shown (averaged when smaller, a JPEG unpacked smaller first; repeated when larger), RGB 5-6-5 with an alpha only when it has one; `pic_dither` to the screen's pens (Floyd-Steinberg, serpentine; a colour wanted past the cube's edges finds the pen that lies that way, so light blue on 16 colours stays blue). JPEG by TJpgDec and jpegdc, or with `-DPIC_LIBJPEG` by libjpeg-turbo |
+| `third_party/libwebp/` | libwebp 1.6.0 | Google's decoder only, unchanged but for its build settings and a float-free `random_utils.c` (`AERA.md`; BSD licence); with `-DPIC_LIBWEBP` (EWeb's `EWEB.PRG`, 24 Oct 2026). 93 KB of 68030 code in `EWEB.PRG`; a lossy picture takes about 193 68030 instructions a pixel at any size shown (a JPEG 96 at its size, 32 shown at a third: libjpeg unpacks it smaller), so 1 megapixel is about 40 s on a DFB1 |
+| `src/pic.c/.h` | new | `pic_kind`, `pic_size` from the header, `pic_decode(data, len, w, h, max_px, &why)`: JPEG, PNG or GIF (WebP with `-DPIC_LIBWEBP`) straight to the size shown (averaged when smaller, a JPEG unpacked smaller first; repeated when larger), RGB 5-6-5 with an alpha only when it has one; `pic_dither` to the screen's pens (Floyd-Steinberg, serpentine; a colour wanted past the cube's edges finds the pen that lies that way, so light blue on 16 colours stays blue). JPEG by TJpgDec and jpegdc, or with `-DPIC_LIBJPEG` by libjpeg-turbo. A lossy WebP comes to the scaler a band of rows at a time (libwebp's `VP8Io`), never whole; a lossless one is whole while it is decoded (libwebp's way, 8 bytes a pixel); an animated one isn't taken |
 
 `tests/pic`: `fetch.sh` (PngSuite, libjpeg-turbo's and libnsgif's test pictures, at fixed commits),
-then `make test` compares every picture with Pillow, with each JPEG decoder (PNG and GIF the same
-in every pixel, JPEG close), shrunk and enlarged against a model of the scaler, dithered, and cut
-short or damaged under AddressSanitizer and UBSan; `make test68k` checks that the 68030 builds
-(qemu-m68k) give the very same bytes.
+then `make test` compares every picture with Pillow, with each JPEG decoder (PNG, GIF and lossless
+WebP the same in every pixel, JPEG and lossy WebP close: their chroma, nearest rather than
+smoothed), shrunk and enlarged against a model of the scaler, dithered, and cut short or damaged
+under AddressSanitizer and UBSan; WebP (made by Pillow: lossy and lossless, with alpha, an odd
+size, a big one, an animation that is refused) in libjpeg-turbo's builds, refused in TJpgDec's;
+`make test68k` checks that the 68030 builds (qemu-m68k) give the very same bytes.
 
 Build: `-Icommon/third_party/nsgif/include`, and either `-Icommon/third_party/tjpgd` with
 `jpegdc.c` and `tjpgd.c` (built with `-fwrapv`: its IDCT wraps on damaged data, as it does on the
-68000) or libjpeg-turbo's flags (its `AERA.md`) with `pic_lj8.c`. `atari/include/stdio.h` names
-`FILE` (no functions) for libjpeg's prototypes.
+68000) or libjpeg-turbo's flags (its `AERA.md`) with `pic_lj8.c`; for WebP too, `-DPIC_LIBWEBP
+-DHAVE_CONFIG_H -Icommon/third_party/libwebp` and libwebp's files (its `AERA.md`, `tests/pic/Makefile`'s
+`WP_SRC`). `atari/include/stdio.h` names `FILE` (no functions) for libjpeg's prototypes.
 
 ### JPEGs and the dither on the DSP (20 and 21 Oct 2026, from EWeb)
 
@@ -392,6 +396,31 @@ memory the five longs of a picture with alpha take: a third less time shrinking 
 A `PIC_PAL`'s nearest-pen table (32 KB) is made only for more than 4 pens, by `pic_pal_init`
 (`pic_pal_free` gives it back; a `PIC_PAL` starts zeroed): monochrome and 4-colour screens work each
 pen out, and EWeb's 1 MB ST got its 32 KB back.
+
+## TLS.OVL: one program for every Atari (24 Oct 2026)
+
+Erez's design: the TLS (`src/tls.c`, BearSSL, the DSP's `ui/dsp.c`, `ui/dsp_ec.c`, `src/ecdsp.c`,
+`atari/dsprsa.c`, `atari/dspec.c`, as 68030 code) in a file of the family's own, `TLS.OVL`, which
+every program carries next to it; no ST editions. The guidelines, 7.4.
+
+| Files | What |
+|---|---|
+| `src/tlsovl.h` | the program and TLS.OVL meet here: `TLS_HOST` (what the program lends: memory, files, network, clock, log) and `TLS_OVL` (tls.h's calls and the DSP's), both only ever growing at the end; `TLSOVL_MAJOR` for a change that can't; the program's calls (`tls_ovl_path`, `tls_ovl_load`, `tls_ovl_version`, `tls_ovl_unload`) |
+| `src/ovl.c/.h` | loads a file in TOS's program format into malloc'd memory and applies its fixups, in one go and closed before `pf_idle`: no Pexec, no memory of TOS's own, no file open across an event call, so an accessory loads it into its heap |
+| `atari/tls_ovl.c` | the program's side: tls.h's calls handed on, TLS.OVL loaded at the first need (a 68020 or better: the `_CPU` cookie; the CPU's caches cleared after), the settings copied over before each call; "TLS.OVL 1.0 loaded, 139 KB, 50 ms" in the log |
+| `ui/dsp_ovl.c` | `falcon_dsp_init()` and the rest, for a program with TLS.OVL |
+| `tlsovl/` | TLS.OVL itself: `head.c` (its table, the program's calls through `TLS_HOST`), `ovl.ld`, `src/plat.h`, `VERSION`; `make`, `make check` (the committed `TLS.OVL` is its sources' build: the build is reproducible), `make release` |
+| `tests/tlsovl/` | the loader on the build machine with the real TLS.OVL and hand-made fixup tables, good and damaged |
+
+`src/tls.c` answers `tls_ovl_*` too, as a program with the TLS built in (EWeb, the build machine's
+tests). `atari/libc.c` builds its strings and `vsnprintf` without the heap for TLS.OVL
+(`LIBC_NO_HEAP`); `ui/dsp.c` and `ui/dsp_ec.c` build without the app's `opt` (`TLSOVL_BUILD`).
+
+Tried with EFTP 1.48's code, EFTP.PRG linked with TLS.OVL: 201,199 bytes (1.48: 313,927; EFTPST.PRG
+200,977). FTPS in Hatari on the Falcon with Erez's TOS 4.04, RSA on the DSP and the data connections
+resuming the session (`secure_test.py ftps`, all passed: a 4,150 ms handshake against 4,125 ms with
+the TLS built in); the same program on the 1 MB ST through the gateway (`secure_test.py sftp`,
+`net_test.py`, all passed); without TLS.OVL, "TLS.OVL is missing" and no crash.
 
 ## Coming next
 

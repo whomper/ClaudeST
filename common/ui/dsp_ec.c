@@ -13,7 +13,9 @@
  */
 #include <string.h>
 #include <stdio.h>
+#ifndef TLSOVL_BUILD
 #include "ui.h"
+#endif
 #include "../src/tls.h"
 #include "../src/conn.h"
 #include "../src/plat.h"
@@ -78,9 +80,10 @@ static int run(void (*fn)(void *), void *ctx)
 	return trusted && dspec_port.run(fn, ctx);
 }
 
-void falcon_dsp_ec_init(void)
+/* use: a Direct connection, with the DSP ticked; TLS.OVL's entry */
+void falcon_dsp_ec_use(int use)
 {
-	have_dsp = opt.falcon && opt.dsp && dspec_present();
+	have_dsp = use && dspec_present();
 	if (!have_dsp) {
 		ecdsp_port = 0;
 		tls_set_ec(0, 0);
@@ -91,6 +94,13 @@ void falcon_dsp_ec_init(void)
 	ecdsp_port = &checked_port;
 	tls_set_ec(&ecdsp_impl, ecdsp_vrfy_asn1);
 }
+
+#ifndef TLSOVL_BUILD
+void falcon_dsp_ec_init(void)
+{
+	falcon_dsp_ec_use(opt.falcon && opt.dsp);
+}
+#endif
 
 const char *falcon_dsp_ec_state(void)
 {

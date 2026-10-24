@@ -102,6 +102,25 @@ void nf_debug(const char *s)
 	(void)s;
 }
 
+/* an AES with 3D objects (AES 4.1, appl_getinfo(13) says so) */
+short aes_version(void)
+{
+	return 0x0410;
+}
+
+short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4)
+{
+	*o1 = type == 13;
+	*o2 = *o3 = *o4 = 0;
+	return 1;
+}
+
+long get_cookie(long id)
+{
+	(void)id;
+	return 0;
+}
+
 short wind_update(short mode)
 {
 	updates += mode == BEG_UPDATE || mode == 3 ? 1 : -1;
@@ -475,10 +494,48 @@ static void test_long_fields(void)
 	check(!lf_of(tree, F1), "lf_forget: the dialog's fields let go");
 }
 
+/* dlg_3d: the AES's 3D flags (0x0200 indicator, 0x0400 background, 0x0600
+   activator) on each kind of object, and none when the setting says flat */
+static void test_3d(void)
+{
+	enum { T_BOX, T_LABEL, T_FIELD, T_OK, T_RADIO, T_TOGGLE, T_ARROW, T_CHAR, N3 };
+	static const unsigned short type[N3] = { G_BOX, G_STRING, G_FTEXT, G_BUTTON, G_BUTTON, G_BUTTON, G_BOXCHAR, G_BOXCHAR };
+	static const unsigned short flags[N3] = { 0, 0, EDITABLE, SELECTABLE | DEFAULT | EXIT, SELECTABLE | RBUTTON,
+		SELECTABLE, TOUCHEXIT, 0 };
+	static const unsigned short want[N3] = { 0x0400, 0x0400, 0, 0x0600, 0x0200, 0x0200, 0x0600, 0x0400 };
+	OBJECT t[N3];
+	int i, ok = 1;
+	memset(t, 0, sizeof t);
+	for (i = 0; i < N3; i++) {
+		t[i].ob_type = type[i];
+		t[i].ob_flags = flags[i] | (i == N3 - 1 ? LASTOB : 0);
+	}
+	check(dlg_3d_ok(), "dlg_3d_ok: an AES 4.1 that has 3D objects");
+	dlg_3d(t);
+	for (i = 0; i < N3; i++)
+		if ((t[i].ob_flags & 0x0600) != want[i] || (t[i].ob_flags & ~0x0600) != (flags[i] | (i == N3 - 1 ? LASTOB : 0)))
+			ok = 0;
+	check(ok, "dlg_3d: box and labels background, the field none, OK and a touch-exit box activators, radio and toggle indicators");
+	dlg_3d(t);
+	for (i = 0; i < N3; i++)
+		if ((t[i].ob_flags & 0x0600) != want[i])
+			ok = 0;
+	check(ok, "... the same again when a tree is shown again");
+	dlg_3d_on = 0;
+	dlg_3d(t);
+	for (i = 0; i < N3; i++)
+		if (t[i].ob_flags != (flags[i] | (i == N3 - 1 ? LASTOB : 0)))
+			ok = 0;
+	check(ok, "DIALOGS3D=0: every 3D flag taken off, the rest kept");
+	dlg_3d_on = 1;
+}
+
 int main(void)
 {
 	short r;
 	setvbuf(stdout, 0, _IOLBF, 0);
+
+	test_3d();
 
 	setup();
 	{

@@ -4,7 +4,7 @@
  * av.h - the AV protocol (the AERA guidelines, 4.1): how the AERA
  * programs, the desktop and other programs hand each other work.
  *
- *   av_init("ECONTACT|ECONTST");   at start-up (an accessory again when it
+ *   av_init("ECONTACT");   at start-up (an accessory again when it
  *                                  opens): tells the desktop's AV server
  *                                  (AVSERVER, else Thing, jinnee or Gemini)
  *                                  that we take VA_START (AV_PROTOKOLL),
@@ -30,7 +30,7 @@
 enum { AV_NONE, AV_START, AV_DONE, AV_PEOPLE };
 
 /* our names as the AES may know us, by the file we were started as:
-   "ECONTACT|ECONTST" (the one appl_find gives our id is used) */
+   "EWEB|EWEBST" (the one appl_find gives our id is used) */
 void av_init(const char *names);
 void av_exit(void);
 void av_window(short h, int open);
@@ -42,7 +42,7 @@ const char *av_arg(const char *p, char *out, long n);	/* 0 when none is left */
 const char *av_command(void);
 
 /* text for the program called names, with VA_START: the first running of
-   its editions, "EMAIL|EMAILST" ("EMAIL" is padded as appl_find wants
+   its editions, "EWEB|EWEBST" ("EWEB" is padded as appl_find wants
    it). 1 when sent, 0 when none is running */
 int av_send(const char *names, const char *text);
 
@@ -70,7 +70,7 @@ extern void (*av_twin_here)(short id);
    taken; 1 when the message was one of those, 0 for the app's */
 extern void (*av_people_hook)(const char *s, short from);
 int av_modal_message(const short *msg);
-/* the name the AES knows us by, without its padding ("ECAL", "ECALST") */
+/* the name the AES knows us by, without its padding ("ECAL", "EWEBST") */
 const char *av_name(void);
 
 /* memory other programs may read: global under MiNT and MagiC (Mxalloc

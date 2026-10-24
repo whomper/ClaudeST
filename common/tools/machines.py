@@ -278,8 +278,10 @@ class Machine:
             shutil.copytree(os.path.join(src, "btfonts"), fonts)
         return True
 
-    # the accessories, by program: (the edition for the Falcon and TT, the ST's)
-    ACCS = {"ECal": ("ECAL.ACC", "ECALST.ACC"), "EContact": ("ECONTACT.ACC", "ECONTST.ACC"),
+    # the accessories, by program: (the Falcon's and TT's, the ST's); one
+    # file for every Atari since TLS.OVL (the guidelines, 7.4: ECal 2.25,
+    # EContact 1.64)
+    ACCS = {"ECal": ("ECAL.ACC", "ECAL.ACC"), "EContact": ("ECONTACT.ACC", "ECONTACT.ACC"),
             "EHypView": ("EHYPVIEW.ACC", "EHYPVIEW.ACC")}
 
     def accs(self, apps):

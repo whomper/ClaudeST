@@ -4,10 +4,11 @@
 # on the build machine, against Pillow: make test (fetch.sh first);
 # make test68k runs the same as 68030 code under qemu-m68k. Both JPEG
 # decoders: TJpgDec (test_pic, the 68000 programs') and libjpeg-turbo
-# (test_pic_lj, -DPIC_LIBJPEG: EWeb's); make testdsp, EWeb's with the
-# transform and colours on the Falcon's DSP (dsp/jpeg.a56 on Hatari's core),
-# and the dither on it (dsp/dither.a56) against the 68030's; make pens,
-# aerapens (tools/pens) against the Atari's own code
+# (test_pic_lj, -DPIC_LIBJPEG: EWeb's, with libwebp's WebP, -DPIC_LIBWEBP);
+# make testdsp, EWeb's with the transform and colours on the Falcon's DSP
+# (dsp/jpeg.a56 on Hatari's core), and the dither on it (dsp/dither.a56)
+# against the 68030's; make pens, aerapens (tools/pens) against the
+# Atari's own code
 S      := ../../src
 T      := ../../third_party
 SRC    := test_pic.c $(S)/pic.c $(S)/png.c $(S)/jpegdc.c $(S)/inflate.c $(S)/util.c \
@@ -28,6 +29,17 @@ LJ_C   := jaricom jcomapi jdapimin jdapistd jdarith jdcoefct jdcolor jddctmgr jd
 LJ_SRC := $(addprefix $(LJ)/src/,$(addsuffix .c,$(LJ_C)))
 LJ_INC := -DPIC_LIBJPEG -DNO_GETENV -DNO_PUTENV -DAERA_NO_FLOAT -I$(LJ)/src -I$(LJ)/config
 SRC_LJ := $(filter-out $(S)/jpegdc.c,$(SRC)) $(S)/pic_lj8.c
+# libwebp's decoder (-DPIC_LIBWEBP), in EWeb's builds (those with libjpeg-turbo)
+WP     := $(T)/libwebp
+WP_C   := dec/alpha_dec dec/buffer_dec dec/frame_dec dec/io_dec dec/quant_dec dec/tree_dec dec/vp8_dec dec/vp8l_dec \
+          dec/webp_dec dsp/alpha_processing dsp/cpu dsp/dec dsp/dec_clip_tables dsp/filters dsp/lossless dsp/rescaler \
+          dsp/upsampling dsp/yuv utils/bit_reader_utils utils/color_cache_utils utils/filters_utils \
+          utils/huffman_utils utils/palette utils/quant_levels_dec_utils utils/rescaler_utils utils/thread_utils \
+          utils/utils
+# (and AERA's random_utils.c, without floats: AERA.md)
+WP_SRC := $(addprefix $(WP)/src/,$(addsuffix .c,$(WP_C))) $(WP)/aera/random_utils.c
+WP_INC := -DPIC_LIBWEBP -DHAVE_CONFIG_H -I$(WP)
+LJ_INC += $(WP_INC)
 
 $(B)/test_pic: $(SRC) $(HDR) $(B)/tjpgd.o | $(B)
 	cc $(CFLAGS) $(SAN) $(INC) -o $@ $(SRC) $(B)/tjpgd.o
@@ -39,10 +51,13 @@ $(B)/libjpeg.a: $(LJ_SRC) | $(B)
 	mkdir -p $(B)/lj && cd $(B)/lj && cc -O2 -g $(SAN) -w -DNO_GETENV -DNO_PUTENV -DAERA_NO_FLOAT -I../../$(LJ)/src -I../../$(LJ)/config \
 		-c $(addprefix ../../,$(LJ_SRC))
 	rm -f $@ && ar rcs $@ $(B)/lj/*.o
-$(B)/test_pic_lj: $(SRC_LJ) $(HDR) $(B)/libjpeg.a | $(B)
-	cc $(CFLAGS) $(SAN) $(INC) $(LJ_INC) -o $@ $(SRC_LJ) $(B)/libjpeg.a
-$(B)/test_pic_lj68k: $(SRC_LJ) $(LJ_SRC) $(HDR) | $(B)
-	m68k-linux-gnu-gcc $(CFLAGS) -w -m68030 -static $(INC) $(LJ_INC) -o $@ $(SRC_LJ) $(LJ_SRC)
+$(B)/libwebp.a: $(WP_SRC) | $(B)
+	mkdir -p $(B)/wp && cd $(B)/wp && cc -O2 -g $(SAN) -w -DHAVE_CONFIG_H -I../../$(WP) -c $(addprefix ../../,$(WP_SRC))
+	rm -f $@ && ar rcs $@ $(B)/wp/*.o
+$(B)/test_pic_lj: $(SRC_LJ) $(HDR) $(B)/libjpeg.a $(B)/libwebp.a | $(B)
+	cc $(CFLAGS) $(SAN) $(INC) $(LJ_INC) -o $@ $(SRC_LJ) $(B)/libjpeg.a $(B)/libwebp.a
+$(B)/test_pic_lj68k: $(SRC_LJ) $(LJ_SRC) $(WP_SRC) $(HDR) | $(B)
+	m68k-linux-gnu-gcc $(CFLAGS) -w -m68030 -static $(INC) $(LJ_INC) -o $@ $(SRC_LJ) $(LJ_SRC) $(WP_SRC)
 # the same with jpeg.a56 on Hatari's DSP core (../ec/fetch-hatari.sh)
 HAT    := ../ec/build/hatari
 $(B)/hatari.a: | $(B)
@@ -50,9 +65,10 @@ $(B)/hatari.a: | $(B)
 	mkdir -p $(B)/hat && cd $(B)/hat && cc -O2 -w -I../../$(HAT) -I../../$(HAT)/stub \
 		-c ../../$(HAT)/dsp_core.c ../../$(HAT)/dsp_cpu.c
 	rm -f $@ && ar rcs $@ $(B)/hat/*.o
-$(B)/test_pic_dsp: $(SRC_LJ) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/libjpeg.a $(B)/hatari.a | $(B)
+$(B)/test_pic_dsp: $(SRC_LJ) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/libjpeg.a $(B)/libwebp.a \
+		$(B)/hatari.a | $(B)
 	cc $(CFLAGS) $(SAN) $(INC) $(LJ_INC) -DWITH_DSP_SIM -I$(HAT) -I$(HAT)/stub -o $@ $(SRC_LJ) dsp_sim.c \
-		$(B)/libjpeg.a $(B)/hatari.a
+		$(B)/libjpeg.a $(B)/libwebp.a $(B)/hatari.a
 $(B):
 	mkdir -p $@
 # aerapens (../../tools/pens), the Pi gateway's pens, against the Atari's

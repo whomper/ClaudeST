@@ -245,6 +245,10 @@ char *strdup(const char *s)
 
 #endif
 
+/* TLS.OVL (common/tlsovl) takes the strings and vsnprintf from here, and
+   the memory from the program that loads it: no heap of its own */
+#ifndef LIBC_NO_HEAP
+
 /* ---------------- heap ----------------
  * Blocks carry their size at both ends (boundary tags), so free() finds
  * and joins its neighbours at once, and free blocks are kept in lists by
@@ -852,6 +856,8 @@ long heap_check(long *nfree)
 	return bytes;
 }
 #endif
+
+#endif	/* LIBC_NO_HEAP */
 
 #ifndef HEAP_TEST
 

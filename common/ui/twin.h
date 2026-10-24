@@ -5,7 +5,7 @@
  * 2.3): one of them in use at a time, so that the two never write the
  * same files at once.
  *
- *   twin_init("ECAL|ECALST")   at start-up: the names the editions run
+ *   twin_init("EWEB|EWEBST")   at start-up: the names the editions run
  *                              under, as av_init's
  *   if (twin_handover(cmd))    the PRG, before it opens a window: where
  *       quit now;              the AES lists its programs (MagiC, MiNT),
