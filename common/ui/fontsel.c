@@ -962,8 +962,10 @@ static void draw_type(void)
 	}
 	tr_box(o_type, &r, 0);
 	graf_mouse(M_OFF, 0);
+	/* the box drawn under it again, so that the line is on the dialog's
+	   own background, 3D or white (5.6) */
+	objc_draw(fs_tree, 0, 8, r.x, r.y, r.w, r.h);
 	clip_on(&r);
-	fill(&r, 0);
 	text_at(r.x, r.y, line, (long)strlen(line), r.w / gl_wchar, TX_LTR);
 	clip_off();
 	graf_mouse(M_ON, 0);
