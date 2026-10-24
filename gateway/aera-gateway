@@ -8,8 +8,11 @@ says how they are.
   sudo ./aera-gateway install mail IMAP SMTP[:587] [POP3]   EMail's (emailgate)
   sudo ./aera-gateway install dav                           ECal's and EContact's (ecalgate)
   sudo ./aera-gateway install ftp                           EFTP's (eftpgate)
+  sudo ./aera-gateway install web                           EWeb's (webgate)
   sudo ./aera-gateway install claude --network --atari ATARI_IP
                                                             ClaudeST's bridge (claude-st)
+  sudo ./aera-gateway install all --allow ATARI_IP --mail IMAP SMTP[:587] [POP3] [--browser]
+                                                            all of them at once
   sudo ./aera-gateway update        every one installed, from this copy, settings kept
                                     (../update-pi.sh: this copy to the latest release first)
   aera-gateway status               what runs, on which ports, with which settings
@@ -45,13 +48,14 @@ import tempfile
 import time
 import urllib.request
 
-VERSION = "1.0"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.9"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
 UNITS = "/etc/systemd/system"
 OLD_BIN = "/usr/local/bin"                  # where the apps' own install.sh put them
-FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py")
+FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py", "webgate.py")
+EXT = "webgate-ext"                         # webgate's browser extension, a folder next to them
 HOME_NETS = ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8")
 CLAUDEST = "whomper/ClaudeST"
 
@@ -95,6 +99,14 @@ class Pi:
     def have(self, prog):
         return shutil.which(prog) is not None
 
+    def which(self, *progs):
+        """the path of the first of progs that is installed, or None"""
+        for prog in progs:
+            path = shutil.which(prog)
+            if path:
+                return path
+        return None
+
     def is_root(self):
         return os.geteuid() == 0
 
@@ -132,7 +144,7 @@ class Pi:
         with contextlib.suppress(FileNotFoundError):
             os.remove(tmp)          # one left over keeps its own mode and owner
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode & 0o600)
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "wb" if isinstance(text, bytes) else "w") as f:
             if owner:
                 self.own(fd, p, owner)
             os.fchmod(fd, mode)     # the umask doesn't decide
@@ -148,7 +160,7 @@ class Pi:
         """src to p; without a mode, src's as cp gives it"""
         if mode is None:
             mode = os.stat(src).st_mode & 0o755
-        with open(src) as f:
+        with open(src, "rb") as f:          # a program too (aerapens)
             self.write(p, f.read(), mode)
 
     def makedirs(self, p):
@@ -365,6 +377,9 @@ class Gateway:
 
     def describe(self, ns):
         return ""
+
+    def prepare(self, pi, ns):
+        """what this set-up needs on the Pi beyond packages, before anything changes"""
 
     def before_start(self, pi):
         pass
@@ -640,7 +655,257 @@ class Ftp(Gateway):
             "Then give your FTPS and SFTP sites their real server names in File > Sites."])
 
 
-GATEWAYS = [Mail(), Dav(), Ftp()]
+class Web(Gateway):
+    key, name, script = "web", "webgate", "webgate.py"
+    title = "EWeb gateway for the Atari (HTTP and HTTPS)"
+    removed = "webgate removed."
+    packages = ("python3-pil",)             # Pillow: pictures made for the Atari's page
+    # the Pi's browser (--browser): Chromium full screen in a screen of
+    # its own, going out through webgate (127.0.0.1), as user webgate
+    SCREEN, BROWSER = "webgate-screen", "webgate-browser"
+    DISPLAY = ":99"
+    PROFILE = "/var/lib/webgate/browser"
+    MIN_MEMORY = 1536                       # MB: a Pi with 2 GB or more
+    # aerapens (EWeb's pictures as the Atari's pens): built here from this
+    # copy's pens/, run by systemd one a connection on its socket
+    PENS_SRC = os.path.join(os.path.dirname(HERE), "pens")
+    PENS_DIR = "/opt/aera-gateway-pens"
+    PENS_SOCKET = "/run/webgate-pens.sock"
+    pens_built = None                       # this install's aerapens, built in prepare()
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Pi (8280 is the default)")
+        ap.add_argument("--allow-local", action="store_true", default=None,
+                        help="also reach servers on the home network (a router's or a NAS's pages)")
+        ap.add_argument("--no-allow-local", dest="allow_local", action="store_false")
+        ap.add_argument("--cafile", metavar="CA.PEM",
+                        help="check servers against this CA instead of the Pi's roots")
+        ap.add_argument("--no-cafile", dest="cafile", action="store_const", const="")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None,
+                        help="log every request (the server, never the address's path)")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+        ap.add_argument("--browser", action="store_true", default=None,
+                        help="EWeb's snapshots and live view: Chromium on the Pi (a Pi with 2 GB or more)")
+        ap.add_argument("--no-browser", dest="browser", action="store_false")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.port is not None:
+            ns.port = o.port
+        if o.allow_local is not None:
+            ns.allow_local = o.allow_local
+        if o.cafile is not None:
+            if o.cafile and not os.path.isfile(o.cafile):
+                raise Usage("--cafile: there is no %s" % o.cafile)
+            ns.cafile = os.path.abspath(o.cafile) if o.cafile else None
+        if o.verbose is not None:
+            ns.verbose = o.verbose
+        if o.browser is not None:
+            ns.browser = o.browser
+
+    def prepare(self, pi, ns):
+        """the Pi's browser: enough memory (before anything changes), and its
+        programs; and aerapens built"""
+        if ns.browser:
+            m = re.search(r"^MemTotal:\s+(\d+) kB", pi.read("/proc/meminfo") or "", re.M)
+            if m and int(m.group(1)) // 1024 < self.MIN_MEMORY:
+                raise Failed("The Pi's browser needs a Pi with 2 GB of memory or more; this one has %d MB.\n"
+                             "webgate works without it: sudo %s install web --no-browser"
+                             % (int(m.group(1)) // 1024, PROG))
+        self.build_pens(pi)
+        if not ns.browser:
+            return
+        need = []
+        if not pi.which("chromium", "chromium-browser"):
+            need.append("chromium" if pi.ok("apt-cache", "show", "chromium") else "chromium-browser")
+        if not pi.which("Xvfb"):
+            need.append("xvfb")
+        if not pi.which("xdotool"):
+            need.append("xdotool")
+        if need:
+            heading("Installing the Pi's browser (%s): this takes a while" % ", ".join(need))
+            pi.run("apt-get", "update", "-qq")
+            pi.run("apt-get", "install", "-y", "-qq", *need)
+
+    def unit(self, ns, keep):
+        keep = [k for k in keep if not k.startswith("Environment=DISPLAY=")]
+        return super().unit(ns, keep + (["Environment=DISPLAY=" + self.DISPLAY] if ns.browser else []))
+
+    def browser_units(self, pi, ns):
+        """(the screen's unit, the browser's unit)"""
+        port = ns.browser_port
+        chromium = pi.which("chromium", "chromium-browser") or "/usr/bin/chromium"
+        ext = "%s/%s" % (OPT, EXT)
+        args = [chromium, "--kiosk", "--no-first-run", "--no-default-browser-check", "--noerrdialogs",
+                "--disable-infobars", "--disable-session-crashed-bubble", "--password-store=basic",
+                "--user-data-dir=" + self.PROFILE, "--load-extension=" + ext, "--disable-extensions-except=" + ext,
+                # everything through webgate, which connects only where 7.3 lets it
+                "--proxy-server=http://127.0.0.1:%d" % port, "--proxy-bypass-list=<-loopback>;127.0.0.1:%d" % port,
+                # and it resolves nothing itself: names go to webgate as they are
+                "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1", "--disable-quic",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--window-position=0,0", "--window-size=1024,768", "about:blank"]
+        common = ["User=" + self.name, "Restart=always", "RestartSec=5",
+                  "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes"]
+        screen = "\n".join([
+            "[Unit]", "Description=webgate's screen for the Pi's browser (EWeb's snapshots and live view)",
+            "After=%s.service" % self.name, "JoinsNamespaceOf=%s.service" % self.name, "",
+            "[Service]",
+            "ExecStart=%s %s -screen 0 1024x768x24 -nolisten tcp" % (pi.which("Xvfb") or "/usr/bin/Xvfb",
+                                                                    self.DISPLAY),
+            "NoNewPrivileges=yes"] + common + ["", "[Install]", "WantedBy=multi-user.target", ""])
+        browser = "\n".join([
+            "[Unit]", "Description=The Pi's browser for EWeb (Chromium, out through webgate only)",
+            "Requires=%s.service" % self.SCREEN, "After=%s.service %s.service" % (self.SCREEN, self.name),
+            "JoinsNamespaceOf=%s.service" % self.name, "",
+            "[Service]",
+            "Environment=DISPLAY=" + self.DISPLAY, "Environment=HOME=/var/lib/webgate", "StateDirectory=webgate",
+            # the screen may take a moment
+            "ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do xdotool getdisplaygeometry >/dev/null "
+            "2>&1 && exit 0; sleep 1; done; exit 1'",
+            "ExecStart=" + " ".join(unit_word(w) for w in args),
+            "# Chromium's own sandbox needs its setuid helper or user namespaces: no NoNewPrivileges here"]
+            + common + ["", "[Install]", "WantedBy=multi-user.target", ""])
+        return screen, browser
+
+    def started(self, pi, ns):
+        if not ns.browser:
+            self.browser_off(pi, quiet=False)
+            return
+        screen, browser = self.browser_units(pi, ns)
+        pi.write(unit_path(self.SCREEN), screen)
+        pi.write(unit_path(self.BROWSER), browser)
+        # Chromium keeps an extension's old background script in its
+        # profile: a new webgate-ext starts afresh (the logins stay)
+        for d in ("Service Worker", "Extension State", "Extension Rules"):
+            pi.rmtree("%s/Default/%s" % (self.PROFILE, d))
+        pi.run("systemctl", "daemon-reload")
+        pi.run("systemctl", "enable", self.SCREEN + ".service", self.BROWSER + ".service", out="hide")
+        pi.run("systemctl", "restart", self.SCREEN + ".service", check=False)
+        pi.run("systemctl", "restart", self.BROWSER + ".service", check=False)
+        say("The Pi's browser (Chromium, in webgate's own screen) is running for EWeb's snapshots and live view.")
+
+    def browser_off(self, pi, quiet=True):
+        if not pi.exists(unit_path(self.BROWSER)) and not pi.exists(unit_path(self.SCREEN)):
+            return
+        for u in (self.BROWSER, self.SCREEN):
+            pi.run("systemctl", "disable", "--now", u + ".service", check=False, out="hide", errors=False)
+            pi.remove(unit_path(u))
+        pi.run("systemctl", "daemon-reload")
+        if not quiet:
+            say("The Pi's browser is off (its profile, with any logins, stays in %s)." % self.PROFILE)
+
+    def after_remove(self, pi):
+        self.browser_off(pi)
+        self.pens_off(pi)
+
+    def build_pens(self, pi):
+        """aerapens from this copy's pens/, built in a folder of its own (the
+        copy stays as it is); without it, or if it doesn't build, pictures
+        come as JPEG and PNG, as before"""
+        self.pens_built = None
+        if not os.path.isdir(os.path.join(self.PENS_SRC, "common")):
+            return              # an app's copy of gateway/: no pens/ beside it
+        need = [pkg for prog, pkg in (("cc", "gcc"), ("make", "make")) if not pi.which(prog)]
+        if need:
+            heading("Installing %s, to build aerapens (pictures as the Atari's pens)" % " and ".join(need))
+            pi.run("apt-get", "update", "-qq")
+            pi.run("apt-get", "install", "-y", "-qq", *need)
+        heading("Building aerapens")
+        tmp = tempfile.mkdtemp(prefix="aerapens-")
+        built = os.path.join(tmp, "pens", "aerapens")
+        shutil.copytree(self.PENS_SRC, os.path.join(tmp, "pens"),
+                        ignore=shutil.ignore_patterns("aerapens", "build"))
+        if pi.run("make", "-s", "-C", os.path.join(tmp, "pens"), "PENS_BUILD=v" + VERSION,
+                  check=False).returncode == 0 and os.path.isfile(built):
+            self.pens_built = tmp
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+            say("aerapens didn't build: pictures come as JPEG and PNG, as before.")
+
+    def pens_units(self):
+        """(the socket's unit, the service's): one aerapens a connection, as
+        a user of its own, with little memory and time, nothing but its
+        socket"""
+        socket_unit = "\n".join([
+            "[Unit]", "Description=aerapens' socket: pictures as the Atari's pens, for webgate", "",
+            "[Socket]", "ListenStream=" + self.PENS_SOCKET, "Accept=yes",
+            "SocketUser=" + self.name, "SocketGroup=" + self.name, "SocketMode=0600", "MaxConnections=8", "",
+            "[Install]", "WantedBy=sockets.target", ""])
+        service = "\n".join([
+            "[Unit]", "Description=aerapens: one picture as the Atari's pens, for webgate", "",
+            "[Service]",
+            "ExecStart=%s/aerapens" % self.PENS_DIR,
+            "StandardInput=socket", "StandardOutput=socket", "StandardError=journal",
+            "DynamicUser=yes",
+            "LimitAS=64M", "LimitCPU=2", "RuntimeMaxSec=5",
+            "PrivateNetwork=yes", "PrivateTmp=yes", "PrivateDevices=yes",
+            "ProtectSystem=strict", "ProtectHome=yes", "ProtectKernelTunables=yes", "ProtectKernelModules=yes",
+            "ProtectControlGroups=yes", "NoNewPrivileges=yes", "MemoryDenyWriteExecute=yes",
+            "LockPersonality=yes", "RestrictAddressFamilies=AF_UNIX", "RestrictNamespaces=yes",
+            "SystemCallArchitectures=native", "SystemCallFilter=@system-service",
+            "SystemCallFilter=~@network-io @privileged @resources", ""])
+        return socket_unit, service
+
+    def before_start(self, pi):
+        """aerapens in place before webgate starts, so that its first look finds it"""
+        if not self.pens_built:
+            return
+        try:
+            pi.copy(os.path.join(self.pens_built, "pens", "aerapens"), self.PENS_DIR + "/aerapens", 0o755)
+        finally:
+            shutil.rmtree(self.pens_built, ignore_errors=True)
+            self.pens_built = None
+        socket_unit, service = self.pens_units()
+        pi.write(unit_path("webgate-pens").replace(".service", ".socket"), socket_unit)
+        pi.write(unit_path("webgate-pens@"), service)
+        pi.run("systemctl", "daemon-reload")
+        pi.run("systemctl", "enable", "webgate-pens.socket", out="hide")
+        pi.run("systemctl", "restart", "webgate-pens.socket", check=False)
+        say("aerapens is ready: pictures as the Atari's pens, one at a time on %s." % self.PENS_SOCKET)
+
+    def pens_off(self, pi):
+        sock = unit_path("webgate-pens").replace(".service", ".socket")
+        if not pi.exists(sock):
+            return
+        pi.run("systemctl", "disable", "--now", "webgate-pens.socket", check=False, out="hide", errors=False)
+        pi.remove(sock)
+        pi.remove(unit_path("webgate-pens@"))
+        pi.rmtree(self.PENS_DIR)
+        pi.run("systemctl", "daemon-reload")
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        out += ["--allow-local"] if ns.allow_local else []
+        out += ["--cafile", ns.cafile] if ns.cafile else []
+        out += ["--browser"] if ns.browser else []
+        out += ["--browser-port", str(ns.browser_port)] if ns.browser_port != ns.default["browser_port"] else []
+        out += ["--pens-socket", ns.pens_socket] if ns.pens_socket != ns.default["pens_socket"] else []
+        out += ["--insecure"] if ns.insecure else []
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def describe(self, ns):
+        return "servers at home %s%s%s" % ("allowed" if ns.allow_local else "refused",
+                                           ", CA " + ns.cafile if ns.cafile else "",
+                                           "; the Pi's browser" if ns.browser else "")
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "webgate is running. In EWeb on the Atari, Settings > Secure:",
+            "   Pi gateway:  %s" % ip,
+            "   Port:        %s" % ns.port,
+            "",
+            "Check it from any browser on your network: http://%s:%s/" % (ip, ns.port)])
+
+
+MAIL = Mail()
+GATEWAYS = [MAIL, Dav(), Ftp(), Web()]
 
 
 def put_files(pi, src):
@@ -652,6 +917,8 @@ def put_files(pi, src):
     pi.makedirs(new)
     for f in FILES:
         pi.copy(os.path.join(src, f), "%s/%s" % (new, f), 0o644 if f == "aeragate.py" else 0o755)
+    for f in sorted(glob.glob(os.path.join(src, EXT, "*"))):
+        pi.copy(f, "%s/%s/%s" % (new, EXT, os.path.basename(f)), 0o644)
     had = pi.exists(OPT)
     if had:
         pi.rename(OPT, old)
@@ -673,8 +940,9 @@ def need_packages(pi, gw):
         need.append("python3")
     if not pi.exists("/etc/ssl/certs/ca-certificates.crt"):     # the roots, for checking the servers
         need.append("ca-certificates")
-    if "python3-paramiko" in gw.packages and not pi.ok("python3", "-c", "import paramiko"):
-        need.append("python3-paramiko")
+    for package, module in (("python3-paramiko", "paramiko"), ("python3-pil", "PIL")):
+        if package in gw.packages and not pi.ok("python3", "-c", "import " + module):
+            need.append(package)
     if need:
         pi.run("apt-get", "update", "-qq")
         pi.run("apt-get", "install", "-y", "-qq", *need)
@@ -689,6 +957,7 @@ def install_gateway(pi, gw, o, src=HERE):
         gw.take_over(pi, ns)
     gw.apply(ns, o)
     gw.check(ns)
+    gw.prepare(pi, ns)
     need_packages(pi, gw)
     if not pi.ok("id", gw.name):
         pi.run("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", gw.name)
@@ -985,7 +1254,7 @@ CLAUDE = Claude()
 SERVICES = {g.key: g for g in GATEWAYS + [CLAUDE]}
 NAMES = {"email": "mail", "emailgate": "mail", "cal": "dav", "ecal": "dav", "econtact": "dav",
          "contacts": "dav", "ecalgate": "dav", "eftp": "ftp", "eftpgate": "ftp",
-         "claudest": "claude", "claude-st": "claude"}
+         "claudest": "claude", "claude-st": "claude", "eweb": "web", "webgate": "web"}
 
 
 def service(name):
@@ -1043,6 +1312,43 @@ def update(pi, o, src=HERE):
         CLAUDE.install(pi, settings_for(CLAUDE, args))
 
 
+def install_all(pi, o, src=HERE):
+    """every service, one after the other, for the Atari at o.allow; one
+    that fails doesn't stop the others. Those already installed keep their
+    settings (--allow, if given, is the one change)."""
+    allow = ",".join(o.allow) if o.allow else None
+    done, failed, skipped = [], [], []
+    for svc in GATEWAYS + [CLAUDE]:
+        if svc is MAIL and not o.mail and not svc.installed(pi) and not pi.exists(Mail.STUNNEL):
+            skipped.append("mail (name your provider's servers: --mail IMAP SMTP[:587] [POP3])")
+            continue
+        if svc is CLAUDE:
+            argv = ["--from", o.source] if o.source else []
+            serial = svc.installed(pi) and "--serial" in CLAUDE.get_var(pi, "CLAUDE_ST_ARGS")
+            if not serial and (allow or not svc.installed(pi)):      # a serial cable stays as it is
+                argv += ["--network", "--atari", allow or "any"]
+        else:
+            argv = (o.mail or []) if svc is MAIL else []
+            argv += ["--allow", allow] if allow else []
+            argv += ["--browser"] if svc.key == "web" and o.browser else []
+        heading("%s (%s)" % (svc.key, svc.name))
+        try:
+            if svc is CLAUDE:
+                CLAUDE.install(pi, settings_for(svc, argv))
+            else:
+                install_gateway(pi, svc, settings_for(svc, argv), src)
+            done.append(svc.key)
+        except Failed as e:
+            print(e, file=sys.stderr)
+            failed.append(svc.key)
+    heading("All")
+    say("Installed: %s" % (", ".join(done) or "none"))
+    if skipped:
+        say("Not installed: " + "; ".join(skipped))
+    if failed:
+        raise Failed("Didn't install: %s (see above); the others run." % ", ".join(failed))
+
+
 def settings_for(svc, argv):
     ap = argparse.ArgumentParser(prog="aera-gateway install " + svc.key)
     svc.options(ap)
@@ -1062,6 +1368,22 @@ def main(argv=None, pi=None):
             return 0
         if cmd not in ("install", "update", "remove", "set-key"):
             raise Usage("%s: the commands are install, update, status, remove and set-key" % cmd)
+        if cmd == "install" and rest[:1] == ["all"]:
+            ap = argparse.ArgumentParser(prog="aera-gateway install all",
+                                         description="mail, dav, ftp, web and claude, for one Atari")
+            ap.add_argument("--allow", action="append", metavar="ATARI_IP",
+                            help="the Atari that may use them (more: IP1,IP2); claude's --atari too")
+            ap.add_argument("--mail", nargs="+", metavar="SERVER",
+                            help="IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]: without them, mail is left out")
+            ap.add_argument("--browser", action="store_true", help="web with the Pi's browser (a Pi with 2 GB)")
+            ap.add_argument("--from", dest="source", metavar="DIR", help="ClaudeST's bridge from this copy")
+            o = ap.parse_args(rest[1:])
+            if o.mail and len(o.mail) not in (2, 3):
+                raise Usage("--mail IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]")
+            if not pi.is_root():
+                raise Failed("Please run with sudo.")
+            install_all(pi, o)
+            return 0
         if cmd == "update":
             ap = argparse.ArgumentParser(prog="aera-gateway update")
             ap.add_argument("--from", dest="source", metavar="DIR", help="ClaudeST's bridge from this copy")

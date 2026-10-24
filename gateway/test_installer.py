@@ -38,9 +38,14 @@ class FakePi(ag.Pi):
         self.rules = []
         self.answers = []
         self.busy = set()           # ports another program has
+        self.programs = set()       # installed beyond python3 (chromium, Xvfb...)
+        self.no_modules = set()     # Python modules that aren't there
 
     def have(self, prog):
         return prog == "python3" or (prog == "ufw" and self.ufw is not None)
+
+    def which(self, *progs):
+        return next(("/usr/bin/" + p for p in progs if p in self.programs), None)
 
     def is_root(self):
         return True
@@ -109,6 +114,11 @@ class FakePi(ag.Pi):
             os.chmod(os.path.join(c[3], "bin", "python"), 0o755)
         elif c[0] == "ls":
             rc = 2
+        elif c[0] == "make":            # aerapens' build: a stand-in for what it makes
+            with open(os.path.join(c[c.index("-C") + 1], "aerapens"), "wb") as f:
+                f.write(b"\x7fELF\x02\x01\x01\0" + bytes(range(256)))       # a program's bytes, not text
+        elif c[:2] == ["python3", "-c"] and c[2].startswith("import "):
+            rc = 1 if c[2][7:] in self.no_modules else 0
         if check and rc:
             raise ag.Failed("%s failed" % " ".join(cmd))
         return subprocess.CompletedProcess(cmd, rc, text if out == "keep" else None)
@@ -455,6 +465,97 @@ class DavFtpTest(Base):
         self.assertEqual(self.pi.rules, [("192.168.1.50", "2121"), ("192.168.1.50", "30000:30099")])
         self.assertIn("Options > Settings > Secure", self.out)
 
+    def test_web(self):
+        self.pi.ufw = True
+        self.assertEqual(self.run_ag("install", "eweb", "--allow", "192.168.1.50"), 0, self.err)
+        self.assertEqual(self.execstart("webgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/webgate.py "
+                                                    "--port 8280 --allow 192.168.1.50")
+        self.assertEqual(self.pi.rules, [("192.168.1.50", "8280")])
+        self.assertIn("In EWeb on the Atari, Settings > Secure:", self.out)
+        self.assertIn("Pi gateway:  192.168.1.10", self.out)
+        self.assertIn("Port:        8280", self.out)
+        self.assertTrue(self.pi.exists("/opt/aera-gateway/webgate.py"))
+        self.assertNotIn(("apt-get", "install", "-y", "-qq", "python3-pil"), self.pi.cmds)  # Pillow there
+        self.pi.no_modules = {"PIL"}
+        self.run_ag("install", "web")
+        self.assertIn(("apt-get", "install", "-y", "-qq", "python3-pil"), self.pi.cmds)
+        self.pi.no_modules = set()
+        self.run_ag("install", "web", "--allow-local", "-v")
+        self.assertEqual(self.execstart("webgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/webgate.py "
+                                                    "--port 8280 --allow 192.168.1.50 --allow-local -v")
+
+    def test_web_browser(self):
+        self.pi.write("/proc/meminfo", "MemTotal:        3884136 kB\nMemFree: 1 kB\n")
+        self.assertEqual(self.run_ag("install", "web", "--browser"), 0, self.err)
+        self.assertEqual(self.execstart("webgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/webgate.py "
+                                                    "--port 8280 --browser")
+        self.assertIn("Environment=DISPLAY=:99", self.unit("webgate"))
+        installed = [c for c in self.pi.cmds if c[:2] == ("apt-get", "install")][-1]
+        for pkg in ("xvfb", "xdotool"):
+            self.assertIn(pkg, installed)
+        screen, browser = self.unit("webgate-screen"), self.unit("webgate-browser")
+        self.assertIn(":99 -screen 0 1024x768x24 -nolisten tcp", screen)
+        for want in ("--proxy-server=http://127.0.0.1:8281", "--load-extension=/opt/aera-gateway/webgate-ext",
+                     "--user-data-dir=/var/lib/webgate/browser", "JoinsNamespaceOf=webgate.service",
+                     "User=webgate", "--kiosk", '"--proxy-bypass-list=<-loopback>;127.0.0.1:8281"',
+                     '"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"', "--disable-quic",
+                     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"):
+            self.assertIn(want, browser)
+        self.assertTrue(self.pi.exists("/opt/aera-gateway/webgate-ext/manifest.json"))
+        self.assertIn(("systemctl", "restart", "webgate-browser.service"), self.pi.cmds)
+        self.assertIn("the Pi's browser", self.out)
+        # an update keeps it, and a new extension starts afresh
+        self.pi.write("/var/lib/webgate/browser/Default/Service Worker/x", "old")
+        self.pi.write("/var/lib/webgate/browser/Default/Cookies", "logins")
+        self.assertEqual(self.run_ag("update"), 0, self.err)
+        self.assertIn("--browser", self.execstart("webgate"))
+        self.assertFalse(self.pi.exists("/var/lib/webgate/browser/Default/Service Worker"))
+        self.assertTrue(self.pi.exists("/var/lib/webgate/browser/Default/Cookies"))
+        # off again, and gone with the service
+        self.assertEqual(self.run_ag("install", "web", "--no-browser"), 0, self.err)
+        self.assertNotIn("--browser", self.execstart("webgate"))
+        self.assertNotIn("DISPLAY", self.unit("webgate"))
+        self.assertIsNone(self.unit("webgate-browser"))
+        self.assertIsNone(self.unit("webgate-screen"))
+        self.run_ag("install", "web", "--browser")
+        self.assertEqual(self.run_ag("remove", "web"), 0, self.err)
+        self.assertIsNone(self.unit("webgate-browser"))
+
+    @unittest.skipUnless(os.path.isdir(os.path.join(ag.Web.PENS_SRC, "common")),
+                         "needs AERA-Gateway's pens/ (an app's copy of gateway/ has none)")
+    def test_web_pens(self):
+        self.pi.programs = {"make"}          # no cc yet
+        self.assertEqual(self.run_ag("install", "web"), 0, self.err)
+        self.assertIn(("apt-get", "install", "-y", "-qq", "gcc"), self.pi.cmds)
+        self.assertIn("Installing gcc, to build aerapens", self.out)
+        make = [c for c in self.pi.cmds if c[0] == "make"][-1]
+        self.assertEqual(make[-1], "PENS_BUILD=v" + ag.VERSION)
+        self.assertFalse(make[3].startswith(os.path.dirname(ag.HERE)))      # never in the copy itself
+        self.assertTrue(self.pi.exists("/opt/aera-gateway-pens/aerapens"))
+        sock, svc = self.pi.read("/etc/systemd/system/webgate-pens.socket"), self.unit("webgate-pens@")
+        for want in ("ListenStream=/run/webgate-pens.sock", "Accept=yes", "SocketUser=webgate", "SocketMode=0600"):
+            self.assertIn(want, sock)
+        for want in ("ExecStart=/opt/aera-gateway-pens/aerapens", "StandardInput=socket", "DynamicUser=yes",
+                     "LimitAS=64M", "LimitCPU=2", "RuntimeMaxSec=5", "PrivateNetwork=yes",
+                     "RestrictAddressFamilies=AF_UNIX"):
+            self.assertIn(want, svc)
+        # the socket before webgate, so that webgate's first look finds aerapens
+        cmds = [c for c in self.pi.cmds if c[:2] == ("systemctl", "restart")]
+        self.assertLess(cmds.index(("systemctl", "restart", "webgate-pens.socket")),
+                        cmds.index(("systemctl", "restart", "webgate.service")))
+        self.assertEqual(self.run_ag("remove", "web"), 0, self.err)
+        self.assertIsNone(self.pi.read("/etc/systemd/system/webgate-pens.socket"))
+        self.assertFalse(self.pi.exists("/opt/aera-gateway-pens"))
+        self.assertFalse(any(c[:2] == ("apt-get", "remove") for c in self.pi.cmds))   # gcc stays
+
+    def test_web_browser_needs_memory(self):
+        self.pi.write("/proc/meminfo", "MemTotal:         948304 kB\n")
+        self.assertEqual(self.run_ag("install", "web", "--browser"), 1)
+        self.assertIn("needs a Pi with 2 GB of memory or more; this one has 926 MB", self.err)
+        self.assertIsNone(self.unit("webgate"))
+        self.assertFalse(any(c[:2] == ("apt-get", "install") for c in self.pi.cmds))
+        self.assertEqual(self.run_ag("install", "web"), 0, self.err)        # without it, as before
+
     def test_cafile_must_exist(self):
         self.assertEqual(self.run_ag("install", "ftp", "--cafile", "/no/such/ca.pem"), 2)
 
@@ -483,6 +584,37 @@ class ClaudeTest(Base):
         with open(os.path.join(self.src, "pi", "claude-st.service"), "w") as fh:
             fh.write("[Service]\nExecStart=/opt/claude-st/venv/bin/python ...\n")
         self.conf = ag.Claude.CONF
+
+    def test_install_all(self):
+        rc = self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src,
+                         "--mail", "imap.mail.me.com", "smtp.mail.me.com:587")
+        self.assertEqual(rc, 0, self.err)
+        for name in ("emailgate", "ecalgate", "eftpgate", "webgate"):
+            self.assertIn("--allow 192.168.1.50", self.execstart(name), name)
+        self.assertIn("imap.mail.me.com smtp.mail.me.com:587", self.execstart("emailgate"))
+        self.assertIn("--tcp 0.0.0.0:2323 --allow 192.168.1.50", self.pi.read(self.conf))
+        self.assertIn("Installed: mail, dav, ftp, web, claude", self.out)
+        # again, without --mail or --allow: everything kept as it is
+        self.assertEqual(self.run_ag("install", "all", "--from", self.src), 0, self.err)
+        self.assertIn("--allow 192.168.1.50", self.execstart("ecalgate"))
+        self.assertIn("imap.mail.me.com", self.execstart("emailgate"))
+        self.assertIn("--allow 192.168.1.50", self.pi.read(self.conf))
+
+    def test_install_all_keeps_a_serial_cable(self):
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--serial", "/dev/ttyUSB0"), 0)
+        self.assertEqual(self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src), 0, self.err)
+        self.assertIn("--serial /dev/ttyUSB0", self.pi.read(self.conf))
+
+    def test_install_all_without_mail_and_a_failure(self):
+        self.pi.busy.add("2121")             # ftp's port is taken
+        rc = self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src)
+        self.assertEqual(rc, 1)
+        self.assertIn("Not installed: mail (name your provider's servers", self.out)
+        self.assertIn("Didn't install: ftp", self.err)
+        self.assertIsNone(self.unit("emailgate"))
+        self.assertIsNotNone(self.unit("webgate"))          # the others went on
+        self.assertIsNotNone(self.unit("claude-st"))
+        self.assertEqual(self.run_ag("install", "all", "--mail", "imap.example"), 2)
 
     def test_network(self):
         rc = self.run_ag("install", "claude", "--from", self.src, "--network", "--atari", "192.168.1.20",
