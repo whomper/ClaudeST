@@ -31,6 +31,7 @@
 #include "bigbuf.h"
 #include "fontsel.h"
 #include "dialog.h"
+#include "panebar.h"
 #include "plat.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -1082,6 +1083,11 @@ static void spark(short x, short y, short r)
 	line(x - r, y + 1, x + r, y + 1, c);
 }
 
+/* the list's own scroll bar (guideline 5.1): AES objects from
+   common/ui/panebar.c at the sidebar's right, from the list's heading down
+   to the status lines; the rows end left of it */
+static PANEBAR lbar;
+
 static void layout(void)
 {
 	short min_sb = 18 * cw, max_sb = 30 * cw;
@@ -1127,6 +1133,18 @@ static void layout(void)
 	list_rows = (status_y - 2 - (list_y + row_h)) / row_h;
 	if (list_rows < 1)
 		list_rows = 1;
+	lbar.r.w = pb_width();
+	lbar.r.x = wx + sb_w - lbar.r.w;
+	lbar.r.y = list_y - 2;
+	lbar.r.h = status_y - 2 - lbar.r.y;
+}
+
+static PANEBAR *list_bar(void)
+{
+	lbar.total = nitems;
+	lbar.shown = list_rows;
+	lbar.top = list_top;
+	return &lbar;
 }
 
 static const char *nav_labels[NNAV] = { "+ New chat", "  Search", "  Chats", "  Code",
@@ -1241,8 +1259,8 @@ static void draw_status(short full)
 
 static void draw_sidebar(void)
 {
-	short i, y, maxc = sb_w / cw - 2;
-	short x = wx + cw;
+	short i, y;
+	short x = wx + cw, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
 
 	fill(wx, wy, wx + sb_w - 1, wy + wh - 1, 0);
 	line(wx + sb_w, wy, wx + sb_w, wy + wh - 1, 1);
@@ -1268,16 +1286,12 @@ static void draw_sidebar(void)
 	}
 	line(wx + 4, list_y - 3, wx + sb_w - 5, list_y - 3, 1);
 
-	/* list header with paging arrows */
+	/* the list's heading; its bar scrolls it */
 	if (row_visible(list_y, list_y + row_h)) {
 		short n = strlen(list_title);
-		if (n > maxc - 4)
-			n = maxc - 4;
+		if (n > lmaxc)
+			n = lmaxc;
 		text(x, list_y, list_title, n, 1, 1);
-		if (list_top > 0)
-			text(wx + sb_w - 4 * cw, list_y, "\001", 1, 0, 1);
-		if (list_top + list_rows < nitems)
-			text(wx + sb_w - 2 * cw, list_y, "\002", 1, 0, 1);
 	}
 
 	/* items */
@@ -1287,8 +1301,8 @@ static void draw_sidebar(void)
 		y = list_y + (i + 1) * row_h;
 		if (!row_visible(y, y + row_h))
 			continue;
-		if (n > maxc - (it->pinned ? 1 : 0))
-			n = maxc - (it->pinned ? 1 : 0);
+		if (n > lmaxc - (it->pinned ? 1 : 0))
+			n = lmaxc - (it->pinned ? 1 : 0);
 		if (it->heading) {
 			/* a date heading, in grey like claude.ai's */
 			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 2, 1);
@@ -1299,17 +1313,17 @@ static void draw_sidebar(void)
 			short target = list_top + i == menu_target;
 			short sel = menu_target >= 0 ? target : cur;
 			if (sel)
-				fill(wx + 4, y - 1, wx + sb_w - 5, y + row_h - 3, 1);
+				fill(wx + 4, y - 1, lr, y + row_h - 3, 1);
 			else if (cur) {
 				/* the open chat, while another item is targeted */
-				short x1 = wx + 4, x2 = wx + sb_w - 5, y1 = y - 1, y2 = y + row_h - 3;
+				short x1 = wx + 4, x2 = lr, y1 = y - 1, y2 = y + row_h - 3;
 				line(x1, y1, x2, y1, 1);
 				line(x2, y1, x2, y2, 1);
 				line(x2, y2, x1, y2, 1);
 				line(x1, y2, x1, y1, 1);
 			}
 			text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
-				  wx + sb_w - 6 - (it->pinned ? cw + 4 : 0));
+				  lr - 1 - (it->pinned ? cw + 4 : 0));
 			/* a dot in the left margin, as claude.ai's: working (grey,
 			   pulsing), waiting for you (yellow, a little bigger), or
 			   updated since last read (blue) */
@@ -1326,7 +1340,7 @@ static void draw_sidebar(void)
 			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
-				short cx = wx + sb_w - cw - 2, cy = y + row_h / 2 - 1, k;
+				short cx = lr - cw + 3, cy = y + row_h / 2 - 1, k;
 				for (k = 0; k <= 3; k++) {
 					line(cx - 3 + k, cy - k, cx + 3 - k, cy - k, sel ? 0 : accent());
 					line(cx - 3 + k, cy + k, cx + 3 - k, cy + k, sel ? 0 : accent());
@@ -1334,7 +1348,7 @@ static void draw_sidebar(void)
 			}
 		}
 		if (list_top + i == lcur) {
-			short x1 = wx + 3, x2 = wx + sb_w - 4, y1 = y - 2, y2 = y + row_h - 2;
+			short x1 = wx + 3, x2 = lr + 1, y1 = y - 2, y2 = y + row_h - 2;
 			line(x1, y1, x2, y1, 1);
 			line(x2, y1, x2, y2, 1);
 			line(x2, y2, x1, y2, 1);
@@ -1345,12 +1359,20 @@ static void draw_sidebar(void)
 		/* while loading, the bridge's progress ("Looking in chat 3 of 40") */
 		const char *e = !list_loading ? "(empty)" : notice[0] ? notice : "Loading...";
 		short n = strlen(e);
-		if (n > maxc)
-			n = maxc;
+		if (n > lmaxc)
+			n = lmaxc;
 		y = list_y + row_h;
 		text(x, y + (row_h - ch) / 2 - 1, e, n, 2, 1);
 	}
 
+	{
+		GRECT c;
+		c.x = clip[0];
+		c.y = clip[1];
+		c.w = clip[2] - clip[0] + 1;
+		c.h = clip[3] - clip[1] + 1;
+		pb_draw(list_bar(), &c);
+	}
 	line(wx, status_y - 2, wx + sb_w - 1, status_y - 2, 1);
 	draw_status(1);
 }
@@ -1871,7 +1893,7 @@ static void flush_dirty(void)
 		if (dirty & D_SIDEBAR)
 			redraw(D_SIDEBAR, wx, wy + title_h + 1, sb_w, status_y - 2 - (wy + title_h + 1));
 		else if (dirty & D_LIST)
-			redraw(D_LIST, wx, list_y, sb_w, status_y - 2 - list_y);
+			redraw(D_LIST, wx, list_y - 2, sb_w, status_y - list_y);
 		if (dirty & D_STATUS)
 			redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
 		if (dirty & D_TITLE)
@@ -3956,7 +3978,7 @@ static void show_picker(void)
 static short list_hit(short mx, short my)
 {
 	short r;
-	if (mx < wx || mx >= wx + sb_w || my < list_y + row_h || my >= status_y - 2)
+	if (mx < wx || mx >= lbar.r.x || my < list_y + row_h || my >= status_y - 2)
 		return -1;
 	r = (my - list_y - row_h) / row_h;
 	if (r >= list_rows || list_top + r >= nitems || items[list_top + r].heading)
@@ -3976,17 +3998,17 @@ static long tip_still;
 /* the cut-off text under (mx, my), or 0 */
 static const char *tip_text(short mx, short my, short *ty)
 {
-	short maxc = sb_w / cw - 2, i;
-	if (mx < wx + sb_w) {
+	short maxc = (lbar.r.x - 2 - (wx + cw)) / cw, i;
+	if (mx < lbar.r.x) {
 		i = list_hit(mx, my);
 		if (i >= 0) {
 			*ty = list_y + (i - list_top + 1) * row_h;
 			return (short)strlen(items[i].label) > maxc - (items[i].pinned ? 1 : 0)
 				? items[i].label : 0;
 		}
-		if (my >= list_y && my < list_y + row_h && mx < wx + sb_w - 4 * cw) {
+		if (my >= list_y && my < list_y + row_h) {
 			*ty = list_y;
-			return (short)strlen(list_title) > maxc - 4 ? list_title : 0;
+			return (short)strlen(list_title) > maxc ? list_title : 0;
 		}
 		return 0;
 	}
@@ -4158,11 +4180,32 @@ static void drag_divider(void)
 	set_divider_watch();
 }
 
+/* the list bar's scrolling (pb_click): the rows and the bar drawn now */
+static int list_bar_scroll(long n)
+{
+	short old = list_top;
+	scroll_list((short)n);
+	if (list_top == old)
+		return 0;
+	lbar.top = list_top;	/* drawn or not (another window over it) */
+	flush_dirty();
+	return 1;
+}
+
+static int list_bar_goto(long t)
+{
+	return list_bar_scroll(t - list_top);
+}
+
 static void handle_click(short mx, short my)
 {
 	short i;
 	if (mx < wx || my < wy || mx >= wx + ww || my >= wy + wh)
 		return;
+	if (pb_part(list_bar(), mx, my) != PB_NONE) {
+		pb_click(&lbar, mx, my, list_bar_scroll, list_bar_goto);
+		return;
+	}
 	if (mx >= divider_x() - 2 && mx <= divider_x() + 2) {
 		drag_divider();
 		return;
@@ -4191,13 +4234,6 @@ static void handle_click(short mx, short my)
 				}
 				return;
 			}
-		}
-		if (my >= list_y && my < list_y + row_h) {
-			if (mx >= wx + sb_w - 4 * cw && mx < wx + sb_w - 2 * cw)
-				scroll_list(-(list_rows - 1));
-			else if (mx >= wx + sb_w - 2 * cw)
-				scroll_list(list_rows - 1);
-			return;
 		}
 		if (my >= list_y + row_h && my < status_y - 2) {
 			i = list_top + (my - list_y - row_h) / row_h;

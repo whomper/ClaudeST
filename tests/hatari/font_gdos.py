@@ -114,6 +114,9 @@ def main():
                 ("SERIALPORT=6\r\n" if a.machine.startswith("Falcon") else ""))
 
     out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")
+    for p in (out, inp):        # before Hatari, which won't start without them
+        if not os.path.exists(p):
+            os.mkfifo(p)
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "bridge", "claude_bridge.py"),
                                "--backend", "demo", "-v", "--pipe", out, inp],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)

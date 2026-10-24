@@ -145,10 +145,10 @@
 
   The sidebar on the left has @{B}+ New chat@{b}, @{B}Search@{b},
   @{B}Chats@{b}, @{B}Code@{b}, @{B}Projects@{b} and @{B}Artifacts@{b},
-  then the list for the chosen area. The open conversation fills the
-  right side, with the reply line at the bottom. Drag the divider
-  between them to resize the sidebar; the pointer turns into a hand
-  over it.
+  then the list for the chosen area, with a scroll bar of its own at
+  its right. The open conversation fills the right side, with the
+  reply line at the bottom. Drag the divider between them to resize
+  the sidebar; the pointer turns into a hand over it.
 
   Where the AES can iconify windows (MultiTOS, MagiC, XaAES, N.AES),
   the window has the iconify button: ClaudeST shrinks to its icon,

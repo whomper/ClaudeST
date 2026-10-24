@@ -64,7 +64,7 @@ pick **Network** and type the Pi's address, port 2323.
 
 The sidebar on the left has **+ New chat**, **Search**, **Chats**,
 **Code**, **Projects** and **Artifacts**, then the list for the chosen
-area. The open conversation fills the right side, with the reply line at
+area, with a scroll bar of its own at its right. The open conversation fills the right side, with the reply line at
 the bottom. Drag the divider between them to resize the sidebar; the
 pointer turns into a hand over it.
 
