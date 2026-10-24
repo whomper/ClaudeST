@@ -2615,7 +2615,7 @@ static void save_config(void)
 		    "FONT", v);
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
-	p = inf_put_num(p, "1 = dialogs and alerts in 3D where the AES draws it (TOS 4, MagiC, XaAES), 0 = flat",
+	p = inf_put_num(p, "1 = dialogs and alerts in 3D where the AES draws it (TOS 4, MagiC, XaAES, EmuTOS in colour), 0 = flat",
 			"DIALOGS3D", dlg_3d_on);
 	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);

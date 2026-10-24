@@ -413,7 +413,7 @@ sets the gateway address, and `/serial` switches to the serial port.
 moves between the two fields, `Clr/Home` clears the one with the
 cursor, and Return is OK. **3D dialogs**, next to the buttons, gives the
 alerts and the Font dialog the AES's 3D look where it has one (TOS 4,
-MagiC, XaAES); untick it for the flat look. It is greyed where the AES
+MagiC, XaAES, EmuTOS in 16 colours or more); untick it for the flat look. It is greyed where the AES
 has no 3D look.
 
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
