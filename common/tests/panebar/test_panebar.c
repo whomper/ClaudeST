@@ -36,7 +36,8 @@ short graf_handle(short *wchar, short *hchar, short *wbox, short *hbox)
 	return 1;
 }
 
-/* a vertical slider adds 15 pixels to the border, and shares a line with it */
+/* a vertical slider adds 15 pixels to the border, a horizontal one 20, and
+   each shares a line with it */
 short wind_calc(short type, short kind, short x, short y, short w, short h,
 		short *ox, short *oy, short *ow, short *oh)
 {
@@ -44,7 +45,7 @@ short wind_calc(short type, short kind, short x, short y, short w, short h,
 	*ox = x - 1;
 	*oy = y - 1;
 	*ow = w + 2 + (kind & VSLIDE ? 15 : 0);
-	*oh = h + 2;
+	*oh = h + 2 + (kind & HSLIDE ? 20 : 0);
 	return 1;
 }
 
@@ -69,7 +70,10 @@ static short drawn_clip[4], drawn_start, draws;
 short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h)
 {
 	(void)depth;
-	memcpy(drawn, tree, 5 * sizeof(OBJECT));
+	int n = 0;
+	while (n < 8 && !(tree[n++].ob_flags & LASTOB))	/* the tree up to its last object */
+		;
+	memcpy(drawn, tree, n * sizeof(OBJECT));
 	drawn_start = start;
 	drawn_clip[0] = x;
 	drawn_clip[1] = y;
@@ -86,8 +90,7 @@ static int mpos, mlen;
 short graf_mkstate(short *mx, short *my, short *mb, short *ks)
 {
 	int i = mpos < mlen ? mpos : mlen - 1;
-	*mx = 105;
-	*my = mouse[2 * i];
+	*mx = *my = mouse[2 * i];	/* a bar across reads x, one down y */
 	*mb = mouse[2 * i + 1];
 	*ks = 0;
 	mpos++;
@@ -222,9 +225,11 @@ int main(void)
 	check((drawn[0].ob_flags & 0x0600) == 0x0400 && (drawn[2].ob_flags & 0x0600) == 0x0400 &&
 	      (drawn[1].ob_flags & 0x0600) == 0x0600 && (drawn[4].ob_flags & 0x0600) == 0x0600 &&
 	      (drawn[3].ob_flags & 0x0600) == 0x0600, "... the box and the track the ground, the arrows and the slider raised");
-	check(((drawn[0].ob_spec >> 16) & 0xff) == 1 && drawn[1].ob_x == -1 && drawn[1].ob_y == -1 &&
-	      drawn[1].ob_width == 16 && drawn[1].ob_height == 19 && drawn[4].ob_y == 300 - 19 - 1,
-	      "... frames inside (the AES draws 3D edges in the box), the arrows the bar's ends themselves");
+	check(((drawn[0].ob_spec >> 16) & 0xff) == 1 && drawn[0].ob_x == 100 && drawn[0].ob_y == 50 &&
+	      drawn[0].ob_width == 16 && drawn[0].ob_height == 300 && drawn[1].ob_x == 0 && drawn[1].ob_y == 0 &&
+	      drawn[1].ob_width == 16 && drawn[1].ob_height == 19 && drawn[4].ob_y == 300 - 19 &&
+	      drawn[2].ob_x == 1 && drawn[2].ob_y == 19 && drawn[3].ob_y == 0,
+	      "... frames inside (the AES draws 3D edges in the box), the box the whole bar (nothing left undrawn)");
 	dlg_3d_on = 0;
 	pb_draw(&bar, &clip);
 	check((drawn[2].ob_spec & 0xff) == 0x91, "DIALOGS3D=0: flat again");
@@ -287,6 +292,51 @@ int main(void)
 		pb_click(&bar, 105, 80, scroll, goto_top);
 		check(ngoes >= 3 && went[ngoes - 1] == 45, "the slider dragged half way: the middle rows");
 		check(updates == 0, "... the mouse the bar's while held (BEG_MCTRL), given back");
+	}
+
+	/* a bar across a pane's foot: the same along x */
+	{
+		static const short s[] = { 60, 1, 120, 1, 181, 1, 181, 0 };
+		PANEBAR h;
+		memset(&h, 0, sizeof(h));
+		h.r.x = 40;
+		h.r.y = 360;
+		h.r.w = 300;
+		h.r.h = pb_height();
+		h.total = 100;
+		h.shown = 10;
+		h.across = 1;
+		check(pb_height() == 21, "pb_height: the AES's slider row (wind_calc)");
+		pb_slider(&h, &ty, &th, &sy, &sh);
+		check(ty == 56 && th == 268 && sy == 56 && sh == 26, "across: the track right of the left arrow (pb_width() long)");
+		check(pb_part(&h, 45, 365) == PB_UP && pb_part(&h, 335, 365) == PB_DOWN &&
+		      pb_part(&h, 60, 365) == PB_SLIDER && pb_part(&h, 200, 365) == PB_PAGE_DOWN &&
+		      pb_part(&h, 200, 359) == PB_NONE, "... the arrows, the slider, the track, above the bar");
+		d3_ok = 0;
+		pb_draw(&h, &clip);
+		check(drawn[1].ob_type == G_BOXCHAR && (drawn[1].ob_spec >> 24) == 4 && (drawn[4].ob_spec >> 24) == 3 &&
+		      drawn[1].ob_x == 0 && drawn[1].ob_y == 0 && drawn[1].ob_width == 14 && drawn[1].ob_height == 19 &&
+		      drawn[4].ob_x == 300 - 16, "... TOS's left and right arrows at each end");
+		check(drawn[2].ob_x == 15 && drawn[2].ob_y == 0 && drawn[2].ob_width == 268 && drawn[2].ob_height == 19 &&
+		      drawn[3].ob_x == 0 && drawn[3].ob_width == 26 && drawn[3].ob_height == 19,
+		      "... the track between them, the slider at its left");
+		h.top = 10;
+		m = pb_moved(&h, 0);
+		check(m.x == 56 && m.w == 55 && m.y == 360 && m.h == 21, "... pb_moved along x");
+		h.top = 0;
+		press(s, 4);
+		bar = h;	/* scroll and goto_top move bar */
+		pb_click(&bar, 60, 365, scroll, goto_top);
+		check(ngoes >= 3 && went[ngoes - 1] == 45, "... the slider dragged half way along x: the middle");
+		d3_ok = 1;
+	}
+	{
+		GRECT r = { 600, 380, 16, 21 };
+		int before = draws;
+		pb_corner(&r, &clip);
+		check(draws == before + 1 && drawn_start == 0 && drawn[0].ob_type == G_BOX && drawn[0].ob_x == 600 &&
+		      drawn[0].ob_width == 16 && (drawn[0].ob_flags & LASTOB) && (drawn[0].ob_flags & 0x0600) == 0x0400,
+		      "pb_corner: the bars' ground, in 3D the AES's, all of the square");
 	}
 
 	printf("%d checks, %d failed\n", checks, failed);
