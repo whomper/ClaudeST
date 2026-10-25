@@ -48,7 +48,7 @@ import tempfile
 import time
 import urllib.request
 
-VERSION = "1.9"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.10"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi

@@ -48,6 +48,19 @@ or 1.3) and hands the answer back as it comes:
     and time); X-Gateway-Pens names it ("aerapens COMMON BUILD"), and the
     log says which once. Without it, or when it fails or is too slow, the
     picture comes as above.
+  - a page's pictures made ahead: EWeb POSTs http://webgate/prefetch, a
+    line a picture, "URL<TAB>X-Gateway-Picture<TAB>Cookie" (the cookie
+    may be left out), the window's first, after "Referer: " and "Accept: "
+    lines for all of them (webgate answers 204 and X-Gateway-Prefetch:
+    the number taken; 409 and "X-Gateway-Palette: need" when one names
+    colours it hasn't got). webgate fetches and makes them four at a time
+    (Prefetch), each as the request will ask for it, and answers that
+    request (the address in proxy form and its X-Gateway-Picture alike,
+    no If-None-Match or If-Modified-Since) with what was made, once,
+    waiting for it if it is being made: a page's pictures come in about
+    the time of the slowest four, not one after another. What isn't asked
+    for in three minutes goes, 48 MB at most are kept, and the Atari's
+    next list drops what of its last hasn't begun.
 
 Snapshots (--browser): a GET with "X-Gateway-Snapshot: 1" is opened in an
 ordinary Chromium on the Pi (its own profile: your logins stay there), and
@@ -135,6 +148,11 @@ CHECK_MAX = 512 << 10           # the most of a 403 or 503 from Cloudflare read 
 VISIT_KEEP = 25 * 60            # seconds a site behind the check stays on the browser after its last page
 VISITS = {}                     # host -> when its last page went through the browser
 VISITS_LOCK = threading.Lock()
+PREFETCH_AT_ONCE = 4            # a page's pictures made ahead at a time
+PREFETCH_KEEP = 180             # seconds one is kept for the Atari to ask for
+PREFETCH_BYTES = 48 << 20       # what they may take in all
+PREFETCH_ITEMS = 100            # the most of a list
+PREFETCH_PLAIN_MAX = 1 << 20    # the most of an answer that isn't a picture made that is kept
 
 
 def visiting(host, keep=None):
@@ -463,6 +481,225 @@ class Bridge:
 BRIDGE = Bridge()
 
 
+class Answer:
+    """an answer to send the Atari as it is: status, reason, header
+    (name, value) pairs without Content-Length, the body, a note for the
+    log"""
+
+    def __init__(self, status, reason, headers, data, note=""):
+        self.status, self.reason, self.headers, self.data, self.note = status, reason, headers, data, note
+
+
+def picture_answer(resp, conn, u, port, want):
+    """a picture that came (resp, 200, not packed) as the Atari's pens
+    (make_pens), else as the page can show it (make_picture), or as it
+    came: an Answer, or why not (a str for a 502)"""
+    try:
+        data = resp.read(PICTURE_MAX + 1)
+    except (OSError, http.client.HTTPException):
+        UP.drop(u.scheme, u.hostname, port)
+        return "webgate: %s closed the connection\n" % u.hostname
+    if len(data) > PICTURE_MAX:
+        UP.drop(u.scheme, u.hostname, port)
+        return "webgate: the picture from %s is too big\n" % u.hostname
+    if resp.will_close:
+        UP.drop(u.scheme, u.hostname, port)
+    pens = make_pens(data, want) if want["pens"] else None
+    made = (pens[0], "application/x-aera-pens", pens[1]) if pens else make_picture(data, want["fit"])
+    skip = HOP_BY_HOP | ({"content-type", "content-length"} if made else set())
+    headers = [(k, v) for k, v in resp.getheaders() if k.lower() not in skip]
+    if made:
+        data = made[0]
+        headers += [("Content-Type", made[1]), ("X-Gateway-Picture", made[2])]
+    if pens:
+        headers.append(("X-Gateway-Pens", pens[2]))    # which aerapens made them, for tracing
+    tls = tls_of(conn)
+    if tls:
+        headers.append(("X-Gateway-TLS", tls))
+    return Answer(resp.status, resp.reason, headers, data, " (%s)" % made[2] if made else "")
+
+
+def picture_want(value):
+    """X-Gateway-Picture: fit=WIDTH (0: none), and for pens size=WxH
+    (None: fit wide at most), pens=N, pal=CRC (8 hex digits), ed=lj or
+    tj: a dict; pens 0 when they weren't asked for, or not right"""
+    want = {"fit": 0, "size": None, "pens": 0, "pal": None, "ed": "lj"}
+    for part in (value or "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == "fit" and v.isdigit() and 16 <= int(v) <= 4096:
+            want["fit"] = int(v)
+        elif k == "size":
+            w, _, h = v.partition("x")
+            if w.isdigit() and h.isdigit() and 1 <= int(w) <= 4096 and 1 <= int(h) <= 4096:
+                want["size"] = (int(w), int(h))
+        elif k == "pens" and v.isdigit() and 2 <= int(v) <= 256:
+            want["pens"] = int(v)
+        elif k == "pal" and len(v) == 8 and all(c in "0123456789abcdefABCDEF" for c in v):
+            want["pal"] = int(v, 16)
+        elif k == "ed" and v in ("lj", "tj"):
+            want["ed"] = v
+    if not want["fit"] or want["pal"] is None:
+        want["pens"] = 0
+    return want
+
+
+class Prefetch:
+    """A page's pictures made ahead (POST http://webgate/prefetch): EWeb
+    names them as it will ask for them, the window's first, and they are
+    fetched and made PREFETCH_AT_ONCE at a time, so that each of its
+    requests is answered at once instead of in turn. Kept by (the Atari,
+    the address, its X-Gateway-Picture) until asked for, PREFETCH_KEEP
+    seconds at most, PREFETCH_BYTES in all; an Atari's next list drops
+    what of its last hasn't begun."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.jobs = {}          # key -> {"done": Event, "answer": Answer or None, "t", "size", "how"}
+        self.queue = []         # keys waiting for a worker, in order
+        self.workers = 0
+
+    def _trim(self):
+        now = time.time()
+        for k in [k for k, j in self.jobs.items() if now - j["t"] > PREFETCH_KEEP and j["done"].is_set()]:
+            del self.jobs[k]
+        total = sum(j["size"] for j in self.jobs.values())
+        for k in sorted((k for k, j in self.jobs.items() if j["done"].is_set()), key=lambda k: self.jobs[k]["t"]):
+            if total <= PREFETCH_BYTES:
+                break
+            total -= self.jobs[k]["size"]
+            del self.jobs[k]
+
+    def add(self, client, items, headers):
+        """items: (url, X-Gateway-Picture, cookie) in the order to make
+        them; headers: what every request carries (User-Agent, Referer,
+        Accept...). The number queued"""
+        n = 0
+        with self.lock:
+            # the last list's pictures not begun: not wanted now
+            for k in [k for k in self.queue if k[0] == client]:
+                self.queue.remove(k)
+                self.jobs.pop(k, None)
+            self._trim()
+            for url, pic, cookie in items:
+                key = (client, url, pic)
+                if key in self.jobs:
+                    continue
+                self.jobs[key] = {"done": threading.Event(), "answer": None, "t": time.time(), "size": 0,
+                                  "how": (url, pic, cookie, headers)}
+                self.queue.append(key)
+                n += 1
+            while self.workers < min(PREFETCH_AT_ONCE, len(self.queue)):
+                self.workers += 1
+                threading.Thread(target=self._work, daemon=True).start()
+        return n
+
+    def _work(self):
+        while True:
+            with self.lock:
+                if not self.queue:
+                    self.workers -= 1
+                    return
+                key = self.queue.pop(0)
+                job = self.jobs.get(key)
+            if job is None:
+                continue
+            try:
+                a = make_ahead(*job["how"])
+            except Exception:       # (anything: the Atari's own request then fetches it)
+                a = None
+            if Config.verbose:      # who connected where (7.3), the host only, as note() says it
+                try:
+                    u = urlsplit(job["how"][0])
+                    where = "%s://%s:%d" % (u.scheme, u.hostname, u.port or (443 if u.scheme == "https" else 80))
+                except ValueError:  # (a port that isn't one: make_ahead fetched nothing)
+                    where = "-"
+                aeragate.say("%s GET %s -> %s (fetched ahead)" % (
+                    key[0], where, "%d, %d bytes" % (a.status, len(a.data)) if a else "not made"))
+            with self.lock:
+                job["answer"] = a
+                job["size"] = len(a.data) if a else 0
+                job["t"] = time.time()
+                job["done"].set()
+                self._trim()
+
+    def take(self, client, url, pic):
+        """the answer made ahead for this request (waited for while it is
+        being made), gone from the store; None: there is none"""
+        key = (client, url, pic)
+        with self.lock:
+            job = self.jobs.get(key)
+            if job is None:
+                return None
+            if key in self.queue:
+                # not begun: made by this request itself, at once
+                self.queue.remove(key)
+                del self.jobs[key]
+                return None
+        if not job["done"].wait(Config.timeout + PENS_TIME):
+            return None
+        with self.lock:
+            self.jobs.pop(key, None)
+        return job["answer"]
+
+
+PREFETCH = Prefetch()
+
+
+def make_ahead(url, pic, cookie, headers):
+    """a picture fetched and made as the Atari would ask for it: an Answer
+    (whatever the server said, a picture made, an error page), or None
+    when it couldn't be fetched (the Atari's own request tries then)"""
+    u = urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return None
+    port = u.port or (443 if u.scheme == "https" else 80)
+    path = (u.path or "/") + ("?" + u.query if u.query else "")
+    want = picture_want(pic)
+    if want["pens"] and PALETTES.get(want["pal"]) is None:
+        return None
+    h = dict(headers)
+    h["Host"] = u.netloc.rsplit("@", 1)[-1]
+    h["Accept-Encoding"] = "identity"
+    if cookie:
+        h["Cookie"] = cookie
+    for attempt in (1, 2):
+        conn = UP.get(u.scheme, u.hostname, port)
+        try:
+            conn.request("GET", path, headers=h)
+            resp = conn.getresponse()
+            break
+        except (http.client.RemoteDisconnected, BrokenPipeError, ConnectionResetError,
+                http.client.CannotSendRequest, http.client.ResponseNotReady):
+            UP.drop(u.scheme, u.hostname, port)
+            if attempt == 2:
+                return None
+        except (OSError, http.client.HTTPException, aeragate.HomeNetwork):
+            UP.drop(u.scheme, u.hostname, port)
+            return None
+    if want["fit"] and resp.status == 200 and \
+            (resp.getheader("Content-Type") or "").lower().startswith("image/") and \
+            (resp.getheader("Content-Encoding") or "identity").lower() == "identity":
+        a = picture_answer(resp, conn, u, port, want)
+        return a if isinstance(a, Answer) else None
+    # anything else (a redirect, an error, a type left as it is): kept as
+    # it came when it is small, else left to the Atari's own request
+    try:
+        data = resp.read(PREFETCH_PLAIN_MAX + 1)
+    except (OSError, http.client.HTTPException):
+        UP.drop(u.scheme, u.hostname, port)
+        return None
+    if resp.will_close:
+        UP.drop(u.scheme, u.hostname, port)
+    if len(data) > PREFETCH_PLAIN_MAX or (resp.getheader("Transfer-Encoding") or "").lower() not in ("", "identity"):
+        UP.drop(u.scheme, u.hostname, port)
+        return None
+    headers = [(k, v) for k, v in resp.getheaders() if k.lower() not in HOP_BY_HOP]
+    tls = tls_of(conn)
+    if tls:
+        headers.append(("X-Gateway-TLS", tls))
+    return Answer(resp.status, resp.reason, headers, data)
+
+
 def tls_of(conn):
     """how conn reached its server: "TLS 1.3, TLS_AES_128_GCM_SHA256", or
     "" for plain HTTP"""
@@ -534,6 +771,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.for_browser and u.hostname == "webgate" and u.path == "/palette":
             self.palette(body)
             return
+        if not self.for_browser and u.hostname == "webgate" and u.path == "/prefetch":
+            self.prefetch(body)
+            return
         if u.scheme not in ("http", "https") or not u.hostname:
             self.reply(400, "webgate: expected a request like GET https://host/path\n")
             return
@@ -549,6 +789,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_body(409, b"webgate: send the colours first\n", "text/plain", [("X-Gateway-Palette", "need")])
             self.note(409, 0, " (no colours %08x)" % want["pal"])
             return
+        if want["fit"] and self.command in ("GET", "HEAD") and not self.for_browser and \
+                not self.headers.get("If-None-Match") and not self.headers.get("If-Modified-Since"):
+            a = PREFETCH.take(self.client_address[0], self.path, self.headers.get("X-Gateway-Picture") or "")
+            if a is not None:
+                self.send_answer(a, " (made ahead)")
+                return
         page = self.command == "GET" and Config.browser and not self.for_browser and \
             "text/html" in (self.headers.get("Accept") or "")
         if page and visiting(u.hostname) and self.browser_may_open(self.path, quiet=True):
@@ -608,27 +854,47 @@ class Handler(BaseHTTPRequestHandler):
             self.pass_on(resp, conn, u, port)
 
     def picture_ask(self):
-        """X-Gateway-Picture: fit=WIDTH (0: none), and for pens size=WxH
-        (None: fit wide at most), pens=N, pal=CRC (8 hex digits), ed=lj
-        or tj: a dict; pens 0 when they weren't asked for, or not right"""
-        want = {"fit": 0, "size": None, "pens": 0, "pal": None, "ed": "lj"}
-        for part in (self.headers.get("X-Gateway-Picture") or "").split(";"):
-            k, _, v = part.strip().partition("=")
-            if k == "fit" and v.isdigit() and 16 <= int(v) <= 4096:
-                want["fit"] = int(v)
-            elif k == "size":
-                w, _, h = v.partition("x")
-                if w.isdigit() and h.isdigit() and 1 <= int(w) <= 4096 and 1 <= int(h) <= 4096:
-                    want["size"] = (int(w), int(h))
-            elif k == "pens" and v.isdigit() and 2 <= int(v) <= 256:
-                want["pens"] = int(v)
-            elif k == "pal" and len(v) == 8 and all(c in "0123456789abcdefABCDEF" for c in v):
-                want["pal"] = int(v, 16)
-            elif k == "ed" and v in ("lj", "tj"):
-                want["ed"] = v
-        if not want["fit"] or want["pal"] is None:
-            want["pens"] = 0
-        return want
+        """this request's X-Gateway-Picture (picture_want)"""
+        return picture_want(self.headers.get("X-Gateway-Picture"))
+
+    def prefetch(self, body):
+        """a page's pictures to make ahead (Prefetch): the body's lines,
+        "Name: value" for what each request carries (Referer, Accept),
+        then one a picture, "URL<TAB>X-Gateway-Picture<TAB>Cookie" (the
+        cookie may be left out), in the order EWeb will ask for them.
+        204 with X-Gateway-Prefetch: the number taken; 409 with
+        X-Gateway-Palette: need when one names colours webgate hasn't got"""
+        if self.command != "POST" or body is None or len(body) > 256 << 10:
+            self.reply(400, "webgate: the pictures to make ahead are a POST of lines\n")
+            return
+        headers = {k: v for k, v in self.headers.items()
+                   if k.lower() in ("user-agent", "accept-language")}
+        items = []
+        for line in body.decode("utf-8", "replace").split("\n"):
+            line = line.rstrip("\r")
+            if "\t" not in line and ": " in line:
+                k, _, v = line.partition(": ")
+                if k.lower() in ("referer", "accept"):
+                    headers[k] = v
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2 or len(items) >= PREFETCH_ITEMS:
+                continue
+            u = urlsplit(parts[0])
+            if u.scheme not in ("http", "https") or not u.hostname:
+                continue
+            want = picture_want(parts[1])
+            if not want["fit"]:
+                continue
+            if want["pens"] and PALETTES.get(want["pal"]) is None:
+                self.send_body(409, b"webgate: send the colours first\n", "text/plain",
+                               [("X-Gateway-Palette", "need")])
+                self.note(409, 0, " (no colours %08x)" % want["pal"])
+                return
+            items.append((parts[0], parts[1], parts[2] if len(parts) > 2 else ""))
+        n = PREFETCH.add(self.client_address[0], items, headers)
+        self.send_body(204, b"", "text/plain", [("X-Gateway-Prefetch", str(n))])
+        self.note(204, 0, " (%d pictures to make ahead)" % n)
 
     def palette(self, body):
         """EWeb's colours for pens: 2 to 256, R G B bytes each"""
@@ -642,41 +908,25 @@ class Handler(BaseHTTPRequestHandler):
     def picture(self, resp, conn, u, port, want):
         """a picture as the Atari's pens (make_pens), else as the page can
         show it (make_picture), or as it came"""
-        try:
-            data = resp.read(PICTURE_MAX + 1)
-        except (OSError, http.client.HTTPException):
-            UP.drop(u.scheme, u.hostname, port)
-            self.reply(502, "webgate: %s closed the connection\n" % u.hostname)
-            return
-        if len(data) > PICTURE_MAX:
-            UP.drop(u.scheme, u.hostname, port)
-            self.reply(502, "webgate: the picture from %s is too big\n" % u.hostname)
-            return
-        if resp.will_close:
-            UP.drop(u.scheme, u.hostname, port)
-        pens = make_pens(data, want) if want["pens"] else None
-        made = (pens[0], "application/x-aera-pens", pens[1]) if pens else make_picture(data, want["fit"])
-        self.send_response(resp.status, resp.reason)
-        skip = HOP_BY_HOP | ({"content-type", "content-length"} if made else set())
-        for k, v in resp.getheaders():
-            if k.lower() not in skip:
-                self.send_header(k, v)
-        if made:
-            data = made[0]
-            self.send_header("Content-Type", made[1])
-            self.send_header("X-Gateway-Picture", made[2])
-        if pens:
-            self.send_header("X-Gateway-Pens", pens[2])    # which aerapens made them, for tracing
-        tls = tls_of(conn)
-        if tls:
-            self.send_header("X-Gateway-TLS", tls)
-        self.send_header("Content-Length", str(len(data)))
+        a = picture_answer(resp, conn, u, port, want)
+        if isinstance(a, str):
+            self.reply(502, a)
+        else:
+            self.send_answer(a)
+
+    def send_answer(self, a, more=""):
+        """an Answer (a picture made, or one made ahead: Prefetch)"""
+        self.send_response(a.status, a.reason)
+        for k, v in a.headers:
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(a.data)))
         self.end_headers()
         try:
-            self.wfile.write(data)
+            if self.command != "HEAD":
+                self.wfile.write(a.data)
         except OSError:
             self.close_connection = True
-        self.note(resp.status, len(data), " (%s)" % made[2] if made else "")
+        self.note(a.status, len(a.data), a.note + more)
 
     # ------------------------------------------------------------ live view
 

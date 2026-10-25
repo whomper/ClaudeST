@@ -11,6 +11,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -280,6 +281,82 @@ class ProxyTest(unittest.TestCase):
             webgate.Config.allow_local = True
         self.assertEqual(r.status, 403)
         self.assertIn(b"webgate: won't connect to the local network", data)
+
+
+class PrefetchTest(ProxyTest):
+    """a page's pictures made ahead (POST http://webgate/prefetch)"""
+
+    def prefetch(self, lines, more=()):
+        body = "\n".join(list(more) + lines).encode()
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("POST", "http://webgate/prefetch", body=body,
+                  headers={"Content-Type": "text/plain", "User-Agent": "EWeb/test"})
+        r = c.getresponse()
+        r.read()
+        return r
+
+    def fetched(self, path):
+        return [s for s in Upstream.seen if s[1] == path]
+
+    def wait_for(self, path, n=1):
+        for _ in range(100):
+            if len(self.fetched(path)) >= n:
+                return
+            time.sleep(0.05)
+
+    @unittest.skipUnless(PICS, "needs Pillow")
+    def test_made_ahead_once(self):
+        Upstream.seen = []
+        r = self.prefetch([self.base + "/pic/big.jpg\tfit=600", self.base + "/pic/pic.webp\tfit=600"],
+                          ["Referer: http://example.org/page"])
+        self.assertEqual((r.status, r.getheader("X-Gateway-Prefetch")), (204, "2"))
+        self.wait_for("/pic/big.jpg")
+        self.wait_for("/pic/pic.webp")
+        time.sleep(0.3)        # (made: the pictures, after they came)
+        r, data = self.picture("big.jpg")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "image/jpeg"))
+        self.assertIn("JPEG 1200x800 to JPEG 600x400", r.getheader("X-Gateway-Picture"))
+        self.assertEqual(self.opened(data).size, (600, 400))
+        r, data = self.picture("pic.webp")
+        self.assertEqual(r.getheader("Content-Type"), "image/jpeg")
+        # each fetched once: the requests were answered with what was made
+        self.assertEqual((len(self.fetched("/pic/big.jpg")), len(self.fetched("/pic/pic.webp"))), (1, 1))
+        h = self.fetched("/pic/big.jpg")[0][2]
+        self.assertEqual((h.get("Referer"), h.get("User-Agent")), ("http://example.org/page", "EWeb/test"))
+        # once only: asked again, it is fetched again
+        self.picture("big.jpg")
+        self.assertEqual(len(self.fetched("/pic/big.jpg")), 2)
+
+    def test_cookie_and_other_answers(self):
+        Upstream.seen = []
+        self.prefetch([self.base + "/echo/x\tfit=600\ta=1; b=2", self.base + "/nothere\tfit=600"])
+        self.wait_for("/echo/x")
+        self.wait_for("/nothere")
+        time.sleep(0.2)
+        self.assertEqual(self.fetched("/echo/x")[0][2].get("Cookie"), "a=1; b=2")
+        r, data, _ = self.ask("GET", "/nothere", {"X-Gateway-Picture": "fit=600"})    # (an error page, as it came)
+        self.assertEqual((r.status, data), (404, b"none"))
+        self.assertEqual(len(self.fetched("/nothere")), 1)
+
+    def test_conditional_not_from_the_store(self):
+        Upstream.seen = []
+        self.prefetch([self.base + "/pic/small.jpg\tfit=600"])
+        self.wait_for("/pic/small.jpg")
+        r, data, _ = self.ask("GET", "/pic/small.jpg", {"X-Gateway-Picture": "fit=600", "If-None-Match": '"p1"'})
+        self.assertEqual(len(self.fetched("/pic/small.jpg")), 2)
+
+    def test_bad_lists(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("GET", "http://webgate/prefetch")
+        r = c.getresponse()
+        r.read()
+        self.assertEqual(r.status, 400)
+        r = self.prefetch(["ftp://x/y\tfit=600", "http://x/y", "http://x/y\tnofit", "junk"])
+        self.assertEqual((r.status, r.getheader("X-Gateway-Prefetch")), (204, "0"))
+        r = self.prefetch([self.base + "/pic/big.jpg\tfit=600; size=60x40; pens=16; pal=0badc0de; ed=lj"])
+        self.assertEqual((r.status, r.getheader("X-Gateway-Palette")), (409, "need"))
 
 
 class FakePens(threading.Thread):
