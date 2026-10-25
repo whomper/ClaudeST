@@ -99,6 +99,12 @@ extern const char *dlg_title;
    "Account"); the app's name (dlg_title) when none is given. The string
    must last while the dialog is open */
 void dlg_name(const char *name);
+/* the next dlg_open's own title band (the black bar with the dialog's
+   name at its top): in a window, where the window's title bar names it,
+   it is hidden and what was below it moves up by its height, the box as
+   much shorter (all put back at dlg_close); the window is named from its
+   text when dlg_name gave none. Over the screen (TOS) nothing changes */
+void dlg_band(short obj);
 /* the app's redraw for its own windows while a dialog window is open
    (msg is WM_REDRAW's); without it the AES's requests are kept, a
    window's areas as one, and given back to the app as WM_REDRAW when the

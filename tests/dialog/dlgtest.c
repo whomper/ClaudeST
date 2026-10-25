@@ -78,6 +78,8 @@ static void ask_dialog(const char *name, short cancel)
 	short r, cw, ch, bw, bh;
 	graf_handle(&cw, &ch, &bw, &bh);
 	make_tree(cw, ch);
+	if (!strcmp(name, "d_band"))
+		dlg_band(TITLE);	/* "New folder" names the window instead */
 	say("DLGT ask %s\n", name, 0);
 	r = dlg_modal(tree, 0, cancel);
 	say("DLGT got %s %d %s %d\n", name, r);
@@ -107,6 +109,7 @@ int main(void)
 	ask_dialog("d_none", -1);
 	ask_dialog("d_click", CANCEL);
 	ask_dialog("d_close", CANCEL);
+	ask_dialog("d_band", CANCEL);
 	nf_debug("DLGT done\n");
 	appl_exit();
 	return 0;
