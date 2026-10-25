@@ -3158,10 +3158,14 @@ static void dlg_frame(short x, short y, short w, short h)
  * guidelines, 3.5), with the dialog's name, a mover and a closer (as Esc).
  * A dialog gives its place() (its parts' places from dlg_x, dlg_y: a
  * window can be moved) and its paint(framed): all of it, framed with its
- * shadow over the screen, on white in a window, whose frame is the AES's. */
+ * shadow over the screen, on white in a window, whose frame is the AES's.
+ * In a window its heading, own_head high, would say the window's name
+ * again (dlg_band's rule): the window starts below it, so dlg_y is
+ * own_head above the window and the heading is never drawn. */
 static void (*own_place)(void);
 static void (*own_paint)(short framed);
 static short own_win;			/* 1: the open one is in a window */
+static short own_head;
 static short own_clipr[4];
 
 static void own_gem(void)
@@ -3176,6 +3180,7 @@ static void own_piece(short x, short y, short w, short h)
 {
 	short c[4], d;
 	dlg_area(&dlg_x, &dlg_y, &d, &d);
+	dlg_y -= own_head;
 	own_place();
 	own_gem();
 	c[0] = x;
@@ -3188,21 +3193,26 @@ static void own_piece(short x, short y, short w, short h)
 
 /* the dialog (dlg_w by dlg_h at dlg_x, dlg_y) shown: the mouse is off on
    return over the screen, on in a window */
-static void own_open(const char *name, void (*place)(void), void (*paint)(short framed))
+/* head: how far down the heading reaches (ch / 2 + 2 and its text) */
+static void own_open(const char *name, short head, void (*place)(void), void (*paint)(short framed))
 {
 	own_place = place;
 	own_paint = paint;
 	own_win = 0;
+	own_head = 0;
 	if (dlg_windowed()) {
-		short w = dlg_w, h = dlg_h;
+		short w = dlg_w, h = dlg_h - head;
+		own_head = head;
 		dlg_name(name);
 		dlg_open_area(own_piece, &dlg_x, &dlg_y, &w, &h);	/* and drawn */
 		if (dlg_in_window()) {
 			own_win = 1;
+			dlg_y -= head;
 			place();
 			return;
 		}
 		dlg_close();		/* no window to be had: as on TOS */
+		own_head = 0;
 	}
 	place();
 	wind_update(BEG_UPDATE);
@@ -3224,6 +3234,7 @@ static void own_moved(void)
 	short d;
 	if (own_win) {
 		dlg_area(&dlg_x, &dlg_y, &d, &d);
+		dlg_y -= own_head;
 		own_place();
 	}
 }
@@ -3233,7 +3244,7 @@ static void own_moved(void)
    the AES has it drawn when it shows) */
 static short own_cut(void)
 {
-	short x = dlg_x, y = dlg_y, w = dlg_w, h = dlg_h, c[4];
+	short x = dlg_x, y = dlg_y + own_head, w = dlg_w, h = dlg_h - own_head, c[4];
 	if (!own_win)
 		return 1;		/* the screen, as at the start */
 	if (!dlg_cut(&x, &y, &w, &h))
@@ -3335,7 +3346,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	dlg_x = dlg_w + 8 <= pw ? px + (pw - dlg_w) / 2 : wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 3;
 
-	own_open(title, td_place, td_paint);
+	own_open(title, ch + ch / 2 + 2, td_place, td_paint);
 	if (!own_win)
 		graf_mouse(M_ON, 0);
 	wait_release();
@@ -3451,7 +3462,7 @@ static void keys_dialog(void)
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 
-	own_open("Keys", keys_place, keys_paint);
+	own_open("ClaudeST's keys", ch + ch / 2 + 2, keys_place, keys_paint);
 	if (!own_win)
 		graf_mouse(M_ON, 0);
 	wait_release();
@@ -4549,7 +4560,7 @@ static void settings_dialog(void)
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 
-	own_open("Settings", sd_place, sd_paint);
+	own_open("Settings", ch + ch / 2 + 2, sd_place, sd_paint);
 	if (own_win)
 		graf_mouse(M_OFF, 0);		/* as over the screen: the loop draws first */
 
