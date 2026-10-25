@@ -10,6 +10,7 @@
 #include "gemui.h"
 #include "aboutbox.h"
 #include "alert.h"
+#include "dialog.h"
 #include "crash.h"
 #include "tos.h"
 
@@ -222,7 +223,7 @@ static void wait_close(void)
 	AEVENT e;
 	wait_up();
 	while (!done) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);	/* in a window: its closer as Esc */
 		if (e.which & MU_KEYBD) {
 			short sc = KEY_SCAN(e.kreturn), as = KEY_ASCII(e.kreturn);
 			if (as == 0x0d || as == 0x1b || as == ' ' || sc == 0x61 || sc == 0x62)
@@ -235,16 +236,132 @@ static void wait_close(void)
 	}
 }
 
+/* the box's layout, for its drawing (about_draw) */
+static const ABOUT *ab;
+static short ab_sx, ab_sy, ab_ih, ab_lh, ab_g, ab_nst, ab_nfine, ab_fstep, ab_fcw, ab_bw, ab_bh, ab_colour;
+#ifndef NO_ICON256
+static unsigned char map256[256];	/* the icon's pens to the screen's */
+#endif
+
+/* the whole box at dx, dy: framed with its shadow over the screen (TOS),
+   on white in a window of the AES's, which is the frame (MiNT, MagiC) */
+static void about_draw(int framed)
+{
+	const ABOUT *a = ab;
+	char v[40];
+	short sx = ab_sx, sy = ab_sy, ih = ab_ih, lh = ab_lh, g = ab_g, nst = ab_nst;
+	short nfine = ab_nfine, fstep = ab_fstep, fcw, fch, bw = ab_bw, bh = ab_bh;
+	short by = dy + dh - bh - lh, y, i;
+
+	vst_height(vdi_h, ch >= 16 ? 13 : 6, &fcw, &fch);	/* the normal size (a piece drawn again) */
+	if (framed)
+		box(dx, dy, dw, dh);
+	else
+		rect_fill(dx, dy, dx + dw - 1, dy + dh - 1, 0);
+
+	y = dy + lh;
+#ifndef NO_ICON256
+	if (ab_colour == 2) {
+		icon256_draw(a->icon256, map256, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
+	} else
+#endif
+	if (ab_colour) {
+		about_icon16(a->icon16, dx + (dw - ICON_W * sx) / 2, y, sx, sy, 0);
+	} else if (a->icon) {
+		draw_icon(a->icon, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
+	}
+	y += ih + g;
+	center(y, a->name, TX_BOLD);
+	{
+		/* underlined, like EMail's and Claude ST's names */
+		short n = (short)strlen(a->name), x = dx + (dw - n * cw) / 2;
+		line(x, y + ch - 1, x + n * cw - 1, y + ch - 1);
+	}
+	y += lh;
+	snprintf(v, sizeof(v), "Version %s", a->version);
+	center(y, v, 0);
+	y += lh + g;
+	center(y, a->tagline, 0);
+	y += lh + g;
+	line(dx + 4 * cw, y - lh / 4, dx + dw - 4 * cw, y - lh / 4);
+	y += lh / 4;
+	center(y, "Created by AERA | Erez Yaary", TX_BOLD);
+	y += lh;
+	center(y, "\xBD 2026 AERA | Erez Yaary", 0);
+	y += lh + g;
+	for (i = 0; i < nst; i++, y += lh)
+		center(y, a->status[i], 0);
+	if (nst)
+		y += g;
+	button(dx + (dw - bw) / 2, by, bw, bh, "OK");
+	/* the fine print, last: the small size, then the normal one again */
+	y += g;
+	vst_height(vdi_h, ch >= 16 ? 6 : 4, &fcw, &fch);
+	vswr_mode(vdi_h, MD_TRANS);
+	vst_color(vdi_h, 1);
+	vst_effects(vdi_h, 0);
+	for (i = 0; i < nfine; i++, y += fstep) {
+		const char *s = i ? a->fine[i - 1] : GPL_LINE;
+		short n = (short)strlen(s);
+		v_gtext_n(vdi_h, dx + (dw - n * fcw) / 2, y, s, n);
+	}
+	(void)ab_fcw;
+}
+
+/* a piece of a box in a dialog window drawn again (dialog.c asks) */
+static void (*box_draw)(int framed);
+static void box_piece(short x, short y, short w, short h)
+{
+	GRECT r;
+	short d;
+	dlg_area(&dx, &dy, &d, &d);	/* where the window has it now */
+	r.x = x;
+	r.y = y;
+	r.w = w;
+	r.h = h;
+	graf_mouse(M_OFF, 0);
+	clip_on(&r);
+	box_draw(0);
+	clip_off();
+	graf_mouse(M_ON, 0);
+}
+
+/* the box shown, run and put away: over the screen on TOS, in a window of
+   the AES's on MiNT and MagiC (the guidelines, 3.5) */
+static void box_run(void (*draw)(int framed), const char *name)
+{
+	box_draw = draw;
+	if (dlg_windowed()) {
+		short x, y, w = dw, h = dh;
+		dlg_name(name);
+		dlg_open_area(box_piece, &x, &y, &w, &h);
+		if (dlg_in_window()) {
+			wait_close();
+			dlg_close();
+			return;
+		}
+		dlg_close();		/* no window to be had: as on TOS */
+	}
+	wind_update(BEG_UPDATE);
+	wind_update(3);
+	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
+	graf_mouse(M_OFF, 0);
+	clip_screen();
+	draw(1);
+	graf_mouse(M_ON, 0);
+	wait_close();
+	wind_update(2);
+	wind_update(END_UPDATE);
+	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
+}
+
 void about_show(const ABOUT *a)
 {
-	char v[40];
+	static char title[40];
 	short sx = 2, sy = gl_hchar >= 16 ? 2 : 1;
-	short ih, lh, y, i, nst = 0, widest = 0, nfine, fcw, fch, fstep, g;
+	short ih, lh, i, nst = 0, widest = 0, nfine, fcw, fch, fstep, g;
 	short saved_rgb[8][3], colour;
-#ifndef NO_ICON256
-	static unsigned char map256[256];	/* the icon's pens to the screen's */
-#endif
-	short bw, bh, by;
+	short bw, bh;
 
 	font_sys_push();
 	ih = ICON_H * sy;
@@ -294,74 +411,26 @@ void about_show(const ABOUT *a)
 		dh = desk_h - 6;
 	dx = desk_x + (desk_w - dw) / 2;
 	dy = desk_y + (desk_h - dh) / 2;
-	by = dy + dh - bh - lh;
 
-	wind_update(BEG_UPDATE);
-	wind_update(3);
-	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
-	graf_mouse(M_OFF, 0);
-	clip_screen();
-	box(dx, dy, dw, dh);
-
-	y = dy + lh;
+	ab = a;
+	ab_sx = sx, ab_sy = sy, ab_ih = ih, ab_lh = lh, ab_g = g, ab_nst = nst;
+	ab_nfine = nfine, ab_fstep = fstep, ab_fcw = fcw, ab_bw = bw, ab_bh = bh, ab_colour = colour;
 #ifndef NO_ICON256
-	if (colour == 2) {
+	if (colour == 2)
 		icon256_pens(a->icon256_rgb, map256);
-		icon256_draw(a->icon256, map256, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
-	} else
+	else
 #endif
 	if (colour) {
 		for (i = 0; i < 8; i++) {
 			vq_color(vdi_h, 8 + i, saved_rgb[i]);
 			vs_color(vdi_h, 8 + i, a->icon16_rgb[i]);
 		}
-		about_icon16(a->icon16, dx + (dw - ICON_W * sx) / 2, y, sx, sy, 0);
-	} else if (a->icon) {
-		draw_icon(a->icon, dx + (dw - ICON_W * sx) / 2, y, sx, sy);
 	}
-	y += ih + g;
-	center(y, a->name, TX_BOLD);
-	{
-		/* underlined, like EMail's and Claude ST's names */
-		short n = (short)strlen(a->name), x = dx + (dw - n * cw) / 2;
-		line(x, y + ch - 1, x + n * cw - 1, y + ch - 1);
-	}
-	y += lh;
-	snprintf(v, sizeof(v), "Version %s", a->version);
-	center(y, v, 0);
-	y += lh + g;
-	center(y, a->tagline, 0);
-	y += lh + g;
-	line(dx + 4 * cw, y - lh / 4, dx + dw - 4 * cw, y - lh / 4);
-	y += lh / 4;
-	center(y, "Created by AERA | Erez Yaary", TX_BOLD);
-	y += lh;
-	center(y, "\xBD 2026 AERA | Erez Yaary", 0);
-	y += lh + g;
-	for (i = 0; i < nst; i++, y += lh)
-		center(y, a->status[i], 0);
-	if (nst)
-		y += g;
-	button(dx + (dw - bw) / 2, by, bw, bh, "OK");
-	/* the fine print, last: the small size stays until font_sys_pop */
-	y += g;
-	vst_height(vdi_h, ch >= 16 ? 6 : 4, &fcw, &fch);
-	vswr_mode(vdi_h, MD_TRANS);
-	vst_color(vdi_h, 1);
-	vst_effects(vdi_h, 0);
-	for (i = 0; i < nfine; i++, y += fstep) {
-		const char *s = i ? a->fine[i - 1] : GPL_LINE;
-		short n = (short)strlen(s);
-		v_gtext_n(vdi_h, dx + (dw - n * fcw) / 2, y, s, n);
-	}
-	graf_mouse(M_ON, 0);
-	wait_close();
+	snprintf(title, sizeof(title), "About %s", a->name);
+	box_run(about_draw, title);
 	if (colour == 1)
 		for (i = 0; i < 8; i++)
 			vs_color(vdi_h, 8 + i, saved_rgb[i]);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
 	font_sys_pop();
 }
 
@@ -369,10 +438,28 @@ void about_show(const ABOUT *a)
 
 #define TB_LINES 40
 
+static const char *tb_title;
+static char (*tb_buf)[82];
+static short tb_n, tb_cols, tb_lh, tb_bw, tb_bh;
+
+static void tb_draw(int framed)
+{
+	short y = dy + tb_lh, i;
+	if (framed)
+		box(dx, dy, dw, dh);
+	else
+		rect_fill(dx, dy, dx + dw - 1, dy + dh - 1, 0);
+	center(y, tb_title, TX_BOLD);
+	y += tb_lh + tb_lh / 2;
+	for (i = 0; i < tb_n; i++, y += tb_lh)
+		text_at(dx + 2 * cw, y, tb_buf[i], (long)strlen(tb_buf[i]), tb_cols, TX_LTR);
+	button(dx + (dw - tb_bw) / 2, dy + dh - tb_bh - tb_lh, tb_bw, tb_bh, "OK");
+}
+
 void text_box(const char *title, const char *text)
 {
 	char (*buf)[82] = malloc(TB_LINES * sizeof(*buf));	/* only while it shows */
-	short n = 0, cols, widest, lh, i, bw, bh, y;
+	short n = 0, cols, widest, lh, i, bw, bh;
 	const char *p = text;
 
 	if (!buf) {
@@ -421,23 +508,14 @@ void text_box(const char *title, const char *text)
 	dx = desk_x + (desk_w - dw) / 2;
 	dy = desk_y + (desk_h - dh) / 2;
 
-	wind_update(BEG_UPDATE);
-	wind_update(3);
-	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
-	graf_mouse(M_OFF, 0);
-	clip_screen();
-	box(dx, dy, dw, dh);
-	y = dy + lh;
-	center(y, title, TX_BOLD);
-	y += lh + lh / 2;
-	for (i = 0; i < n; i++, y += lh)
-		text_at(dx + 2 * cw, y, buf[i], (long)strlen(buf[i]), cols, TX_LTR);
-	button(dx + (dw - bw) / 2, dy + dh - bh - lh, bw, bh, "OK");
-	graf_mouse(M_ON, 0);
-	wait_close();
-	wind_update(2);
-	wind_update(END_UPDATE);
-	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
+	tb_title = title;
+	tb_buf = buf;
+	tb_n = n;
+	tb_cols = cols;
+	tb_lh = lh;
+	tb_bw = bw;
+	tb_bh = bh;
+	box_run(tb_draw, title);
 	font_sys_pop();
 	free(buf);
 }

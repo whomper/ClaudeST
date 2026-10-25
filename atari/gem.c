@@ -365,6 +365,13 @@ short aes_version(void)
 	return global[0];
 }
 
+/* global[1], ap_count: 1 on TOS and EmuTOS, -1 where the AES runs several
+   programs at once (MultiTOS, MagiC, N.AES, XaAES, MyAES) */
+short aes_count(void)
+{
+	return global[1];
+}
+
 /* the GEM file selector; the titled version needs AES 1.4 (TOS 1.04) */
 short fsel_exinput(char *path, char *name, short *button, const char *title)
 {

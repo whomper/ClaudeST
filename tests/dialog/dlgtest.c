@@ -88,6 +88,7 @@ int main(void)
 	short cw, ch, bw, bh, x, y, w, h;
 	char b[80];
 	appl_init();
+	dlg_title = "DLGT";
 	graf_mouse(ARROW, 0);
 	graf_handle(&cw, &ch, &bw, &bh);
 	wind_get(0, WF_CURRXYWH, &x, &y, &w, &h);
@@ -105,6 +106,7 @@ int main(void)
 	ask_dialog("d_undo", CANCEL);
 	ask_dialog("d_none", -1);
 	ask_dialog("d_click", CANCEL);
+	ask_dialog("d_close", CANCEL);
 	nf_debug("DLGT done\n");
 	appl_exit();
 	return 0;

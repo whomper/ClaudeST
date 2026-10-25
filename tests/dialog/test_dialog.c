@@ -27,6 +27,8 @@
 #define DCLICK(o)  { MU_BUTTON, 0, (o), 2 }
 #define KEY(k)     { MU_KEYBD, (k), 0, 0 }
 #define END        { 0, 0, 0, 0 }
+#define MSG(t, wh)  { MU_MESAG, (t), (wh), 0 }	/* an AES message for window wh */
+#define OUTSIDE    -2				/* a click off the dialog's window */
 
 typedef struct {
 	short which, key, obj, clicks;
@@ -46,6 +48,11 @@ static int failed, checks;
 static int updates, update_low, mouse_off, cursor, ed_char_esc, bells, draws;
 static int dial_start, dial_finish, blits, opened, closed, vwk_fails;
 static short planes = 1, blit_dir[2];
+/* the multitasking AES: its windows */
+static short ap_count = 1, top_win, win_fails, wins_made, wins_open, win_name_set, hook_calls;
+static short win[4] = { 200, 100, 320, 160 };	/* the dialog window's work area */
+static unsigned short root_drawn_state;
+static int evnt_updates = -1;
 static long blit_size;
 static void *blit_buf;
 
@@ -87,6 +94,11 @@ static void setup(void)
 	dial_start = dial_finish = blits = opened = closed = vwk_fails = 0;
 	npre = 0;
 	planes = 1;
+	ap_count = 1;
+	top_win = win_fails = wins_made = wins_open = win_name_set = hook_calls = 0;
+	dlg_window_on = -1;
+	evnt_updates = -1;
+	win[0] = 200, win[1] = 100, win[2] = 320, win[3] = 160;
 }
 
 /* ---------------- the stand-in AES ---------------- */
@@ -121,6 +133,133 @@ long get_cookie(long id)
 	return 0;
 }
 
+short aes_count(void)
+{
+	return ap_count;
+}
+
+#define DLGWIN 5
+short wind_create(short kind, short x, short y, short w, short h)
+{
+	(void)kind, (void)x, (void)y, (void)w, (void)h;
+	if (win_fails)
+		return -1;
+	wins_made++;
+	return DLGWIN;
+}
+
+short wind_open(short h, short x, short y, short w, short ht)
+{
+	(void)x, (void)y, (void)w, (void)ht;
+	if (h == DLGWIN) {
+		wins_open++;
+		top_win = DLGWIN;
+	}
+	return 1;
+}
+
+short wind_close(short h)
+{
+	if (h == DLGWIN)
+		wins_open--;
+	return 1;
+}
+
+short wind_delete(short h)
+{
+	(void)h;
+	return 1;
+}
+
+short wind_set_str(short h, short field, const char *str)
+{
+	if (h == DLGWIN && field == WF_NAME && str && !strcmp(str, "Test"))
+		win_name_set++;
+	if (h == DLGWIN && field == WF_NAME && str && !strcmp(str, "Font"))
+		win_name_set += 10;
+	return 1;
+}
+
+/* the border: a line round it, the title bar 20 high */
+short wind_calc(short type, short kind, short x, short y, short w, short h,
+		short *ox, short *oy, short *ow, short *oh)
+{
+	(void)kind;
+	if (type == WC_BORDER) {
+		*ox = x - 1, *oy = y - 20, *ow = w + 2, *oh = h + 21;
+	} else {
+		*ox = x + 1, *oy = y + 20, *ow = w - 2, *oh = h - 21;
+	}
+	return 1;
+}
+
+static short rect_step;
+short wind_get(short h, short field, short *a, short *b, short *c, short *d)
+{
+	*a = *b = *c = *d = 0;
+	if (field == WF_WORKXYWH && h == 0) {
+		*a = 0, *b = 19, *c = 640, *d = 381;
+	} else if (field == WF_WORKXYWH && h == DLGWIN) {
+		*a = win[0], *b = win[1], *c = win[2], *d = win[3];
+	} else if (field == WF_FIRSTXYWH && h == DLGWIN) {
+		*a = win[0], *b = win[1], *c = win[2], *d = win[3];
+		rect_step = 1;
+	} else if (field == WF_NEXTXYWH) {
+		rect_step = 0;		/* one rectangle: all of it shows */
+	} else if (field == WF_TOP) {
+		*a = top_win;
+	}
+	return 1;
+}
+
+short wind_set(short h, short field, short a, short b, short c, short d)
+{
+	if (field == WF_TOP)
+		top_win = h;
+	if (field == WF_CURRXYWH && h == DLGWIN) {
+		short x, y, w, ht;
+		wind_calc(WC_WORK, 0, a, b, c, d, &x, &y, &w, &ht);
+		win[0] = x, win[1] = y, win[2] = w, win[3] = ht;
+	}
+	return 1;
+}
+
+short wind_find(short x, short y)
+{
+	(void)y;
+	return x == OUTSIDE ? 0 : DLGWIN;
+}
+
+static short posted[8], posts;
+short appl_id(void)
+{
+	return 1;
+}
+
+short appl_write(short id, short len, const void *buf)
+{
+	(void)id;
+	memcpy(posted, buf, (size_t)len);
+	posts++;
+	return 1;
+}
+
+/* the app's drawing over the tree: what dlg_cut lets it draw */
+static short cut[4], cut_ok, more_calls;
+static void more(short x, short y, short w, short h)
+{
+	(void)x, (void)y, (void)w, (void)h;
+	more_calls++;
+	cut[0] = 150, cut[1] = 90, cut[2] = 100, cut[3] = 50;	/* a list over the window's corner */
+	cut_ok = dlg_cut(&cut[0], &cut[1], &cut[2], &cut[3]);
+}
+
+static void hook(const short *msg)
+{
+	if (msg[0] == WM_REDRAW && msg[3] == 9)
+		hook_calls++;
+}
+
 short wind_update(short mode)
 {
 	updates += mode == BEG_UPDATE || mode == 3 ? 1 : -1;
@@ -132,8 +271,10 @@ short wind_update(short mode)
 short evnt_multi_(short flags, short clicks, short mask, short state,
 		  unsigned long timer, short *msg, AEVENT *ev)
 {
-	(void)clicks, (void)mask, (void)state, (void)timer, (void)msg;
+	(void)clicks, (void)mask, (void)state, (void)timer;
 	memset(ev, 0, sizeof(*ev));
+	if (!(flags & MU_TIMER))
+		evnt_updates = updates;
 	if (flags & MU_TIMER) {
 		if (npre) {
 			ev->which = MU_KEYBD;
@@ -146,6 +287,17 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 	if (!script->which)
 		longjmp(out, 1);		/* still waiting when the script ended */
 	ev->which = script->which;
+	if (script->which == MU_MESAG) {
+		memset(msg, 0, 16);
+		msg[0] = script->key;
+		msg[3] = script->obj;
+		if (script->key == WM_REDRAW)
+			msg[4] = 0, msg[5] = 0, msg[6] = 640, msg[7] = 480;	/* all of it */
+		else
+			msg[4] = 300, msg[5] = 200, msg[6] = 322, msg[7] = 181;	/* WM_MOVED: work at 301, 220 */
+		script++;
+		return ev->which;
+	}
 	ev->kreturn = script->key;
 	ev->mx = script->obj;
 	ev->breturn = script->clicks;
@@ -288,8 +440,9 @@ short objc_offset(OBJECT *t, short obj, short *x, short *y)
 
 short objc_draw(OBJECT *t, short start, short depth, short x, short y, short w, short h)
 {
-	(void)t, (void)start, (void)depth, (void)x, (void)y, (void)w, (void)h;
+	(void)start, (void)depth, (void)x, (void)y, (void)w, (void)h;
 	draws++;
+	root_drawn_state = t[0].ob_state;
 	return 1;
 }
 
@@ -774,6 +927,164 @@ int main(void)
 		check(r == OK && blits == 0 && dial_finish == 1,
 		      "dlg_modal_save without a workstation: form_dial's redraw instead");
 		tidy("no workstation");
+	}
+
+	/* ---- in a window: a multitasking AES (MiNT, MagiC) ---- */
+	setup();
+	ap_count = -1;
+	check(dlg_windowed(), "ap_count -1 (XaAES, MagiC, N.AES): dialogs in a window");
+	ap_count = 1;
+	check(!dlg_windowed(), "ap_count 1 (TOS, EmuTOS): over the screen, as before");
+
+	setup();
+	ap_count = -1;
+	dlg_title = "Test";
+	tree[ROOT].ob_state = OUTLINED;
+	tree[ROOT].ob_spec = 0x00021100L;
+	{
+		static const STEP s[] = { MSG(WM_REDRAW, DLGWIN), MSG(WM_MOVED, DLGWIN), KEY(K('w')), CLICK(OK), END };
+		script = s;
+		draws = 0;
+		r = dlg_modal(tree, 0, CANCEL);
+		check(r == OK && !strcmp(text[0], "hellow"), "in a window: typing, a click on OK: OK");
+		check(wins_made == 1 && wins_open == 0 && win_name_set == 1 && dial_start == 0 && dial_finish == 0,
+		      "... a window of the AES's with the app's name, closed after; no form_dial");
+		check(draws >= 2 && !(root_drawn_state & OUTLINED), "... drawn when it opened and when the AES asked, without the outline");
+		check(tree[ROOT].ob_state == OUTLINED && tree[ROOT].ob_spec == 0x00021100L, "... the root as it was, after");
+		check(tree[ROOT].ob_x == 301 && tree[ROOT].ob_y == 220, "... moved: the tree with the window");
+		check(evnt_updates == 0, "... the screen not held while it waits (the others draw)");
+		tidy("in a window");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { KEY(K('c')), MSG(WM_CLOSED, DLGWIN), END };
+		script = s;
+		r = dlg_modal(tree, 0, CANCEL);
+		check(r == CANCEL && !strcmp(text[0], "helloc"), "the window's closer: as Esc, Cancel, the field kept");
+		tidy("closer");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { MSG(WM_REDRAW, 9), CLICK(OUTSIDE), KEY(KEY_RETURN), END };
+		script = s;
+		dlg_redraw_hook = hook;
+		r = dlg_modal(tree, 0, CANCEL);
+		dlg_redraw_hook = 0;
+		check(r == OK && hook_calls == 1, "the app's own window to draw: its redraw, the dialog goes on");
+		check(bells == 1, "a click off the dialog: the bell, and the dialog stays");
+		tidy("hook");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { CLICK(CANCEL), KEY(KEY_RETURN), END };
+		script = s;
+		r = run(0, CANCEL, s);	/* dlg_do alone: no window open, as before */
+		check(r == CANCEL, "dlg_do with no dialog window open: as before");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { CLICK(CANCEL), KEY(KEY_RETURN), END };
+		static const STEP s2[] = { MSG(WM_TOPPED, 9), KEY(KEY_RETURN), END };
+		short x, y, w, h;
+		script = s;
+		r = -999;
+		if (!setjmp(out)) {
+			dlg_open(tree, &x, &y, &w, &h);
+			top_win = 9;			/* another program's window came to the front */
+			r = dlg_do(tree, 0, CANCEL);
+			dlg_close();
+		}
+		check(r == OK && top_win == DLGWIN, "behind another window: the click brings it to the front and does nothing else");
+		tidy("behind");
+		script = s2;
+		r = -999;
+		if (!setjmp(out)) {
+			dlg_open(tree, &x, &y, &w, &h);
+			top_win = 0;
+			r = dlg_do(tree, 0, CANCEL);
+			dlg_close();
+		}
+		check(r == OK && top_win == DLGWIN, "one of the app's own windows asked to the front: the dialog stays in front");
+		tidy("topped");
+	}
+
+	setup();
+	ap_count = -1;
+	win_fails = 1;
+	{
+		static const STEP s[] = { KEY(KEY_RETURN), END };
+		script = s;
+		r = dlg_modal(tree, 0, CANCEL);
+		check(r == OK && dial_start == 1 && dial_finish == 1, "no window to be had: over the screen, as on TOS");
+		tidy("no window");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s1[] = { KEY(KEY_RETURN), END };
+		short x, y, w, h, x2, y2, w2, h2;
+		script = s1;
+		dlg_open(tree, &x, &y, &w, &h);
+		dlg_area(&x2, &y2, &w2, &h2);
+		check(x == x2 && y == y2 && w == 320 && h == 160 && dlg_in_window(), "dlg_area: where the open dialog is");
+		draws = 0;
+		dlg_draw(tree, OK);
+		check(draws == 1, "dlg_draw: the object through the window's rectangles");
+		dlg_close();
+		check(!dlg_in_window() && wins_open == 0, "dlg_close: no dialog open after");
+		tidy("open and close");
+	}
+
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { MSG(WM_REDRAW, 9), MSG(WM_REDRAW, 9), KEY(KEY_RETURN), END };
+		script = s;
+		posts = 0;
+		r = dlg_modal(tree, 0, CANCEL);
+		check(r == OK && posts == 1 && posted[0] == WM_REDRAW && posted[3] == 9 && posted[6] == 640,
+		      "no hook: the app's window's redraws kept, given back as one when the dialog closes");
+		tidy("kept redraws");
+	}
+
+	/* the app's own drawing in a dialog window */
+	setup();
+	ap_count = -1;
+	{
+		static const STEP s[] = { MSG(WM_REDRAW, DLGWIN), KEY(KEY_RETURN), END };
+		short x, y, w, h, c[4] = { 10, 20, 30, 40 };
+		script = s;
+		posts = more_calls = 0;
+		check(dlg_cut(&c[0], &c[1], &c[2], &c[3]) && c[0] == 10 && c[3] == 40, "dlg_cut with no dialog open: all of it");
+		dlg_name("Font");
+		dlg_open(tree, &x, &y, &w, &h);
+		check(win_name_set == 10, "dlg_name: the dialog's own name on its window");
+		dlg_more(more);
+		r = dlg_do(tree, 0, CANCEL);
+		check(r == OK && more_calls == 1, "dlg_more: drawn again with the tree when the AES asks");
+		check(cut_ok && cut[0] == 200 && cut[1] == 100 && cut[2] == 50 && cut[3] == 40,
+		      "... and dlg_cut keeps it within the piece being drawn");
+		top_win = 9;
+		c[0] = 210, c[1] = 110, c[2] = 20, c[3] = 10;
+		check(!dlg_cut(&c[0], &c[1], &c[2], &c[3]) && posts == 1 && posted[0] == WM_REDRAW &&
+		      posted[3] == DLGWIN && posted[4] == 210 && posted[6] == 20,
+		      "dlg_cut behind another program's window: nothing now, a WM_REDRAW for it asked");
+		top_win = DLGWIN;
+		c[0] = 210, c[1] = 110, c[2] = 20, c[3] = 10;
+		check(dlg_cut(&c[0], &c[1], &c[2], &c[3]) && c[2] == 20, "... in front: all of it");
+		dlg_close();
+		dlg_name("Font");
+		dlg_name(0);
+		tidy("dlg_more");
 	}
 
 	test_long_fields();

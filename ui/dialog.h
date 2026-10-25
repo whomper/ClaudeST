@@ -41,6 +41,70 @@ short dlg_modal(OBJECT *tree, short start, short cancel);
    reading its messages (alert() uses it) */
 short dlg_modal_save(OBJECT *tree, short start, short cancel);
 
+/* ---- a dialog in a window, where the AES runs several programs at once
+   (MiNT with XaAES, N.AES or MyAES; MagiC: the guidelines, 3.5; Erez,
+   25 Oct 2026). There the AES draws the frame, the dialog can be moved and
+   closed with its closer (as Esc), and other programs go on running. On
+   TOS and EmuTOS it is drawn over the screen as before.
+
+     dlg_open(tree, &x, &y, &w, &h);	in place of form_center, wind_update
+					(BEG_UPDATE, BEG_MCTRL), form_dial
+					(FMD_START) and objc_draw
+     ... dlg_do(tree, 0, CANCEL), or the app's own loop with dlg_evnt in
+     place of evnt_multi_, and dlg_draw for an object that changed ...
+     dlg_close();			in place of form_dial(FMD_FINISH) and
+					wind_update's ends
+
+   They nest (a list over the settings): each dlg_open has its dlg_close.
+   x, y, w, h are where the dialog is; it may be moved, so draw through
+   dlg_draw, or dlg_area for where it is now. The screen is the
+   dialog's (BEG_UPDATE) between them, except while dlg_evnt waits. */
+short dlg_open(OBJECT *tree, short *x, short *y, short *w, short *h);
+/* a dialog the app draws itself (VDI), w by h, centred: draw(x, y, w, h)
+   draws that part of it, clipped, when the AES asks */
+short dlg_open_area(void (*draw)(short x, short y, short w, short h),
+		    short *x, short *y, short *w, short *h);
+void dlg_close(void);
+/* evnt_multi_ for a dialog's loop: in a window it also takes the AES's
+   messages for it (drawn again, moved, brought to the front; the closer
+   comes back as Esc), hands WM_REDRAW for the app's other windows to
+   dlg_redraw_hook, and gives the key or click only when the dialog is in
+   front (a click outside it rings the bell). Elsewhere evnt_multi_. */
+short dlg_evnt(short flags, short clicks, short mask, short state,
+	       unsigned long timer, short *msg, AEVENT *e);
+/* what the app draws itself over the open dialog's tree (lists, a
+   sample, with the VDI): draw(x, y, w, h) draws that piece of it again,
+   called after the tree when the AES asks for a piece of the window (on
+   TOS the app draws it as before) */
+void dlg_more(void (*draw)(short x, short y, short w, short h));
+/* the app's own drawing in a dialog keeps within what it may draw now:
+   x, y, w, h cut to the piece being drawn again; 0 when nothing of it
+   may be drawn (the dialog behind another program's window: the AES is
+   then asked to have it drawn where it shows). Everything when no
+   dialog window is open. Use it before clip_on and for lines. */
+int dlg_cut(short *x, short *y, short *w, short *h);
+/* an object of the open dialog drawn again, through what shows of it */
+void dlg_draw(OBJECT *tree, short obj);
+/* where the open dialog is now */
+void dlg_area(short *x, short *y, short *w, short *h);
+/* 1 where dialogs open in a window (aes_count() != 1, or MagiC);
+   dlg_window_on 1 or 0 forces it (tests), -1 (the default) asks the AES */
+int dlg_windowed(void);
+extern int dlg_window_on;
+/* 1 while the innermost open dialog is in a window */
+int dlg_in_window(void);
+/* the dialog windows' title: the app's name (set it at start) */
+extern const char *dlg_title;
+/* the next dlg_open's window title, the dialog's own name ("Font",
+   "Account"); the app's name (dlg_title) when none is given. The string
+   must last while the dialog is open */
+void dlg_name(const char *name);
+/* the app's redraw for its own windows while a dialog window is open
+   (msg is WM_REDRAW's); without it the AES's requests are kept, a
+   window's areas as one, and given back to the app as WM_REDRAW when the
+   last dialog window closes */
+extern void (*dlg_redraw_hook)(const short *msg);
+
 /* 1 for Esc and Undo, as evnt_multi gives them (scan code in the high
    byte) */
 int dlg_esc(short key);
