@@ -3152,21 +3152,176 @@ static void dlg_frame(short x, short y, short w, short h)
 	line(x + 2, y + h - 3, x + 2, y + 2, 1);
 }
 
+/* ClaudeST's own dialogs (the text box, Keys, Settings), drawn with the
+ * VDI: over the screen on TOS and EmuTOS, as they always were; in a window
+ * of the AES's where it runs several programs at once (MiNT, MagiC: the
+ * guidelines, 3.5), with the dialog's name, a mover and a closer (as Esc).
+ * A dialog gives its place() (its parts' places from dlg_x, dlg_y: a
+ * window can be moved) and its paint(framed): all of it, framed with its
+ * shadow over the screen, on white in a window, whose frame is the AES's. */
+static void (*own_place)(void);
+static void (*own_paint)(short framed);
+static short own_win;			/* 1: the open one is in a window */
+static short own_clipr[4];
+
+static void own_gem(void)
+{
+	vswr_mode(vh, 2);
+	vsf_perimeter(vh, 0);
+	vst_alignment(vh, 0, 5);
+}
+
+/* a piece of the dialog's window drawn again (dialog.c asks) */
+static void own_piece(short x, short y, short w, short h)
+{
+	short c[4], d;
+	dlg_area(&dlg_x, &dlg_y, &d, &d);
+	own_place();
+	own_gem();
+	c[0] = x;
+	c[1] = y;
+	c[2] = x + w - 1;
+	c[3] = y + h - 1;
+	vs_clip(vh, 1, c);
+	own_paint(0);
+}
+
+/* the dialog (dlg_w by dlg_h at dlg_x, dlg_y) shown: the mouse is off on
+   return over the screen, on in a window */
+static void own_open(const char *name, void (*place)(void), void (*paint)(short framed))
+{
+	own_place = place;
+	own_paint = paint;
+	own_win = 0;
+	if (dlg_windowed()) {
+		short w = dlg_w, h = dlg_h;
+		dlg_name(name);
+		dlg_open_area(own_piece, &dlg_x, &dlg_y, &w, &h);	/* and drawn */
+		if (dlg_in_window()) {
+			own_win = 1;
+			place();
+			return;
+		}
+		dlg_close();		/* no window to be had: as on TOS */
+	}
+	place();
+	wind_update(BEG_UPDATE);
+	wind_update(3);		/* BEG_MCTRL */
+	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	graf_mouse(M_OFF, 0);
+	own_gem();
+	own_clipr[0] = 0;
+	own_clipr[1] = 0;
+	own_clipr[2] = scr_w - 1;
+	own_clipr[3] = scr_h - 1;
+	vs_clip(vh, 1, own_clipr);
+	paint(1);
+}
+
+/* after each event: where a moved window has its parts now */
+static void own_moved(void)
+{
+	short d;
+	if (own_win) {
+		dlg_area(&dlg_x, &dlg_y, &d, &d);
+		own_place();
+	}
+}
+
+/* before the dialog's loop draws part of it: 1, clipped to what of it
+   may be drawn now; 0 when nothing (in a window behind another program's:
+   the AES has it drawn when it shows) */
+static short own_cut(void)
+{
+	short x = dlg_x, y = dlg_y, w = dlg_w, h = dlg_h, c[4];
+	if (!own_win)
+		return 1;		/* the screen, as at the start */
+	if (!dlg_cut(&x, &y, &w, &h))
+		return 0;
+	own_gem();
+	c[0] = x;
+	c[1] = y;
+	c[2] = x + w - 1;
+	c[3] = y + h - 1;
+	vs_clip(vh, 1, c);
+	return 1;
+}
+
+/* the dialog put away, the window under it drawn again */
+static void own_close(void)
+{
+	if (own_win) {
+		dlg_close();	/* the AES asks for what was under it */
+		own_win = 0;
+		return;
+	}
+	vs_clip(vh, 0, own_clipr);
+	wind_update(2);
+	wind_update(END_UPDATE);
+	{
+		short saved = text_dirty_row;
+		text_dirty_row = 0;
+		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+		text_dirty_row = saved;
+	}
+	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+}
+
+/* the box's frame: GEM's over the screen, the AES's window's otherwise */
+static void own_frame(short framed)
+{
+	if (framed)
+		dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
+	else
+		fill(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 0);
+}
+
+/* the text box's state, for its paint */
+static const char *td_title, *td_ok;
+static char td_edit[128];
+static short td_len, td_cur, td_start, td_tl;
+
+static void td_place(void)
+{
+	fld_x = dlg_x + 2 * cw;
+	fld_y = dlg_y + 2 * ch + 2;
+	btn_y = dlg_y + dlg_h - btn_h - ch;
+	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
+	cancel_x = ok_x - btn_w - 2 * cw;
+}
+
+static void td_paint(short framed)
+{
+	own_frame(framed);
+	text_bidi(fld_x, dlg_y + ch / 2 + 2, td_title, td_tl, 1, 1, 0);
+	/* the field */
+	line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
+	line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
+	line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
+	line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
+	dlg_field(td_edit, td_len, td_cur, &td_start);
+	dlg_button(cancel_x, "Cancel", 0);
+	dlg_button(ok_x, td_ok, 1);
+}
+
 /* Asks for a line of text. buf holds the starting text and receives the
  * result (up to max-1 characters). Returns 1 for OK, 0 for Cancel.
  * Keys: typing, Backspace, Clr/Home clears, F10 Hebrew, Return OK, Esc/Undo
  * cancel. Mouse: the buttons. */
 static short text_dialog(const char *title, const char *ok_label, char *buf, short max)
 {
-	char edit[128];
-	short len, cur, start = 0, res = -1, clipr[4], m[8], tl = strlen(title);
+	short res = -1, m[8];
 	AEVENT e;
 
-	if (max > (short)sizeof(edit))
-		max = sizeof(edit);
-	strlcpy_(edit, buf, max);
-	len = strlen(edit);
-	cur = len;
+	if (max > (short)sizeof(td_edit))
+		max = sizeof(td_edit);
+	strlcpy_(td_edit, buf, max);
+	td_len = strlen(td_edit);
+	td_cur = td_len;
+	td_start = 0;
+	td_title = title;
+	td_tl = strlen(title);
+	td_ok = ok_label;
 
 	fld_cols = 44;
 	if (fld_cols > ww / cw - 10)
@@ -3179,39 +3334,15 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	/* over the conversation pane, so the sidebar item stays in view */
 	dlg_x = dlg_w + 8 <= pw ? px + (pw - dlg_w) / 2 : wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 3;
-	fld_x = dlg_x + 2 * cw;
-	fld_y = dlg_y + 2 * ch + 2;
-	btn_y = dlg_y + dlg_h - btn_h - ch;
-	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
-	cancel_x = ok_x - btn_w - 2 * cw;
 
-	wind_update(BEG_UPDATE);
-	wind_update(3);		/* BEG_MCTRL */
-	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-	graf_mouse(M_OFF, 0);
-	vswr_mode(vh, 2);
-	vsf_perimeter(vh, 0);
-	vst_alignment(vh, 0, 5);
-	clipr[0] = 0;
-	clipr[1] = 0;
-	clipr[2] = scr_w - 1;
-	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
-	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
-	text_bidi(fld_x, dlg_y + ch / 2 + 2, title, tl, 1, 1, 0);
-	/* the field */
-	line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
-	line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
-	line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
-	line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
-	dlg_field(edit, len, cur, &start);
-	dlg_button(cancel_x, "Cancel", 0);
-	dlg_button(ok_x, ok_label, 1);
-	graf_mouse(M_ON, 0);
+	own_open(title, td_place, td_paint);
+	if (!own_win)
+		graf_mouse(M_ON, 0);
 	wait_release();
 
 	while (res < 0) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		own_moved();
 		if (e.which & MU_KEYBD) {
 			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
 			short changed = 1;
@@ -3220,16 +3351,17 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 			else if (as == 0x1b || sc == 0x61)
 				res = 0;
 			else if (sc == 0x47)		/* Clr/Home clears */
-				len = cur = start = 0;
+				td_len = td_cur = td_start = 0;
 			else if (sc == 0x44)
 				toggle_hebrew();
 			else if (clip_key(e.kreturn))
-				changed = field_clip(clip_key(e.kreturn), edit, &len, &cur, max - 1);
+				changed = field_clip(clip_key(e.kreturn), td_edit, &td_len, &td_cur, max - 1);
 			else
-				changed = edit_key(edit, &len, &cur, max - 1, e.kstate, e.kreturn);
+				changed = edit_key(td_edit, &td_len, &td_cur, max - 1, e.kstate, e.kreturn);
 			if (changed && res < 0) {
 				graf_mouse(M_OFF, 0);
-				dlg_field(edit, len, cur, &start);
+				if (own_cut())
+					dlg_field(td_edit, td_len, td_cur, &td_start);
 				graf_mouse(M_ON, 0);
 			}
 		}
@@ -3244,96 +3376,88 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 			wait_release();
 		}
 	}
-	vs_clip(vh, 0, clipr);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	{
-		short saved = text_dirty_row;
-		text_dirty_row = 0;
-		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-		text_dirty_row = saved;
-	}
-	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	own_close();
 	dirty |= D_INPUT;	/* the HE badge may have changed */
-	edit[len] = 0;
+	td_edit[td_len] = 0;
 	if (res == 1)
-		strlcpy_(buf, edit, max);
+		strlcpy_(buf, td_edit, max);
 	return res;
 }
 
 /* Help > Keys..., and the Help key's button when no help viewer runs:
  * ClaudeST's keys, as in ECal and EContact. Any key or click closes it. */
+static const char *const keys_k[][2] = {
+	{ "Return", "send what you typed" },
+	{ "F1  ^N", "a new chat" },
+	{ "F2 F6 F3 F4", "Chats, Code, Projects, Artifacts" },
+	{ "F5  ^F", "search the chat titles" },
+	{ "Tab, Return", "pick and open a sidebar item" },
+	{ "Insert", "the item's menu (or right-click)" },
+	{ "F8  F9", "account; model and effort" },
+	{ "F10", "Hebrew keyboard on or off" },
+	{ "\x01 \x02", "scroll the chat; Shift: a page" },
+	{ "Clr/Home", "the top; Shift: the end" },
+	{ "Shift+Del", "clear the reply line" },
+	{ "^O", "attach a file; Bksp removes it" },
+	{ "^C ^X ^V", "copy, cut, paste" },
+	{ "^R", "reconnect to the gateway" },
+	{ "^,", "settings: the gateway, serial" },
+	{ "Help", "the user guide" },
+	{ "^W  ^Q", "quit" },
+};
+enum { KEYS_N = sizeof(keys_k) / sizeof(keys_k[0]), KEYCOL = 13 };
+static short keys_lh;
+
+static void keys_place(void)
+{
+	btn_y = dlg_y + dlg_h - btn_h - ch / 2 - 2;
+	ok_x = dlg_x + (dlg_w - btn_w) / 2;
+}
+
+static void keys_paint(short framed)
+{
+	short lh = keys_lh, i, y, x0 = dlg_x + 2 * cw;
+	short cols = dlg_w / cw - 4 - KEYCOL;		/* room for the words */
+	own_frame(framed);
+	y = dlg_y + ch / 2 + 2;
+	text(x0, y, "ClaudeST's keys", 15, 1, 1);
+	y += lh + lh / 2;
+	for (i = 0; i < KEYS_N && y + lh <= btn_y; i++, y += lh) {
+		short n = strlen(keys_k[i][1]);
+		text(x0, y, keys_k[i][0], strlen(keys_k[i][0]), 1, 1);
+		text(x0 + KEYCOL * cw, y, keys_k[i][1], n < cols ? n : cols, 0, 1);
+	}
+	dlg_button(ok_x, "OK", 1);
+}
+
 static void keys_dialog(void)
 {
-	static const char *const k[][2] = {
-		{ "Return", "send what you typed" },
-		{ "F1  ^N", "a new chat" },
-		{ "F2 F6 F3 F4", "Chats, Code, Projects, Artifacts" },
-		{ "F5  ^F", "search the chat titles" },
-		{ "Tab, Return", "pick and open a sidebar item" },
-		{ "Insert", "the item's menu (or right-click)" },
-		{ "F8  F9", "account; model and effort" },
-		{ "F10", "Hebrew keyboard on or off" },
-		{ "\x01 \x02", "scroll the chat; Shift: a page" },
-		{ "Clr/Home", "the top; Shift: the end" },
-		{ "Shift+Del", "clear the reply line" },
-		{ "^O", "attach a file; Bksp removes it" },
-		{ "^C ^X ^V", "copy, cut, paste" },
-		{ "^R", "reconnect to the gateway" },
-		{ "^,", "settings: the gateway, serial" },
-		{ "Help", "the user guide" },
-		{ "^W  ^Q", "quit" },
-	};
-	enum { N = sizeof(k) / sizeof(k[0]), KEYCOL = 13 };
-	short lh = ch + (ch >= 16 ? 2 : 0), m[8], clipr[4], i, done = 0, cols, x0, y;
+	short m[8], done = 0;
 	AEVENT e;
 
+	keys_lh = ch + (ch >= 16 ? 2 : 0);
 	btn_w = 10 * cw;
 	btn_h = ch + 6;
 	dlg_w = (KEYCOL + 36) * cw;
 	if (dlg_w > ww - 2 * cw)
 		dlg_w = ww - 2 * cw;
-	dlg_h = ch + lh * (N + 2) + btn_h + ch;
+	dlg_h = ch + keys_lh * (KEYS_N + 2) + btn_h + ch;
 	if (dlg_h > wh - 4) {		/* a low window: no space between rows */
-		lh = ch;
-		dlg_h = ch + lh * (N + 2) + btn_h + ch;
+		keys_lh = ch;
+		dlg_h = ch + keys_lh * (KEYS_N + 2) + btn_h + ch;
 	}
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
-	btn_y = dlg_y + dlg_h - btn_h - ch / 2 - 2;
-	ok_x = dlg_x + (dlg_w - btn_w) / 2;
-	cols = dlg_w / cw - 4 - KEYCOL;		/* room for the words */
-	x0 = dlg_x + 2 * cw;
 
-	wind_update(BEG_UPDATE);
-	wind_update(3);		/* BEG_MCTRL */
-	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-	graf_mouse(M_OFF, 0);
-	vswr_mode(vh, 2);
-	vsf_perimeter(vh, 0);
-	vst_alignment(vh, 0, 5);
-	clipr[0] = 0;
-	clipr[1] = 0;
-	clipr[2] = scr_w - 1;
-	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
-	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
-	y = dlg_y + ch / 2 + 2;
-	text(x0, y, "ClaudeST's keys", 15, 1, 1);
-	y += lh + lh / 2;
-	for (i = 0; i < N && y + lh <= btn_y; i++, y += lh) {
-		short n = strlen(k[i][1]);
-		text(x0, y, k[i][0], strlen(k[i][0]), 1, 1);
-		text(x0 + KEYCOL * cw, y, k[i][1], n < cols ? n : cols, 0, 1);
-	}
-	dlg_button(ok_x, "OK", 1);
-	graf_mouse(M_ON, 0);
+	own_open("Keys", keys_place, keys_paint);
+	if (!own_win)
+		graf_mouse(M_ON, 0);
 	wait_release();
 
 	while (!done) {
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
 		if (e.which & MU_KEYBD)
 			done = 1;
 		if (e.which & MU_BUTTON) {
@@ -3341,16 +3465,7 @@ static void keys_dialog(void)
 			done = 1;
 		}
 	}
-	vs_clip(vh, 0, clipr);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	{
-		short saved = text_dirty_row;
-		text_dirty_row = 0;
-		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-		text_dirty_row = saved;
-	}
-	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	own_close();
 }
 
 /* ------------------------------------------------------------------ */
@@ -4301,191 +4416,205 @@ static void move_cursor(short d)
  * serial: the speed. Tab moves between the two fields, Return is OK, Esc
  * or Undo Cancel. The 3D dialogs tick (guideline 5.6) sits on the buttons'
  * row, greyed where the AES draws no 3D. */
+static const char *const sp_label[3] = { "4800", "9600", "19200" };
+static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
+/* where the system and bitmap fonts keep the Hebrew letters (the Font
+   dialog's own sample row before the family's dialog) */
+static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
+/* what Settings shows, for its paint, and where */
+static char sd_f[2][24];
+static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
+static short sd_nl, sd_nb, sd_nh, sd_n3, sd_ok3, sd_focus;
+static short sd_lh, sd_ly[5], sd_chw, sd_ch_x[2], sd_fx[2], sd_fy[2];
+static short sd_sp_w, sd_sp_x[3], sd_hb_w, sd_hb_x[3], sd_tk_x, sd_tk_y;
+
+static void sd_place(void)
+{
+	short cx = dlg_x + 20 * cw, i;		/* where the controls start */
+	for (i = 0; i < 5; i++)
+		sd_ly[i] = dlg_y + ch + sd_lh * (i + 1) + sd_lh / 2;
+	sd_chw = 11 * cw;			/* Network | Serial */
+	sd_ch_x[0] = cx;
+	sd_ch_x[1] = cx + sd_chw + cw;
+	for (i = 0; i < 2; i++) {
+		sd_fx[i] = cx;
+		sd_fy[i] = sd_ly[i + 1] - 3;
+	}
+	sd_sp_w = 7 * cw;
+	for (i = 0; i < 3; i++)
+		sd_sp_x[i] = cx + i * (sd_sp_w + cw);
+	sd_hb_w = 9 * cw;
+	for (i = 0; i < 3; i++)
+		sd_hb_x[i] = cx + i * (sd_hb_w + cw);
+	btn_y = dlg_y + dlg_h - btn_h - ch;
+	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
+	cancel_x = ok_x - btn_w - 2 * cw;
+	sd_tk_x = dlg_x + 2 * cw;		/* the tick: a box two characters wide */
+	sd_tk_y = btn_y + (btn_h - ch) / 2;
+}
+
+/* the parts that change: the choices, the tick, the fields */
+static void sd_live(void)
+{
+	short i, tk_x = sd_tk_x, tk_y = sd_tk_y;
+	/* the choices: the chosen one drawn inverted */
+	for (i = 0; i < 8; i++) {
+		short x = i < 2 ? sd_ch_x[i] : i < 5 ? sd_sp_x[i - 2] : sd_hb_x[i - 5];
+		short w = i < 2 ? sd_chw : i < 5 ? sd_sp_w : sd_hb_w, y = sd_ly[i < 2 ? 0 : i < 5 ? 3 : 4] - 3;
+		const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
+		short on = i < 2 ? (i == 0) == (sd_nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == sd_nb : sd_nh == i - 5;
+		short n = strlen(l);
+		fill(x, y, x + w - 1, y + ch + 5, on ? 1 : 0);
+		line(x, y, x + w - 1, y, 1);
+		line(x + w - 1, y, x + w - 1, y + ch + 5, 1);
+		line(x + w - 1, y + ch + 5, x, y + ch + 5, 1);
+		line(x, y + ch + 5, x, y, 1);
+		text(x + (w - n * cw) / 2, y + 3, l, n, 0, on ? 0 : 1);
+	}
+	/* the tick: crossed when on */
+	fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 0);
+	line(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y, 1);
+	line(tk_x + 2 * cw - 1, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
+	line(tk_x + 2 * cw - 1, tk_y + ch - 1, tk_x, tk_y + ch - 1, 1);
+	line(tk_x, tk_y + ch - 1, tk_x, tk_y, 1);
+	if (sd_n3) {
+		line(tk_x + 2, tk_y + 2, tk_x + 2 * cw - 3, tk_y + ch - 3, 1);
+		line(tk_x + 2 * cw - 3, tk_y + 2, tk_x + 2, tk_y + ch - 3, 1);
+	}
+	/* the fields: the one with the cursor is edited */
+	for (i = 0; i < 2; i++) {
+		fld_x = sd_fx[i];
+		fld_y = sd_fy[i];
+		fld_cols = sd_cols[i];
+		fld_w = sd_cols[i] * cw;
+		line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
+		line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
+		line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
+		line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
+		if (i == sd_focus)
+			dlg_field(sd_f[i], sd_len[i], sd_cur[i], &sd_start[i]);
+		else {
+			fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
+			text(fld_x + cw / 2, fld_y + 3, sd_f[i], sd_len[i] < sd_cols[i] - 1 ? sd_len[i] : sd_cols[i] - 1, 0, 1);
+		}
+	}
+}
+
+static void sd_paint(short framed)
+{
+	own_frame(framed);
+	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
+	text(sd_tk_x + 3 * cw, sd_tk_y, "3D dialogs", 10, sd_ok3 ? 0 : 2, 1);	/* 2: light, greyed */
+	text(dlg_x + 2 * cw, sd_ly[0], "Connect through", 15, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[1], "Gateway address", 15, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[2], "Gateway port", 12, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[3], "Serial speed", 12, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[4], "Hebrew in fonts", 15, 0, 1);
+	dlg_button(cancel_x, "Cancel", 0);
+	dlg_button(ok_x, "OK", 1);
+	if (!framed)
+		sd_live();	/* over the screen the loop draws these next */
+}
+
 static void settings_dialog(void)
 {
-	static const char *const sp_label[3] = { "4800", "9600", "19200" };
-	static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
-	/* where the system and bitmap fonts keep the Hebrew letters (the
-	   Font dialog's own sample row before the family's dialog) */
-	static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
-	char f[2][24];
-	short len[2], cur[2], start[2] = { 0, 0 }, cols[2] = { 17, 7 }, fx[2], fy[2];
-	short nl = link, nb = baud, nh = hebfont, focus = 0, res = -1, clipr[4], m[8], i;
-	short lh, cx, ly[5], chw, ch_x[2], sp_w, sp_x[3], hb_w, hb_x[3];
-	short n3 = dlg_3d_on != 0, ok3 = dlg_3d_ok(), tk_x, tk_y;
+	char (*f)[24] = sd_f;
+	short res = -1, m[8], i;
 	AEVENT e;
 
 	f[0][0] = 0;
 	if (tcp_ip)
 		ip_to_str(tcp_ip, f[0]);
 	*put_num(f[1], tcp_port) = 0;
-	for (i = 0; i < 2; i++)
-		len[i] = cur[i] = strlen(f[i]);
+	for (i = 0; i < 2; i++) {
+		sd_len[i] = sd_cur[i] = strlen(f[i]);
+		sd_start[i] = 0;
+	}
+	sd_nl = link;
+	sd_nb = baud;
+	sd_nh = hebfont;
+	sd_n3 = dlg_3d_on != 0;
+	sd_ok3 = dlg_3d_ok();
+	sd_focus = 0;
 
-	lh = ch + 8;
+	sd_lh = ch + 8;
 	btn_w = 10 * cw;
 	btn_h = ch + 6;
 	dlg_w = 52 * cw;
 	if (dlg_w > ww - 2 * cw)
 		dlg_w = ww - 2 * cw;
-	dlg_h = ch + lh * 7 + btn_h + ch;
+	dlg_h = ch + sd_lh * 7 + btn_h + ch;
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
-	cx = dlg_x + 20 * cw;			/* where the controls start */
-	for (i = 0; i < 5; i++)
-		ly[i] = dlg_y + ch + lh * (i + 1) + lh / 2;
-	chw = 11 * cw;				/* Network | Serial */
-	ch_x[0] = cx;
-	ch_x[1] = cx + chw + cw;
-	for (i = 0; i < 2; i++) {
-		fx[i] = cx;
-		fy[i] = ly[i + 1] - 3;
-	}
-	sp_w = 7 * cw;
-	for (i = 0; i < 3; i++)
-		sp_x[i] = cx + i * (sp_w + cw);
-	hb_w = 9 * cw;
-	for (i = 0; i < 3; i++)
-		hb_x[i] = cx + i * (hb_w + cw);
-	btn_y = dlg_y + dlg_h - btn_h - ch;
-	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
-	cancel_x = ok_x - btn_w - 2 * cw;
-	tk_x = dlg_x + 2 * cw;			/* the tick: a box two characters wide */
-	tk_y = btn_y + (btn_h - ch) / 2;
 
-	wind_update(BEG_UPDATE);
-	wind_update(3);		/* BEG_MCTRL */
-	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-	graf_mouse(M_OFF, 0);
-	vswr_mode(vh, 2);
-	vsf_perimeter(vh, 0);
-	vst_alignment(vh, 0, 5);
-	clipr[0] = 0;
-	clipr[1] = 0;
-	clipr[2] = scr_w - 1;
-	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
-	dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
-	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
-	text(tk_x + 3 * cw, tk_y, "3D dialogs", 10, ok3 ? 0 : 2, 1);	/* 2: light, greyed */
-	text(dlg_x + 2 * cw, ly[0], "Connect through", 15, 0, 1);
-	text(dlg_x + 2 * cw, ly[1], "Gateway address", 15, 0, 1);
-	text(dlg_x + 2 * cw, ly[2], "Gateway port", 12, 0, 1);
-	text(dlg_x + 2 * cw, ly[3], "Serial speed", 12, 0, 1);
-	text(dlg_x + 2 * cw, ly[4], "Hebrew in fonts", 15, 0, 1);
-	dlg_button(cancel_x, "Cancel", 0);
-	dlg_button(ok_x, "OK", 1);
+	own_open("Settings", sd_place, sd_paint);
+	if (own_win)
+		graf_mouse(M_OFF, 0);		/* as over the screen: the loop draws first */
 
 	for (;;) {
-		/* the choices: the chosen one drawn inverted */
-		for (i = 0; i < 8; i++) {
-			short x = i < 2 ? ch_x[i] : i < 5 ? sp_x[i - 2] : hb_x[i - 5];
-			short w = i < 2 ? chw : i < 5 ? sp_w : hb_w, y = ly[i < 2 ? 0 : i < 5 ? 3 : 4] - 3;
-			const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
-			short on = i < 2 ? (i == 0) == (nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == nb : nh == i - 5;
-			short n = strlen(l);
-			fill(x, y, x + w - 1, y + ch + 5, on ? 1 : 0);
-			line(x, y, x + w - 1, y, 1);
-			line(x + w - 1, y, x + w - 1, y + ch + 5, 1);
-			line(x + w - 1, y + ch + 5, x, y + ch + 5, 1);
-			line(x, y + ch + 5, x, y, 1);
-			text(x + (w - n * cw) / 2, y + 3, l, n, 0, on ? 0 : 1);
-		}
-		/* the tick: crossed when on */
-		fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 0);
-		line(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y, 1);
-		line(tk_x + 2 * cw - 1, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
-		line(tk_x + 2 * cw - 1, tk_y + ch - 1, tk_x, tk_y + ch - 1, 1);
-		line(tk_x, tk_y + ch - 1, tk_x, tk_y, 1);
-		if (n3) {
-			line(tk_x + 2, tk_y + 2, tk_x + 2 * cw - 3, tk_y + ch - 3, 1);
-			line(tk_x + 2 * cw - 3, tk_y + 2, tk_x + 2, tk_y + ch - 3, 1);
-		}
-		/* the fields: the one with the cursor is edited */
-		for (i = 0; i < 2; i++) {
-			fld_x = fx[i];
-			fld_y = fy[i];
-			fld_cols = cols[i];
-			fld_w = cols[i] * cw;
-			line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
-			line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
-			line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
-			line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
-			if (i == focus)
-				dlg_field(f[i], len[i], cur[i], &start[i]);
-			else {
-				fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
-				text(fld_x + cw / 2, fld_y + 3, f[i], len[i] < cols[i] - 1 ? len[i] : cols[i] - 1, 0, 1);
-			}
-		}
+		if (own_cut())
+			sd_live();
 		graf_mouse(M_ON, 0);
 		if (res >= 0)
 			break;
 		wait_release();
-		evnt_multi_(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
+		own_moved();
 		graf_mouse(M_OFF, 0);
 		if (e.which & MU_KEYBD) {
 			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
+			short fo = sd_focus;
 			if (as == 0x0d)
 				res = 1;
 			else if (as == 0x1b || sc == 0x61)
 				res = 0;
 			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
-				focus ^= 1;
+				sd_focus ^= 1;
 			else if (sc == 0x47)		/* Clr/Home clears */
-				len[focus] = cur[focus] = start[focus] = 0;
+				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
 			else if (clip_key(e.kreturn))
-				field_clip(clip_key(e.kreturn), f[focus], &len[focus], &cur[focus],
-					   (focus ? 5 : 15));
+				field_clip(clip_key(e.kreturn), f[fo], &sd_len[fo], &sd_cur[fo],
+					   (fo ? 5 : 15));
 			else if (sc != 0x44)		/* no Hebrew in an address */
-				edit_key(f[focus], &len[focus], &cur[focus], focus ? 5 : 15, e.kstate, e.kreturn);
-			f[focus][len[focus]] = 0;
+				edit_key(f[fo], &sd_len[fo], &sd_cur[fo], fo ? 5 : 15, e.kstate, e.kreturn);
+			f[fo][sd_len[fo]] = 0;
 		}
 		if (e.which & MU_BUTTON) {
 			short mx = e.mx, my = e.my;
 			for (i = 0; i < 2; i++) {
-				if (mx >= ch_x[i] && mx < ch_x[i] + chw && my >= ly[0] - 3 && my < ly[0] + ch + 3)
-					nl = i == 0 ? LINK_TCP : LINK_SERIAL;
-				if (mx >= fx[i] && mx < fx[i] + cols[i] * cw && my >= fy[i] && my < fy[i] + ch + 6)
-					focus = i;
+				if (mx >= sd_ch_x[i] && mx < sd_ch_x[i] + sd_chw && my >= sd_ly[0] - 3 && my < sd_ly[0] + ch + 3)
+					sd_nl = i == 0 ? LINK_TCP : LINK_SERIAL;
+				if (mx >= sd_fx[i] && mx < sd_fx[i] + sd_cols[i] * cw && my >= sd_fy[i] && my < sd_fy[i] + ch + 6)
+					sd_focus = i;
 			}
 			for (i = 0; i < 3; i++) {
-				if (mx >= sp_x[i] && mx < sp_x[i] + sp_w && my >= ly[3] - 3 && my < ly[3] + ch + 3)
-					nb = sp_baud[i];
-				if (mx >= hb_x[i] && mx < hb_x[i] + hb_w && my >= ly[4] - 3 && my < ly[4] + ch + 3)
-					nh = i;
+				if (mx >= sd_sp_x[i] && mx < sd_sp_x[i] + sd_sp_w && my >= sd_ly[3] - 3 && my < sd_ly[3] + ch + 3)
+					sd_nb = sp_baud[i];
+				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[4] - 3 && my < sd_ly[4] + ch + 3)
+					sd_nh = i;
 			}
 			if (my >= btn_y && my < btn_y + btn_h) {
 				if (mx >= ok_x && mx < ok_x + btn_w)
 					res = 1;
 				else if (mx >= cancel_x && mx < cancel_x + btn_w)
 					res = 0;
-				else if (ok3 && mx >= tk_x && mx < tk_x + 13 * cw)
-					n3 = !n3;
+				else if (sd_ok3 && mx >= sd_tk_x && mx < sd_tk_x + 13 * cw)
+					sd_n3 = !sd_n3;
 			}
 		}
 		/* an address that doesn't read as one: back to it */
-		if (res == 1 && nl == LINK_TCP) {
+		if (res == 1 && sd_nl == LINK_TCP) {
 			u32 ip;
 			if (!parse_ip(f[0], &ip, 0) || !ip) {
 				res = -1;
-				focus = 0;
+				sd_focus = 0;
 				alert(1, "[1][Please type the gateway's|IP address, for example|192.168.1.10.][ OK ]");
 			}
 		}
 	}
-	vs_clip(vh, 0, clipr);
-	wind_update(2);
-	wind_update(END_UPDATE);
-	{
-		short saved = text_dirty_row;
-		text_dirty_row = 0;
-		redraw(D_ALL, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
-		text_dirty_row = saved;
-	}
-	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	own_close();
 	if (res != 1)
 		return;
 	{
@@ -4498,19 +4627,19 @@ static void settings_dialog(void)
 			port = port * 10 + (*q++ - '0');
 		if (!port)
 			port = 2323;
-		changed = nl != link || (nl == LINK_TCP && (ip != tcp_ip || port != tcp_port));
+		changed = sd_nl != link || (sd_nl == LINK_TCP && (ip != tcp_ip || port != tcp_port));
 		if (ip)
 			tcp_ip = ip;
 		tcp_port = port;
-		if (nb != baud)
-			set_baud(nb);
-		dlg_3d_on = n3;			/* the next dialog follows it */
-		if (nh != hebfont) {	/* the window's Hebrew, drawn anew */
-			hebfont = nh;
+		if (sd_nb != baud)
+			set_baud(sd_nb);
+		dlg_3d_on = sd_n3;		/* the next dialog follows it */
+		if (sd_nh != hebfont) {	/* the window's Hebrew, drawn anew */
+			hebfont = sd_nh;
 			on_resize();
 		}
 		if (changed)
-			use_link(nl);		/* connects again, saves */
+			use_link(sd_nl);	/* connects again, saves */
 		else
 			save_config();
 	}
@@ -4937,6 +5066,16 @@ static void crash_quit(const char *what)
 	appl_exit();
 }
 
+/* while a dialog is in a window (MiNT, MagiC: the guidelines, 3.5), the
+   AES's requests to draw ClaudeST's own window, handled as ever */
+static void dialog_redraw(const short *msg)
+{
+	short m[8], i;
+	for (i = 0; i < 8; i++)
+		m[i] = msg[i];
+	handle_msg(m);
+}
+
 int main(void)
 {
 	short work_out[57], dx, dy, dw, dh, wbox, hbox;
@@ -4947,6 +5086,8 @@ int main(void)
 	if (apid < 0)
 		return 1;
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
+	dlg_title = "ClaudeST";		/* dialogs in a window (3.5) */
+	dlg_redraw_hook = dialog_redraw;
 	sys_cw = cst_gl_wchar = cw;
 	sys_ch = cst_gl_hchar = ch;
 	{
