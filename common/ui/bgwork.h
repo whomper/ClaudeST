@@ -28,7 +28,12 @@
  *   - while our program edition runs (twin_prg(): the accessory leaves the
  *     work to it).
  * A slice lasts BG_SLICE_030 ms on a 68020 or better, BG_SLICE_000 on a
- * 68000 (the _CPU cookie); one step must be shorter than that.
+ * 68000 (the _CPU cookie); one step must be shorter than that. A step's
+ * cost adds to the slice it ends: before a step known to be long (EMail's
+ * [account] line, a 20 KB calloc, 30 ms on an ST), ask bg_room(its cost)
+ * instead of bg_more(), so it starts only with that much of the slice
+ * left, or first in the next turn:
+ *     do one_step(); while (pending && bg_room(next_is_long ? 30 : 0));
  * Nothing here allocates memory, so an accessory may use it at any time.
  */
 #ifndef BGWORK_H
@@ -51,6 +56,7 @@ void bg_tick(void);
 int bg_may_work(void);
 void bg_begin(void);
 int bg_more(void);		/* 1 while the slice has time left */
+int bg_room(unsigned long ms);	/* 1 while it has more than ms left */
 unsigned long bg_timer(int pending, unsigned long idle_ms);
 
 #endif

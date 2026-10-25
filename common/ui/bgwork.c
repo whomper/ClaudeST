@@ -102,9 +102,14 @@ void bg_begin(void)
 	slice_end = tos_ms() + slice_len;
 }
 
+int bg_room(unsigned long ms)
+{
+	return (long)(slice_end - tos_ms()) > (long)ms;
+}
+
 int bg_more(void)
 {
-	return (long)(slice_end - tos_ms()) > 0;
+	return bg_room(0);
 }
 
 unsigned long bg_timer(int pending, unsigned long idle_ms)

@@ -143,6 +143,24 @@ int main(void)
 		now += 10;
 	CHECK(steps == 8, "80 ms slice on a 68000");
 
+	/* a long step (30 ms) after short ones: started only with 30 ms of the
+	   slice left, so the stretch stays within the 80 ms slice; the first
+	   step of the next turn takes it */
+	bg_begin();
+	{
+		u32 t0 = now;
+		int shorts = 0;
+		do {
+			now += 10;
+			shorts++;
+		} while (bg_room(30));
+		CHECK(shorts == 5 && now - t0 == 50, "bg_room(30): the long step waits for a turn (5 short steps, 50 ms)");
+		bg_begin();
+		t0 = now;
+		now += 30;
+		CHECK(bg_more() && now - t0 == 30, "... and is the next turn's first");
+	}
+
 	printf("%s\n", fails ? "bgwork: FAILED" : "bgwork: ok");
 	return fails != 0;
 }

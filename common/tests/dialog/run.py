@@ -32,7 +32,12 @@ CASES = [
     ("d_undo", ["key 0x61"], "4 hello 0"),
     ("d_none", ["key q", "key 0x01"], "-1 helloq 0"),
     ("d_click", ["click OK"], "3 hello 0"),
+    ("d_close", ["key x", "close"], "4 hellox 0"),
 ]
+# under XaAES the alerts are the AES's own (Erez, 25 Oct 2026): Return
+# answers them (its Esc does nothing), and the dialogs are in a window
+XA_CASES = [(n, ["key 0x1c"], "1") for n, _, _ in CASES if n.startswith("a_")] + \
+    [c for c in CASES if c[0].startswith("d_")]
 MODES = {
     "high": ["--machine", "st", "--mono", "--memsize", "4"],
     "med": ["--machine", "st", "--monitor", "rgb", "--tos-res", "med", "--memsize", "4"],
@@ -84,6 +89,8 @@ class Rig:
     def start_xaaes(self, a):
         # ../xaaes/run.py makes the disk and starts Hatari; we drive it
         # through its fifo and window, as its own steps do
+        shutil.rmtree(self.work, ignore_errors=True)	# no log of a run before
+        os.makedirs(os.path.dirname(self.work), exist_ok=True)
         xa = os.path.join(HERE, "..", "xaaes", "run.py")
         self.h = subprocess.Popen([sys.executable, xa, self.work, os.path.abspath(a.tos), PRG,
                                    "--display", a.display], env=self.env,
@@ -179,23 +186,43 @@ def run_mode(a, mode):
         sw, sh = int(m.group(1)), int(m.group(2))
         print("     %s: screen %dx%d, cell %sx%s" % (mode, sw, sh, m.group(3), m.group(4)), flush=True)
         pos = i
-        for name, acts, want in CASES:
+        for name, acts, want in (XA_CASES if mode == "xaaes" else CASES):
             got, i = r.wait("DLGT ask %s\n" % name, pos)
             if not check(i >= 0, "%s %s: shown" % (mode, name)):
                 return
             pos = i
             # the DLG lines come once the box is drawn
-            got, j = r.wait("DLG exit", pos)
+            if name.startswith("d_") or mode != "xaaes":
+                got, j = r.wait("DLG exit", pos)
+            else:
+                time.sleep(6)		# the AES's alert says nothing when it is up
             time.sleep(1.5)			# past the loop's flush of typed-ahead keys
             got = r.log()
             k = got.find("DLGT got", pos)
             exits = re.findall(r"DLG exit (\d+) (-?\d+) (-?\d+) (\d+) (\d+) ([^\n]*)", got[pos:k if k > 0 else None])
             r.shot("%s-%s" % (mode, name))
+            if name.startswith("d_"):
+                inwin = "DLG window" in got[pos:k if k > 0 else None]
+                check(inwin == (mode == "xaaes"), "%s %s: %s" % (mode, name,
+                      "in a window of the AES's" if mode == "xaaes" else "over the screen, no window"))
             for act in acts:
-                verb, arg = act.split(" ", 1)
+                verb, _, arg = act.partition(" ")
                 if verb == "key":
                     r.cmd("hatari-event keypress %s" % arg)
                     time.sleep(0.3)
+                elif verb == "close":
+                    # the window's closer, at the left of its title bar;
+                    # on TOS (no window) Esc does what it does
+                    wm = re.findall(r"DLG window (\d+) (\d+) (\d+) (\d+)", got[pos:k if k > 0 else None])
+                    if mode != "xaaes":
+                        r.cmd("hatari-event keypress 0x01")
+                        continue
+                    if not check(bool(wm), "%s %s: in a window" % (mode, name)):
+                        continue
+                    if r.win is None:
+                        r.find_window(sw, sh)
+                    wx, wy = int(wm[-1][0]), int(wm[-1][1])
+                    r.click(wx + 8, wy + 8)
                 elif verb == "click":
                     if r.win is None:
                         r.find_window(sw, sh)

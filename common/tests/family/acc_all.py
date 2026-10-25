@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""All the AERA accessories at once (Erez, 19 Oct 2026): ECal, EContact
-and EHypView, and EMail's EMail check (EMAILCHK.ACC, from EMail's release,
---accs ...,EMailCheck), their latest releases (getrelease.py), loaded
-together on a 4 MB machine, as on Erez's own:
+"""All the AERA accessories at once (Erez, 19 Oct 2026): ECal, EContact,
+EHypView and EMail's EMail check (EMAILCHK.ACC), their latest releases
+(getrelease.py), loaded together on a 4 MB machine, as on Erez's own:
 
     common/tests/family/acc_all.py WORK [MACHINE] [--nvdi [--font]] [--display :N] [--use FILE]...
                                    [--accs ECal,EContact] [--prg EMail]
@@ -16,7 +15,7 @@ ECONTACT.ACC), ST by default; EHYPVIEW.ACC runs on both. --nvdi boots
 with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
 candidate's accessory (ECAL.ACC, say) or --prg's program (EMAIL.PRG) in place of the release's
-of that name, for the hub's run before the release; the report names it. --accs names the accessories (all three by default);
+of that name, for the hub's run before the release; the report names it. --accs names the accessories (all four by default);
 --prg APP starts that program's latest release (EMAIL.PRG; APP:FILE[:MORE...] for another
 edition and the files it needs, as EWeb:EWEBST.PRG:EWEB.FNT on an ST) first, as Erez works: the accessories
 are then opened from its own Desk menu, and at the end the program is quit (^Q) and must give
@@ -48,7 +47,7 @@ display = ":90"
 if "--display" in args:
     display = args[args.index("--display") + 1]
     args.remove(display)
-accs = ["ECal", "EContact", "EHypView"]
+accs = ["ECal", "EContact", "EHypView", "EMailCheck"]
 if "--accs" in args:
     v = args[args.index("--accs") + 1]
     args.remove(v)

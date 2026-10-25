@@ -206,9 +206,11 @@ void pb_draw(const PANEBAR *b, const GRECT *clip)
 	put(&t[O_DOWN], across, d3, len - ah - d3, -d3, ah - 2 + 2 * d3, wide - 2 + 2 * d3);
 
 	/* the track between them, its end frames on theirs: TOS's dotted grey
-	   flat, the AES's ground in 3D */
+	   flat; in 3D the AES's ground with no frame of its own, so the bar is
+	   one channel (its box's frame) with the raised arrows and slider in it
+	   (framed, the track beside the slider read as a second box: EWeb) */
 	t[O_TRACK].ob_type = G_BOX;
-	t[O_TRACK].ob_spec = d3 ? 0x00011100L : 0x00FF1191L;
+	t[O_TRACK].ob_spec = d3 ? 0x00001100L : 0x00FF1191L;
 	put(&t[O_TRACK], across, d3, ah - 1, 0, th, wide - 2);
 
 	/* the slider over the track's sy .. sy+sh-1 (flat, its frames one

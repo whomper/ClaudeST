@@ -174,6 +174,7 @@ short rsrc_obfix(OBJECT *tree, short obj);
 short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
 short aes_version(void);
+short aes_count(void);		/* global[1]: 1 on TOS, -1 on a multitasking AES */
 short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);	/* 0: not known */
 short fsel_exinput(char *path, char *name, short *button, const char *title);
 short form_do(OBJECT *tree, short start);

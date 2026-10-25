@@ -7,7 +7,10 @@
  * fm_keybd knows Return, Enter, Tab and the arrows), so the alert is
  * built here, as EmuTOS's fm_alert builds it (gemfmalt.c), and run by
  * the shared dialog loop, where Esc and Undo pick the last button (the
- * guidelines, 3.5 and 6.2). Anything it can't show goes to form_alert.
+ * guidelines, 3.5 and 6.2). Anything it can't show goes to form_alert, and
+ * so does everything where the AES runs several programs at once (MiNT,
+ * MagiC): there the alert is the AES's, in its look, as its other
+ * programs' are.
  */
 #include <stdarg.h>
 #include <string.h>
@@ -307,7 +310,11 @@ short alert(short def, const char *fmt, ...)
 	for (k = 0; btn[k] && o < (short)sizeof(out) - 1; k++)
 		out[o++] = btn[k];
 	out[o] = 0;
-	/* our own, where Esc and Undo pick the last button; else form_alert */
+	/* the AES's own where it runs several programs at once (MiNT, MagiC:
+	   its look, in its window; Erez, 25 Oct 2026); else ours, where Esc
+	   and Undo pick the last button, or form_alert when ours can't */
+	if (dlg_windowed())
+		return form_alert(def, out);
 	if (icon >= 0 && (nb = al_build(icon, lines, btn + 2, def, &first))) {
 		short r;
 		graf_mouse(ARROW, 0);

@@ -301,13 +301,27 @@ static void arrow(short x, short y, short w, short h, int up)
 	line_col(cx, y2, cx + k, y1, 1);
 }
 
+/* the VDI's clip on r, cut to what may be drawn now (in a dialog window,
+   the piece the AES asked for: dialog.c's dlg_cut); 0 when none of r */
+static int pf_clip(GRECT *r)
+{
+	GRECT c = *r;
+	if (!dlg_cut(&c.x, &c.y, &c.w, &c.h))
+		return 0;
+	clip_on(&c);
+	return 1;
+}
+
 static void draw_list(void)
 {
 	GRECT r = lr, t;
 	short i, sw = sb_w(), cols = (r.w - sw - 4) / gl_wchar;
 	char row[PEOPLE_ADDR + PEOPLE_NAME + 8];
 	graf_mouse(M_OFF, 0);
-	clip_on(&r);
+	if (!pf_clip(&r)) {
+		graf_mouse(M_ON, 0);
+		return;
+	}
 	fill(&r, 0);
 	for (i = 0; i < rows && top + i < nshown; i++) {
 		short k = shown[top + i], y = r.y + i * gl_hchar, fl = TX_LTR;
@@ -362,11 +376,29 @@ static void draw_find(void)
 	strcpy(s, find);
 	strcat(s, "_");
 	graf_mouse(M_OFF, 0);
-	clip_on(&fr);
-	fill(&fr, 0);
-	text_at(fr.x, fr.y, s, (long)strlen(s), cols, TX_LTR);
-	clip_off();
+	if (pf_clip(&fr)) {
+		fill(&fr, 0);
+		text_at(fr.x, fr.y, s, (long)strlen(s), cols, TX_LTR);
+		clip_off();
+	}
 	graf_mouse(M_ON, 0);
+}
+
+/* the list's and the search line's places, from the tree's */
+static void place(void)
+{
+	box(o_list, &lr, 1);
+	box(o_find, &fr, 0);
+}
+
+/* what the dialog's window shows over its tree, drawn again when the AES
+   asks (in a window: dlg_more) */
+static void pf_more(short x, short y, short w, short h)
+{
+	(void)x, (void)y, (void)w, (void)h;
+	place();
+	draw_find();
+	draw_list();
 }
 
 static short left_down(void)
@@ -378,11 +410,14 @@ static short left_down(void)
 
 static void button(short obj)
 {
-	short x, y;
+	short x, y, w = pd_tree[obj].ob_width + 4, h = pd_tree[obj].ob_height + 4;
 	pd_tree[obj].ob_state |= SELECTED;
 	objc_offset(pd_tree, obj, &x, &y);
+	x -= 2;
+	y -= 2;
 	graf_mouse(M_OFF, 0);
-	objc_draw(pd_tree, 0, 8, x - 2, y - 2, pd_tree[obj].ob_width + 4, pd_tree[obj].ob_height + 4);
+	if (dlg_cut(&x, &y, &w, &h))
+		objc_draw(pd_tree, 0, 8, x, y, w, h);
 	graf_mouse(M_ON, 0);
 	while (left_down())
 		evnt_timer_(10);
@@ -593,22 +628,20 @@ static int file_dialog(const char *partial, void (*picked)(const PERSON *list, i
 		find[sizeof(find) - 1] = 0;
 	}
 	build();
-	form_center(pd_tree, &x, &y, &w, &h);
-	box(o_list, &lr, 1);
-	box(o_find, &fr, 0);
+	/* in a window of the AES's on MiNT and MagiC (3.5), else over the
+	   screen */
+	dlg_name("Contacts");
+	dlg_open(pd_tree, &x, &y, &w, &h);
+	place();
 	rows = lr.h / gl_hchar;
 	refilter();
-	wind_update(BEG_UPDATE);
-	wind_update(3);			/* BEG_MCTRL */
-	form_dial(FMD_START, x, y, w, h);
-	graf_mouse(M_OFF, 0);
-	objc_draw(pd_tree, 0, 8, x, y, w, h);
-	graf_mouse(M_ON, 0);
 	draw_find();
 	draw_list();
+	dlg_more(pf_more);
 	while (!done) {
 		short flags = MU_KEYBD | MU_BUTTON | (on_message ? MU_MESAG | MU_TIMER : 0);
-		evnt_multi_(flags, up ? 2 : 1, 1, up ? 1 : 0, 250, m, &e);
+		dlg_evnt(flags, up ? 2 : 1, 1, up ? 1 : 0, 250, m, &e);
+		place();		/* the window may have moved */
 		if ((e.which & MU_MESAG) && on_message)
 			on_message(m);
 		else if ((e.which & MU_TIMER) && on_message)
@@ -623,10 +656,8 @@ static int file_dialog(const char *partial, void (*picked)(const PERSON *list, i
 				up = 1;
 		}
 	}
-	form_dial(FMD_FINISH, x, y, w, h);
+	dlg_close();
 	clip_off();
-	wind_update(2);			/* END_MCTRL */
-	wind_update(END_UPDATE);
 	font_sys_pop();
 	if (done > 0) {
 		short k = 0;

@@ -22,6 +22,12 @@ static short cell_w = 8, cell_h = 16, desk_w = 640, desk_h = 381;
 static short pick;			/* 0: the cancel object; else this button */
 static short got_cancel, got_start, got_default, mouse_arrow;
 
+static int windowed;			/* a multitasking AES (MiNT, MagiC) */
+int dlg_windowed(void)
+{
+	return windowed;
+}
+
 short form_alert(short def, const char *s)
 {
 	(void)def;
@@ -306,6 +312,19 @@ int main(void)
 	alert(1, "[1][Too low.][ OK ]");
 	expect_n("a desk too low: form_alert", via, 'F');
 	desk_h = 381;
+
+	/* where the AES runs several programs at once: always its own, the
+	   text wrapped as ours is */
+	windowed = 1;
+	via = 0;
+	alert(1, "[3][Can't find pop3.example.net. Check the server's name in Settings.][Retry|Cancel]");
+	expect_n("a multitasking AES: form_alert", via, 'F');
+	expect("... the text wrapped into lines of 30 at most",
+	       "[3][Can't find pop3.example.net.|Check the server's name in|Settings.][Retry|Cancel]");
+	windowed = 0;
+	via = 0;
+	alert(1, "[1][The folder was saved.][ OK ]");
+	expect_n("TOS again: our own", via, 'T');
 
 	screens();
 

@@ -431,6 +431,17 @@ static void fonts_free(void)
 	nfo = nfa = 0;
 }
 
+/* the VDI's clip on r, cut to what may be drawn now (in a dialog window,
+   the piece the AES asked for: dialog.c's dlg_cut); 0 when none of r */
+static int fs_clip(GRECT *r)
+{
+	GRECT c = *r;
+	if (!dlg_cut(&c.x, &c.y, &c.w, &c.h))
+		return 0;
+	clip_on(&c);
+	return 1;
+}
+
 /* the progress of the first look, in the sample's box */
 static void show_progress(GRECT *r, short done, short todo)
 {
@@ -440,10 +451,11 @@ static void show_progress(GRECT *r, short done, short todo)
 	snprintf(m, sizeof(m), "Measuring the fonts: %d of %d...", done, todo);
 	sys_font();			/* (the last font measured was set) */
 	graf_mouse(M_OFF, 0);
-	clip_on(r);
-	fill(r, 0);
-	text_at(r->x + gl_wchar, r->y + 2, m, (long)strlen(m), (r->w - 2 * gl_wchar) / gl_wchar, TX_LTR);
-	clip_off();
+	if (fs_clip(r)) {
+		fill(r, 0);
+		text_at(r->x + gl_wchar, r->y + 2, m, (long)strlen(m), (r->w - 2 * gl_wchar) / gl_wchar, TX_LTR);
+		clip_off();
+	}
 	graf_mouse(M_ON, 0);
 }
 
@@ -830,8 +842,16 @@ static void sb_arrow(short x, short y, short w, short h, int up)
 /* the ring round the list the keys go to */
 static void focus_ring(LIST *l, short on)
 {
+	GRECT f;
+	f.x = l->r.x - 3;
+	f.y = l->r.y - 3;
+	f.w = l->r.w + 6;
+	f.h = l->r.h + 6;
 	graf_mouse(M_OFF, 0);
-	edge(l->r.x - 3, l->r.y - 3, l->r.w + 6, l->r.h + 6, on);
+	if (fs_clip(&f)) {
+		edge(f.x, f.y, f.w, f.h, on);
+		clip_off();
+	}
 	graf_mouse(M_ON, 0);
 }
 
@@ -840,7 +860,10 @@ static void fl_draw(LIST *l)
 	GRECT r = l->r, t;
 	short i, sw = sb_width(), cols = (r.w - sw - 4) / gl_wchar, ah = gl_hchar;
 	graf_mouse(M_OFF, 0);
-	clip_on(&r);
+	if (!fs_clip(&r)) {
+		graf_mouse(M_ON, 0);
+		return;
+	}
 	fill(&r, 0);
 	for (i = 0; i < l->rows && l->top + i < l->n; i++) {
 		short k = l->top + i, y = r.y + i * gl_hchar, fl = TX_LTR;
@@ -901,9 +924,13 @@ static fontsel *fs;
 static void tr_draw(short obj)
 {
 	short x, y;
+	short w = fs_tree[obj].ob_width + 4, h = fs_tree[obj].ob_height + 4;
 	objc_offset(fs_tree, obj, &x, &y);
+	x -= 2;
+	y -= 2;
 	graf_mouse(M_OFF, 0);
-	objc_draw(fs_tree, 0, 8, x - 2, y - 2, fs_tree[obj].ob_width + 4, fs_tree[obj].ob_height + 4);
+	if (dlg_cut(&x, &y, &w, &h))
+		objc_draw(fs_tree, 0, 8, x, y, w, h);
 	graf_mouse(M_ON, 0);
 }
 
@@ -962,12 +989,15 @@ static void draw_type(void)
 	}
 	tr_box(o_type, &r, 0);
 	graf_mouse(M_OFF, 0);
-	/* the box drawn under it again, so that the line is on the dialog's
-	   own background, 3D or white (5.6) */
-	objc_draw(fs_tree, 0, 8, r.x, r.y, r.w, r.h);
-	clip_on(&r);
-	text_at(r.x, r.y, line, (long)strlen(line), r.w / gl_wchar, TX_LTR);
-	clip_off();
+	if (fs_clip(&r)) {
+		GRECT c = r;
+		dlg_cut(&c.x, &c.y, &c.w, &c.h);
+		/* the box drawn under it again, so that the line is on the
+		   dialog's own background, 3D or white (5.6) */
+		objc_draw(fs_tree, 0, 8, c.x, c.y, c.w, c.h);
+		text_at(r.x, r.y, line, (long)strlen(line), r.w / gl_wchar, TX_LTR);
+		clip_off();
+	}
 	graf_mouse(M_ON, 0);
 }
 
@@ -979,7 +1009,10 @@ static void draw_preview(void)
 	tr_box(o_prev, &r, 1);
 	cols = (r.w - 2 * gl_wchar) / gl_wchar;
 	graf_mouse(M_OFF, 0);
-	clip_on(&r);
+	if (!fs_clip(&r)) {
+		graf_mouse(M_ON, 0);
+		return;
+	}
 	fill(&r, 0);
 	if (f->later) {
 		static const char l1[] = "Used from the next start: the accessory";
@@ -991,19 +1024,20 @@ static void draw_preview(void)
 					   system font's sample fits whole */
 		c.x += gl_wchar / 2;
 		c.w -= gl_wchar;
-		clip_on(&c);
-		if (f->id == 1) {
-			vst_font(vdi_h, 1);
-			vst_height(vdi_h, pt >= 16 ? 13 : 6, &w, &h);
-		} else {
-			vst_font(vdi_h, f->id);
-			vst_point(vdi_h, pt, &w, &h);
+		if (fs_clip(&c)) {
+			if (f->id == 1) {
+				vst_font(vdi_h, 1);
+				vst_height(vdi_h, pt >= 16 ? 13 : 6, &w, &h);
+			} else {
+				vst_font(vdi_h, f->id);
+				vst_point(vdi_h, pt, &w, &h);
+			}
+			/* (h: the cell's height) in the middle of the box, or
+			   from its top when it is taller */
+			v_gtext_n(vdi_h, r.x + gl_wchar / 2, h < r.h ? r.y + (r.h - h) / 2 : r.y, FS_SAMPLE,
+				  (short)strlen(FS_SAMPLE));
+			sys_font();
 		}
-		/* (h: the cell's height) in the middle of the box, or from its
-		   top when it is taller */
-		v_gtext_n(vdi_h, c.x, h < r.h ? r.y + (r.h - h) / 2 : r.y, FS_SAMPLE,
-			  (short)strlen(FS_SAMPLE));
-		sys_font();
 	}
 	clip_off();
 	graf_mouse(M_ON, 0);
@@ -1022,6 +1056,21 @@ static void sizes_now(void)
 	fl_show(&ls, ls.sel < 0 ? 0 : ls.sel);
 	fl_draw(&ls);
 	ok_state();
+}
+
+/* what the dialog's window shows over its tree, drawn again when the AES
+   asks (in a window: dlg_more; the drawing keeps within the piece asked) */
+static void fs_more(short x, short y, short w, short h)
+{
+	short i;
+	(void)x, (void)y, (void)w, (void)h;
+	for (i = 0; i < 3; i++) {
+		fl_place(&lists[i]);
+		fl_draw(&lists[i]);
+	}
+	focus_ring(&lists[focus], 1);
+	draw_type();
+	draw_preview();
 }
 
 /* what waits for the keys to stop */
@@ -1282,13 +1331,10 @@ int fontsel_run(fontsel *s)
 		lists[i].sel = -1;
 	}
 
-	form_center(fs_tree, &x, &y, &w, &h);
-	wind_update(BEG_UPDATE);
-	wind_update(3);			/* BEG_MCTRL */
-	form_dial(FMD_START, x, y, w, h);
-	graf_mouse(M_OFF, 0);
-	objc_draw(fs_tree, 0, 8, x, y, w, h);
-	graf_mouse(M_ON, 0);
+	/* in a window of the AES's on MiNT and MagiC (3.5), else over the
+	   screen */
+	dlg_name("Font");
+	dlg_open(fs_tree, &x, &y, &w, &h);
 	for (i = 0; i < 3; i++)
 		fl_place(&lists[i]);
 	tr_box(o_prev, &prev, 1);
@@ -1331,6 +1377,7 @@ int fontsel_run(fontsel *s)
 	draw_type();
 	draw_preview();
 	dirty = 0;
+	dlg_more(fs_more);
 
 	while (!done) {
 		short flags = MU_KEYBD | MU_BUTTON;
@@ -1343,7 +1390,9 @@ int fontsel_run(fontsel *s)
 		}
 		/* a press when the button is up, else its release first: a
 		   button still down from the menu is no click */
-		evnt_multi_(flags, up ? 2 : 1, 1, up ? 1 : 0, t, m, &e);
+		dlg_evnt(flags, up ? 2 : 1, 1, up ? 1 : 0, t, m, &e);
+		for (i = 0; i < 3; i++)
+			fl_place(&lists[i]);	/* the window may have moved */
 		if ((e.which & MU_MESAG) && s->message)
 			s->message(m);
 		if (e.which & MU_KEYBD)
@@ -1369,10 +1418,8 @@ int fontsel_run(fontsel *s)
 				done = 0;	/* a font the VDI no longer has */
 		}
 	}
-	form_dial(FMD_FINISH, x, y, w, h);
+	dlg_close();
 	clip_off();			/* no clip left on vdi_h: NVDI clips raster copies with it */
-	wind_update(2);			/* END_MCTRL */
-	wind_update(END_UPDATE);
 	if (done > 0) {
 		FSF *f = chosen();
 		s->id = f->id;
