@@ -139,9 +139,11 @@ short aes_count(void)
 }
 
 #define DLGWIN 5
+static short create_h;		/* the last window's height, its border's */
 short wind_create(short kind, short x, short y, short w, short h)
 {
-	(void)kind, (void)x, (void)y, (void)w, (void)h;
+	(void)kind, (void)x, (void)y, (void)w;
+	create_h = h;
 	if (win_fails)
 		return -1;
 	wins_made++;
@@ -1054,6 +1056,39 @@ int main(void)
 		check(r == OK && posts == 1 && posted[0] == WM_REDRAW && posted[3] == 9 && posted[6] == 640,
 		      "no hook: the app's window's redraws kept, given back as one when the dialog closes");
 		tidy("kept redraws");
+	}
+
+	/* the dialog's own title band, in a window */
+	setup();
+	ap_count = -1;
+	tree[TITLE].ob_spec = (long)"Test";
+	{
+		static const STEP s[] = { KEY(KEY_RETURN), END };
+		short x, y, w, h, f1_y = tree[F1].ob_y, ok_y = tree[OK].ob_y, root_h = tree[ROOT].ob_height;
+		script = s;
+		dlg_band(TITLE);
+		dlg_open(tree, &x, &y, &w, &h);
+		check((tree[TITLE].ob_flags & HIDETREE) && tree[F1].ob_y == f1_y - 16 && tree[OK].ob_y == ok_y - 16 &&
+		      tree[ROOT].ob_height == root_h - 16 && create_h == root_h - 16 + 21,
+		      "dlg_band in a window: the band hidden, the rest up by its height, the box shorter");
+		check(win_name_set == 1, "... the window named from the band's text");
+		r = dlg_do(tree, 0, CANCEL);
+		dlg_close();
+		check(r == OK && !(tree[TITLE].ob_flags & HIDETREE) && tree[F1].ob_y == f1_y && tree[OK].ob_y == ok_y &&
+		      tree[ROOT].ob_height == root_h, "... all put back at dlg_close");
+		tidy("band");
+	}
+	setup();
+	{
+		static const STEP s[] = { KEY(KEY_RETURN), END };
+		short x, y, w, h;
+		script = s;
+		dlg_band(TITLE);
+		dlg_open(tree, &x, &y, &w, &h);
+		check(!(tree[TITLE].ob_flags & HIDETREE) && tree[ROOT].ob_height == 160 && dial_start == 1,
+		      "dlg_band on TOS: nothing changes");
+		r = dlg_do(tree, 0, CANCEL);
+		dlg_close();
 	}
 
 	/* the app's own drawing in a dialog window */

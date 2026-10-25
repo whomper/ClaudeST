@@ -71,6 +71,7 @@ static void redraw(OBJECT *tree, short obj)
 
 const char *dlg_title = "";
 static const char *next_name;		/* dlg_name's, for the next dlg_open */
+static short next_band;			/* dlg_band's, for the next dlg_open */
 void (*dlg_redraw_hook)(const short *msg);
 int dlg_window_on = -1;
 
@@ -84,6 +85,7 @@ static struct {
 	short x, y, w, h_;		/* form_dial's space on TOS */
 	unsigned short state;		/* the root's, as it was */
 	long spec;
+	short band, band_h;		/* dlg_band's object, hidden, and its height */
 } dw[DLG_NEST];
 static short ndw;
 
@@ -225,6 +227,49 @@ void dlg_more(void (*draw)(short x, short y, short w, short h))
 		dw[ndw - 1].draw = draw;
 }
 
+/* the band's text, the window's name where the app gave none */
+static const char *band_text(OBJECT *tree, short obj)
+{
+	short t;
+	if (obj <= 0)
+		return 0;
+	t = tree[obj].ob_type & 0xff;
+	if (t == G_STRING || t == G_BUTTON || t == G_TITLE)
+		return (const char *)tree[obj].ob_spec;
+	if (t == G_TEXT || t == G_BOXTEXT || t == G_FTEXT || t == G_FBOXTEXT)
+		return ((TEDINFO *)tree[obj].ob_spec)->te_ptext;
+	return 0;
+}
+
+/* the dialog's own title band out of the way in a window: hidden, what
+   was below it moved up by its height, the box as much shorter; and back */
+static void band_move(OBJECT *tree, short obj, short d)
+{
+	short c;
+	for (c = tree[0].ob_head; c > 0; c = tree[c].ob_next) {
+		if (c != obj && tree[c].ob_y > tree[obj].ob_y)
+			tree[c].ob_y -= d;
+		if (tree[c].ob_next == 0)
+			break;			/* back at the root */
+	}
+	tree[0].ob_height -= d;
+}
+
+static void band_hide(OBJECT *tree, short i, short obj)
+{
+	dw[i].band = obj;
+	dw[i].band_h = tree[obj].ob_height;
+	tree[obj].ob_flags |= HIDETREE;
+	band_move(tree, obj, dw[i].band_h);
+}
+
+static void band_show(OBJECT *tree, short i)
+{
+	band_move(tree, dw[i].band, -dw[i].band_h);
+	tree[dw[i].band].ob_flags &= ~HIDETREE;
+	dw[i].band = 0;
+}
+
 static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		      short *x, short *y, short *w, short *h)
 {
@@ -243,6 +288,9 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		*x = dx + (dwid - *w) / 2;
 		*y = dy + (dh - *h) / 2;
 	}
+	dw[i].band = 0;
+	if (dlg_windowed() && tree && next_band > 0)
+		band_hide(tree, i, next_band);
 	if (dlg_windowed()) {
 		short wx = tree ? tree[0].ob_x : *x, wy = tree ? tree[0].ob_y : *y;
 		short ww = tree ? tree[0].ob_width : *w, wh = tree ? tree[0].ob_height : *h;
@@ -254,7 +302,8 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		}
 		dw[i].h = wind_create(DLG_KIND, bx, by, bw, bh);
 		if (dw[i].h > 0) {
-			wind_set_str(dw[i].h, WF_NAME, next_name ? next_name : dlg_title ? dlg_title : "");
+			wind_set_str(dw[i].h, WF_NAME, next_name ? next_name : band_text(tree, dw[i].band) ?
+				     band_text(tree, dw[i].band) : dlg_title ? dlg_title : "");
 			if (tree) {
 				/* in the window the AES's frame is the frame */
 				tree[0].ob_state &= ~(OUTLINED | SHADOWED);
@@ -275,6 +324,9 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 			return 1;
 		}
 		/* no window to be had: over the screen, as on TOS */
+		if (dw[i].band)
+			band_show(tree, i);
+		form_center(tree, x, y, w, h);
 	}
 	wind_update(BEG_UPDATE);
 	wind_update(BEG_MCTRL);
@@ -298,10 +350,16 @@ void dlg_name(const char *name)
 	next_name = name;
 }
 
+void dlg_band(short obj)
+{
+	next_band = obj;
+}
+
 short dlg_open(OBJECT *tree, short *x, short *y, short *w, short *h)
 {
 	short r = open_any(tree, 0, x, y, w, h);
 	next_name = 0;
+	next_band = 0;
 	return r;
 }
 
@@ -310,6 +368,7 @@ short dlg_open_area(void (*draw)(short x, short y, short w, short h),
 {
 	short r = open_any(0, draw, x, y, w, h);
 	next_name = 0;
+	next_band = 0;
 	return r;
 }
 
@@ -326,6 +385,8 @@ void dlg_close(void)
 		if (dw[i].tree) {
 			dw[i].tree[0].ob_state = dw[i].state;
 			dw[i].tree[0].ob_spec = dw[i].spec;
+			if (dw[i].band)
+				band_show(dw[i].tree, i);
 		}
 		if (!ndw)
 			give_back_redraws();
