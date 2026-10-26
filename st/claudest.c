@@ -4997,6 +4997,17 @@ static void on_resize(void)
 	dirty |= D_ALL;
 }
 
+/* the window's work area on a multiple of 8 across (the guidelines'
+   Speed: text on the 8-pixel grid; common's wind_x8), narrower by what it
+   moved where it would reach past the desk's right edge */
+static void x8_box(short *x, short y, short *w, short h)
+{
+	short x8 = wind_x8(icon_kind(WKIND), *x, y, *w, h);
+	if (x8 + *w > desk_x + desk_w)
+		*w = desk_x + desk_w - x8;
+	*x = x8;
+}
+
 static void set_curr(short x, short y, short w, short h)
 {
 	short minw = 48 * cw, minh = 14 * ch;
@@ -5004,6 +5015,7 @@ static void set_curr(short x, short y, short w, short h)
 		w = minw;
 	if (h < minh)
 		h = minh;
+	x8_box(&x, y, &w, h);
 	wind_set(win, WF_CURRXYWH, x, y, w, h);
 	on_resize();
 }
@@ -5208,6 +5220,7 @@ static void handle_msg(short *msg)
 			break;
 		wind_get(win, WF_CURRXYWH, &cx, &cy, &cw_, &ch_);
 		wind_get(win, WF_FULLXYWH, &fx, &fy, &fw, &fh);
+		x8_box(&fx, fy, &fw, fh);	/* full, as set_curr makes it */
 		if (cx == fx && cy == fy && cw_ == fw && ch_ == fh)
 			wind_get(win, WF_PREVXYWH, &fx, &fy, &fw, &fh);
 		set_curr(fx, fy, fw, fh);
@@ -5386,6 +5399,7 @@ int main(void)
 	vq_extnd(vh, 1, work_out);
 	planes = work_out[4];
 	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
+	x8_box(&dx, dy, &dw, dh);
 	if (win < 0) {
 		alert(1, "[3][ClaudeST: no window available.][ Quit ]");
 		menu_bar(mb.tree, 0);
