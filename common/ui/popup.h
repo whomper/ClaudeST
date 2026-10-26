@@ -16,5 +16,7 @@ short popup(short x, short y, const char *const *labels, short n);
    row it is for) instead of above y (Claude ST's list menus) */
 short popup_alt(short x, short y, short alt_y, const char *const *labels, short n);
 extern GRECT popup_area;	/* where the last popup was: what the app repaints */
+extern short popup_put_back;	/* 1: the screen under it was put back as it closed
+				   (dlg_under): nothing to repaint; 0: the AES was asked to */
 
 #endif

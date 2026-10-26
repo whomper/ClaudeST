@@ -107,43 +107,81 @@ static void draw_icon(const unsigned short *bits, short x, short y, short sx, sh
 	vrt_cpyfm(vdi_h, 2, pxy, &src, &dst, colors);	/* transparent */
 }
 
-/* the 16-colour icon, as runs of VDI fills; pens 8..15 are lent the
+/* an icon of pens (32x32, a byte a pixel) scaled by sx, sy: one 1-plane
+ * mask a pen it has, each blitted once, transparent, in that pen (map[]
+ * or pens[] turning its pens into the screen's). As runs of VDI fills it
+ * took a stock Falcon some 300 fills; now one vrt_cpyfm a colour (the
+ * guidelines' Speed, Erez, 26 Oct 2026). */
+static void icon_pens(const unsigned char *px, const unsigned char *map, const short *pens,
+		      short x, short y, short sx, short sy)
+{
+	unsigned char slot[256];
+	short pen_of[64], n = 0, r, c, k, yy, i, wpl = 2 * sx, words = wpl * ICON_H * sy;
+	short w = ICON_W * sx, h = ICON_H * sy, pxy[8], colors[2];
+	unsigned short *masks;
+	MFDB src, dst;
+	memset(slot, 0xff, sizeof(slot));
+	for (i = 0; i < ICON_W * ICON_H; i++)
+		if (px[i] && slot[px[i]] == 0xff && n < 64) {
+			slot[px[i]] = (unsigned char)n;
+			pen_of[n++] = px[i];
+		}
+	if (!n || !(masks = calloc((size_t)n * words, 2)))
+		return;
+	for (r = 0; r < ICON_H; r++)
+		for (c = 0; c < ICON_W; c++) {
+			unsigned char s = px[r * ICON_W + c];
+			unsigned short *m;
+			if (!s || slot[s] == 0xff)
+				continue;
+			m = masks + slot[s] * words;
+			for (k = 0; k < sx; k++) {
+				short bx = c * sx + k;
+				for (yy = 0; yy < sy; yy++)
+					m[(r * sy + yy) * wpl + (bx >> 4)] |= 0x8000 >> (bx & 15);
+			}
+		}
+	memset(&src, 0, sizeof(src));
+	memset(&dst, 0, sizeof(dst));
+	src.fd_addr = st_ram((long)words * 2);
+	src.fd_w = w;
+	src.fd_h = h;
+	src.fd_wdwidth = wpl;
+	src.fd_nplanes = 1;
+	pxy[0] = 0;
+	pxy[1] = 0;
+	pxy[2] = w - 1;
+	pxy[3] = h - 1;
+	pxy[4] = x;
+	pxy[5] = y;
+	pxy[6] = x + w - 1;
+	pxy[7] = y + h - 1;
+	for (i = 0; src.fd_addr && i < n; i++) {
+		memcpy(src.fd_addr, masks + i * words, (size_t)words * 2);
+		colors[0] = map ? map[pen_of[i]] : pens ? pens[pen_of[i]] : pen_of[i];
+		colors[1] = 0;
+		vrt_cpyfm(vdi_h, 2, pxy, &src, &dst, colors);	/* transparent */
+	}
+	free(masks);
+}
+
+/* the 16-colour icon (two pixels a byte); pens 8..15 are lent the
  * icon's colours while the box is open */
 void about_icon16(const unsigned char *px, short x, short y, short sx, short sy, const short *pens)
 {
-	short r, c;
-	for (r = 0; r < ICON_H; r++) {
-		for (c = 0; c < ICON_W; ) {
-			unsigned char b = px[r * 16 + c / 2];
-			short pen = (c & 1) ? (b & 15) : (b >> 4), e = c + 1;
-			while (e < ICON_W) {
-				unsigned char b2 = px[r * 16 + e / 2];
-				if (((e & 1) ? (b2 & 15) : (b2 >> 4)) != pen)
-					break;
-				e++;
-			}
-			if (pen)
-				rect_fill(x + c * sx, y + r * sy, x + e * sx - 1, y + r * sy + sy - 1,
-					  pens ? pens[pen] : pen);
-			c = e;
-		}
-	}
+	unsigned char p[ICON_W * ICON_H];
+	short i;
+	for (i = 0; i < ICON_W * ICON_H; i++)
+		p[i] = (i & 1) ? (px[i >> 1] & 15) : (px[i >> 1] >> 4);
+	icon_pens(p, 0, pens, x, y, sx, sy);
 }
 
 #ifndef NO_ICON256
-/* the 256-colour icon, a byte a pixel, as runs of VDI fills; map[] turns
-   its pens into the screen's */
+/* the 256-colour icon, a byte a pixel; map[] turns its pens into the
+   screen's */
 static void icon256_draw(const unsigned char *px, const unsigned char *map, short x, short y, short sx, short sy)
 {
-	short r, c, e;
-	for (r = 0; r < ICON_H; r++)
-		for (c = 0; c < ICON_W; c = e) {
-			unsigned char pen = px[r * ICON_W + c];
-			for (e = c + 1; e < ICON_W && px[r * ICON_W + e] == pen; e++)
-				;
-			if (pen)
-				rect_fill(x + c * sx, y + r * sy, x + e * sx - 1, y + r * sy + sy - 1, map[pen]);
-		}
+	icon_pens(px, map, 0, x, y, sx, sy);
 }
 
 /* for each colour of the icon, the pen that has it now: its own when the
@@ -152,25 +190,32 @@ static void icon256_draw(const unsigned char *px, const unsigned char *map, shor
    changes colour while the box is open. */
 static void icon256_pens(const short (*rgb)[4], unsigned char *map)
 {
-	short i, p, have[3];
+	short i, p, have[3], (*pal)[3] = 0;
 	for (i = 0; rgb[i][0]; i++) {
 		long best = -1;
 		short pen = rgb[i][0];
 		vq_color(vdi_h, pen, have);
-		if (abs(have[0] - rgb[i][1]) + abs(have[1] - rgb[i][2]) + abs(have[2] - rgb[i][3]) > 24)
-			for (p = 0; p < 256; p++) {
+		if (abs(have[0] - rgb[i][1]) + abs(have[1] - rgb[i][2]) + abs(have[2] - rgb[i][3]) > 24) {
+			/* the palette asked once, not 256 times a colour (the
+			   guidelines' Speed) */
+			if (!pal && (pal = malloc(256 * sizeof(*pal))) != 0)
+				for (p = 0; p < 256; p++)
+					vq_color(vdi_h, p, pal[p]);
+			for (p = 0; pal && p < 256; p++) {
 				long d;
-				vq_color(vdi_h, p, have);
-				d = (long)(have[0] - rgb[i][1]) * (have[0] - rgb[i][1]) +
-				    (long)(have[1] - rgb[i][2]) * (have[1] - rgb[i][2]) +
-				    (long)(have[2] - rgb[i][3]) * (have[2] - rgb[i][3]);
+				short *h = pal[p];
+				d = (long)(h[0] - rgb[i][1]) * (h[0] - rgb[i][1]) +
+				    (long)(h[1] - rgb[i][2]) * (h[1] - rgb[i][2]) +
+				    (long)(h[2] - rgb[i][3]) * (h[2] - rgb[i][3]);
 				if (best < 0 || d < best) {
 					best = d;
 					pen = p;
 				}
 			}
+		}
 		map[rgb[i][0]] = (unsigned char)pen;
 	}
+	free(pal);
 }
 #endif
 
@@ -184,10 +229,17 @@ const char *about_ram(void)
 	return code && heap ? "TT RAM" : code || heap ? "TT RAM in part" : "";
 }
 
+/* x on a byte (the nearest): TOS 4.04's v_gtext took a stock Falcon 9.1
+   ms for 39 letters a pixel off a byte, 3.4 ms on one (tests/speed/vdt.py) */
+static short on_byte(short x)
+{
+	return (x + 4) & ~7;
+}
+
 static void center(short y, const char *s, short flags)
 {
 	short n = (short)strlen(s);
-	text_at(dx + (dw - n * cw) / 2, y, s, n, n, flags | TX_LTR);
+	text_at(on_byte(dx + (dw - n * cw) / 2), y, s, n, n, flags | TX_LTR);
 }
 
 static void button(short x, short y, short w, short h, const char *label)
@@ -203,7 +255,7 @@ static void button(short x, short y, short w, short h, const char *label)
 	line(x + w, y - 1, x + w, y + h);
 	line(x + w, y + h, x - 1, y + h);
 	line(x - 1, y + h, x - 1, y - 1);
-	text_at(x + (w - n * cw) / 2, y + (h - ch) / 2, label, n, n, TX_BOLD | TX_LTR);
+	text_at(on_byte(x + (w - n * cw) / 2), y + (h - ch) / 2, label, n, n, TX_BOLD | TX_LTR);
 }
 
 static void wait_up(void)
@@ -274,7 +326,7 @@ static void about_draw(int framed)
 	center(y, a->name, TX_BOLD);
 	{
 		/* underlined, like EMail's and Claude ST's names */
-		short n = (short)strlen(a->name), x = dx + (dw - n * cw) / 2;
+		short n = (short)strlen(a->name), x = on_byte(dx + (dw - n * cw) / 2);
 		line(x, y + ch - 1, x + n * cw - 1, y + ch - 1);
 	}
 	y += lh;
@@ -303,7 +355,7 @@ static void about_draw(int framed)
 	for (i = 0; i < nfine; i++, y += fstep) {
 		const char *s = i ? a->fine[i - 1] : GPL_LINE;
 		short n = (short)strlen(s);
-		v_gtext_n(vdi_h, dx + (dw - n * fcw) / 2, y, s, n);
+		v_gtext_n(vdi_h, on_byte(dx + (dw - n * fcw) / 2), y, s, n);
 	}
 	(void)ab_fcw;
 }
@@ -330,6 +382,7 @@ static void box_piece(short x, short y, short w, short h)
    the AES's on MiNT and MagiC (the guidelines, 3.5) */
 static void box_run(void (*draw)(int framed), const char *name)
 {
+	void *under;
 	box_draw = draw;
 	if (dlg_windowed()) {
 		short x, y, w = dw, h = dh;
@@ -344,15 +397,19 @@ static void box_run(void (*draw)(int framed), const char *name)
 	}
 	wind_update(BEG_UPDATE);
 	wind_update(3);
+	under = dlg_under(dx, dy, dw + 3, dh + 3);	/* put back, not redrawn */
 	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
 	graf_mouse(M_OFF, 0);
 	clip_screen();
 	draw(1);
 	graf_mouse(M_ON, 0);
 	wait_close();
+	if (under)
+		dlg_under_back(under);
 	wind_update(2);
 	wind_update(END_UPDATE);
-	form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
+	if (!under)
+		form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);
 }
 
 void about_show(const ABOUT *a)
@@ -409,7 +466,7 @@ void about_show(const ABOUT *a)
 	}
 	if (dh > desk_h - 6)
 		dh = desk_h - 6;
-	dx = desk_x + (desk_w - dw) / 2;
+	dx = (desk_x + (desk_w - dw) / 2 + 8) & ~15;	/* on a word: its text on bytes */
 	dy = desk_y + (desk_h - dh) / 2;
 
 	ab = a;

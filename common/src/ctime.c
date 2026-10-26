@@ -29,6 +29,23 @@ static long fdiv(long a, long b)
 	return q;
 }
 
+/* n / d with the remainder, for a quotient under 65536: one divu.w on a
+   68000, where a long division is a libgcc call of some 150 instructions
+   (ECal: over half of a year view's collect on an ST, 26 Oct 2026) */
+static unsigned short udiv16(unsigned long n, unsigned short d, unsigned short *rem)
+{
+#ifdef __mc68000__
+	__asm__("divu.w %1,%0" : "+d"(n) : "dmi"(d));
+	*rem = (unsigned short)(n >> 16);
+	return (unsigned short)n;
+#else
+	*rem = (unsigned short)(n % d);
+	return (unsigned short)(n / d);
+#endif
+}
+
+#define UDIV16(n, d) ({ unsigned short r_; udiv16((n), (d), &r_); })
+
 /* Howard Hinnant's algorithms, in 32-bit arithmetic */
 long days_from_civil(int y, int m, int d)
 {
@@ -45,21 +62,34 @@ void civil_from_days(long z, int *y, int *m, int *d)
 {
 	long era, doe, yoe, doy, mp, yy;
 	z += 719468L;
-	era = fdiv(z, 146097L);
-	doe = z - era * 146097L;
-	yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	if (z >= 0 && z < 146097L * 32) {	/* 0000 to 12800: subtracted, not divided */
+		for (era = 0, doe = z; doe >= 146097L; era++)
+			doe -= 146097L;
+	} else {
+		era = fdiv(z, 146097L);
+		doe = z - era * 146097L;
+	}
+	/* doe is under 146097: every quotient below fits in 16 bits */
+	yoe = UDIV16(doe - UDIV16(doe, 1460) + UDIV16(doe, 36524) - (doe == 146096), 365);
 	yy = yoe + era * 400;
-	doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-	mp = (5 * doy + 2) / 153;
-	*d = (int)(doy - (153 * mp + 2) / 5 + 1);
+	doy = doe - (365 * yoe + (yoe >> 2) - UDIV16(yoe, 100));
+	mp = UDIV16(5 * doy + 2, 153);
+	*d = (int)(doy - UDIV16(153 * mp + 2, 5) + 1);
 	*m = (int)(mp < 10 ? mp + 3 : mp - 9);
 	*y = (int)(yy + (*m <= 2));
 }
 
 int wday_of(long days)
 {
-	long w = (days + 4) % 7;	/* 1970-01-01 was a Thursday */
-	return (int)(w < 0 ? w + 7 : w);
+	unsigned short w;
+	if (days >= -4 && days < 7L * 65536 - 4) {	/* 1970 to 3225 */
+		udiv16(days + 4, 7, &w);
+		return w;
+	}
+	{
+		long l = (days + 4) % 7;	/* 1970-01-01 was a Thursday */
+		return (int)(l < 0 ? l + 7 : l);
+	}
 }
 
 int is_leap(int y)
@@ -80,6 +110,8 @@ CTIME ct_make(int y, int mo, int d, int h, int mi)
 
 long ct_days(CTIME t)
 {
+	if (t >= 0 && t < MIN_PER_DAY * 65536)	/* 1970 to 2149 */
+		return UDIV16(t, MIN_PER_DAY);
 	return fdiv(t, MIN_PER_DAY);
 }
 
@@ -90,14 +122,22 @@ CTIME ct_day_start(CTIME t)
 
 void ct_split(CTIME t, DT *o)
 {
-	long days = ct_days(t), m = t - days * MIN_PER_DAY;
+	long days, m;
 	int y, mo, d;
+	unsigned short mi;
+	if (t >= 0 && t < MIN_PER_DAY * 65536) {	/* as ct_days */
+		days = udiv16(t, MIN_PER_DAY, &mi);
+		m = mi;
+	} else {
+		days = fdiv(t, MIN_PER_DAY);
+		m = t - days * MIN_PER_DAY;
+	}
 	civil_from_days(days, &y, &mo, &d);
 	o->year = (short)y;
 	o->mon = (short)mo;
 	o->day = (short)d;
-	o->hour = (short)(m / 60);
-	o->min = (short)(m % 60);
+	o->hour = (short)udiv16(m, 60, &mi);
+	o->min = (short)mi;
 	o->wday = (short)wday_of(days);
 }
 

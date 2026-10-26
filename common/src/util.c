@@ -131,11 +131,20 @@ int str_istarts(const char *s, const char *p)
 	return strncasecmp(s, p, strlen(p)) == 0;
 }
 
+/* the needle's first letter, either case, is looked for before the rest is
+   compared: strncasecmp at every place took EContact's search 14,700 calls
+   a letter typed (the guidelines' Speed, 26 Oct 2026). tests/istr checks it
+   finds what the plain way finds. */
 const char *str_istr(const char *h, const char *n)
 {
 	long l = strlen(n);
+	char lo, up;
+	if (!l)
+		return *h ? h : 0;
+	lo = (char)tolower((unsigned char)*n);
+	up = (char)toupper((unsigned char)*n);
 	for (; *h; h++)
-		if (!strncasecmp(h, n, l))
+		if ((*h == lo || *h == up) && !strncasecmp(h, n, l))
 			return h;
 	return 0;
 }

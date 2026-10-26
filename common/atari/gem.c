@@ -31,13 +31,19 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
 	return aintout[0];
 }
 
-#ifdef AES_PROFILE
-/* Built with -DAES_PROFILE (or -DAES_PROFILE=ms): how long the program
-   holds the machine between its event calls (evnt_*): the time the
-   program in front, or for an accessory every other program, can't run
-   (guideline 2.2). Each stretch of AES_PROFILE ms or more (50 when no
-   number is given) goes to the emulator's console (NatFeats) as
-   "AESGAP <ms> ms <tag>"; tests/aesgap.py reads them.
+/* How long the program holds the machine between its event calls
+   (evnt_*): the time the program in front, or for an accessory every
+   other program, can't run (guideline 2.2), and what the user waits for
+   (the guidelines' Speed).
+   In every build (Erez, 26 Oct 2026) the four longest stretches are kept,
+   each with what started it: the app's aes_profile_tag since the event, or
+   else the event (a key, a click, WM_REDRAW...). aes_slowest() gives them
+   as one line for the app's log, so the machine the user has says where it
+   waits, not only the emulator.
+   Built with -DAES_PROFILE (or -DAES_PROFILE=ms), each stretch of
+   AES_PROFILE ms or more (50 when no number is given) also goes to the
+   emulator's console (NatFeats) as "AESGAP <ms> ms <tag>" (the tag the
+   app set since the event, else the event's); tests/aesgap.py reads them.
    Under plain TOS the AES hands the processor to the other programs in
    calls that do no work of their own (appl_write, appl_find, graf_mkstate,
    wind_update: EContact saw ECal's whole turn of 160 ms run inside its
@@ -46,24 +52,98 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
    AES_PROFILE, goes out as "AESOTHER <ms> ms <tag>".
    The first stretch, from appl_init to the first event call (the start,
    the guidelines' Speed), goes out as "AESSTART <ms> ms" whatever its
-   length, and is no AESGAP (tests/speed reads it). */
+   length, and is no AESGAP (tests/speed reads it). Only a profiled build
+   times it: elsewhere the clock is first read after the first event, so an
+   accessory's start costs nothing more. */
 #include <stdio.h>
-#if AES_PROFILE < 2
+#if defined(AES_PROFILE) && AES_PROFILE < 2
 #undef AES_PROFILE
 #define AES_PROFILE 50
 #endif
+#define SLOW_KEPT 4
 static const char *gap_tag = "start";
 static u32 gap_from, gap_max, other;
-static int starting;
+static int starting, tagged;
+static char ev_tag[20];
+static struct {
+	u32 ms;
+	char tag[24];
+} slow[SLOW_KEPT];
 
 void aes_profile_tag(const char *tag)
 {
 	gap_tag = tag;
+	tagged = 1;
 }
 
 unsigned long aes_profile_max(void)
 {
 	return gap_max;
+}
+
+static void keep_slow(u32 g, const char *tag)
+{
+	short i, j = 0;
+	for (i = 1; i < SLOW_KEPT; i++)
+		if (slow[i].ms < slow[j].ms)
+			j = i;
+	if (g <= slow[j].ms)
+		return;
+	slow[j].ms = g;
+	for (i = 0; tag[i] && i < (short)sizeof(slow[j].tag) - 1; i++)
+		slow[j].tag[i] = tag[i];
+	slow[j].tag[i] = 0;
+}
+
+const char *aes_slowest(void)
+{
+	static char b[4 * 40];
+	short i, k, n = 0, done[SLOW_KEPT] = { 0 };
+	b[0] = 0;
+	for (k = 0; k < SLOW_KEPT; k++) {
+		short best = -1;
+		for (i = 0; i < SLOW_KEPT; i++)
+			if (!done[i] && slow[i].ms && (best < 0 || slow[i].ms > slow[best].ms))
+				best = i;
+		if (best < 0)
+			break;
+		done[best] = 1;
+		n += snprintf(b + n, sizeof(b) - n, "%s%lu ms (%s)", n ? ", " : "",
+			      (unsigned long)slow[best].ms, slow[best].tag);
+		if (n >= (short)sizeof(b))
+			break;
+	}
+	return b;
+}
+
+/* what an event call returned, as the tag of the stretch it starts */
+static void event_tag(short op)
+{
+	static const struct {
+		short type;
+		const char *name;
+	} names[] = {
+		{ 10, "MN_SELECTED" }, { 20, "WM_REDRAW" }, { 21, "WM_TOPPED" }, { 22, "WM_CLOSED" },
+		{ 23, "WM_FULLED" }, { 24, "WM_ARROWED" }, { 25, "WM_HSLID" }, { 26, "WM_VSLID" },
+		{ 27, "WM_SIZED" }, { 28, "WM_MOVED" }, { 40, "AC_OPEN" }, { 41, "AC_CLOSE" },
+	};
+	short which = op == 25 ? aintout[0] : op == 20 ? MU_KEYBD : op == 21 ? MU_BUTTON :
+		      op == 23 ? MU_MESAG : MU_TIMER, i;
+	if ((which & MU_MESAG) && addrin[0]) {
+		short t = ((short *)addrin[0])[0];
+		for (i = 0; i < (short)(sizeof(names) / sizeof(names[0])); i++)
+			if (names[i].type == t)
+				break;
+		if (i < (short)(sizeof(names) / sizeof(names[0])))
+			snprintf(ev_tag, sizeof(ev_tag), "%s", names[i].name);
+		else
+			snprintf(ev_tag, sizeof(ev_tag), "message %d", t);
+	} else if (which & MU_KEYBD)
+		snprintf(ev_tag, sizeof(ev_tag), "key %04x", (unsigned short)(op == 25 ? aintout[5] : aintout[0]));
+	else if (which & MU_BUTTON)
+		snprintf(ev_tag, sizeof(ev_tag), "click");
+	else
+		snprintf(ev_tag, sizeof(ev_tag), "timer");
 }
 
 static short aes(short op, short nin, short nout, short nain, short naout)
@@ -73,26 +153,36 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 	int idle = op == 12 || op == 13 || op == 79 || op == 107;	/* no work of ours */
 	u32 t0 = 0;
 	if (ev && gap_from && starting) {
+#ifdef AES_PROFILE
 		u32 g = tos_ms() - gap_from;
 		char b[48];
 		g = g > other ? g - other : 0;
 		snprintf(b, sizeof(b), "AESSTART %lu ms\n", (unsigned long)g);
 		nf_debug(b);
+#endif
 		starting = 0;
 	} else if (ev && gap_from) {
 		u32 g = tos_ms() - gap_from;
-		char b[96];
 		g = g > other ? g - other : 0;
 		if (g > gap_max)
 			gap_max = g;
-		if (g >= AES_PROFILE) {
-			snprintf(b, sizeof(b), "AESGAP %lu ms %s\n", (unsigned long)g, gap_tag);
-			nf_debug(b);
+		/* the app's tag when it set one since the event, else the event's
+		   own: a tag left from background work is not this stretch's */
+		const char *tag = tagged ? gap_tag : ev_tag;
+		keep_slow(g, tag);
+#ifdef AES_PROFILE
+		{
+			char b[96];
+			if (g >= AES_PROFILE) {
+				snprintf(b, sizeof(b), "AESGAP %lu ms %s\n", (unsigned long)g, tag);
+				nf_debug(b);
+			}
+			if (other >= AES_PROFILE) {
+				snprintf(b, sizeof(b), "AESOTHER %lu ms %s\n", (unsigned long)other, tag);
+				nf_debug(b);
+			}
 		}
-		if (other >= AES_PROFILE) {
-			snprintf(b, sizeof(b), "AESOTHER %lu ms %s\n", (unsigned long)other, gap_tag);
-			nf_debug(b);
-		}
+#endif
 	}
 	if (idle && gap_from)
 		t0 = tos_ms();
@@ -102,16 +192,22 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 		if (d >= 5)
 			other += d;
 	}
-	if (ev || (op == 10 && !gap_from)) {
+#ifdef AES_PROFILE
+	if (op == 10 && !gap_from) {
 		gap_from = tos_ms();
 		other = 0;
-		starting = !ev;
+		starting = 1;
+	}
+#endif
+	if (ev) {
+		gap_from = tos_ms();
+		other = 0;
+		starting = 0;
+		tagged = 0;
+		event_tag(op);
 	}
 	return r;
 }
-#else
-#define aes aes_raw
-#endif
 
 short appl_init(void) { return aes(10, 0, 1, 0, 0); }
 short appl_exit(void) { return aes(19, 0, 1, 0, 0); }
@@ -196,6 +292,32 @@ short rsrc_obfix(OBJECT *tree, short obj)
 	aintin[0] = obj;
 	addrin[0] = tree;
 	return aes(114, 1, 1, 1, 0);
+}
+
+/* what rsrc_obfix makes of a place or a size: characters in the low
+   byte, pixels in the high one (above 128 back from it) */
+static short obfix(short v, short unit)
+{
+	short off = (short)(((unsigned short)v >> 8) & 0xff);
+	if (off > 128)
+		off -= 256;
+	return (short)((v & 0xff) * unit + off);
+}
+
+/* rsrc_obfix for objects 0 to n - 1, done here: an AES call an object
+   cost TOS 1.04 1.4 ms, 210 ms of EFTP's Settings on an ST (26 Oct 2026) */
+void rsrc_obfix_all(OBJECT *tree, short n)
+{
+	static short wc, hc;
+	short i, d;
+	if (!wc)
+		graf_handle(&wc, &hc, &d, &d);
+	for (i = 0; i < n; i++) {
+		tree[i].ob_x = obfix(tree[i].ob_x, wc);
+		tree[i].ob_y = obfix(tree[i].ob_y, hc);
+		tree[i].ob_width = obfix(tree[i].ob_width, wc);
+		tree[i].ob_height = obfix(tree[i].ob_height, hc);
+	}
 }
 
 short wind_find(short x, short y)
@@ -825,6 +947,20 @@ short vqt_width(short h, short c)
 	return ptsout[0];
 }
 
+/* how wide n characters draw, the effects in force with them */
+short vqt_extent_n(short h, const char *s, short n)
+{
+	short i;
+	if (n > 127)
+		n = 127;
+	if (n <= 0)
+		return 0;
+	for (i = 0; i < n; i++)
+		vintin[i] = (u8)s[i];
+	vdi(116, 0, n, h);
+	return ptsout[2] - ptsout[0];
+}
+
 /* NVDI 5: a character's index in another mapping (0 the font's own
  * index, 1 the Atari character set, 2 Unicode); -1 when the font hasn't
  * got it or the VDI can't say */
@@ -928,6 +1064,32 @@ static void gdp_box(short sub, short h, const short *pxy)
 }
 
 void v_bar(short h, const short *pxy) { gdp_box(1, h, pxy); }
+
+/* GDP 10: n characters drawn to a width of len, the room between the
+   characters (char_space 1) and the words (word_space 1) made to fit */
+void v_justified_n(short h, short x, short y, const char *s, short n, short len, short word_space, short char_space)
+{
+	short i;
+	if (n > 125)
+		n = 125;
+	if (n <= 0)
+		return;
+	vintin[0] = word_space;
+	vintin[1] = char_space;
+	for (i = 0; i < n; i++)
+		vintin[2 + i] = (u8)s[i];
+	ptsin[0] = x;
+	ptsin[1] = y;
+	ptsin[2] = len;
+	ptsin[3] = 0;
+	contrl[0] = 11;
+	contrl[1] = 2;
+	contrl[3] = n + 2;
+	contrl[5] = 10;
+	contrl[6] = h;
+	__asm__ volatile("move.l %0,%%d1\n\tmove.w #115,%%d0\n\ttrap #2"
+		: : "r"((long)vdipb) : "d0", "d1", "d2", "a0", "a1", "a2", "memory", "cc");
+}
 void v_rbox(short h, const short *pxy) { gdp_box(8, h, pxy); }
 void v_rfbox(short h, const short *pxy) { gdp_box(9, h, pxy); }
 

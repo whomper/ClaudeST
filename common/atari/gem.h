@@ -171,6 +171,7 @@ short menu_bar(OBJECT *tree, short show);
 short menu_tnormal(OBJECT *tree, short title, short normal);
 short menu_register(short apid, const char *name);
 short rsrc_obfix(OBJECT *tree, short obj);
+void  rsrc_obfix_all(OBJECT *tree, short n);	/* objects 0..n-1, no AES call each */
 short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
 short aes_version(void);
@@ -282,6 +283,10 @@ short vqt_font_format(short h, short index);	/* 1 bitmap, 2 Speedo, 4 TrueType, 
 short vst_font(short h, short id);
 short vst_point(short h, short point, short *cw, short *ch);
 short vqt_width(short h, short c);	/* cell width of character c */
+short vqt_extent_n(short h, const char *s, short n);	/* width n characters draw, effects in force */
+/* n characters drawn to len pixels wide, the gaps between characters
+   (char_space 1) and words (word_space 1) stretched or shrunk to fit */
+void v_justified_n(short h, short x, short y, const char *s, short n, short len, short word_space, short char_space);
 void v_hide_c(short h);
 void v_show_c(short h, short reset);
 
@@ -292,13 +297,14 @@ void v_rfbox(short h, const short *pxy);
 void vsl_ends(short h, short beg, short end);	/* 0 square, 1 arrow, 2 round */
 void vr_trnfm(short h, MFDB *src, MFDB *dst);
 
-/* built with -DAES_PROFILE (gem.c): name what runs now, for the console's
-   AESGAP lines, and the longest stretch between event calls so far */
-#ifdef AES_PROFILE
+/* how long the program holds the machine between event calls (gem.c):
+   aes_profile_tag names what runs now (for the four longest stretches,
+   kept in every build, and, built with -DAES_PROFILE, the console's AESGAP
+   lines); aes_profile_max is the longest so far; aes_slowest the four
+   longest as a line for the app's log, "640 ms (WM_REDRAW), 210 ms
+   (Settings), ..." or "" (the guidelines' Speed) */
 void aes_profile_tag(const char *tag);
 unsigned long aes_profile_max(void);
-#else
-#define aes_profile_tag(tag) ((void)0)
-#endif
+const char *aes_slowest(void);
 
 #endif

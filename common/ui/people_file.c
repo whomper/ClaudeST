@@ -200,7 +200,6 @@ static short add(short type, short flags, long spec, short x, short y, short w, 
 
 static void build(void)
 {
-	short i;
 	memset(pd_tree, 0, sizeof(pd_tree));
 	pd_tree[0].ob_next = pd_tree[0].ob_head = pd_tree[0].ob_tail = -1;
 	pd_tree[0].ob_type = G_BOX;
@@ -219,8 +218,7 @@ static void build(void)
 	o_cancel = add(G_BUTTON, SELECTABLE | EXIT, (long)"Cancel", 41, 16, 9, 1);
 	pd_tree[last_child].ob_next = 0;
 	pd_tree[nobj - 1].ob_flags |= LASTOB;
-	for (i = 0; i < nobj; i++)
-		rsrc_obfix(pd_tree, i);
+	rsrc_obfix_all(pd_tree, nobj);
 	pd_tree[o_list].ob_y += 3;	/* clear of the Find line's underline */
 }
 

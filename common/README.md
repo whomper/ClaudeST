@@ -229,6 +229,23 @@ checks each action's longest stretch against the guidelines' time (`speed.LINE`,
 80 ms). On `ST` (TOS 1.04) and `Falcon-4` (TOS 4.04) each is read back to the millisecond, and only
 the 200 ms one is over its time.
 
+Every build keeps its four longest stretches with what started each (a key, WM_REDRAW, or the
+app's `aes_profile_tag`): `aes_slowest()` gives them as one line for the app's log, so a real
+machine says where it waits. `tests/speed/vdt.py WORK MACHINE [--nvdi]` runs `VDT.PRG`, which
+times the VDI: text on and off a byte, fills, screen copies, and under NVDI a GDOS font (FreeMono)
+as runs and a letter at a time. On TOS a dialog, a popup and the About box keep the screen under
+them and put it back (`dialog.c`'s `dlg_under`), so nothing under them is drawn again.
+`tests/mem` checks `libc.c`'s `memcpy`, `memmove`, `memset` and `memchr` (68000 loops by hand)
+against plain C under qemu-m68k, as 68000 and 68030 code.
+`src/inflate.c` also unpacks a piece at a time (`inflate_open`, `inflate_read`): a file of any
+size through a 32 KB window, with a turn for GEM between pieces; `tests/inflate` checks it against
+`inflate_raw` and zlib (every level and strategy, stored blocks after compressed ones). `str_istr`
+looks for the needle's first letter before comparing the rest (`tests/istr`).
+`src/ctime.c` divides with one `divu.w` where a quotient fits in 16 bits (the days of 1970 to
+2149, a day's minutes, a 400-year cycle's parts), not libgcc's long division (`tests/ctime`, also as
+68000 code). `pf_wopen`, `pf_wwrite` and `pf_wclose` save a file a piece at a time, as `pf_save`
+does in one (`tests/futil`).
+
 ## People from EContact (17 Oct 2026)
 
 EMail and ECal show people by name and let the user pick them in EContact by asking EContact, with

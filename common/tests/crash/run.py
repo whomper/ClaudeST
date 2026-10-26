@@ -107,11 +107,11 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
         tag = "%s %s:" % (machine, NAMES[kind])
         m = re.search(r"CRASHT line F not ours: TOS ([0-9A-F]+), vector 11 ([0-9A-F]+)", con)
         if kind == "f" and m:
-            # left to the handler on vector 11: right only for a TOS 1.0x
-            # whose AES dispatcher isn't the one crash.c knows; a regression
-            # anywhere else
+            # left to the handler on vector 11: right only for a TOS 1.0x,
+            # whose ROM uses line F itself (crash.c hooks it no more there:
+            # the guidelines' Speed); a regression anywhere else
             check(int(m.group(1), 16) < 0x200 and not rep,
-                  tag + " left to vector 11's handler (TOS %s, %s): only on an unknown TOS 1.0x" % m.groups())
+                  tag + " left to vector 11's handler (TOS %s, %s): only on a TOS 1.0x" % m.groups())
             continue
         check("CRASHT crashing" in con and "CRASHT no crash" not in con, tag + " it crashed")
         check("CrashTest 1.0: " + NAMES[kind] in rep, tag + " CRASH.LOG names it")

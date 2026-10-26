@@ -242,8 +242,12 @@ static void sup_install(void)
 	   that bombs, or TOS 1.0x's AES dispatcher. A software FPU emulator or
 	   a 68040's or 68060's FPU package (CT60) keeps it, as the program's
 	   FPU instructions are theirs to run. Looked at before vectors 3 and 7
-	   are ours */
-	int i, line_f = tos_default(11, 7) || tos_default(11, 3) || tos1_aes_line_f();
+	   are ours. Not on TOS 1.0x either (the guidelines' Speed): its ROM
+	   calls its own routines through line F, from the AES and the VDI, so
+	   the hook was on 4 to 7% of all an ST's time (EFTP's profiles, 26 Oct
+	   2026); a line F in the program, which no AERA program has, then
+	   bombs as before */
+	int i, line_f = (tos_default(11, 7) || tos_default(11, 3)) && !tos1_aes_line_f();
 	if (rec[0] == 0x12345678L) {		/* proc_lives: TOS saw bombs */
 		for (i = 0; i < 27; i++)
 			prev[i] = rec[i];
