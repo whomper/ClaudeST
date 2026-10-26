@@ -152,6 +152,7 @@ static LINE *lines;
 static short nlines, maxlines;
 static short top_line;
 static short last_slider_pos = -1, last_slider_size = -1;
+static short slider_due;	/* the slider is set in a pass that draws nothing else */
 
 /* sidebar list */
 typedef struct {
@@ -240,6 +241,16 @@ static char save_path[160];
 #define D_ALL     15
 static short dirty;
 static short text_dirty_row = 0x7fff;	/* first text row needing redraw */
+/* what each row of the text pane shows (draw_text keeps it, blit_scroll
+   moves it): flush_dirty then draws only rows whose line changed, and a
+   line that grew (a reply arriving) only from where it changed */
+#define SHOWN_MAX 128
+static struct {
+	long off;		/* -1: not known (as good as changed) */
+	short len;
+	u8 kind, role;
+} shown[SHOWN_MAX];
+static short text_diff;			/* draw_text: rows as shown are left alone */
 static short pending_scroll;		/* lines auto-scrolled since last redraw */
 
 /* serial */
@@ -769,6 +780,18 @@ static void mark_text_from_line(short li)
 	dirty |= D_TEXT;
 }
 
+/* only the line's new characters need drawing: it is left to right, with
+   no inline code (whose marks take no column), and not bold (whose
+   letters reach a pixel into the next one's cell) */
+static short grows_plainly(short li)
+{
+	LINE *l = &lines[li];
+	const char *t = tb + l->off;
+	short type = l->kind & L_TYPE;
+	return type != L_HEADER && type != L_BOLD && !(l->kind & (L_RTL | L_INL)) &&
+	       !memchr(t, MK_INL, l->len) && !bidi_has_rtl(t, l->len);
+}
+
 /* drop the oldest half of the conversation when the buffer fills up */
 static void trim_buffer(void)
 {
@@ -1150,7 +1173,10 @@ static PANEBAR lbar;
 
 static void layout(void)
 {
-	short min_sb = 18 * cw, max_sb = 30 * cw;
+	short min_sb = 18 * cw, max_sb = 30 * cw, r;
+
+	for (r = 0; r < SHOWN_MAX; r++)		/* the pane moves: all of it drawn */
+		shown[r].off = -1;
 
 	if (sb_user) {
 		sb_w = sb_user;
@@ -1528,11 +1554,39 @@ static void draw_text(short from_row)
 		fill(px, wy + title_h + 1, px + pw - 1, ty - 1, 0);
 	/* clear and draw row by row so streaming text doesn't flicker */
 	for (r = from_row; r < rows; r++) {
-		short li = top_line + r;
+		short li = top_line + r, whole, col = 0;
 		LINE *l;
 		y = ty + r * ch;
 		if (!row_visible(y, y + ch))
 			continue;
+		/* the clip takes the whole row: then it shows what is drawn now */
+		whole = clip[0] <= px && clip[2] >= px + pw - 1 && clip[1] <= y && clip[3] >= y + ch - 1;
+		if (text_diff && whole && r < SHOWN_MAX) {
+			if (li >= nlines ? shown[r].off == -2 :
+			    shown[r].off == lines[li].off && shown[r].len == lines[li].len &&
+			    shown[r].kind == lines[li].kind && shown[r].role == lines[li].role)
+				continue;		/* as it is on the screen */
+			if (li < nlines && shown[r].off == lines[li].off && shown[r].kind == lines[li].kind &&
+			    shown[r].role == lines[li].role && grows_plainly(li))
+				col = shown[r].len < lines[li].len ? shown[r].len : lines[li].len;
+		}
+		if (r < SHOWN_MAX) {
+			shown[r].off = !whole ? -1 : li < nlines ? lines[li].off : -2;
+			if (li < nlines) {
+				shown[r].len = lines[li].len;
+				shown[r].kind = lines[li].kind;
+				shown[r].role = lines[li].role;
+			}
+		}
+		if (col) {
+			/* the line grew or lost its end: only from col on */
+			l = &lines[li];
+			x = tx + (l->role == 'U' ? 3 * cw : 0) + col * cw;
+			fill(x, y, px + pw - 1, y + ch - 1, 0);
+			text(x, y, tb + l->off + col, l->len - col,
+			     (l->kind & L_TYPE) == L_GREY ? 2 : 0, (l->kind & L_TYPE) == L_CODE ? code_colour() : 1);
+			continue;
+		}
 		fill(px, y, px + pw - 1, y + ch - 1, 0);
 		if (li >= nlines)
 			continue;
@@ -1638,6 +1692,24 @@ static short blit_scroll(short n)
 	vro_cpyfm(vh, 3, pxy, &scr, &scr);
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
+	{
+		/* what the rows show moved with them; the rows left behind
+		   show what they did, which is no line's now */
+		short r, m = rows < SHOWN_MAX ? rows : SHOWN_MAX;
+		if (n > 0) {
+			for (r = 0; r < m; r++)
+				if (r + k < m)
+					shown[r] = shown[r + k];
+				else
+					shown[r].off = -1;
+		} else {
+			for (r = m - 1; r >= 0; r--)
+				if (r - k >= 0)
+					shown[r] = shown[r - k];
+				else
+					shown[r].off = -1;
+		}
+	}
 	return 1;
 }
 
@@ -1962,13 +2034,15 @@ static void flush_dirty(void)
 		if (dirty & D_TEXT) {
 			short r0 = text_dirty_row < rows ? text_dirty_row : rows;
 			short y0 = ty + r0 * ch;
+			text_diff = 1;
 			redraw(D_TEXT, px, y0, pw, wy + wh - input_h - y0);
+			text_diff = 0;
 		}
 		if (dirty & D_INPUT)
 			redraw(D_INPUT, px, wy + wh - input_h, pw, input_h);
 	}
 	if (dirty & D_TEXT)
-		update_slider();
+		slider_due = 1;
 	dirty = 0;
 	text_dirty_row = 0x7fff;
 }
@@ -3070,7 +3144,7 @@ static void scroll_text(short delta)
 		text_dirty_row = 0;
 		redraw(D_TEXT, px, d > 0 ? ty + (rows - k) * ch : ty, pw, k * ch);
 		text_dirty_row = 0x7fff;
-		update_slider();
+		slider_due = 1;
 		return;
 	}
 	text_dirty_row = 0;
@@ -4486,7 +4560,7 @@ static void toggle_hebrew(void)
 
 static void move_cursor(short d)
 {
-	short start;
+	short start, was = lcur, top = list_top;
 	if (nitems == 0)
 		return;
 	lcur = lcur < 0 ? (d > 0 ? list_top : list_top + list_rows - 1) : lcur + d;
@@ -4510,7 +4584,13 @@ static void move_cursor(short d)
 		list_top = lcur;
 	if (lcur >= list_top + list_rows)
 		list_top = lcur - list_rows + 1;
-	dirty |= D_LIST;
+	if (list_top != top || (dirty & D_LIST)) {
+		dirty |= D_LIST;
+		return;
+	}
+	/* the list stays: only the rows the cursor left and came to */
+	redraw_item_row(was);
+	redraw_item_row(lcur);
 }
 
 /* Options > Settings... (^,), as in the other AERA programs: how
@@ -5357,10 +5437,18 @@ int main(void)
 			   pieces at a time; what the user did, at once */
 			static u32 text_at;
 			u32 now = tos_ms();
+			short drew = 0;
 			if (!busy || !(dirty & D_TEXT) || (ev.which & (MU_KEYBD | MU_BUTTON)) || now - text_at >= 100) {
 				if (dirty & D_TEXT)
 					text_at = now;
+				drew = dirty || pending_scroll;
 				flush_dirty();
+			}
+			/* the AES redraws the slider (45 ms on an ST): not in the
+			   pass that scrolled or drew, nor while a key is in */
+			if (slider_due && !drew && !(ev.which & (MU_KEYBD | MU_BUTTON))) {
+				slider_due = 0;
+				update_slider();
 			}
 		}
 	}
