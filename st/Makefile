@@ -19,6 +19,8 @@ CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
            -fno-pic -fno-pie -fno-tree-loop-distribute-patterns -fno-store-merging -fdisable-tree-bswap \
            -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
            -nostdinc -isystem $(GCCINC) -I$(COMMON)/atari/include -I$(COMMON)/atari -I$(COMMON)/src -I$(COMMON)/ui -I.
+# the speed rig's build (../tests/hatari/speed.py): EXTRA_CFLAGS=-DAES_PROFILE=20
+CFLAGS  += $(EXTRA_CFLAGS)
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 

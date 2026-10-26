@@ -18,6 +18,13 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 
   When a change touches one of these, do it the guideline's way, even if the old code here did it
   differently.
+- **Speed is set by the stock machines** (Erez, 26 Oct 2026; the guidelines' "Speed"): an 8 MHz ST
+  and a stock Falcon (`ST`, `ST-1`, `Falcon-4`), not the DFB1. Design and code for them: draw only
+  what changed, keep the 68000's slow operations out of inner loops, do work once. A change to
+  drawing, a loop over the data or the start gives its `AESGAP` stretches on `ST` and `Falcon-4`,
+  before and after, in its commit message. A GEM release passes the speed rig within the
+  guidelines' times. Here the rig is `python3 tests/hatari/speed.py WORK --machine M`, on
+  `ST:mono`, `ST:med` and `Falcon-4:16` (and `--nvdi`).
 - **Shared code lives in [AERA-Atari](https://github.com/whomper/AERA-Atari).** Files under `common/` come from it. Change them
   there, not here, and pull them in with `tools/sync-common.sh`. A fix made only in this repo will drift
   again.
