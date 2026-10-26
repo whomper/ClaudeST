@@ -451,6 +451,7 @@ static void sup_restore_iorec(void)
    elsewhere (a serial driver with buffers of its own), Bconin as before */
 static u8 rx_take[256];
 static short rx_direct;
+static short rx_fill;		/* what the ring held before the last sup_drain */
 
 static long sup_drain(void)
 {
@@ -462,6 +463,9 @@ static long sup_drain(void)
 	tl = io->ibuftl;
 	if (hd < 0 || hd >= RXBUF || tl < 0 || tl >= RXBUF)
 		return -1;
+	rx_fill = tl - hd;
+	if (rx_fill < 0)
+		rx_fill += RXBUF;
 	while (hd != tl && n < (short)sizeof(rx_take)) {
 		if (++hd >= RXBUF)
 			hd = 0;
@@ -2415,8 +2419,14 @@ static void poll_link(void)
 
 	if (link == LINK_SERIAL) {
 		/* what came, for 40 ms at most: then the events again (the
-		   guidelines' Speed), the rest on the next pass */
+		   guidelines' Speed), the rest on the next pass. But all of it
+		   while the ring is over a quarter full: a slow machine drawing
+		   between passes would otherwise take bytes more slowly than
+		   19200 baud brings them, and a full ring drops them (an ST lost
+		   1.1 KB of a 40 KB chat so) */
 		u32 t0 = tos_ms();
+		short taken = 0;
+		static short told;
 		do {
 			short i, n = 0;
 			if (rx_direct) {
@@ -2431,9 +2441,15 @@ static void poll_link(void)
 					rx_take[n++] = (u8)Bconin(DEV_AUX);
 			if (!n)
 				break;
+			if (rx_direct && rx_fill >= RXBUF - 1 && !told) {
+				nf_debug("ClaudeST: the serial ring was full: bytes were lost\n");
+				told = 1;
+			} else if (rx_fill < RXBUF / 2)
+				told = 0;
 			for (i = 0; i < n; i++)
 				rx_byte(rx_take[i]);
-		} while (tos_ms() - t0 < 40);
+			taken += n;
+		} while (tos_ms() - t0 < 40 || (rx_direct ? rx_fill > RXBUF / 4 : taken < 3000));
 		return;
 	}
 	if (tcp_cn < 0) {

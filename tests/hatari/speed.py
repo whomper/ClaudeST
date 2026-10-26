@@ -124,6 +124,9 @@ def main():
         r.still()
         fails = not same(drawn, r.shot("streamed-whole"), "the reply as it streamed is the reply drawn whole")
         fails += not same(shot(r, 3), shot(r, 5), "five lines up and down again: the pane as it arrived")
+        lost = "the serial ring was full" in r.console()
+        print(("FAIL  " if lost else "ok    ") + "no byte from the bridge lost (the ring never full)", flush=True)
+        fails += lost
         return r.report() or (1 if fails else 0)
     finally:
         r.stop()
