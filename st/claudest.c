@@ -3271,6 +3271,8 @@ static void wait_release(void)
 static short menu_popup(short x, short y, short alt_y, const char *const *lab, short n)
 {
 	short r = popup_alt(x, y, alt_y, lab, n), saved = text_dirty_row;
+	if (popup_put_back)	/* the screen under it is back as it was */
+		return r;
 	text_dirty_row = 0;
 	redraw(D_ALL, popup_area.x, popup_area.y, popup_area.w, popup_area.h);
 	text_dirty_row = saved;
@@ -3375,6 +3377,8 @@ static void own_piece(short x, short y, short w, short h)
 /* the dialog (dlg_w by dlg_h at dlg_x, dlg_y) shown: the mouse is off on
    return over the screen, on in a window */
 /* head: how far down the heading reaches (ch / 2 + 2 and its text) */
+static void *own_under;		/* the screen under it (dlg_under), on TOS */
+
 static void own_open(const char *name, short head, void (*place)(void), void (*paint)(short framed))
 {
 	own_place = place;
@@ -3395,10 +3399,18 @@ static void own_open(const char *name, short head, void (*place)(void), void (*p
 		dlg_close();		/* no window to be had: as on TOS */
 		own_head = 0;
 	}
+	/* on 16 pixels across, so its text is on a byte (the guidelines'
+	   Speed: TOS 1.04 draws it 7 times as fast) */
+	dlg_x = (dlg_x + 8) & ~15;
+	if (dlg_x + dlg_w + 4 > scr_w)
+		dlg_x -= 16;
+	if (dlg_x < 0)
+		dlg_x = 0;
 	place();
 	wind_update(BEG_UPDATE);
 	wind_update(3);		/* BEG_MCTRL */
 	form_dial(FMD_START, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
+	own_under = dlg_under(dlg_x, dlg_y, dlg_w, dlg_h);
 	graf_mouse(M_OFF, 0);
 	own_gem();
 	own_clipr[0] = 0;
@@ -3448,6 +3460,15 @@ static void own_close(void)
 		return;
 	}
 	vs_clip(vh, 0, own_clipr);
+	if (own_under) {
+		/* what it covered, put back as it was: nothing under it is drawn
+		   again (what changed meanwhile is dirty, and drawn after) */
+		dlg_under_back(own_under);
+		own_under = 0;
+		wind_update(2);
+		wind_update(END_UPDATE);
+		return;
+	}
 	wind_update(2);
 	wind_update(END_UPDATE);
 	{
@@ -5469,7 +5490,10 @@ int main(void)
 		}
 	}
 
-	tx_cmd("BYE", 0, 0);
+	/* the four longest stretches between event calls (common's gem.c),
+	   for the gateway's log: where a real machine waits (the guidelines'
+	   Speed). Gateways before 1.65 take BYE and leave the rest */
+	tx_cmd("BYE", aes_slowest(), 0);
 	if (tcp_cn >= 0)
 		sting_close(tcp_cn);
 	if (tcp_opening >= 0)

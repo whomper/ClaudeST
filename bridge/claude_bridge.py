@@ -809,8 +809,9 @@ class Session:
         """The Atari heard nothing for a while: say we're here."""
         self.out("p")
 
-    def cmd_bye(self, *_):
-        log.info("Atari closed ClaudeST")
+    def cmd_bye(self, slowest="", *_):
+        # ClaudeST 1.65 on: its four longest stretches between event calls
+        log.info("Atari closed ClaudeST%s", " (its slowest: %s)" % slowest if slowest else "")
         self.greeted = False    # no more checks for it
 
     def handle(self, raw: bytes):
