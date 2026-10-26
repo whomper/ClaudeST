@@ -1582,13 +1582,14 @@ static void draw_text(short from_row)
 		fill(px, y, px + pw - 1, wy + wh - input_h - 1, 0);
 }
 
-/* move the text area up by n lines on screen, if the window is fully visible */
+/* move the text area up by n lines on screen (down for n < 0), if the
+   window is fully visible */
 static short blit_scroll(short n)
 {
-	short r[4], pxy[8];
+	short r[4], pxy[8], k = n < 0 ? -n : n;
 	MFDB scr;
 
-	if (n <= 0 || n >= rows)
+	if (n == 0 || k >= rows)
 		return 0;
 	wind_get(win, WF_FIRSTXYWH, &r[0], &r[1], &r[2], &r[3]);
 	if (r[0] != wx || r[1] != wy || r[2] != ww || r[3] != wh ||
@@ -1596,13 +1597,13 @@ static short blit_scroll(short n)
 		return 0;
 	memset(&scr, 0, sizeof(scr));
 	pxy[0] = px;
-	pxy[1] = ty + n * ch;
+	pxy[1] = ty + (n > 0 ? k * ch : 0);
 	pxy[2] = px + pw - 1;
-	pxy[3] = ty + rows * ch - 1;
+	pxy[3] = pxy[1] + (rows - k) * ch - 1;
 	pxy[4] = px;
-	pxy[5] = ty;
+	pxy[5] = ty + (n > 0 ? 0 : k * ch);
 	pxy[6] = px + pw - 1;
-	pxy[7] = ty + (rows - n) * ch - 1;
+	pxy[7] = pxy[5] + (rows - k) * ch - 1;
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
 	vs_clip(vh, 0, pxy);
@@ -3007,15 +3008,28 @@ static void open_item(short i)
 	}
 }
 
+static void update_slider(void);
+
 static void scroll_text(short delta)
 {
-	short old = top_line;
+	short old = top_line, d;
 	top_line += delta;
 	clamp_top();
-	if (top_line != old) {
+	d = top_line - old;
+	if (!d)
+		return;
+	/* what stays on the screen moves; only the rows that come in are
+	   drawn (the clip leaves the others alone) */
+	if (!pending_scroll && !(dirty & D_TEXT) && blit_scroll(d)) {
+		short k = d > 0 ? d : -d;
 		text_dirty_row = 0;
-		dirty |= D_TEXT;
+		redraw(D_TEXT, px, d > 0 ? ty + (rows - k) * ch : ty, pw, k * ch);
+		text_dirty_row = 0x7fff;
+		update_slider();
+		return;
 	}
+	text_dirty_row = 0;
+	dirty |= D_TEXT;
 }
 
 static void scroll_list(short delta)
