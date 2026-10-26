@@ -33,6 +33,7 @@
 #include "dialog.h"
 #include "panebar.h"
 #include "plat.h"
+#include "text.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
 #undef fill
@@ -979,8 +980,11 @@ static void heb_runs(short x, short y, const char *s, short n)
 	}
 }
 
+/* in transparent mode (every bold caller's); bold black text the fast way
+   (the guidelines' Speed: "Text through text_n") */
 static void text(short x, short y, const char *s, short n, short fx, short color)
 {
+	short fast = color == 1 && text_fx_fast(fx, 1);
 	vst_effects(vh, fx);
 	vst_color(vh, color);
 	if (n > 0 && (heb_mode != HM_MAP || hebfont != HEB_ATARI) && has_heb(s, n)) {
@@ -993,10 +997,20 @@ static void text(short x, short y, const char *s, short n, short fx, short color
 		}
 		memcpy(m, s, n);
 		heb_font_map(m, n, hebfont);
-		v_gtext_n(vh, x, y, m, n);
+		text_n(vh, x, y, m, n);
 		return;
 	}
-	v_gtext_n(vh, x, y, s, n);
+	if (fast) {
+		/* bold as a copy of the plain text ORed a pixel to the right
+		   (text.c): black ORs to black on any even ground, as TOS's
+		   own bold drawn transparent; it may leave the mode replace */
+		vst_effects(vh, 0);
+		text_n(vh, x, y, s, n);
+		text_fx(vh, x, y, s, n, fx, color);
+		vswr_mode(vh, 2);
+		return;
+	}
+	text_n(vh, x, y, s, n);
 }
 
 /* draw a string that may contain Hebrew in visual order; a right-to-left
@@ -1531,6 +1545,7 @@ static void draw_title(void)
 	 * characters, or the chip goes */
 	vst_font(vh, 1);
 	vst_height(vh, big ? 6 : 4, &scw, &sch);
+	text_font(vh, 1, scw, sch);
 	chip_x0 = chip_x1 = 0;
 	if (cl && maxc - ((cl + 1) * scw + cw) / cw < 16)
 		cl = 0;
@@ -1706,7 +1721,7 @@ static short blit_scroll(short n)
 	pxy[7] = pxy[5] + (rows - k) * ch - 1;
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
-	vs_clip(vh, 0, pxy);
+	text_noclip(vh);
 	vro_cpyfm(vh, 3, pxy, &scr, &scr);
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
@@ -1969,7 +1984,7 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 			clip[1] = r[1];
 			clip[2] = r[0] + r[2] - 1;
 			clip[3] = r[1] + r[3] - 1;
-			vs_clip(vh, 1, clip);
+			text_clip(vh, clip);
 			if (mask & (D_SIDEBAR | D_LIST))
 				draw_sidebar();
 			else if (mask & D_STATUS)
@@ -1983,7 +1998,7 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 		}
 		wind_get(win, WF_NEXTXYWH, &r[0], &r[1], &r[2], &r[3]);
 	}
-	vs_clip(vh, 0, clip);
+	text_noclip(vh);
 	set_font(keep_id, keep_pt);	/* and back to what the caller had */
 	cw = keep_cw;
 	ch = keep_ch;
@@ -3284,7 +3299,9 @@ static void wait_release(void)
  * below; what it covered is repainted at once */
 static short menu_popup(short x, short y, short alt_y, const char *const *lab, short n)
 {
-	short r = popup_alt(x, y, alt_y, lab, n), saved = text_dirty_row;
+	short r, saved = text_dirty_row;
+	text_noclip(vh);	/* popup.c clips by vs_clip, not text.c */
+	r = popup_alt(x, y, alt_y, lab, n);
 	if (popup_put_back)	/* the screen under it is back as it was */
 		return r;
 	text_dirty_row = 0;
@@ -3388,7 +3405,7 @@ static void own_piece(short x, short y, short w, short h)
 	c[1] = y;
 	c[2] = x + w - 1;
 	c[3] = y + h - 1;
-	vs_clip(vh, 1, c);
+	text_clip(vh, c);
 	own_paint(0);
 }
 
@@ -3435,7 +3452,7 @@ static void own_open(const char *name, short head, void (*place)(void), void (*p
 	own_clipr[1] = 0;
 	own_clipr[2] = scr_w - 1;
 	own_clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, own_clipr);
+	text_clip(vh, own_clipr);
 	paint(1);
 }
 
@@ -3465,7 +3482,7 @@ static short own_cut(void)
 	c[1] = y;
 	c[2] = x + w - 1;
 	c[3] = y + h - 1;
-	vs_clip(vh, 1, c);
+	text_clip(vh, c);
 	return 1;
 }
 
@@ -3477,7 +3494,7 @@ static void own_close(void)
 		own_win = 0;
 		return;
 	}
-	vs_clip(vh, 0, own_clipr);
+	text_noclip(vh);
 	if (own_under) {
 		/* what it covered, put back as it was: nothing under it is drawn
 		   again (what changed meanwhile is dirty, and drawn after) */
@@ -3763,6 +3780,7 @@ static short set_font(short id, short pt)
 	cw = w;
 	ch = h;
 	vst_alignment(vh, 0, 5);
+	text_font(vh, id, w, h);
 	cur_font_id = id;
 	cur_font_pt = pt;
 	probe_hebrew(id);
@@ -3851,17 +3869,12 @@ void cst_ui_clip_on(GRECT *r)
 	p[1] = r->y;
 	p[2] = r->x + r->w - 1;
 	p[3] = r->y + r->h - 1;
-	vs_clip(vh, 1, p);
+	text_clip(vh, p);
 }
 
 void cst_ui_clip_off(void)
 {
-	short p[4];
-	p[0] = 0;
-	p[1] = 0;
-	p[2] = scr_w - 1;
-	p[3] = scr_h - 1;
-	vs_clip(vh, 0, p);
+	text_noclip(vh);
 }
 
 /* ST RAM for a bitmap to blit: the screen can't be fed from TT RAM */
@@ -4406,7 +4419,7 @@ static void show_tip(short mx, const char *t, short ty)
 	clipr[1] = 0;
 	clipr[2] = scr_w - 1;
 	clipr[3] = scr_h - 1;
-	vs_clip(vh, 1, clipr);
+	text_clip(vh, clipr);
 	vswr_mode(vh, 1);
 	fill(tip_x + 2, top + 2, tip_x + tip_w + 1, top + tip_h + 1, 1);	/* shadow */
 	fill(tip_x, top, tip_x + tip_w - 1, top + tip_h - 1, 0);
@@ -4415,7 +4428,7 @@ static void show_tip(short mx, const char *t, short ty)
 	line(tip_x + tip_w - 1, top + tip_h - 1, tip_x, top + tip_h - 1, 1);
 	line(tip_x, top + tip_h - 1, tip_x, top, 1);
 	text_bidi(tip_x + cw / 2, top + 2, t, n, 0, 1, 0);
-	vs_clip(vh, 0, clipr);
+	text_noclip(vh);
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
 	tip_on = 1;
@@ -4493,7 +4506,7 @@ static void drag_divider(void)
 	clipr[1] = wy;
 	clipr[2] = wx + ww - 1;
 	clipr[3] = wy + wh - 1;
-	vs_clip(vh, 1, clipr);
+	text_clip(vh, clipr);
 	vswr_mode(vh, 3);		/* XOR */
 	vsl_color(vh, 1);
 	do {
@@ -4513,7 +4526,7 @@ static void drag_divider(void)
 	xor_divider(last);
 	graf_mouse(M_ON, 0);
 	vswr_mode(vh, 2);
-	vs_clip(vh, 0, clipr);
+	text_noclip(vh);
 	wind_update(2);
 	wind_update(END_UPDATE);
 	if (last - wx != sb_w) {
