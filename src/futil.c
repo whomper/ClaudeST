@@ -7,6 +7,18 @@
  * guidelines, 2.3): a reset or a full disk in the middle leaves the old
  * file as it was. pf_load() finds a NAME.IN$ whose renaming was cut
  * short and takes it.
+ *
+ * A program that saves big files sets pf_save_turn (declared in its
+ * plat.h: extern void (*pf_save_turn)(void);): pf_save then writes
+ * PF_SAVE_PIECE bytes at a time and calls it between pieces, a turn for
+ * GEM while the file is open (EUpdate: 210 KB took a stock Falcon's disk
+ * over a second in one write). Never in an accessory: its files must not
+ * stay open across an event call (the guidelines, 2.2).
+ *
+ * pf_wopen, pf_wwrite and pf_wclose are pf_save a piece at a time, for a
+ * file made as it comes (EUpdate: a member unpacked as it is read): the
+ * pieces go to NAME.IN$, and pf_wclose renames it over NAME, or removes
+ * it when the file is given up. pf_wwrite takes pf_save_turn every 32 KB.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -87,15 +99,30 @@ char *pf_load(const char *path, long *len)
 	return buf;
 }
 
+#define PF_SAVE_PIECE 32768L
+
+void (*pf_save_turn)(void);
+
 static int write_file(const char *path, const void *data, long len)
 {
 	int h = pf_open(path, PF_WRITE);
-	long r;
+	const char *p = data;
+	long done = 0, n, r = 0;
 	if (h < 0)
 		return h;
-	r = pf_write(h, data, len);
+	while (done < len) {
+		n = len - done;
+		if (pf_save_turn && n > PF_SAVE_PIECE)
+			n = PF_SAVE_PIECE;
+		r = pf_write(h, p + done, n);
+		if (r != n)
+			break;
+		done += n;
+		if (pf_save_turn && done < len)
+			pf_save_turn();
+	}
 	pf_close(h);
-	return r == len ? 0 : -1;
+	return done == len ? 0 : -1;
 }
 
 int pf_save(const char *path, const void *data, long len)
@@ -109,4 +136,51 @@ int pf_save(const char *path, const void *data, long len)
 	/* no room for both, or a drive that doesn't rename: as before */
 	pf_remove(tmp);
 	return write_file(path, data, len);
+}
+
+static long since_turn;
+
+int pf_wopen(const char *path)
+{
+	char tmp[260];
+	if (!tmp_name(path, tmp, sizeof(tmp)))
+		return -1;
+	since_turn = 0;
+	return pf_open(tmp, PF_WRITE);	/* never NAME itself: the old one stays */
+}
+
+long pf_wwrite(int h, const void *data, long len)
+{
+	const char *p = data;
+	long done = 0, n;
+	while (done < len) {
+		n = len - done;
+		if (pf_save_turn && n > PF_SAVE_PIECE - since_turn)
+			n = PF_SAVE_PIECE - since_turn;
+		if (pf_write(h, p + done, n) != n)
+			return -1;
+		done += n;
+		since_turn += n;
+		if (since_turn >= PF_SAVE_PIECE) {
+			since_turn = 0;
+			if (pf_save_turn)
+				pf_save_turn();
+		}
+	}
+	return done;
+}
+
+int pf_wclose(int h, const char *path, int keep)
+{
+	char tmp[260];
+	pf_close(h);
+	if (!tmp_name(path, tmp, sizeof(tmp)))
+		return -1;
+	if (!keep) {
+		pf_remove(tmp);
+		return 0;
+	}
+	pf_remove(path);		/* TOS doesn't rename over a file */
+	/* a drive that doesn't rename leaves NAME.IN$, which pf_load takes */
+	return pf_rename(tmp, path) == 0 ? 0 : -1;
 }

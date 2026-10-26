@@ -20,22 +20,52 @@
 
 int mem_unaligned_ok;		/* a 68020 or later: longs at any address */
 
+/* The loops are 68000 code by hand (the guidelines' Speed; ECal, 26 Oct
+ * 2026: GCC's byte loops took some 40 cycles a byte with an index and the
+ * character read again each time; move.b (a0)+,(a1)+ with dbra is 12).
+ * A dbra counts at most 65536, so the byte loops go in pieces. tests/mem
+ * checks them against plain C at every alignment, on a 68000 and a
+ * 68030 (qemu-m68k). */
+static void bytes_copy(u8 **d, const u8 **s, size_t n)
+{
+	u8 *dp = *d;
+	const u8 *sp = *s;
+	while (n) {
+		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
+		n -= k;
+		__asm__ volatile("subq.w #1,%2\n"
+				 "1:\tmove.b (%0)+,(%1)+\n\t"
+				 "dbra %2,1b"
+				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
+	}
+	*d = dp;
+	*s = sp;
+}
+
 void *memcpy(void *d, const void *s, size_t n)
 {
 	u8 *dp = d;
 	const u8 *sp = s;
-	/* long copies when both are even, or always on a 68020 and later
-	   (the 68000 faults on an odd address; text is usually odd on one side) */
-	if (mem_unaligned_ok || !(((u32)dp | (u32)sp) & 1)) {
-		while (n >= 4) {
-			*(u32 *)dp = *(const u32 *)sp;
-			dp += 4;
-			sp += 4;
-			n -= 4;
-		}
-	}
-	while (n--)
+	/* both odd: one byte, then both even */
+	if (n >= 16 && ((u32)dp & 1) && ((u32)sp & 1)) {
 		*dp++ = *sp++;
+		n--;
+	}
+	/* longs, 16 bytes a turn, when both are even, or always on a 68020
+	   and later (the 68000 faults on an odd address) */
+	if (n >= 16 && (mem_unaligned_ok || !(((u32)dp | (u32)sp) & 1))) {
+		u32 k = n >> 4;
+		n &= 15;
+		__asm__ volatile("1:\tmove.l (%0)+,(%1)+\n\t"
+				 "move.l (%0)+,(%1)+\n\t"
+				 "move.l (%0)+,(%1)+\n\t"
+				 "move.l (%0)+,(%1)+\n\t"
+				 "subq.l #1,%2\n\t"
+				 "bne.s 1b"
+				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
+	}
+	if (n)
+		bytes_copy(&dp, &sp, n);
 	return d;
 }
 
@@ -47,28 +77,38 @@ void *memmove(void *d, const void *s, size_t n)
 		return memcpy(d, s, n);
 	dp += n;
 	sp += n;
-	while (n--)
-		*--dp = *--sp;
+	while (n) {
+		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
+		n -= k;
+		__asm__ volatile("subq.w #1,%2\n"
+				 "1:\tmove.b -(%0),-(%1)\n\t"
+				 "dbra %2,1b"
+				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
+	}
 	return d;
 }
 
 void *memset(void *d, int c, size_t n)
 {
 	u8 *dp = d;
+	u32 v = (u8)c;
 	/* long words from an even address: a 68000 can */
 	if ((u32)dp & 1 && n) {
 		*dp++ = (u8)c;
 		n--;
 	}
-	if (n >= 8) {
-		u32 v = (u8)c;
+	if (n >= 16) {
+		u32 k = n >> 4;
+		n &= 15;
 		v |= v << 8;
 		v |= v << 16;
-		while (n >= 4) {
-			*(u32 *)dp = v;
-			dp += 4;
-			n -= 4;
-		}
+		__asm__ volatile("1:\tmove.l %2,(%0)+\n\t"
+				 "move.l %2,(%0)+\n\t"
+				 "move.l %2,(%0)+\n\t"
+				 "move.l %2,(%0)+\n\t"
+				 "subq.l #1,%1\n\t"
+				 "bne.s 1b"
+				 : "+a"(dp), "+d"(k) : "d"(v) : "memory", "cc");
 	}
 	while (n--)
 		*dp++ = (u8)c;
@@ -87,9 +127,19 @@ int memcmp(const void *a, const void *b, size_t n)
 void *memchr(const void *s, int c, size_t n)
 {
 	const u8 *p = s;
-	for (; n; n--, p++)
-		if (*p == (u8)c)
-			return (void *)p;
+	u32 ch = (u8)c;
+	while (n) {
+		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
+		u32 hit;
+		n -= k;
+		__asm__ volatile("subq.w #1,%1\n"
+				 "1:\tcmp.b (%0)+,%3\n\t"
+				 "dbeq %1,1b\n\t"
+				 "seq %2"
+				 : "+a"(p), "+d"(k), "=&d"(hit) : "d"(ch) : "cc");
+		if (hit & 0xff)
+			return (void *)(p - 1);
+	}
 	return 0;
 }
 

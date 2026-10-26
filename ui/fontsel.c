@@ -240,8 +240,8 @@ int fontsel_fnt_line(const char *line, fs_line *l)
 
 #include "plat.h"
 #include "dialog.h"
+#include "tos.h"			/* tos_ms: the progress shown every 250 ms */
 #ifdef FONTSEL_TRACE
-#include "tos.h"
 #define TRACE(...) do { char tb[160]; snprintf(tb, sizeof(tb), __VA_ARGS__); nf_debug(tb); } while (0)
 #define TRACE_MS(what) TRACE("fontsel: %lu ms %s\n", (unsigned long)tos_ms(), what)
 #else
@@ -420,8 +420,15 @@ static int cmp_font(const FSF *a, const FSF *b)
 	return strcmp(a->name, b->name);
 }
 
+/* the program's lists, kept from one opening to the next while the fonts
+   loaded stay the same (the guidelines' Speed: a second opening asked
+   NVDI for 137 names again, 1.5 s on a stock Falcon); the accessory's
+   memory isn't kept for them */
+static short kept_gdos = -2;
+
 static void fonts_free(void)
 {
+	kept_gdos = -2;
 	if (fo && fo != &fo_sys)
 		free(fo);
 	if (fa && fa != &fa_sys)
@@ -443,12 +450,10 @@ static int fs_clip(GRECT *r)
 }
 
 /* the progress of the first look, in the sample's box */
-static void show_progress(GRECT *r, short done, short todo)
+static void show_text(GRECT *r, const char *m)
 {
-	char m[64];
 	if (!r)
 		return;
-	snprintf(m, sizeof(m), "Measuring the fonts: %d of %d...", done, todo);
 	sys_font();			/* (the last font measured was set) */
 	graf_mouse(M_OFF, 0);
 	if (fs_clip(r)) {
@@ -457,6 +462,25 @@ static void show_progress(GRECT *r, short done, short todo)
 		clip_off();
 	}
 	graf_mouse(M_ON, 0);
+}
+
+static void show_progress(GRECT *r, const char *what, short done, short todo)
+{
+	char m[64];
+	snprintf(m, sizeof(m), "%s: %d of %d...", what, done, todo);
+	show_text(r, m);
+}
+
+/* NAME.FNT's line for a font it lists as usable (FNT2): its family, style
+   and format kept, so a font known isn't asked about again (Erez, 26 Oct
+   2026: the dialog showed nothing for seconds under NVDI) */
+static int known_line(const char *known, const char *name, fs_line *l)
+{
+	const char *line;
+	for (line = known; line && *line; line = strchr(line, '\n') ? strchr(line, '\n') + 1 : 0)
+		if (fontsel_fnt_line(line, l) && l->use == 1 && !strcmp(l->name, name))
+			return 1;
+	return 0;
 }
 
 /* the accessory without its fonts: the ones NAME.FNT knows, for the next
@@ -495,16 +519,23 @@ static void known_fonts(const char *known)
    and fa (one per family). Names first, quick whatever their number;
    then the fonts NAME.FNT doesn't know are measured, and NAME.FNT
    written again */
-static void collect(fontsel *s, GRECT *show)
+static void collect(fontsel *s, GRECT *show, GRECT *fam)
 {
 	short n = s->gdos > 0 ? s->gdos : 0, i, k, todo = 0, done = 0, nuse = 0;
-	char *known = s->fnt ? pf_load(s->fnt, 0) : 0, name[34];
-	int v2 = known && !strncmp(known, FS_FNT_HEAD, 5);
+	char *known, name[34];
+	int v2;
 	signed char *use = 0;
 	short *ids = 0;
+	char (*names)[FS_NAME] = 0;
+	u32 shown = tos_ms();
+	fs_line l;
 
 	TRACE_MS("collect");
+	if (fo && fa && s->gdos > 0 && s->gdos == kept_gdos)
+		return;			/* as the last opening found them */
 	fonts_free();
+	known = s->fnt ? pf_load(s->fnt, 0) : 0;
+	v2 = known && !strncmp(known, FS_FNT_HEAD, 5);
 	if (s->gdos < 0) {
 		if (s->acc && vq_gdos())
 			known_fonts(known);
@@ -512,13 +543,20 @@ static void collect(fontsel *s, GRECT *show)
 	} else if (n) {
 		use = malloc(n);
 		ids = malloc(n * sizeof(short));
-		if (!use || !ids)
+		names = malloc(n * sizeof(*names));
+		if (!use || !ids || !names)
 			n = 0;		/* the system font, at least */
 	}
-	/* each font once (a bitmap font has an index for each size) */
+	/* each font once (a bitmap font has an index for each size); its name
+	   asked once and kept */
 	for (i = 0; i < n; i++) {
-		ids[i] = vqt_name(vdi_h, i + 2, name);
-		name_trim(name);
+		if (tos_ms() - shown >= 250) {
+			show_progress(fam, "Reading the fonts", i, n);
+			shown = tos_ms();
+		}
+		ids[i] = vqt_name(vdi_h, i + 2, names[i]);
+		name_trim(names[i]);
+		strcpy(name, names[i]);
 		use[i] = -2;
 		if (ids[i] <= 1)
 			continue;
@@ -536,10 +574,8 @@ static void collect(fontsel *s, GRECT *show)
 		graf_mouse(BUSYBEE, 0);
 		for (i = 0; i < n; i++)
 			if (use[i] == -1) {
-				show_progress(show, ++done, todo);
-				vqt_name(vdi_h, i + 2, name);
-				name_trim(name);
-				use[i] = (signed char)usable(ids[i], format_of(ids[i], i + 2), name);
+				show_progress(show, "Measuring the new fonts", ++done, todo);
+				use[i] = (signed char)usable(ids[i], format_of(ids[i], i + 2), names[i]);
 			}
 		graf_mouse(ARROW, 0);
 		sys_font();
@@ -554,11 +590,17 @@ static void collect(fontsel *s, GRECT *show)
 		for (i = 0; fo && i < n; i++)
 			if (use[i] == 1) {
 				FSF *f = &fo[nfo++];
-				f->id = vqt_name(vdi_h, i + 2, f->name);
-				name_trim(f->name);
-				f->format = vqt_font_format(vdi_h, i + 2);
+				f->id = ids[i];
+				strcpy(f->name, names[i]);
 				f->later = 0;
-				names_of(f);
+				if (v2 && known_line(known, f->name, &l) && l.family[0]) {
+					f->format = l.format;	/* as NAME.FNT has it: nothing asked */
+					strcpy(f->family, l.family);
+					strcpy(f->style, l.style);
+				} else {
+					f->format = vqt_font_format(vdi_h, i + 2);
+					names_of(f);
+				}
 			}
 	}
 	TRACE_MS("named");
@@ -571,8 +613,7 @@ static void collect(fontsel *s, GRECT *show)
 			for (i = 0; i < n; i++) {
 				if (use[i] < 0)
 					continue;
-				vqt_name(vdi_h, i + 2, name);
-				name_trim(name);
+				strcpy(name, names[i]);
 				if (use[i]) {
 					for (k = 1; k < nfo && fo[k].id != ids[i]; k++)
 						;
@@ -589,6 +630,7 @@ static void collect(fontsel *s, GRECT *show)
 	TRACE_MS("written");
 	free(use);
 	free(ids);
+	free(names);
 	free(known);
 	if (!fo) {
 		fo = &fo_sys;
@@ -638,7 +680,7 @@ int fontsel_usable(fontsel *s, short id)
 	font_sys_push();
 	fs_sys_cw = cw;
 	fs_sys_ch = ch;
-	collect(s, 0);
+	collect(s, 0, 0);
 	for (i = 1; i < nfo; i++)
 		if (fo[i].id == id && !fo[i].later)
 			r = 1;
@@ -765,11 +807,9 @@ static short tr_text(short x, short y, const char *s)
 
 static void tr_end(void)
 {
-	short i;
 	fs_tree[last_child].ob_next = 0;
 	fs_tree[nobj - 1].ob_flags |= LASTOB;
-	for (i = 0; i < nobj; i++)
-		rsrc_obfix(fs_tree, i);
+	rsrc_obfix_all(fs_tree, nobj);
 	dlg_3d(fs_tree);
 }
 
@@ -1280,7 +1320,8 @@ int fontsel_run(fontsel *s)
 {
 	short i, x, y, w, h, m[8], up = 0, done = 0, o_size;
 	AEVENT e;
-	GRECT prev;
+	GRECT prev, fam;
+	int said;
 
 	fs = s;
 	font_sys_push();
@@ -1288,13 +1329,6 @@ int fontsel_run(fontsel *s)
 	fs_sys_ch = ch;
 	/* the program loads the GDOS fonts when they're first wanted; the
 	   accessory never here (2.2): it had them at boot, or not */
-	if (s->gdos < 0 && !s->acc && vq_gdos()) {
-		graf_mouse(BUSYBEE, 0);
-		s->gdos = vst_load_fonts(vdi_h, 0);
-		graf_mouse(ARROW, 0);
-		sys_font();
-	}
-
 	/* 48 x 17 cells: ST medium's and ST high's rows under the menu bar,
 	   a quarter smaller than the first (Erez) */
 	tr_begin(48, 17);
@@ -1338,8 +1372,38 @@ int fontsel_run(fontsel *s)
 	for (i = 0; i < 3; i++)
 		fl_place(&lists[i]);
 	tr_box(o_prev, &prev, 1);
+	tr_box(lf.obj, &fam, 1);
+	/* the dialog at once, saying what it waits for (Erez, 26 Oct 2026:
+	   seconds with nothing to see were confusing) */
+	said = 0;
+	if (s->gdos < 0 && !s->acc && vq_gdos()) {
+		said = 1;
+		show_text(&fam, "Loading the fonts...");
+		graf_mouse(BUSYBEE, 0);
+		s->gdos = vst_load_fonts(vdi_h, 0);
+		graf_mouse(ARROW, 0);
+		sys_font();
+	} else if (s->gdos > 0 && s->gdos != kept_gdos) {
+		said = 1;
+		show_text(&fam, "Reading the fonts...");
+	}
 
-	collect(s, &prev);
+	collect(s, &prev, &fam);
+	if (said || s->gdos > 0) {		/* the messages gone: the lists draw on white */
+		GRECT c;
+		graf_mouse(M_OFF, 0);
+		c = fam;
+		if (fs_clip(&c)) {
+			fill(&fam, 0);
+			clip_off();
+		}
+		c = prev;
+		if (fs_clip(&c)) {
+			fill(&prev, 0);
+			clip_off();
+		}
+		graf_mouse(M_ON, 0);
+	}
 	/* the font in use: by its id, else its name (or its family's) */
 	{
 		short k = -1;
@@ -1430,7 +1494,10 @@ int fontsel_run(fontsel *s)
 		strcpy(s->family, f->family);
 		strcpy(s->style, f->style);
 	}
-	fonts_free();
+	if (!s->acc && s->gdos > 0)
+		kept_gdos = s->gdos;	/* for the next opening */
+	else
+		fonts_free();
 	font_sys_pop();
 	if (done > 0 && s->apply)
 		s->apply(s);

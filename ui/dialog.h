@@ -29,17 +29,26 @@
 short dlg_do(OBJECT *tree, short start, short cancel);
 
 /* the whole of it: the screen and mouse kept (wind_update), the tree
-   centred (form_center), the space taken (form_dial), drawn, dlg_do,
-   the space given back (the windows under it get WM_REDRAW), the exit
-   object deselected; returns it without the double-click bit (or a
-   cancel below 0 as it is) */
+   centred (form_center) on a multiple of 16 pixels across (its text on a
+   byte), the screen under it saved (dlg_under), drawn, dlg_do, the screen
+   put back, the exit object deselected; returns it without the
+   double-click bit (or a cancel below 0 as it is). On TOS the windows
+   under it get no WM_REDRAW (the guidelines' Speed; Erez, 26 Oct 2026),
+   except when there was no memory to save it: an app whose window's
+   content changed while the box showed draws it again itself. */
 short dlg_modal(OBJECT *tree, short start, short cancel);
 
-/* as dlg_modal, but the screen under the box is saved and put back, as
-   form_alert does, rather than redrawn through WM_REDRAW, when there is
-   memory for it: for a small box that may come while the app isn't
-   reading its messages (alert() uses it) */
+/* the same (it was dlg_modal with the screen saved, before every dialog
+   saved it) */
 short dlg_modal_save(OBJECT *tree, short start, short cancel);
+
+/* the screen under a box (x, y, w, h, and 4 pixels round it for the
+   outline and shadow) kept in memory, as form_alert does; 0 when there's
+   no memory for it (then form_dial(FMD_FINISH) as before). dlg_under_back
+   puts it back and lets it go. dlg_open, dlg_modal, popups and the About
+   box use them on TOS. */
+void *dlg_under(short x, short y, short w, short h);
+void dlg_under_back(void *saved);
 
 /* ---- a dialog in a window, where the AES runs several programs at once
    (MiNT with XaAES, N.AES or MyAES; MagiC: the guidelines, 3.5; Erez,

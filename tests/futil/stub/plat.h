@@ -12,3 +12,6 @@ int  pf_rename(const char *from, const char *to);
 char *pf_load(const char *path, long *len);
 extern long (*pf_size_open)(int h);
 int  pf_save(const char *path, const void *data, long len);
+int  pf_wopen(const char *path);
+long pf_wwrite(int h, const void *data, long len);
+int  pf_wclose(int h, const char *path, int keep);

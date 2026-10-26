@@ -12,6 +12,7 @@
 #include <string.h>
 #include "gemui.h"
 #include "popup.h"
+#include "dialog.h"
 
 #define MAXROWS 64
 
@@ -106,6 +107,7 @@ static short mouse(short *mx, short *my)
 }
 
 GRECT popup_area;
+short popup_put_back;
 
 short popup(short x, short y, const char *const *lab, short n)
 {
@@ -118,6 +120,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 	short mx, my, ox, oy, m[8], clipr[4];
 	GRECT shadow, body;
 	AEVENT e;
+	void *under;
 
 	font_sys_push();
 	if (n > MAXROWS)
@@ -133,6 +136,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 		x = desk_x + desk_w - pw - 2;
 	if (x < desk_x)
 		x = desk_x;
+	x &= ~7;			/* its text on a byte (the guidelines' Speed) */
 	if (y + bh + 2 > desk_y + desk_h) {
 		if (alt_y >= 0)			/* above the item it is for */
 			y = alt_y - bh - 2;
@@ -150,6 +154,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 
 	wind_update(BEG_UPDATE);
 	wind_update(3);			/* BEG_MCTRL: we own the mouse */
+	under = dlg_under(x, y, pw + 3, bh + 3);	/* put back, not redrawn */
 	form_dial(FMD_START, x, y, pw + 3, bh + 3);
 	graf_mouse(M_OFF, 0);
 	clipr[0] = 0;
@@ -226,11 +231,15 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 		}
 	}
 	vs_clip(vdi_h, 0, clipr);
+	popup_put_back = under != 0;
+	if (under)
+		dlg_under_back(under);
 	wind_update(2);			/* END_MCTRL */
 	wind_update(END_UPDATE);
 	while (mouse(&mx, &my))
 		evnt_timer_(10);
-	form_dial(FMD_FINISH, x, y, pw + 3, bh + 3);
+	if (!under)
+		form_dial(FMD_FINISH, x, y, pw + 3, bh + 3);
 	font_sys_pop();
 	return res;
 }

@@ -76,6 +76,115 @@ static short next_band;			/* dlg_band's, for the next dlg_open */
 void (*dlg_redraw_hook)(const short *msg);
 int dlg_window_on = -1;
 
+/* the screen under the box, kept in memory while it shows (form_alert's
+   way); vro_cpyfm through a workstation of our own */
+typedef struct {
+	short vh, pxy[8];
+	MFDB scr, mem;
+} SAVED;
+
+static int screen_save(SAVED *s, short x, short y, short w, short h)
+{
+	short cw, ch, bw, bh, wo[57], ex[57], i, planes, words;
+	short phys = graf_handle(&cw, &ch, &bw, &bh);
+	long size;
+	s->vh = v_opnvwk_(phys, wo);
+	if (s->vh <= 0)
+		return 0;
+	vq_extnd(s->vh, 1, ex);
+	planes = ex[4];
+	/* the outline and shadow too, within the screen */
+	x -= 4;
+	y -= 4;
+	w += 8;
+	h += 8;
+	if (x < 0) {
+		w += x;
+		x = 0;
+	}
+	if (y < 0) {
+		h += y;
+		y = 0;
+	}
+	/* on whole words across: TOS 1.04 copies a block that starts or ends
+	   inside a word bit by bit (the guidelines' Speed) */
+	w += x & 15;
+	x &= ~15;
+	w = (w + 15) & ~15;
+	if (x + w > wo[0] + 1)
+		w = wo[0] + 1 - x;
+	if (y + h > wo[1] + 1)
+		h = wo[1] + 1 - y;
+	words = (w + 15) >> 4;
+	size = (long)words * 2 * h * planes;
+	if (w <= 0 || h <= 0 || planes <= 0 || !(s->mem.fd_addr = malloc(size))) {
+		v_clsvwk(s->vh);
+		return 0;
+	}
+	s->scr.fd_addr = 0;			/* the screen */
+	s->mem.fd_w = words * 16;
+	s->mem.fd_h = h;
+	s->mem.fd_wdwidth = words;
+	s->mem.fd_stand = 0;
+	s->mem.fd_nplanes = planes;
+	s->mem.fd_r1 = s->mem.fd_r2 = s->mem.fd_r3 = 0;
+	s->pxy[0] = x;
+	s->pxy[1] = y;
+	s->pxy[2] = x + w - 1;
+	s->pxy[3] = y + h - 1;
+	s->pxy[4] = 0;
+	s->pxy[5] = 0;
+	s->pxy[6] = w - 1;
+	s->pxy[7] = h - 1;
+	graf_mouse(M_OFF, 0);
+	vro_cpyfm(s->vh, 3, s->pxy, &s->scr, &s->mem);	/* S_ONLY */
+	graf_mouse(M_ON, 0);
+	for (i = 0; i < 4; i++) {		/* the other way, for screen_back */
+		short t = s->pxy[i];
+		s->pxy[i] = s->pxy[i + 4];
+		s->pxy[i + 4] = t;
+	}
+	return 1;
+}
+
+static void screen_back(SAVED *s)
+{
+	graf_mouse(M_OFF, 0);
+	vro_cpyfm(s->vh, 3, s->pxy, &s->mem, &s->scr);
+	graf_mouse(M_ON, 0);
+	free(s->mem.fd_addr);
+	v_clsvwk(s->vh);
+}
+
+
+void *dlg_under(short x, short y, short w, short h)
+{
+	SAVED *s = malloc(sizeof(SAVED));
+	if (s && !screen_save(s, x, y, w, h)) {
+		free(s);
+		s = 0;
+	}
+	return s;
+}
+
+void dlg_under_back(void *p)
+{
+	if (p) {
+		screen_back(p);
+		free(p);
+	}
+}
+
+/* the root moved to a multiple of 16 pixels across, so the text in it
+   starts on a byte: TOS 4.04's v_gtext took a stock Falcon 9.1 ms for 39
+   letters a pixel off a byte, 3.4 ms on one (tests/speed/vdt.py) */
+static void align16(OBJECT *tree, short *x)
+{
+	short d = ((tree[0].ob_x + 8) & ~15) - tree[0].ob_x;
+	tree[0].ob_x += d;
+	*x += d;
+}
+
 #define DLG_KIND (NAME | CLOSER | MOVER)
 #define DLG_NEST 4
 
@@ -84,6 +193,7 @@ static struct {
 	void (*draw)(short x, short y, short w, short h);
 	short h;			/* the window; 0 on TOS */
 	short x, y, w, h_;		/* form_dial's space on TOS */
+	void *under;			/* the screen under it on TOS (dlg_under), or 0 */
 	unsigned short state;		/* the root's, as it was */
 	long spec;
 	short band, band_h;		/* dlg_band's object, hidden, and its height */
@@ -313,6 +423,7 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		short wx = tree ? tree[0].ob_x : *x, wy = tree ? tree[0].ob_y : *y;
 		short ww = tree ? tree[0].ob_width : *w, wh = tree ? tree[0].ob_height : *h;
 		wind_get(0, WF_WORKXYWH, &dx, &dy, &dwid, &dh);
+		wx = (wx + 8) & ~15;		/* its text on a byte, as align16 */
 		wind_calc(WC_BORDER, DLG_KIND, wx, wy, ww, wh, &bx, &by, &bw, &bh);
 		if (by < dy) {			/* below the menu bar */
 			wy += dy - by;
@@ -348,10 +459,13 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 	}
 	wind_update(BEG_UPDATE);
 	wind_update(BEG_MCTRL);
+	if (tree)
+		align16(tree, x);
 	dw[i].x = *x;
 	dw[i].y = *y;
 	dw[i].w = *w;
 	dw[i].h_ = *h;
+	dw[i].under = dlg_under(*x, *y, *w, *h);
 	form_dial(FMD_START, *x, *y, *w, *h);
 	graf_mouse(M_OFF, 0);
 	if (tree)
@@ -409,7 +523,11 @@ void dlg_close(void)
 		if (!ndw)
 			give_back_redraws();
 	} else {
-		form_dial(FMD_FINISH, dw[i].x, dw[i].y, dw[i].w, dw[i].h_);
+		if (dw[i].under)
+			dlg_under_back(dw[i].under);
+		else
+			form_dial(FMD_FINISH, dw[i].x, dw[i].y, dw[i].w, dw[i].h_);
+		dw[i].under = 0;
 		wind_update(END_MCTRL);
 		wind_update(END_UPDATE);
 	}
@@ -466,6 +584,10 @@ short dlg_evnt(short flags, short clicks, short mask, short state,
 				win_paint(k, msg[4], msg[5], msg[6], msg[7]);
 				wind_update(BEG_UPDATE);
 			} else if (msg[0] == WM_MOVED && k <= i && dw[k].h > 0) {
+				short wx, wy, ww, wh;
+				/* the work area stays on 16 pixels across */
+				wind_calc(WC_WORK, DLG_KIND, msg[4], msg[5], msg[6], msg[7], &wx, &wy, &ww, &wh);
+				msg[4] += ((wx + 8) & ~15) - wx;
 				wind_set(dw[k].h, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
 				if (dw[k].tree)
 					wind_get(dw[k].h, WF_WORKXYWH, &dw[k].tree[0].ob_x,
@@ -568,81 +690,6 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 		wind_update(END_UPDATE);
 	}
 	return next;
-}
-
-/* the screen under the box, kept in memory while it shows (form_alert's
-   way); vro_cpyfm through a workstation of our own */
-typedef struct {
-	short vh, pxy[8];
-	MFDB scr, mem;
-} SAVED;
-
-static int screen_save(SAVED *s, short x, short y, short w, short h)
-{
-	short cw, ch, bw, bh, wo[57], ex[57], i, planes, words;
-	short phys = graf_handle(&cw, &ch, &bw, &bh);
-	long size;
-	s->vh = v_opnvwk_(phys, wo);
-	if (s->vh <= 0)
-		return 0;
-	vq_extnd(s->vh, 1, ex);
-	planes = ex[4];
-	/* the outline and shadow too, within the screen */
-	x -= 4;
-	y -= 4;
-	w += 8;
-	h += 8;
-	if (x < 0) {
-		w += x;
-		x = 0;
-	}
-	if (y < 0) {
-		h += y;
-		y = 0;
-	}
-	if (x + w > wo[0] + 1)
-		w = wo[0] + 1 - x;
-	if (y + h > wo[1] + 1)
-		h = wo[1] + 1 - y;
-	words = (w + 15) >> 4;
-	size = (long)words * 2 * h * planes;
-	if (w <= 0 || h <= 0 || planes <= 0 || !(s->mem.fd_addr = malloc(size))) {
-		v_clsvwk(s->vh);
-		return 0;
-	}
-	s->scr.fd_addr = 0;			/* the screen */
-	s->mem.fd_w = words * 16;
-	s->mem.fd_h = h;
-	s->mem.fd_wdwidth = words;
-	s->mem.fd_stand = 0;
-	s->mem.fd_nplanes = planes;
-	s->mem.fd_r1 = s->mem.fd_r2 = s->mem.fd_r3 = 0;
-	s->pxy[0] = x;
-	s->pxy[1] = y;
-	s->pxy[2] = x + w - 1;
-	s->pxy[3] = y + h - 1;
-	s->pxy[4] = 0;
-	s->pxy[5] = 0;
-	s->pxy[6] = w - 1;
-	s->pxy[7] = h - 1;
-	graf_mouse(M_OFF, 0);
-	vro_cpyfm(s->vh, 3, s->pxy, &s->scr, &s->mem);	/* S_ONLY */
-	graf_mouse(M_ON, 0);
-	for (i = 0; i < 4; i++) {		/* the other way, for screen_back */
-		short t = s->pxy[i];
-		s->pxy[i] = s->pxy[i + 4];
-		s->pxy[i + 4] = t;
-	}
-	return 1;
-}
-
-static void screen_back(SAVED *s)
-{
-	graf_mouse(M_OFF, 0);
-	vro_cpyfm(s->vh, 3, s->pxy, &s->mem, &s->scr);
-	graf_mouse(M_ON, 0);
-	free(s->mem.fd_addr);
-	v_clsvwk(s->vh);
 }
 
 #ifdef DLG_TRACE
@@ -775,7 +822,8 @@ static short modal(OBJECT *tree, short start, short cancel, int save)
 		wind_update(BEG_UPDATE);
 		wind_update(BEG_MCTRL);
 		form_center(tree, &x, &y, &w, &h);
-		save = save && screen_save(&s, x, y, w, h);
+		align16(tree, &x);
+		save = screen_save(&s, x, y, w, h);
 		form_dial(FMD_START, x, y, w, h);
 		objc_draw(tree, 0, 8, x, y, w, h);
 	}

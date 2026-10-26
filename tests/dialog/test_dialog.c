@@ -296,7 +296,7 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 		if (script->key == WM_REDRAW)
 			msg[4] = 0, msg[5] = 0, msg[6] = 640, msg[7] = 480;	/* all of it */
 		else
-			msg[4] = 300, msg[5] = 200, msg[6] = 322, msg[7] = 181;	/* WM_MOVED: work at 301, 220 */
+			msg[4] = 300, msg[5] = 200, msg[6] = 322, msg[7] = 181;	/* WM_MOVED: work at 301, 220, put on 304 */
 		script++;
 		return ev->which;
 	}
@@ -801,7 +801,7 @@ int main(void)
 		static const STEP s[] = { KEY(KEY_ESC), END };
 		script = s;
 		r = dlg_modal(tree, 0, -1);
-		check(r == -1 && dial_start == 1 && dial_finish == 1, "dlg_modal, cancel -1: Esc gives -1, the dialog put away");
+		check(r == -1 && dial_start == 1 && dial_finish == 0 && blits == 2, "dlg_modal, cancel -1: Esc gives -1, the dialog put away (the screen put back)");
 		check(!(tree[OK].ob_state & SELECTED) && !(tree[CANCEL].ob_state & SELECTED), "... no object changed");
 		tidy("dlg_modal cancel -1");
 	}
@@ -877,7 +877,7 @@ int main(void)
 		script = s;
 		r = dlg_modal(tree, 0, CANCEL);
 		check(r == ROW, "dlg_modal: the object without the double-click bit");
-		check(dial_start == 1 && dial_finish == 1 && blits == 0, "dlg_modal: form_dial START and FINISH");
+		check(dial_start == 1 && dial_finish == 0 && blits == 2, "dlg_modal: form_dial START, the screen saved and put back: no FINISH, no redraw (the guidelines' Speed)");
 		tidy("dlg_modal");
 	}
 
@@ -905,7 +905,8 @@ int main(void)
 		check(r == CANCEL, "dlg_modal_save: Esc gives Cancel");
 		check(blits == 2 && blit_dir[0] == 1 && blit_dir[1] == 0 && dial_finish == 0,
 		      "dlg_modal_save: the screen saved and put back, no redraw");
-		check(blit_size == (long)((320 + 8 + 15) / 16) * 2 * (160 + 8), "... the box and its outline, one plane");
+		/* x 160, less 4 for the outline: from 144 (a word) to 496 (whole words) */
+		check(blit_size == (long)(352 / 16) * 2 * (160 + 8), "... the box and its outline, one plane, on whole words");
 		check(opened == 1 && closed == 1, "... its own workstation, closed after");
 		tidy("dlg_modal_save");
 	}
@@ -916,7 +917,7 @@ int main(void)
 		static const STEP s[] = { KEY(KEY_RETURN), END };
 		script = s;
 		r = dlg_modal_save(tree, 0, CANCEL);
-		check(r == OK && blits == 2 && blit_size == (long)((320 + 8 + 15) / 16) * 2 * (160 + 8) * 16,
+		check(r == OK && blits == 2 && blit_size == (long)(352 / 16) * 2 * (160 + 8) * 16,
 		      "dlg_modal_save in 16 planes (Falcon true colour): sixteen times the memory");
 	}
 
@@ -953,7 +954,7 @@ int main(void)
 		      "... a window of the AES's with the app's name, closed after; no form_dial");
 		check(draws >= 2 && !(root_drawn_state & OUTLINED), "... drawn when it opened and when the AES asked, without the outline");
 		check(tree[ROOT].ob_state == OUTLINED && tree[ROOT].ob_spec == 0x00021100L, "... the root as it was, after");
-		check(tree[ROOT].ob_x == 301 && tree[ROOT].ob_y == 220, "... moved: the tree with the window");
+		check(tree[ROOT].ob_x == 304 && tree[ROOT].ob_y == 220, "... moved: the tree with the window, its work area on 16 pixels");
 		check(evnt_updates == 0, "... the screen not held while it waits (the others draw)");
 		tidy("in a window");
 	}
@@ -1025,7 +1026,7 @@ int main(void)
 		static const STEP s[] = { KEY(KEY_RETURN), END };
 		script = s;
 		r = dlg_modal(tree, 0, CANCEL);
-		check(r == OK && dial_start == 1 && dial_finish == 1, "no window to be had: over the screen, as on TOS");
+		check(r == OK && dial_start == 1 && dial_finish == 0 && blits == 2, "no window to be had: over the screen, as on TOS");
 		tidy("no window");
 	}
 
