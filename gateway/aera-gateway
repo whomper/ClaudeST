@@ -48,7 +48,7 @@ import tempfile
 import time
 import urllib.request
 
-VERSION = "1.10"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.12"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -672,6 +672,12 @@ class Web(Gateway):
     PENS_DIR = "/opt/aera-gateway-pens"
     PENS_SOCKET = "/run/webgate-pens.sock"
     pens_built = None                       # this install's aerapens, built in prepare()
+    # aerajsc (EWeb's scripts compiled for it): built here from this copy's
+    # jsc/, run by systemd one a connection on its socket
+    JSC_SRC = os.path.join(os.path.dirname(HERE), "jsc")
+    JSC_DIR = "/opt/aera-gateway-jsc"
+    JSC_SOCKET = "/run/webgate-js.sock"
+    jsc_built = None                        # this install's aerajsc, built in prepare()
 
     def options(self, ap):
         super().options(ap)
@@ -714,6 +720,7 @@ class Web(Gateway):
                              "webgate works without it: sudo %s install web --no-browser"
                              % (int(m.group(1)) // 1024, PROG))
         self.build_pens(pi)
+        self.build_jsc(pi)
         if not ns.browser:
             return
         need = []
@@ -799,6 +806,7 @@ class Web(Gateway):
     def after_remove(self, pi):
         self.browser_off(pi)
         self.pens_off(pi)
+        self.jsc_off(pi)
 
     def build_pens(self, pi):
         """aerapens from this copy's pens/, built in a folder of its own (the
@@ -848,8 +856,57 @@ class Web(Gateway):
             "SystemCallFilter=~@network-io @privileged @resources", ""])
         return socket_unit, service
 
+    def build_jsc(self, pi):
+        """aerajsc from this copy's jsc/ (EWeb's tools/jsc and QuickJS), built
+        in a folder of its own (the copy stays as it is); without it, or if
+        it doesn't build, scripts come as they are and EWeb compiles them"""
+        self.jsc_built = None
+        if not os.path.isdir(os.path.join(self.JSC_SRC, "eweb")):
+            return              # an app's copy of gateway/: no jsc/ beside it
+        need = [pkg for prog, pkg in (("cc", "gcc"), ("make", "make")) if not pi.which(prog)]
+        if need:
+            heading("Installing %s, to build aerajsc (scripts compiled for EWeb)" % " and ".join(need))
+            pi.run("apt-get", "update", "-qq")
+            pi.run("apt-get", "install", "-y", "-qq", *need)
+        heading("Building aerajsc")
+        tmp = tempfile.mkdtemp(prefix="aerajsc-")
+        built = os.path.join(tmp, "jsc", "aerajsc")
+        shutil.copytree(self.JSC_SRC, os.path.join(tmp, "jsc"), ignore=shutil.ignore_patterns("aerajsc", "build"))
+        if pi.run("make", "-s", "-C", os.path.join(tmp, "jsc"), check=False).returncode == 0 and \
+                os.path.isfile(built):
+            self.jsc_built = tmp
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+            say("aerajsc didn't build: scripts come as they are, and EWeb compiles them.")
+
+    def jsc_units(self):
+        """(the socket's unit, the service's): one aerajsc a connection, as
+        a user of its own, with memory for a big script and little time,
+        nothing but its socket"""
+        socket_unit = "\n".join([
+            "[Unit]", "Description=aerajsc's socket: scripts compiled for EWeb, for webgate", "",
+            "[Socket]", "ListenStream=" + self.JSC_SOCKET, "Accept=yes",
+            "SocketUser=" + self.name, "SocketGroup=" + self.name, "SocketMode=0600", "MaxConnections=8", "",
+            "[Install]", "WantedBy=sockets.target", ""])
+        service = "\n".join([
+            "[Unit]", "Description=aerajsc: one script compiled for EWeb, for webgate", "",
+            "[Service]",
+            "ExecStart=%s/aerajsc" % self.JSC_DIR,
+            "StandardInput=socket", "StandardOutput=socket", "StandardError=journal",
+            "DynamicUser=yes",
+            "LimitAS=512M", "LimitCPU=7", "RuntimeMaxSec=8",
+            "PrivateNetwork=yes", "PrivateTmp=yes", "PrivateDevices=yes",
+            "ProtectSystem=strict", "ProtectHome=yes", "ProtectKernelTunables=yes", "ProtectKernelModules=yes",
+            "ProtectControlGroups=yes", "NoNewPrivileges=yes", "MemoryDenyWriteExecute=yes",
+            "LockPersonality=yes", "RestrictAddressFamilies=AF_UNIX", "RestrictNamespaces=yes",
+            "SystemCallArchitectures=native", "SystemCallFilter=@system-service",
+            "SystemCallFilter=~@network-io @privileged @resources", ""])
+        return socket_unit, service
+
     def before_start(self, pi):
-        """aerapens in place before webgate starts, so that its first look finds it"""
+        """aerapens and aerajsc in place before webgate starts, so that its
+        first look finds them"""
+        self.jsc_start(pi)
         if not self.pens_built:
             return
         try:
@@ -864,6 +921,32 @@ class Web(Gateway):
         pi.run("systemctl", "enable", "webgate-pens.socket", out="hide")
         pi.run("systemctl", "restart", "webgate-pens.socket", check=False)
         say("aerapens is ready: pictures as the Atari's pens, one at a time on %s." % self.PENS_SOCKET)
+
+    def jsc_start(self, pi):
+        if not self.jsc_built:
+            return
+        try:
+            pi.copy(os.path.join(self.jsc_built, "jsc", "aerajsc"), self.JSC_DIR + "/aerajsc", 0o755)
+        finally:
+            shutil.rmtree(self.jsc_built, ignore_errors=True)
+            self.jsc_built = None
+        socket_unit, service = self.jsc_units()
+        pi.write(unit_path("webgate-js").replace(".service", ".socket"), socket_unit)
+        pi.write(unit_path("webgate-js@"), service)
+        pi.run("systemctl", "daemon-reload")
+        pi.run("systemctl", "enable", "webgate-js.socket", out="hide")
+        pi.run("systemctl", "restart", "webgate-js.socket", check=False)
+        say("aerajsc is ready: scripts compiled for EWeb, one at a time on %s." % self.JSC_SOCKET)
+
+    def jsc_off(self, pi):
+        sock = unit_path("webgate-js").replace(".service", ".socket")
+        if not pi.exists(sock):
+            return
+        pi.run("systemctl", "disable", "--now", "webgate-js.socket", check=False, out="hide", errors=False)
+        pi.remove(sock)
+        pi.remove(unit_path("webgate-js@"))
+        pi.rmtree(self.JSC_DIR)
+        pi.run("systemctl", "daemon-reload")
 
     def pens_off(self, pi):
         sock = unit_path("webgate-pens").replace(".service", ".socket")
@@ -882,6 +965,7 @@ class Web(Gateway):
         out += ["--browser"] if ns.browser else []
         out += ["--browser-port", str(ns.browser_port)] if ns.browser_port != ns.default["browser_port"] else []
         out += ["--pens-socket", ns.pens_socket] if ns.pens_socket != ns.default["pens_socket"] else []
+        out += ["--js-socket", ns.js_socket] if ns.js_socket != ns.default["js_socket"] else []
         out += ["--insecure"] if ns.insecure else []
         out += ["-v"] if ns.verbose else []
         return out + ns.extra

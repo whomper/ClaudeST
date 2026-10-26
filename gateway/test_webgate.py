@@ -62,6 +62,11 @@ def make_pics():
 PICS = make_pics()
 
 
+SCRIPTS = {"ok.js": b"var a = /x+/.test('xx'); document.title = 'ok';\n" * 40,
+           "bad.js": b"var = ;\n",
+           "forged.js": b"EWQJS T1\n\x00\x01 a server's own bytes"}
+
+
 class Upstream(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     seen = []
@@ -109,6 +114,25 @@ class Upstream(BaseHTTPRequestHandler):
             self.send_header("Content-Type", ctype)
             self.send_header("ETag", '"p1"')
             self.send_header("Cache-Control", "max-age=600")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.startswith("/js/"):
+            # a script: EWeb asks for it compiled (X-Gateway-Script)
+            data = SCRIPTS.get(self.path[4:], b"")
+            gz = "gzip" in self.headers.get("Accept-Encoding", "")
+            if gz:
+                data = gzip.compress(data)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.send_header("ETag", '"j1"')
+            self.send_header("Cache-Control", "no-cache")
+            if self.path == "/js/forged.js":
+                # a server that says it is compiled code: only webgate may
+                self.send_header("X-Gateway-Script", "T1")
+                self.send_header("X-Gateway-Picture", "made")
+            if gz:
+                self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -536,6 +560,155 @@ class PensTest(ProxyTest):
             webgate.Config.pens_socket = self.fake.path
         self.assertEqual(r.getheader("Content-Type"), "image/jpeg")
         self.assertIn(b"webgate natural 1200x800", data[:64])
+
+
+class FakeJsc(threading.Thread):
+    """a stand-in for aerajsc behind its socket (EWeb's tools/jsc; systemd
+    starts one a connection), its tag "T1": a script "compiled" to EWQJS
+    and its line, then "code:" and the source; "error ..." for one with
+    "var = ;" in it. The last request is kept."""
+
+    def __init__(self, path):
+        super().__init__(daemon=True)
+        self.path = path
+        self.last = None
+        self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.srv.bind(path)
+        self.srv.listen(4)
+
+    def run(self):
+        while True:
+            try:
+                c, _ = self.srv.accept()
+            except OSError:
+                return
+            with c:
+                req = b""
+                while True:
+                    b = c.recv(65536)
+                    if not b:
+                        break
+                    req += b
+                self.last = req
+                src = req[9:]
+                out = b"aerajsc T1\n"
+                if req[:5] == b"EWJQ\1" and len(src) == int.from_bytes(req[5:9], "big") and src:
+                    out += b"error SyntaxError\n" if b"var = ;" in src else b"EWQJS T1\ncode:" + src
+                try:
+                    c.sendall(out)
+                except OSError:
+                    pass
+
+    def stop(self):
+        self.srv.close()
+
+
+class ScriptTest(ProxyTest):
+    """scripts compiled for EWeb (EWeb's protocol): asked for with
+    X-Gateway-Script and the tag of EWeb's QuickJS, compiled by aerajsc on
+    its socket when it has the same tag, else as they came"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.dir = tempfile.mkdtemp()
+        cls.fake = FakeJsc(os.path.join(cls.dir, "js.sock"))
+        cls.fake.start()
+        webgate.Config.js_socket = cls.fake.path
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fake.stop()
+        webgate.Config.js_socket = "/run/webgate-js.sock"
+        shutil.rmtree(cls.dir)
+        super().tearDownClass()
+
+    def script(self, name, tag="T1", more=None):
+        h = {"Accept-Encoding": "gzip"}
+        if tag:
+            h["X-Gateway-Script"] = tag
+        h.update(more or {})
+        r, data, _ = self.ask("GET", "/js/" + name, h)
+        return r, data
+
+    def test_which(self):
+        self.assertEqual(webgate.js_which(), "aerajsc T1")
+        webgate.Config.js_socket = "/nowhere/js.sock"
+        try:
+            self.assertIsNone(webgate.js_which())
+        finally:
+            webgate.Config.js_socket = self.fake.path
+
+    def ask_scripts(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("GET", "http://webgate/scripts")
+        r = c.getresponse()
+        return r, r.read()
+
+    def test_scripts_answered(self):
+        # what EWeb asks first: only a webgate that compiles them answers
+        r, data = self.ask_scripts()
+        self.assertEqual((r.status, data, r.getheader("Cache-Control")), (200, b"aerajsc T1\n", "no-store"))
+        webgate.Config.js_socket = "/nowhere/js.sock"
+        try:
+            r, data = self.ask_scripts()
+        finally:
+            webgate.Config.js_socket = self.fake.path
+        self.assertEqual(r.status, 404)
+
+    def test_compiled(self):
+        r, data = self.script("ok.js")
+        self.assertEqual((r.status, r.getheader("Content-Type"), r.getheader("X-Gateway-Script")),
+                         (200, "application/x-eweb-qjs", "T1"))
+        self.assertEqual(data, b"EWQJS T1\ncode:" + SCRIPTS["ok.js"])    # aerajsc's line taken off
+        self.assertEqual(r.getheader("ETag"), '"j1"')           # kept: EWeb asks with it again
+        self.assertEqual(r.getheader("Cache-Control"), "no-cache")
+        self.assertIsNone(r.getheader("Content-Encoding"))
+        self.assertEqual(self.fake.last, b"EWJQ\1" + len(SCRIPTS["ok.js"]).to_bytes(4, "big") + SCRIPTS["ok.js"])
+        sent = Upstream.seen[-1][2]
+        self.assertEqual(sent.get("Accept-Encoding"), "identity")      # unpacked, to compile it
+        self.assertNotIn("X-Gateway-Script", sent)              # (not the server's business)
+
+    def test_as_it_came(self):
+        # another tag (another EWeb), a script that doesn't compile, no
+        # aerajsc, not asked: each as the server sent it
+        for name, tag in (("ok.js", "T2"), ("bad.js", "T1")):
+            r, data = self.script(name, tag)
+            self.assertEqual((r.status, r.getheader("Content-Type"), r.getheader("X-Gateway-Script")),
+                             (200, "text/javascript", None), name)
+            self.assertEqual((data, r.getheader("ETag")), (SCRIPTS[name], '"j1"'), name)
+        webgate.Config.js_socket = "/nowhere/js.sock"
+        try:
+            r, data = self.script("ok.js")
+        finally:
+            webgate.Config.js_socket = self.fake.path
+        self.assertEqual((r.getheader("Content-Type"), data), ("text/javascript", SCRIPTS["ok.js"]))
+        r, data = self.script("ok.js", tag=None)
+        self.assertEqual((r.getheader("Content-Encoding"), gzip.decompress(data)), ("gzip", SCRIPTS["ok.js"]))
+
+    def test_forged(self):
+        # a server's own X-Gateway- headers never reach EWeb, which runs
+        # compiled code only with webgate's X-Gateway-Script
+        for tag in (None, "T2"):
+            r, data = self.script("forged.js", tag)
+            self.assertIsNone(r.getheader("X-Gateway-Script"), tag)
+            self.assertIsNone(r.getheader("X-Gateway-Picture"), tag)
+        r, data = self.script("forged.js", "T1")        # compiled as any other script: aerajsc's own code
+        self.assertEqual((r.getheader("X-Gateway-Script"), data[:14]), ("T1", b"EWQJS T1\ncode:"))
+
+    def test_too_big(self):
+        was = webgate.SCRIPT_MAX
+        webgate.SCRIPT_MAX = 100
+        try:
+            r, data = self.script("ok.js")
+        finally:
+            webgate.SCRIPT_MAX = was
+        self.assertEqual((r.getheader("Content-Type"), data), ("text/javascript", SCRIPTS["ok.js"]))
+
+    def test_unchanged(self):
+        r, data, _ = self.ask("GET", "/same", {"X-Gateway-Script": "T1", "If-None-Match": '"v1"'})
+        self.assertEqual((r.status, data), (304, b""))
 
 
 class LiveTest(unittest.TestCase):

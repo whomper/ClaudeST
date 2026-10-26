@@ -114,8 +114,9 @@ class FakePi(ag.Pi):
             os.chmod(os.path.join(c[3], "bin", "python"), 0o755)
         elif c[0] == "ls":
             rc = 2
-        elif c[0] == "make":            # aerapens' build: a stand-in for what it makes
-            with open(os.path.join(c[c.index("-C") + 1], "aerapens"), "wb") as f:
+        elif c[0] == "make":            # aerapens' or aerajsc's build: a stand-in for what it makes
+            where = c[c.index("-C") + 1]
+            with open(os.path.join(where, "aerajsc" if os.path.basename(where) == "jsc" else "aerapens"), "wb") as f:
                 f.write(b"\x7fELF\x02\x01\x01\0" + bytes(range(256)))       # a program's bytes, not text
         elif c[:2] == ["python3", "-c"] and c[2].startswith("import "):
             rc = 1 if c[2][7:] in self.no_modules else 0
@@ -528,7 +529,7 @@ class DavFtpTest(Base):
         self.assertEqual(self.run_ag("install", "web"), 0, self.err)
         self.assertIn(("apt-get", "install", "-y", "-qq", "gcc"), self.pi.cmds)
         self.assertIn("Installing gcc, to build aerapens", self.out)
-        make = [c for c in self.pi.cmds if c[0] == "make"][-1]
+        make = [c for c in self.pi.cmds if c[0] == "make" and os.path.basename(c[3]) == "pens"][-1]
         self.assertEqual(make[-1], "PENS_BUILD=v" + ag.VERSION)
         self.assertFalse(make[3].startswith(os.path.dirname(ag.HERE)))      # never in the copy itself
         self.assertTrue(self.pi.exists("/opt/aera-gateway-pens/aerapens"))
@@ -547,6 +548,27 @@ class DavFtpTest(Base):
         self.assertIsNone(self.pi.read("/etc/systemd/system/webgate-pens.socket"))
         self.assertFalse(self.pi.exists("/opt/aera-gateway-pens"))
         self.assertFalse(any(c[:2] == ("apt-get", "remove") for c in self.pi.cmds))   # gcc stays
+
+    @unittest.skipUnless(os.path.isdir(os.path.join(ag.Web.JSC_SRC, "eweb")),
+                         "needs AERA-Gateway's jsc/ (an app's copy of gateway/ has none)")
+    def test_web_jsc(self):
+        self.assertEqual(self.run_ag("install", "web"), 0, self.err)
+        make = [c for c in self.pi.cmds if c[0] == "make" and os.path.basename(c[3]) == "jsc"][-1]
+        self.assertFalse(make[3].startswith(os.path.dirname(ag.HERE)))      # never in the copy itself
+        self.assertTrue(self.pi.exists("/opt/aera-gateway-jsc/aerajsc"))
+        sock, svc = self.pi.read("/etc/systemd/system/webgate-js.socket"), self.unit("webgate-js@")
+        for want in ("ListenStream=/run/webgate-js.sock", "Accept=yes", "SocketUser=webgate", "SocketMode=0600"):
+            self.assertIn(want, sock)
+        for want in ("ExecStart=/opt/aera-gateway-jsc/aerajsc", "StandardInput=socket", "DynamicUser=yes",
+                     "LimitAS=512M", "RuntimeMaxSec=8", "PrivateNetwork=yes", "RestrictAddressFamilies=AF_UNIX"):
+            self.assertIn(want, svc)
+        # the socket before webgate, so that webgate's first look finds aerajsc
+        cmds = [c for c in self.pi.cmds if c[:2] == ("systemctl", "restart")]
+        self.assertLess(cmds.index(("systemctl", "restart", "webgate-js.socket")),
+                        cmds.index(("systemctl", "restart", "webgate.service")))
+        self.assertEqual(self.run_ag("remove", "web"), 0, self.err)
+        self.assertIsNone(self.pi.read("/etc/systemd/system/webgate-js.socket"))
+        self.assertFalse(self.pi.exists("/opt/aera-gateway-jsc"))
 
     def test_web_browser_needs_memory(self):
         self.pi.write("/proc/meminfo", "MemTotal:         948304 kB\n")
