@@ -3337,7 +3337,11 @@ static void dlg_field(const char *buf, short len, short cur, short *start)
 /* a dialog box with a shadow and a double border, like a GEM alert */
 static void dlg_frame(short x, short y, short w, short h)
 {
-	fill(x + 3, y + 3, x + w + 2, y + h + 2, 1);
+	/* the shadow as its two strips, not a box the size of the dialog
+	   under it: a fill that size costs an ST ~33 ms (the guidelines'
+	   Speed) */
+	fill(x + w, y + 3, x + w + 2, y + h + 2, 1);
+	fill(x + 3, y + h, x + w - 1, y + h + 2, 1);
 	fill(x, y, x + w - 1, y + h - 1, 0);
 	line(x, y, x + w - 1, y, 1);
 	line(x + w - 1, y, x + w - 1, y + h - 1, 1);
@@ -4697,19 +4701,19 @@ static void sd_live(void)
 		const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
 		short on = i < 2 ? (i == 0) == (sd_nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == sd_nb : sd_nh == i - 5;
 		short n = strlen(l);
-		fill(x, y, x + w - 1, y + ch + 5, on ? 1 : 0);
-		line(x, y, x + w - 1, y, 1);
-		line(x + w - 1, y, x + w - 1, y + ch + 5, 1);
-		line(x + w - 1, y + ch + 5, x, y + ch + 5, 1);
-		line(x, y + ch + 5, x, y, 1);
-		text(x + (w - n * cw) / 2, y + 3, l, n, 0, on ? 0 : 1);
+		/* its border and inside as fills: two calls, not five */
+		fill(x, y, x + w - 1, y + ch + 5, 1);
+		if (!on)
+			fill(x + 1, y + 1, x + w - 2, y + ch + 4, 0);
+		{
+			/* centred, on a byte where it still fits inside */
+			short lx = x + (w - n * cw) / 2, bx = on_byte(lx, x);
+			text(bx + n * cw < x + w - 1 ? bx : lx, y + 3, l, n, 0, on ? 0 : 1);
+		}
 	}
 	/* the tick: crossed when on */
-	fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 0);
-	line(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y, 1);
-	line(tk_x + 2 * cw - 1, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
-	line(tk_x + 2 * cw - 1, tk_y + ch - 1, tk_x, tk_y + ch - 1, 1);
-	line(tk_x, tk_y + ch - 1, tk_x, tk_y, 1);
+	fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
+	fill(tk_x + 1, tk_y + 1, tk_x + 2 * cw - 2, tk_y + ch - 2, 0);
 	if (sd_n3) {
 		line(tk_x + 2, tk_y + 2, tk_x + 2 * cw - 3, tk_y + ch - 3, 1);
 		line(tk_x + 2 * cw - 3, tk_y + 2, tk_x + 2, tk_y + ch - 3, 1);
