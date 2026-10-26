@@ -115,6 +115,16 @@ static short over_divider;		/* mouse is over the divider (MU_M1) */
 static short px, pw;			/* chat pane x / width */
 static short title_h, input_h, row_h;
 static short tx, ty, tw, th;		/* text area */
+static short sx;			/* the sidebar's text */
+
+/* x moved to a byte, left if it stays right of floor, else right: TOS
+   1.04 draws text that starts on a byte 7 times as fast (5.4 ms against
+   36.5 for 39 letters on an ST; the guidelines' Speed) */
+static short on_byte(short x, short floor)
+{
+	short b = x & ~7;
+	return b > floor ? b : b + 8;
+}
 static short rows, cols;
 static short nav_y;			/* first nav row */
 #define NNAV 6				/* New chat, Search, Chats, Code, Projects, Artifacts */
@@ -1206,8 +1216,9 @@ static void layout(void)
 	px = wx + sb_w + 1;
 	pw = ww - sb_w - 1;
 
-	tx = px + cw;
-	tw = pw - 2 * cw;
+	tx = on_byte(px + cw, px);
+	tw = px + pw - cw - tx;
+	sx = on_byte(wx + cw, wx);
 	ty = wy + title_h + 2;
 	th = wh - title_h - input_h - 4;
 	cols = tw / cw;
@@ -1270,7 +1281,7 @@ static short nav_active(short i)
 static void draw_status(short full)
 {
 	static short last_tx = -1, last_sb = -1;
-	short x = wx + cw, tx = x, n, room;
+	short x = sx, tx = x, n, room, dtx;
 	/* pixels are twice as tall as wide where the system font is 8x8 */
 	short sq = sys_ch >= 16 ? 1 : 2;
 	short dry = ch / 3 / sq, drx = ch / 3;
@@ -1282,7 +1293,8 @@ static void draw_status(short full)
 	if (dry < 1)
 		dry = 1;
 	if (usage_pct >= 0)
-		tx = x + 2 * rrx + cw;
+		tx = on_byte(x + 2 * rrx + cw, x + 2 * rrx);
+	dtx = on_byte(tx + 2 * drx + cw / 2, tx + 2 * drx);	/* the connection's words */
 	if (!full && (tx != last_tx || sb_w != last_sb))	/* the layout moved */
 		fill(wx, status_y - 1, wx + sb_w - 1, wy + wh - 1, 0);
 	last_tx = tx;
@@ -1294,7 +1306,7 @@ static void draw_status(short full)
 		short bottom = wy + wh - 1, gx = usage_pct >= 0 ? x + 2 * rrx + 1 : wx + 1;
 		if (gx < tx)
 			fill(gx, status_y - 1, tx - 1, bottom, 0);
-		fill(tx, status_y - 1, tx + 2 * drx + cw / 2 - 1, status_y + row_h - 1, 0);
+		fill(tx, status_y - 1, dtx - 1, status_y + row_h - 1, 0);
 	}
 	if (usage_pct >= 0) {
 		short ry = rry, rx = rrx;
@@ -1313,14 +1325,16 @@ static void draw_status(short full)
 		     1, 0, 0, 1);
 
 	vswr_mode(vh, 1);		/* replace: each character paints its cell */
-	n = room - 2;
+	n = (wx + sb_w - 4 - dtx) / cw;
+	if (n > (short)sizeof(t) - 1)
+		n = sizeof(t) - 1;
 	if (n > 0) {
 		short k = strlen(status);
 		if (k > n)
 			k = n;
 		memcpy(t, status, k);
 		memset(t + k, ' ', n - k);
-		text(tx + 2 * drx + cw / 2, status_y + (row_h - ch) / 2, t, n, 0, 1);
+		text(dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
 	}
 	if (usage_pct >= 0 && room > 0) {
 		char *p = t;
@@ -1350,7 +1364,7 @@ static void draw_status(short full)
 static void draw_sidebar(void)
 {
 	short i, y;
-	short x = wx + cw, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
+	short x = sx, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
 
 	fill(wx, wy, wx + sb_w - 1, wy + wh - 1, 0);
 	line(wx + sb_w, wy, wx + sb_w, wy + wh - 1, 1);
@@ -1537,7 +1551,7 @@ static void draw_title(void)
 	title_xr = xr;
 	if (n > maxc)
 		n = maxc;
-	text_bidi(px + cw, ty0, chat_title, n, 1, 1, 0);
+	text_bidi(tx, ty0, chat_title, n, 1, 1, 0);
 	{
 		/* a notice from the bridge, or "thinking...", right-aligned */
 		const char *t = notice[0] && !list_loading ? notice : busy ? "thinking..." : 0;
@@ -1857,7 +1871,7 @@ static void draw_input(void)
 	short pl = strlen(prompt);
 	short avail = (x2 - x1) / cw - pl - 2 - (hebrew_kbd ? 3 : 0);
 	short tyy = y1 + (y2 - y1 - ch) / 2 + 1;
-	short tx0 = x1 + cw / 2;
+	short tx0 = on_byte(x1 + cw / 2, x1);
 
 	fill(px, y, px + pw - 1, wy + wh - 1, 0);
 	line(px, y, px + pw - 1, y, 1);
