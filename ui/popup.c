@@ -14,6 +14,24 @@
 #include "popup.h"
 #include "dialog.h"
 
+/* the clip set through text.c where the app has it (text_clip keeps the
+   clip text_n reads: set behind its back, text_n would put the old one
+   back; ClaudeST, 26 Oct 2026), else straight */
+extern void text_clip(short h, const short *r) __attribute__((weak));
+extern void text_noclip(short h) __attribute__((weak));
+
+static void pclip(int on, short *r)
+{
+	if (text_clip && text_noclip) {
+		if (on)
+			text_clip(vdi_h, r);
+		else
+			text_noclip(vdi_h);
+	} else {
+		vs_clip(vdi_h, on, r);
+	}
+}
+
 #define MAXROWS 64
 
 static short px, py, pw, ih, sh;
@@ -161,7 +179,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 	clipr[1] = 0;
 	clipr[2] = scr_w - 1;
 	clipr[3] = scr_h - 1;
-	vs_clip(vdi_h, 1, clipr);
+	pclip(1, clipr);
 	shadow.x = x + 2;
 	shadow.y = y + 2;
 	shadow.w = pw + 1;
@@ -230,7 +248,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 			break;
 		}
 	}
-	vs_clip(vdi_h, 0, clipr);
+	pclip(0, clipr);
 	popup_put_back = under != 0;
 	if (under)
 		dlg_under_back(under);

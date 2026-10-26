@@ -52,7 +52,10 @@ static void clip_screen(void)
 
 static void box(short x, short y, short w, short h)
 {
-	rect_fill(x + 3, y + 3, x + w + 2, y + h + 2, 1);	/* shadow */
+	/* the shadow: its two strips, not a box-sized fill painted over (on
+	   a stock Falcon 15 ms of the About box's 155) */
+	rect_fill(x + w, y + 3, x + w + 2, y + h + 2, 1);
+	rect_fill(x + 3, y + h, x + w - 1, y + h + 2, 1);
 	rect_fill(x, y, x + w - 1, y + h - 1, 0);
 	line(x, y, x + w - 1, y);
 	line(x + w - 1, y, x + w - 1, y + h - 1);
@@ -67,12 +70,19 @@ static void box(short x, short y, short w, short h)
 /* the 32x32 icon scaled by sx, sy (2x on square pixels; 2x1 in ST
  * medium, whose pixels are twice as tall as wide), blitted from ST RAM */
 static unsigned short icon_big[64 * 4];
+static const unsigned short *icon_was;	/* the icon and scale icon_big holds */
+static short icon_sx, icon_sy;
 
 static void draw_icon(const unsigned short *bits, short x, short y, short sx, short sy)
 {
 	MFDB src, dst;
 	short pxy[8], colors[2], r, c, k, wpl = 2 * sx;
 	short w = ICON_W * sx, h = ICON_H * sy;
+	if (icon_was == bits && icon_sx == sx && icon_sy == sy)
+		goto made;		/* scaled once (an ST took 30 ms each time) */
+	icon_was = bits;
+	icon_sx = sx;
+	icon_sy = sy;
 	memset(icon_big, 0, sizeof(icon_big));
 	for (r = 0; r < ICON_H; r++)
 		for (c = 0; c < ICON_W; c++) {
@@ -84,6 +94,7 @@ static void draw_icon(const unsigned short *bits, short x, short y, short sx, sh
 					icon_big[(r * sy + yy) * wpl + bx / 16] |= 0x8000 >> (bx & 15);
 			}
 		}
+made:
 	memset(&src, 0, sizeof(src));
 	memset(&dst, 0, sizeof(dst));
 	src.fd_addr = st_ram(sizeof(icon_big));
@@ -236,10 +247,34 @@ static short on_byte(short x)
 	return (x + 4) & ~7;
 }
 
+/* bold as TOS draws it, but plain text and its box ORed onto itself a
+   pixel to the right (common/ui/text.c's text_fx: the same pixels, on an
+   ST a third of vst_effects' time); NVDI's own bold elsewhere */
+static void text_b(short x, short y, const char *s, short n, short flags)
+{
+	if ((flags & TX_BOLD) && !get_cookie(0x4E564449L)) {	/* 'NVDI' */
+		MFDB scr;
+		short p[8];
+		text_at(x, y, s, n, n, (flags & ~TX_BOLD) | TX_LTR);
+		memset(&scr, 0, sizeof(scr));
+		p[0] = x;
+		p[1] = y;
+		p[2] = x + n * cw - 1;
+		p[3] = y + ch - 1;
+		p[4] = x + 1;
+		p[5] = y;
+		p[6] = x + n * cw;
+		p[7] = y + ch - 1;
+		vro_cpyfm(vdi_h, 7, p, &scr, &scr);	/* S_OR_D */
+		return;
+	}
+	text_at(x, y, s, n, n, flags | TX_LTR);
+}
+
 static void center(short y, const char *s, short flags)
 {
 	short n = (short)strlen(s);
-	text_at(on_byte(dx + (dw - n * cw) / 2), y, s, n, n, flags | TX_LTR);
+	text_b(on_byte(dx + (dw - n * cw) / 2), y, s, n, flags);
 }
 
 static void button(short x, short y, short w, short h, const char *label)
@@ -255,7 +290,7 @@ static void button(short x, short y, short w, short h, const char *label)
 	line(x + w, y - 1, x + w, y + h);
 	line(x + w, y + h, x - 1, y + h);
 	line(x - 1, y + h, x - 1, y - 1);
-	text_at(on_byte(x + (w - n * cw) / 2), y + (h - ch) / 2, label, n, n, TX_BOLD | TX_LTR);
+	text_b(on_byte(x + (w - n * cw) / 2), y + (h - ch) / 2, label, n, TX_BOLD);
 }
 
 static void wait_up(void)
@@ -378,6 +413,181 @@ static void box_piece(short x, short y, short w, short h)
 	graf_mouse(M_ON, 0);
 }
 
+/* ---- the box drawn in memory and shown at once ----
+ * It is many fills, lines and texts; drawn on the screen, a stock machine
+ * showed them appearing one by one (Erez, 26 Oct 2026). TOS's VDI draws at
+ * the logical screen's base, so while the box is drawn that base is put in
+ * a buffer holding the box's rows (the screen under it first), and the
+ * buffer is copied to the screen in one raster copy. Only under TOS's own
+ * single-tasking AES (the box is a window under MiNT and MagiC), the
+ * logical and shown screens the same, and once a test pixel has landed in
+ * the buffer; otherwise, or without the memory, it is drawn on the screen
+ * as before. */
+static long xb_setscreen(void *log)
+{
+	register long r __asm__("d0");
+	__asm__ volatile("move.w #-1,-(%%sp)\n\tmove.l #-1,-(%%sp)\n\tmove.l %1,-(%%sp)\n\t"
+			 "move.w #5,-(%%sp)\n\ttrap #14\n\tlea 12(%%sp),%%sp"
+			 : "=r"(r) : "r"(log) : "d1", "d2", "a0", "a1", "a2", "memory", "cc");
+	return r;
+}
+
+static int off_ok;		/* 1 the logical screen moves the VDI's drawing, -1 it doesn't */
+
+/* the screen's bytes a line, as the VDI has them (Line-A's v_lin_wr) */
+static long screen_bpl(void)
+{
+	register const short *la __asm__("a0");
+	__asm__ volatile(".dc.w 0xa000" : "=r"(la) : : "d0", "d1", "d2", "a1", "a2", "memory", "cc");
+	return la[1];		/* v_lin_wr */
+}
+
+static void rows_copy(unsigned char *d, long ds, const unsigned char *s, long ss, short rows, long n)
+{
+	for (; rows > 0; rows--, d += ds, s += ss)
+		memcpy(d, s, n);
+}
+
+/* the box's rows: the screen under it kept (to put back) and the box
+   drawn in a buffer, then copied to the screen; plain memory copies, the
+   screen being TOS's own (on an ST they are some six times the speed of
+   the VDI's raster copies, and no workstation is opened for them) */
+static struct {
+	unsigned char *screen, *under;
+	long bpl, off, n;
+	short rows;
+} ob;
+
+extern short _is_acc;		/* crt0.S: started as a desk accessory */
+
+static void buf_free(void *p)
+{
+	if (_is_acc)
+		free(p);
+	else
+		Mfree(p);
+}
+
+static int draw_off(void (*draw)(int framed))
+{
+	short x0 = dx & ~15, x1 = (dx + dw + 3 + 15) & ~15;
+	unsigned char *buf, *base, *scr = (unsigned char *)trap14_w(3);	/* Logbase */
+	long size;
+	GRECT c;
+	if (off_ok < 0 || planes < 1 || scr != (unsigned char *)trap14_w(2) || dy + dh + 3 > scr_h ||
+	    x1 > scr_w)
+		return 0;
+	ob.bpl = screen_bpl();
+	if (ob.bpl < (long)((scr_w + 15) / 16) * 2 * planes)
+		return 0;
+	ob.rows = dh + 3;
+	ob.off = (long)(x0 >> 4) * planes * 2;
+	ob.n = (long)((x1 - x0) >> 4) * planes * 2;
+	ob.screen = scr + (long)dy * ob.bpl + ob.off;
+	size = ob.bpl * ob.rows;
+	if (_is_acc) {
+		/* an accessory takes no GEMDOS memory once it runs (the
+		   guidelines, 2.2): its heap's, in ST RAM (the blitter's), or
+		   the box drawn on the screen */
+		buf = malloc(size);
+		if (buf && (unsigned long)buf + size > 0x01000000UL) {
+			free(buf);
+			buf = 0;
+		}
+	} else {
+		buf = Mxalloc(size, 0);		/* ST RAM, where the blitter reaches */
+		if ((long)buf == -32 || !buf)	/* no Mxalloc: Malloc's is ST RAM */
+			buf = Malloc(size);
+		if ((long)buf <= 0)
+			buf = 0;
+	}
+	if (!buf)
+		return 0;
+	ob.under = malloc(ob.n * ob.rows);
+	if (!ob.under) {
+		buf_free(buf);
+		return 0;
+	}
+	rows_copy(ob.under, ob.n, ob.screen, ob.bpl, ob.rows, ob.n);
+	base = buf - (long)dy * ob.bpl;	/* the screen's row dy at the buffer's start */
+	if (!off_ok) {
+		/* does the VDI draw where the logical screen is, at our idea of
+		   a line's length? the box's top left pixel (the frame's, drawn
+		   over anyway) and its bottom left, in one pen and then the
+		   other, tell */
+		short n = planes * 2 > 32 ? 32 : planes * 2, pen, k;
+		off_ok = 1;
+		for (k = 0; k < 2 && off_ok > 0; k++) {
+			short y = k ? dy + dh - 1 : dy;
+			unsigned char was[32], *at = buf + (long)(y - dy) * ob.bpl + (long)(dx >> 4) * planes * 2;
+			GRECT px;
+			px.x = dx;
+			px.y = y;
+			px.w = 1;
+			px.h = 1;
+			off_ok = -1;
+			for (pen = 1; pen >= 0 && off_ok < 0; pen--) {
+				memcpy(was, at, n);
+				xb_setscreen(base);
+				clip_on(&px);
+				fill(&px, pen);
+				clip_off();
+				xb_setscreen(scr);
+				if (memcmp(was, at, n))
+					off_ok = 1;
+			}
+		}
+		if (off_ok < 0) {
+			rows_copy(ob.screen, ob.bpl, ob.under, ob.n, ob.rows, ob.n);	/* a test pixel on the screen */
+			free(ob.under);
+			buf_free(buf);
+			return 0;
+		}
+	}
+	{
+		/* where the box leaves the screen showing: the shadow's rows
+		   in whole, and the words at its edges, a word at a time (a
+		   memcpy a row took an ST 60 ms) */
+		short r, i, g = planes, lw = (dx & 15) ? g : 0, rw = (short)(ob.n >> 1) - 2 * g;
+		unsigned short *d = (unsigned short *)(buf + ob.off);
+		const unsigned short *u = (const unsigned short *)ob.under;
+		long ds = ob.bpl >> 1, us = ob.n >> 1;
+		for (r = 0; r < ob.rows; r++, d += ds, u += us) {
+			if (r < 3 || r >= ob.rows - 3) {
+				memcpy(d, u, ob.n);
+				continue;
+			}
+			for (i = 0; i < lw; i++)
+				d[i] = u[i];
+			if (rw > 0)
+				for (i = rw; i < rw + 2 * g; i++)
+					d[i] = u[i];
+		}
+	}
+	c.x = dx;
+	c.y = dy;
+	c.w = dw + 3;
+	c.h = ob.rows;
+	xb_setscreen(base);
+	clip_on(&c);				/* nothing past the buffer's rows */
+	draw(1);
+	clip_off();
+	xb_setscreen(scr);
+	rows_copy(ob.screen, ob.bpl, buf + ob.off, ob.bpl, ob.rows, ob.n);
+	buf_free(buf);
+	return 1;
+}
+
+/* the screen under the box put back */
+static void off_back(void)
+{
+	graf_mouse(M_OFF, 0);
+	rows_copy(ob.screen, ob.bpl, ob.under, ob.n, ob.rows, ob.n);
+	graf_mouse(M_ON, 0);
+	free(ob.under);
+	ob.under = 0;
+}
+
 /* the box shown, run and put away: over the screen on TOS, in a window of
    the AES's on MiNT and MagiC (the guidelines, 3.5) */
 static void box_run(void (*draw)(int framed), const char *name)
@@ -397,6 +607,16 @@ static void box_run(void (*draw)(int framed), const char *name)
 	}
 	wind_update(BEG_UPDATE);
 	wind_update(3);
+	graf_mouse(M_OFF, 0);
+	if (draw_off(draw)) {
+		graf_mouse(M_ON, 0);
+		wait_close();
+		off_back();
+		wind_update(2);
+		wind_update(END_UPDATE);
+		return;
+	}
+	graf_mouse(M_ON, 0);
 	under = dlg_under(dx, dy, dw + 3, dh + 3);	/* put back, not redrawn */
 	form_dial(FMD_START, dx, dy, dw + 3, dh + 3);
 	graf_mouse(M_OFF, 0);

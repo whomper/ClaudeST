@@ -3,13 +3,14 @@
 /*
  * text.h - text drawn the fast way TOS allows (the guidelines' Speed).
  *
- * TOS's VDI draws text the slow way whenever a clip rectangle smaller
- * than the screen is set, even text wholly inside it: ten lines of 78
- * characters took an ST (TOS 1.04) 100 ms unclipped and 638 ms with the
- * clip round them, a stock Falcon (TOS 4.04) 63 against 171 (EHypView and
- * the hub, 26 Oct 2026). Every redraw through the AES's rectangle list is
- * clipped, so text_n() draws the characters wholly inside the clip with
- * clipping off and only the one cut at each side with it on.
+ * TOS's VDI draws text the slow way when the clip's right or bottom edge
+ * is less than 2 pixels past it, even text wholly inside the clip: ten
+ * lines of 78 characters took an ST (TOS 1.04) 100 ms unclipped and 638
+ * ms with the clip tight round them, a stock Falcon (TOS 4.04) 63 against
+ * 171 (EHypView, EFTP and the hub, 26 Oct 2026). A redraw's rectangle or
+ * a row's often ends right at the text, so text_n() draws the characters
+ * wholly inside the clip with clipping off where the clip leaves no such
+ * room, and only the one cut at each side with it on.
  *
  * Bold and underline by vst_effects cost TOS three times plain text;
  * text_fx() draws them on plain text, the same bytes as TOS's (TOS 1.04

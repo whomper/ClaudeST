@@ -142,6 +142,24 @@ static void timing(void)
 	snprintf(line, sizeof(line), "TXT time: ten lines of 78, clip tight: text_n %lu ms", (unsigned long)(tos_ms() - t) / 4);
 	say(line);
 	text_noclip(vh);
+	/* a clip with room past the text: fast as it is */
+	c[2] += 8;
+	c[3] += 8;
+	vs_clip(vh, 1, c);
+	t = tos_ms();
+	for (k = 0; k < 4; k++)
+		for (l = 0; l < 10; l++)
+			v_gtext_n(vh, 8, 60 + l * ch, row, 78);
+	snprintf(line, sizeof(line), "TXT time: ten lines of 78, clip 8 past: v_gtext_n %lu ms", (unsigned long)(tos_ms() - t) / 4);
+	say(line);
+	text_clip(vh, c);
+	t = tos_ms();
+	for (k = 0; k < 4; k++)
+		for (l = 0; l < 10; l++)
+			text_n(vh, 8, 60 + l * ch, row, 78);
+	snprintf(line, sizeof(line), "TXT time: ten lines of 78, clip 8 past: text_n %lu ms", (unsigned long)(tos_ms() - t) / 4);
+	say(line);
+	text_noclip(vh);
 }
 
 int main(void)
@@ -179,6 +197,9 @@ int main(void)
 			c[0] = 0;
 			c[2] = sw - 1;
 			clip_case(x, c, m);		/* the whole width */
+			c[3] = Y + ch + 3;
+			clip_case(x, c, m);		/* room below too: drawn as it is */
+			c[3] = Y + ch - 1;
 			for (k = 0; k < 2 * cw; k++) {
 				c[0] = (short)(40 + k);	/* cut on the left at every pixel */
 				c[2] = (short)(300 + k);	/* and on the right */

@@ -123,6 +123,8 @@ int main(void)
 						while ((r = inflate_read(z, back + got, 30000)) > 0)
 							got += r;
 						check(r < 0, "cut short");
+						/* what came before the cut, as it was */
+						check(got <= n && !memcmp(back, data, got) && (c < 2000 || got > 0), "cut short: the start");
 						inflate_close(z);
 					}
 				}

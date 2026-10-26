@@ -181,8 +181,20 @@ def model(ref, w, h):
     out = np.zeros((h, w, 4), np.int64)
     n, sa = sums[..., 4], sums[..., 3]
     opaque = sa == 255 * n
+    # the rows shown while every row before was opaque (the solid rows'
+    # sums): the mean rounded, as (sum * recip[n] + 32768) >> 16
+    row_opaque = np.minimum.accumulate((a == 255).all(axis=1))
+    last = [int(np.nonzero(dy == y)[0].max()) if dy is not None and (dy == y).any() else
+            (int(ys[y]) if ys is not None else 0) for y in range(h)]
+    rounded = np.array([bool(row_opaque[r]) for r in last])[:, None] & np.ones((1, w), bool)
+    nn = np.maximum(n, 1)
+    recip = (65536 + nn // 2) // nn
+    mean_r = np.where(nn[..., None] == 1, sums[..., :3],
+                      np.where(nn[..., None] < 258, (sums[..., :3] * recip[..., None] + 32768) >> 16,
+                               sums[..., :3] // nn[..., None]))
     with np.errstate(divide="ignore", invalid="ignore"):
-        solid = np.where(opaque[..., None], sums[..., :3] // np.maximum(n, 1)[..., None],
+        mean = np.where(rounded[..., None], mean_r, sums[..., :3] // nn[..., None])
+        solid = np.where(opaque[..., None], mean,
                          np.minimum(255, sums[..., :3] * 255 // np.maximum(sa, 1)[..., None]))
     out[..., :3] = np.where((sa == 0)[..., None], 0, solid)
     out[..., 3] = np.where(opaque, 255, np.where(sa == 0, 0, sa // np.maximum(n, 1)))
@@ -326,6 +338,13 @@ def main():
         if r.returncode != 0:
             fails += 1
             print("FAIL dithered on the DSP")
+    # in slices: the same with turns taken, and stopped by one
+    r = subprocess.run(shlex.split(cmd) + ["-s"] + pictures(), capture_output=True, text=True)
+    checks += 1
+    print(r.stdout.strip()[-3000:], r.stderr.strip()[-2000:])
+    if r.returncode != 0:
+        fails += 1
+        print("FAIL in slices")
     r = subprocess.run(shlex.split(cmd) + ["-r"] + pictures(), capture_output=True, text=True)
     checks += 1
     print(r.stdout.strip(), r.stderr.strip()[-2000:])

@@ -121,7 +121,8 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b);
 /* the picture as pens, Floyd-Steinberg (serpentine; a colour wanted past
    the cube's edges finds the pen that lies that way); out has w * h
    bytes. The pixels the alpha leaves less than half solid are given pen
-   0 (they aren't drawn) and carry no error */
-void pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
+   0 (they aren't drawn) and carry no error. pic_poll is called every 16
+   rows: 1 done, 0 when it stopped it (out then partly made) */
+int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
 
 #endif
