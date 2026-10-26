@@ -57,6 +57,9 @@ int bg_may_work(void);
 void bg_begin(void);
 int bg_more(void);		/* 1 while the slice has time left */
 int bg_room(unsigned long ms);	/* 1 while it has more than ms left */
+/* room for one more piece of a job made of pieces: 40 ms left on a 68000,
+   10 on a 68030 (EHypView's full-text search: a piece's own cost) */
+int bg_piece(void);
 unsigned long bg_timer(int pending, unsigned long idle_ms);
 
 #endif

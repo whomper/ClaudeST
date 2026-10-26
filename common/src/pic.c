@@ -182,6 +182,7 @@ typedef struct {
 	unsigned short *cw;		/* each column shown: the columns in it */
 	int ny;				/* rows in the sums */
 	int maxcw;
+	unsigned char *rgb;		/* sw * 3: an opaque R G B A row as R G B */
 } SCALER;
 
 /* a 16 x 16 product: a 68000's mulu.w (GCC calls its 32-bit routine for
@@ -236,6 +237,7 @@ static void sc_free(SCALER *s)
 	free(s->sum16);
 	free(s->xm3);
 	free(s->cw);
+	free(s->rgb);
 }
 
 /* the 16-bit sums for solid rows, when each pixel shown is made of 257
@@ -470,6 +472,22 @@ static int sc_row_rgb(SCALER *s, const unsigned char *rgb)
 static int sc_row(SCALER *s, const unsigned char *rgba)
 {
 	long x, w = s->pic->w;
+	if ((s->y == 0 || s->solid) && s->y < s->sh) {
+		/* while every row is opaque (most PNGs and GIFs), the solid
+		   rows' sums: no alpha to weigh, no divides */
+		const unsigned char *c = rgba;
+		unsigned char *o = s->rgb;
+		if (o == NULL && (o = s->rgb = malloc((size_t) s->sw * 3)) == NULL)
+			goto rgba;
+		for (x = 0; x < s->sw && c[3] == 255; x++, c += 4, o += 3) {
+			o[0] = c[0];
+			o[1] = c[1];
+			o[2] = c[2];
+		}
+		if (x == s->sw)
+			return sc_row_rgb(s, s->rgb);
+	}
+rgba:
 	if (s->s16) {
 		/* the 16-bit sums so far into the longs */
 		for (x = 0; x < w; x++) {
@@ -1775,6 +1793,12 @@ static int png_row(void *ud, long y, const unsigned char *rgba)
 	return sc_row(ud, rgba);
 }
 
+static int png_row_rgb(void *ud, long y, const unsigned char *rgb)
+{
+	(void) y;
+	return sc_row_rgb(ud, rgb);
+}
+
 static int decode_png(const unsigned char *d, long n, PIC *p, SCALER *sc, long max_px, int *why)
 {
 	long w, h;
@@ -1788,7 +1812,7 @@ static int decode_png(const unsigned char *d, long n, PIC *p, SCALER *sc, long m
 		return 0;
 	}
 	p->how = PIC_PNG;
-	r = png_decode(d, n, max_px, png_row, sc);
+	r = png_decode_rgb(d, n, max_px, png_row, png_row_rgb, sc);
 	switch (r) {
 	case PNG_OK: return 1;
 	case PNG_MEMORY: *why = PIC_MEMORY; break;
@@ -2217,7 +2241,7 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b)
    from tables, in 16-bit arithmetic. The three colours' dither took 250 us
    a pixel on an 8 MHz ST (5.7 s for a 192 x 128 photo); brightness is all
    two pens can show */
-static void dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
+static int dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
 {
 	long w = p->w, y;
 	short lr[32], lg[64], lb[32], y0, y1, mid, i;
@@ -2247,7 +2271,7 @@ static void dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
 			unsigned v = p->px[k];
 			out[k] = (unsigned char) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] >= mid ? light : !light);
 		}
-		return;
+		return 1;
 	}
 	cur = rows + 1;
 	nxt = rows + w + 3;
@@ -2257,6 +2281,10 @@ static void dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		unsigned char *o = out + y * w;
 		short e = 0, *c, *d;	/* e: 7/16 of the last pixel's error, in 16ths */
 		long n;
+		if (pic_poll != NULL && y > 0 && (y & 15) == 0 && !pic_poll()) {
+			free(rows);
+			return 0;
+		}
 		/* a pixel at s (its alpha a, or none), its pen to o; c its row's
 		   errors, d the next row's, STEP the way along (serpentine): a
 		   loop each way, so that the pointers step by addressing (a
@@ -2307,9 +2335,10 @@ static void dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		}
 	}
 	free(rows);
+	return 1;
 }
 
-static void dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
+static int dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
 {
 	/* Floyd-Steinberg: each pixel's error (what it wanted less its pen)
 	   carried 7/16 on, and 3/16, 5/16 and 1/16 to the row below,
@@ -2325,7 +2354,7 @@ static void dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
 			unsigned v = p->px[i];
 			out[i] = (unsigned char) nearest_far(pal, (v >> 8) & 0xF8, (v >> 3) & 0xFC, (v << 3) & 0xF8);
 		}
-		return;
+		return 1;
 	}
 	cur = rows;
 	nxt = rows + (w + 2) * 3;
@@ -2337,6 +2366,10 @@ static void dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		long x = dir > 0 ? 0 : w - 1, n;
 		short *c = cur + (x + 1) * 3, *d = nxt + (x + 1) * 3;
 		int er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 16ths */
+		if (pic_poll != NULL && y > 0 && (y & 15) == 0 && !pic_poll()) {
+			free(rows);
+			return 0;
+		}
 		for (n = 0; n < w; n++, x += dir, c += step, d += step) {
 			unsigned v = px[x];
 			int r, g, b, k, qr, qg, qb;
@@ -2378,6 +2411,7 @@ static void dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		}
 	}
 	free(rows);
+	return 1;
 }
 
 #ifdef PIC_LIBJPEG
@@ -2540,7 +2574,12 @@ static int dd_check(PIC_PAL *pal)
 	r = dither_dsp(&t, pal, a);
 	if (r == 0)
 		return -1;
-	dither_many(&t, pal, b);
+	{
+		int (*poll)(void) = pic_poll;	/* 12 rows: no turn, and not stopped */
+		pic_poll = NULL;
+		dither_many(&t, pal, b);
+		pic_poll = poll;
+	}
 	return r > 0 && memcmp(a, b, sizeof a) == 0;
 }
 
@@ -2571,14 +2610,13 @@ static int dither_on_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 }
 #endif
 
-void pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out)
+int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out)
 {
 	if (pal->n == 2)
-		dither_two(p, pal, out);
+		return dither_two(p, pal, out);
 #ifdef PIC_LIBJPEG
-	else if (dither_on_dsp(p, pal, out))
-		return;
+	if (dither_on_dsp(p, pal, out))
+		return 1;
 #endif
-	else
-		dither_many(p, pal, out);
+	return dither_many(p, pal, out);
 }

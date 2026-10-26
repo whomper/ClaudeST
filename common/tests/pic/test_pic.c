@@ -177,6 +177,105 @@ static int robust(int argc, char **argv)
 	return 0;
 }
 
+/* pic_poll for -s: counts its calls; 0 at call stop_at (0: never) */
+static long polls, stop_at;
+
+static int count_poll(void)
+{
+	return ++polls != stop_at;
+}
+
+/* in slices: each picture decoded and dithered with turns taken comes
+   out as without them; turns come every 16 rows or fewer (a picture of
+   48 rows or more has some), and a turn that says stop stops the decode
+   (PIC_STOPPED) and the dither */
+static int slices(int argc, char **argv)
+{
+	static PIC_PAL pal;
+	long tried = 0, bad = 0, stopped = 0;
+	int a, k;
+#ifdef WITH_DSP_SIM
+	pic_dsp_dither = 0;	/* the 68030's (the DSP's takes no turns: -X compares it) */
+#endif
+	make256();
+	for (a = 0; a < argc; a++) {
+		long n;
+		unsigned char *d = load(argv[a], &n);
+		if (d == NULL)
+			continue;
+		for (k = 0; k < 2; k++) {
+			int why, w = k ? 61 : 0, h = k ? 37 : 0;
+			PIC *p, *q;
+			size_t np;
+			unsigned char *x, *y;
+			long dp;
+			pic_poll = NULL;
+			p = pic_decode(d, n, w, h, 4L << 20, &why);
+			if (p == NULL)
+				continue;
+			polls = 0;
+			stop_at = 0;
+			pic_poll = count_poll;
+			q = pic_decode(d, n, w, h, 4L << 20, &why);
+			tried++;
+			np = (size_t) p->w * p->h;
+			if (q == NULL || q->w != p->w || q->h != p->h || memcmp(p->px, q->px, np * 2) != 0 ||
+			    (p->alpha == NULL) != (q->alpha == NULL) ||
+			    (p->alpha != NULL && memcmp(p->alpha, q->alpha, np) != 0)) {
+				printf("FAIL %s %dx%d: not the same with turns\n", argv[a], w, h);
+				bad++;
+			}
+			pic_free(q);
+			pic_pal_init(&pal, 256, (const unsigned char (*)[3]) pal256);
+			x = malloc(np);
+			y = malloc(np);
+			pic_poll = NULL;
+			pic_dither(p, &pal, x);
+			polls = 0;
+			pic_poll = count_poll;
+			if (!pic_dither(p, &pal, y) || memcmp(x, y, np) != 0) {
+				printf("FAIL %s %dx%d: dithered not the same with turns\n", argv[a], p->w, p->h);
+				bad++;
+			}
+			dp = polls;
+			if (p->h >= 48 && dp == 0) {
+				printf("FAIL %s %dx%d: no turn while dithering\n", argv[a], p->w, p->h);
+				bad++;
+			}
+			if (p->h >= 48) {
+				/* a turn that says stop */
+				polls = 0;
+				stop_at = 2;
+				q = pic_decode(d, n, w, h, 4L << 20, &why);
+				if (q != NULL || why != PIC_STOPPED) {
+					printf("FAIL %s %dx%d: not stopped (%s)\n", argv[a], w, h,
+					       q != NULL ? "decoded" : pic_why_text(why));
+					bad++;
+				} else {
+					stopped++;
+				}
+				pic_free(q);
+				polls = 0;
+				if (pic_dither(p, &pal, y) != 0 || polls != 2) {
+					printf("FAIL %s %dx%d: dither not stopped\n", argv[a], p->w, p->h);
+					bad++;
+				}
+			}
+			pic_poll = NULL;
+			free(x);
+			free(y);
+			pic_free(p);
+		}
+		free(d);
+	}
+	pic_pal_free(&pal);
+#ifdef WITH_DSP_SIM
+	pic_dsp_dither = 1;
+#endif
+	printf("in slices: %ld pictures, %ld stopped, %ld failed\n", tried, stopped, bad);
+	return bad != 0;
+}
+
 #ifdef WITH_DSP_SIM
 static int dsame(int argc, char **argv)
 {
@@ -232,6 +331,8 @@ static int run(int argc, char **argv)
 {
 	if (argc >= 2 && strcmp(argv[1], "-r") == 0)
 		return robust(argc - 2, argv + 2);
+	if (argc >= 2 && strcmp(argv[1], "-s") == 0)
+		return slices(argc - 2, argv + 2);
 #ifdef WITH_DSP_SIM
 	if (argc >= 2 && strcmp(argv[1], "-X") == 0)
 		return dsame(argc - 2, argv + 2);
@@ -240,7 +341,7 @@ static int run(int argc, char **argv)
 		return one(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5], argv[1][1] == 'D' ? 2 : argv[1][1] == 'm' ? 3 : 1);
 	if (argc == 5)
 		return one(argv[1], atoi(argv[2]), atoi(argv[3]), argv[4], 0);
-	fprintf(stderr, "test_pic FILE W H OUT | -d|-D|-m FILE W H OUT | -r FILE...\n");
+	fprintf(stderr, "test_pic FILE W H OUT | -d|-D|-m FILE W H OUT | -r FILE... | -s FILE...\n");
 	return 2;
 }
 

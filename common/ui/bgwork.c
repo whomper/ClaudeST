@@ -112,6 +112,11 @@ int bg_more(void)
 	return bg_room(0);
 }
 
+int bg_piece(void)
+{
+	return bg_room(slice_len == BG_SLICE_000 ? 40 : 10);
+}
+
 unsigned long bg_timer(int pending, unsigned long idle_ms)
 {
 	unsigned long t = idle_ms;

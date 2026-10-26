@@ -20,7 +20,8 @@ static unsigned long os_magic;
 
 static void sup_os(void)
 {
-	const unsigned char *os = *(const unsigned char *const *)0x4f2;	/* _sysbase */
+	const unsigned char *os;
+	__asm__ volatile("move.l 0x4f2.w,%0" : "=a"(os));	/* _sysbase */
 	os_version = *(const unsigned short *)(os + 2);
 	os_magic = *(const unsigned long *)(os + 0x2c);
 }
@@ -64,12 +65,21 @@ static void run(short h, short x, short y, const char *s, long n)
 	}
 }
 
+/* TOS takes the slow way only when the clip's right or bottom edge is
+   less than 2 pixels past the text (EFTP, 26 Oct 2026: its left and top
+   edges make no difference) */
+static int room(short x2, short y2)
+{
+	return x2 + 2 <= clip_now[2] && y2 + 2 <= clip_now[3];
+}
+
 void text_n(short h, short x, short y, const char *s, long n)
 {
 	long i0 = 0, m;
 	short xs;
-	if (!clipping || !fast || y < clip_now[1] || y + ch - 1 > clip_now[3] || n <= 0) {
-		run(h, x, y, s, n);
+	if (!clipping || !fast || y < clip_now[1] || y + ch - 1 > clip_now[3] || n <= 0 ||
+	    (x >= clip_now[0] && room((short)(x + n * cw - 1), (short)(y + ch - 1)))) {
+		run(h, x, y, s, n);	/* no clip, or nothing cut and fast with it */
 		return;
 	}
 	/* the first character wholly inside, and how many are */
@@ -83,7 +93,9 @@ void text_n(short h, short x, short y, const char *s, long n)
 		m = n - i0;
 	if (i0 > 0 && xs - cw <= clip_now[2])
 		run(h, (short)(xs - cw), y, s + i0 - 1, 1);	/* cut on the left */
-	if (m > 0) {
+	if (m > 0 && room((short)(xs + m * cw - 1), (short)(y + ch - 1))) {
+		run(h, xs, y, s + i0, m);
+	} else if (m > 0) {
 		vs_clip(h, 0, clip_now);
 		run(h, xs, y, s + i0, m);
 		vs_clip(h, 1, clip_now);

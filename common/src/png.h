@@ -22,5 +22,11 @@ int png_size(const unsigned char *d, long n, long *w, long *h);
    then transparent ones, and PNG_OK. */
 int png_decode(const unsigned char *d, long n, long max_px,
 	       int (*row)(void *ud, long y, const unsigned char *rgba), void *ud);
+/* the same, but a picture that can have no transparency and isn't
+   interlaced gives its rows to row_rgb, w * 3 bytes of R G B (a picture
+   cut short: the rest as transparent rows, to row) */
+int png_decode_rgb(const unsigned char *d, long n, long max_px,
+		   int (*row)(void *ud, long y, const unsigned char *rgba),
+		   int (*row_rgb)(void *ud, long y, const unsigned char *rgb), void *ud);
 
 #endif

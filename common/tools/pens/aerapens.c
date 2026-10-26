@@ -63,7 +63,7 @@ PIC *tj_pic_decode(const unsigned char *d, long n, int w, int h, long max_px, in
 void tj_pic_free(PIC *p);
 void tj_pic_pal_init(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 void tj_pic_pal_free(PIC_PAL *pal);
-void tj_pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
+int tj_pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
 
 typedef struct {
 	int (*size)(const unsigned char *d, long n, long *w, long *h);
@@ -71,7 +71,7 @@ typedef struct {
 	void (*free)(PIC *p);
 	void (*pal_init)(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 	void (*pal_free)(PIC_PAL *pal);
-	void (*dither)(const PIC *p, PIC_PAL *pal, unsigned char *out);
+	int (*dither)(const PIC *p, PIC_PAL *pal, unsigned char *out);
 } BUILD;
 
 static const BUILD lj = { pic_size, pic_decode, pic_free, pic_pal_init, pic_pal_free, pic_dither };
