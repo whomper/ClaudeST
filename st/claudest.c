@@ -433,6 +433,33 @@ static void sup_restore_iorec(void)
 	ints_restore(sr);
 }
 
+/* The ring read in one go: Bconstat and Bconin, two BIOS traps a byte,
+   cost an ST 0.2 ms a byte (615 ms for 3000), this one trap a pass.
+   Only under plain TOS, where the BIOS fills the IOREC that is ours
+   (sup_set_iorec); under MiNT or MagiC, or when the bytes turn out to go
+   elsewhere (a serial driver with buffers of its own), Bconin as before */
+static u8 rx_take[256];
+static short rx_direct;
+
+static long sup_drain(void)
+{
+	IOREC *io = iorec;
+	short hd, tl, n = 0;
+	if (!io || io->ibuf != rxring || io->ibufsiz != RXBUF)
+		return -1;
+	hd = io->ibufhd;
+	tl = io->ibuftl;
+	if (hd < 0 || hd >= RXBUF || tl < 0 || tl >= RXBUF)
+		return -1;
+	while (hd != tl && n < (short)sizeof(rx_take)) {
+		if (++hd >= RXBUF)
+			hd = 0;
+		rx_take[n++] = (u8)rxring[hd];
+	}
+	io->ibufhd = hd;
+	return n;
+}
+
 static short aux_port;		/* CLAUDEST.INF "port N": Bconmap device, 0 = TOS's choice */
 static short old_port;
 
@@ -454,6 +481,7 @@ static void serial_open(void)
 	Rsconf(baud, 0, -1, -1, -1, -1);
 	iorec = Iorec(0);
 	Supexec(sup_set_iorec);
+	rx_direct = !get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L);	/* MiNT, MagX */
 }
 
 static void serial_close(void)
@@ -2312,9 +2340,26 @@ static void poll_link(void)
 	short budget;
 
 	if (link == LINK_SERIAL) {
-		budget = 3000;
-		while (budget-- > 0 && Bconstat(DEV_AUX))
-			rx_byte((u8)Bconin(DEV_AUX));
+		/* what came, for 40 ms at most: then the events again (the
+		   guidelines' Speed), the rest on the next pass */
+		u32 t0 = tos_ms();
+		do {
+			short i, n = 0;
+			if (rx_direct) {
+				/* asked first: a byte coming after it is no sign */
+				short any = Bconstat(DEV_AUX) != 0;
+				n = (short)Supexec(sup_drain);
+				if (n < 0 || (any && !n))
+					rx_direct = n = 0;	/* not where the bytes go */
+			}
+			if (!rx_direct)
+				while (n < (short)sizeof(rx_take) && Bconstat(DEV_AUX))
+					rx_take[n++] = (u8)Bconin(DEV_AUX);
+			if (!n)
+				break;
+			for (i = 0; i < n; i++)
+				rx_byte(rx_take[i]);
+		} while (tos_ms() - t0 < 40);
 		return;
 	}
 	if (tcp_cn < 0) {
