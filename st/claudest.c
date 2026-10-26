@@ -590,15 +590,53 @@ static short wrap_width(u8 role)
 	return w < 8 ? 8 : w;
 }
 
+/* wrap one paragraph's text from s to e (no newline in it), its lines of
+   the given kind: L_INL says the first line starts inside inline code */
+static void wrap_para(long s, long e, u8 kind, u8 role)
+{
+	const char *t = tb, *q = t + s, *end = t + e;
+	short w = wrap_width(role);
+
+	while (q < end) {
+		const char *m = q, *b;
+		short k = 0;
+		/* w characters on, not counting inline code marks */
+		while (m < end && (k < w || *m == MK_INL)) {
+			if (*m != MK_INL)
+				k++;
+			m++;
+		}
+		if (m >= end) {
+			add_line(q - t, (short)(end - q), kind, role);
+			break;
+		}
+		for (b = m; b > q && *b != ' '; b--)
+			;
+		if (b == q)
+			b = m;
+		add_line(q - t, (short)(b - q), kind, role);
+		for (m = q; m < b; m++)	/* inline code going on */
+			if (*m == MK_INL)
+				kind ^= L_INL;
+		q = *b == ' ' ? b + 1 : b;	/* a space breaks the line */
+	}
+}
+
+static long para_end(long p)
+{
+	const char *t = tb + p, *end = tb + tlen;
+	while (t < end && *t != '\n')
+		t++;
+	return t - tb;
+}
+
 static void wrap_from(long p, u8 role)
 {
 	long e, s;
-	short w;
 	u8 kind;
 
 	while (p < tlen) {
-		for (e = p; e < tlen && tb[e] != '\n'; e++)
-			;
+		e = para_end(p);
 		if (tb[p] == MK_HEADER && e - p >= 2) {
 			role = (u8)tb[p + 1];
 			add_line(p, 0, L_HEADER, role);
@@ -620,28 +658,7 @@ static void wrap_from(long p, u8 role)
 			/* the paragraph's direction comes from its first strong letter */
 			if (bidi_is_rtl(tb + s, e - s > 2000 ? 2000 : (short)(e - s)))
 				kind |= L_RTL;
-			w = wrap_width(role);
-			while (s < e) {
-				long b, m;
-				short k;
-				/* w characters on, not counting inline code marks */
-				for (m = s, k = 0; m < e && (k < w || tb[m] == MK_INL); m++)
-					if (tb[m] != MK_INL)
-						k++;
-				if (m >= e) {
-					add_line(s, (short)(e - s), kind, role);
-					break;
-				}
-				for (b = m; b > s && tb[b] != ' '; b--)
-					;
-				if (b == s)
-					b = m;
-				add_line(s, (short)(b - s), kind, role);
-				for (m = s; m < b; m++)	/* inline code going on */
-					if (tb[m] == MK_INL)
-						kind ^= L_INL;
-				s = tb[b] == ' ' ? b + 1 : b;	/* a space breaks the line */
-			}
+			wrap_para(s, e, kind, role);
 		}
 		if (e >= tlen)
 			break;
@@ -655,10 +672,14 @@ static short is_para_start(long off)
 	       tb[off - 1] == MK_CODE;
 }
 
-/* rewrap the last paragraph after text was appended; returns first changed line */
+/* rewrap after text was appended; returns the first changed line. Only
+   the paragraph's last line can change: the breaks before it were made
+   with all their text there, and text added at the end can't move them.
+   Unless the paragraph's direction changed (its first strong letter just
+   came): then all of it. */
 static short wrap_tail(void)
 {
-	short li = nlines;
+	short li = nlines, last = nlines - 1;
 	long p = 0;
 	u8 role = 0;
 
@@ -668,7 +689,18 @@ static short wrap_tail(void)
 			break;
 	}
 	if (nlines) {
+		LINE *l = &lines[last];
 		p = lines[li].off;
+		if (last > li && (l->kind & L_TYPE) != L_HEADER) {
+			long e = para_end(l->off), n = e - p;
+			if (!bidi_is_rtl(tb + p, n > 2000 ? 2000 : (short)n) == !(l->kind & L_RTL)) {
+				nlines = last;
+				wrap_para(l->off, e, l->kind, l->role);
+				if (e < tlen)
+					wrap_from(e + 1, l->role);
+				return last;
+			}
+		}
 		if (li < nlines && p > 0 && (((lines[li].kind & L_TYPE) == L_BOLD && tb[p - 1] == MK_BOLD) ||
 					     ((lines[li].kind & L_TYPE) == L_GREY && tb[p - 1] == MK_GREY) ||
 					     ((lines[li].kind & L_TYPE) == L_CODE && tb[p - 1] == MK_CODE)))
@@ -5261,7 +5293,17 @@ int main(void)
 		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
 			send_hello();
 		heartbeat();
-		flush_dirty();
+		{
+			/* a reply arriving is drawn at most every 100 ms, a few
+			   pieces at a time; what the user did, at once */
+			static u32 text_at;
+			u32 now = tos_ms();
+			if (!busy || !(dirty & D_TEXT) || (ev.which & (MU_KEYBD | MU_BUTTON)) || now - text_at >= 100) {
+				if (dirty & D_TEXT)
+					text_at = now;
+				flush_dirty();
+			}
+		}
 	}
 
 	tx_cmd("BYE", 0, 0);
