@@ -141,4 +141,10 @@ int dlg_3d_ok(void);
    AES has it; 0: flat everywhere), taken by every dlg_3d after it is set */
 extern int dlg_3d_on;
 
+/* the pen of the first npens (16 at most: the UI's) whose colour is nearest
+   r, g, b (VDI's 0-1000), read with vq_color; text: one dark enough to read
+   on white, where there is one. A UI colour in 16 colours or fewer is never
+   a fixed pen number: on a TT pens 9-14 are light (the guidelines 5.x) */
+short pen_nearest(short h, short npens, short r, short g, short b, int text);
+
 #endif

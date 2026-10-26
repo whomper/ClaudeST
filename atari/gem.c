@@ -320,6 +320,20 @@ void rsrc_obfix_all(OBJECT *tree, short n)
 	}
 }
 
+/* a window's border x moved so its work area starts on a multiple of 8
+   across (the guidelines' Speed: text on a byte), the nearest one, for
+   wind_create/wind_open and WM_MOVED/WM_SIZED */
+short wind_x8(short kind, short x, short y, short w, short h)
+{
+	short wx, wy, ww, wh;
+	short d;
+	wind_calc(WC_WORK, kind, x, y, w, h, &wx, &wy, &ww, &wh);
+	d = ((wx + 4) & ~7) - wx;
+	if (x + d < 0)
+		d += 8;			/* not off the screen's left edge */
+	return x + d;
+}
+
 short wind_find(short x, short y)
 {
 	aintin[0] = x;
@@ -813,6 +827,16 @@ void vst_height(short h, short height, short *cw_, short *ch_)
 	vdi(12, 1, 0, h);
 	*cw_ = ptsout[2];
 	*ch_ = ptsout[3];
+}
+
+void vqt_attributes(short h, short *a)
+{
+	short i;
+	vdi(38, 0, 0, h);
+	for (i = 0; i < 6; i++)
+		a[i] = vintout[i];
+	for (i = 0; i < 4; i++)
+		a[6 + i] = ptsout[i];
 }
 
 void vs_color(short h, short index, const short *rgb)

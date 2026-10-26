@@ -706,6 +706,20 @@ static void test_3d(void)
 	dlg_3d_on = 1;
 }
 
+/* the pens: a TT's 16 by default (light 9-14), for pen_nearest */
+static const short tt_pal[16][3] = {
+	{1000, 1000, 1000}, {0, 0, 0}, {1000, 0, 0}, {0, 1000, 0}, {0, 0, 1000}, {0, 1000, 1000},
+	{1000, 1000, 0}, {1000, 0, 1000}, {800, 800, 800}, {533, 533, 533}, {1000, 533, 533},
+	{533, 1000, 533}, {533, 533, 1000}, {533, 1000, 1000}, {1000, 1000, 533}, {1000, 533, 1000}
+};
+void vq_color(short h, short index, short *rgb)
+{
+	(void)h;
+	rgb[0] = tt_pal[index][0];
+	rgb[1] = tt_pal[index][1];
+	rgb[2] = tt_pal[index][2];
+}
+
 int main(void)
 {
 	short r;
@@ -1142,6 +1156,15 @@ int main(void)
 	check(dlg_esc(KEY_ESC) && dlg_esc(KEY_UNDO) && !dlg_esc(KEY_RETURN) && !dlg_esc(K('a')) &&
 	      !dlg_esc(0x0e08), "dlg_esc: Esc and Undo only");
 
-	printf("%d checks, %d failed\n", checks, failed);
+		/* pen_nearest on a TT's 16 */
+	check(pen_nearest(1, 16, 0, 0, 900, 1) == 4, "pen_nearest: blue is pen 4");
+	check(pen_nearest(1, 16, 900, 450, 0, 0) == 10 || pen_nearest(1, 16, 900, 450, 0, 0) == 2,
+	      "pen_nearest: orange, any pen: the nearest");
+	check(pen_nearest(1, 16, 1000, 1000, 500, 1) != 14 && pen_nearest(1, 16, 1000, 1000, 500, 1) != 6,
+	      "pen_nearest: pale yellow for text: not a pale pen");
+	check(pen_nearest(1, 16, 1000, 1000, 500, 0) == 14, "pen_nearest: pale yellow, not for text: pen 14");
+	check(pen_nearest(1, 2, 1000, 0, 0, 1) == 1, "pen_nearest: two pens, text: black");
+	check(pen_nearest(1, 256, 0, 0, 1000, 1) == 4, "pen_nearest: 256 pens: only the first 16");
+printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;
 }

@@ -121,7 +121,8 @@ void pf_now(PFTIME *t)
 	}
 }
 
-unsigned long pf_ms(void) { return 0; }
+/* a clock that moves 10 ms a look: tls.c's turns come by the time */
+unsigned long pf_ms(void) { static unsigned long t; return t += 10; }
 
 void pf_entropy(unsigned char *buf, int n)
 {
@@ -237,7 +238,7 @@ static int roots(const char *dir)
 	check(opens == 2, "CACERT.PEM opened twice (its checksum, then the decoding)");
 	check(reads <= 2 * ((pemsize + 32767) / 32768) + 2, "and read in 32 KB pieces");
 	printf("  (%d idles, %ld bytes)\n", idles, pemsize);
-	check(idles >= pemsize / 4096 - 1, "pf_idle at every 4 KB decoded");
+	check(idles >= pemsize / 4096 - 1, "a turn at least every 4 KB decoded");
 	check(pf_size(tls_roots_cache) > 0, "ROOTS.DAT made");
 
 	printf("== the next session: found by CACERT.PEM's date\n");
@@ -266,8 +267,9 @@ static int roots(const char *dir)
 	tls_read_at = read_at;
 	n = load(pem, pem, err);
 	check(n == n0, "the same anchors");
-	check(read_ats == (pemsize + 32767) / 32768 + 1, "a read_at per 32 KB (and the end)");
-	check(opens == 1 + read_ats, "CACERT.PEM opened for its checksum and per read_at");
+	check(read_ats == 2 * ((pemsize + 32767) / 32768 + 1),
+	      "a read_at per 32 KB (and the end), for the checksum and for the certificates");
+	check(opens == read_ats, "CACERT.PEM opened only by read_at: none kept across a turn");
 	tls_read_at = 0;
 	tls_file_info = 0;
 	tls_file_stamp = 0;

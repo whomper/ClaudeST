@@ -79,7 +79,13 @@ static int get(unsigned long *w)
 	return 1;
 }
 
-static void sup_run(void)
+/* the job in three parts, so that the 68030 needn't wait in supervisor
+   mode while the DSP works (335 ms for a 4096-bit key on a stock Falcon):
+   the program and the numbers sent; the answer looked for, from user
+   mode with pf_idle between looks; the answer taken */
+static int io_ready;
+
+static void sup_send(void)
 {
 	int i;
 	io_fail = 1;
@@ -90,10 +96,45 @@ static void sup_run(void)
 	for (i = 0; i < io_n; i++)
 		if (!put(io_words[i]))
 			return;
+	io_fail = 0;
+}
+
+static void sup_ready(void)
+{
+	io_ready = (HISR & 1) != 0;
+}
+
+static void sup_take(void)
+{
+	int i;
+	io_fail = 1;
 	for (i = 0; i < io_out; i++)
 		if (!get(&io_res[i]))
 			return;
 	io_fail = 0;
+}
+
+static void sup_run(void)
+{
+	unsigned long t0, turn;
+	Supexec(sup_send);
+	if (io_fail)
+		return;
+	t0 = turn = pf_ms();
+	for (;;) {
+		Supexec(sup_ready);
+		if (io_ready)
+			break;
+		if (pf_ms() - t0 > 10000) {	/* a 4096-bit key takes about 1 s */
+			io_fail = 1;
+			return;
+		}
+		if (pf_idle && pf_ms() - turn >= 40) {
+			pf_idle();
+			turn = pf_ms();
+		}
+	}
+	Supexec(sup_take);
 }
 
 /* ---------------- numbers ---------------- */
@@ -227,7 +268,7 @@ int dsp_rsa_public(unsigned char *x, size_t xlen, const unsigned char *n, size_t
 	   changes it with interrupts off. Writing the chip directly raced the
 	   system's own use of it (floppy, key click) on a real Falcon */
 	dsp_reset();
-	Supexec(sup_run);
+	sup_run();
 	if (lock == 0)
 		trap14_w(105);			/* Dsp_Unlock */
 	if (io_fail)
