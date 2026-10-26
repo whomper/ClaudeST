@@ -1252,6 +1252,14 @@ static void layout(void)
 	lbar.r.x = wx + sb_w - lbar.r.w;
 	lbar.r.y = list_y - 2;
 	lbar.r.h = status_y - 2 - lbar.r.y;
+#ifdef AES_PROFILE
+	{
+		/* where the list's bar is, for the speed rig's clicks */
+		char b[48];
+		snprintf(b, sizeof(b), "LISTBAR %d %d %d %d\n", lbar.r.x, lbar.r.y, lbar.r.w, lbar.r.h);
+		nf_debug(b);
+	}
+#endif
 }
 
 static PANEBAR *list_bar(void)
@@ -1380,7 +1388,11 @@ static void draw_sidebar(void)
 	short i, y;
 	short x = sx, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
 
-	fill(wx, wy, wx + sb_w - 1, wy + wh - 1, 0);
+	/* white but under the list's bar, which objc_draw paints whole:
+	   blanked first, the bar flashed as it scrolled */
+	fill(wx, wy, lbar.r.x - 1, wy + wh - 1, 0);
+	fill(lbar.r.x, wy, wx + sb_w - 1, lbar.r.y - 1, 0);
+	fill(lbar.r.x, lbar.r.y + lbar.r.h, wx + sb_w - 1, wy + wh - 1, 0);
 	line(wx + sb_w, wy, wx + sb_w, wy + wh - 1, 1);
 
 	/* brand */
@@ -1417,7 +1429,7 @@ static void draw_sidebar(void)
 		ITEM *it = &items[list_top + i];
 		short n = strlen(it->label);
 		y = list_y + (i + 1) * row_h;
-		if (!row_visible(y, y + row_h))
+		if (!row_visible(y - 2, y + row_h - 2))	/* the cursor's frame too */
 			continue;
 		if (n > lmaxc - (it->pinned ? 1 : 0))
 			n = lmaxc - (it->pinned ? 1 : 0);
@@ -1483,7 +1495,9 @@ static void draw_sidebar(void)
 		text(x, y + (row_h - ch) / 2 - 1, e, n, 2, 1);
 	}
 
-	{
+	/* what of the bar and the status the clip holds: a row drawn alone
+	   (a scroll's, the cursor's) draws neither */
+	if (clip[2] >= lbar.r.x && row_visible(lbar.r.y, lbar.r.y + lbar.r.h - 1)) {
 		GRECT c;
 		c.x = clip[0];
 		c.y = clip[1];
@@ -1491,8 +1505,10 @@ static void draw_sidebar(void)
 		c.h = clip[3] - clip[1] + 1;
 		pb_draw(list_bar(), &c);
 	}
-	line(wx, status_y - 2, wx + sb_w - 1, status_y - 2, 1);
-	draw_status(1);
+	if (row_visible(status_y - 2, wy + wh - 1)) {
+		line(wx, status_y - 2, wx + sb_w - 1, status_y - 2, 1);
+		draw_status(1);
+	}
 }
 
 static const char *model_label(void)
@@ -3196,6 +3212,8 @@ static void scroll_text(short delta)
 	dirty |= D_TEXT;
 }
 
+static void list_scrolled(short old);
+
 static void scroll_list(short delta)
 {
 	short old = list_top;
@@ -3204,8 +3222,7 @@ static void scroll_list(short delta)
 		list_top = nitems - list_rows;
 	if (list_top < 0)
 		list_top = 0;
-	if (list_top != old)
-		dirty |= D_LIST;
+	list_scrolled(old);
 }
 
 static void about(void);
@@ -4016,6 +4033,63 @@ static void redraw_item_row(short i)
 		redraw(D_SIDEBAR, wx, item_row_y(i), sb_w, row_h + 1);
 }
 
+/* the list's rows moved n rows on the screen, as blit_scroll moves the
+   text's; 0 when they can't be (covered, or more than the rows shown) */
+static short list_blit(short n)
+{
+	short r[4], pxy[8], k = n < 0 ? -n : n, y0 = list_y + row_h - 2;
+	MFDB scr;
+
+	if (n == 0 || k >= list_rows)
+		return 0;
+	wind_get(win, WF_FIRSTXYWH, &r[0], &r[1], &r[2], &r[3]);
+	if (r[0] != wx || r[1] != wy || r[2] != ww || r[3] != wh ||
+	    wx < 0 || wy < 0 || wx + ww > scr_w || wy + wh > scr_h)
+		return 0;
+	memset(&scr, 0, sizeof(scr));
+	pxy[0] = pxy[4] = wx;
+	pxy[2] = pxy[6] = lbar.r.x - 1;
+	pxy[1] = y0 + (n > 0 ? k * row_h : 0);
+	pxy[3] = pxy[1] + (list_rows - k) * row_h - 1;
+	pxy[5] = y0 + (n > 0 ? 0 : k * row_h);
+	pxy[7] = pxy[5] + (list_rows - k) * row_h - 1;
+	wind_update(BEG_UPDATE);
+	graf_mouse(M_OFF, 0);
+	text_noclip(vh);
+	vro_cpyfm(vh, 3, pxy, &scr, &scr);
+	graf_mouse(M_ON, 0);
+	wind_update(END_UPDATE);
+	return 1;
+}
+
+/* list_top moved from old: the rows that stay are moved, the rows that
+   come in and the bar's slider drawn (the guidelines' Speed: "To scroll,
+   move what stays on the screen"); the whole list where that can't be */
+static void list_scrolled(short old)
+{
+	short n = list_top - old, k = n < 0 ? -n : n, y0 = list_y + row_h - 2;
+	GRECT m;
+	if (n == 0)
+		return;
+	lbar.top = list_top;
+	if ((dirty & (D_LIST | D_SIDEBAR)) || !list_blit(n)) {
+		dirty |= D_LIST;
+		return;
+	}
+	/* the keyboard cursor's frame ends on the line below its row's: the
+	   rows that come in with that line, and the line at the other end of
+	   what moved, whose frame went or came */
+	if (n > 0) {
+		redraw(D_LIST, wx, y0 + (list_rows - k) * row_h, lbar.r.x - wx, k * row_h + 1);
+		redraw(D_LIST, wx, y0, lbar.r.x - wx, 1);
+	} else {
+		redraw(D_LIST, wx, y0, lbar.r.x - wx, k * row_h + 1);
+		redraw(D_LIST, wx, y0 + list_rows * row_h, lbar.r.x - wx, 1);
+	}
+	m = pb_moved(&lbar, old);
+	redraw(D_LIST, m.x, m.y, m.w, m.h);
+}
+
 static short current_item(void)
 {
 	short i;
@@ -4543,10 +4617,9 @@ static void drag_divider(void)
 static int list_bar_scroll(long n)
 {
 	short old = list_top;
-	scroll_list((short)n);
+	scroll_list((short)n);	/* lbar.top too, drawn or not */
 	if (list_top == old)
 		return 0;
-	lbar.top = list_top;	/* drawn or not (another window over it) */
 	flush_dirty();
 	return 1;
 }
@@ -4652,13 +4725,14 @@ static void move_cursor(short d)
 		list_top = lcur;
 	if (lcur >= list_top + list_rows)
 		list_top = lcur - list_rows + 1;
-	if (list_top != top || (dirty & D_LIST)) {
-		dirty |= D_LIST;
+	list_scrolled(top);	/* the list moved, or marked to be drawn */
+	if (dirty & D_LIST)
 		return;
-	}
-	/* the list stays: only the rows the cursor left and came to */
+	/* the rows the cursor left and came to; moved, it came to a row
+	   that came in, drawn already */
 	redraw_item_row(was);
-	redraw_item_row(lcur);
+	if (list_top == top)
+		redraw_item_row(lcur);
 }
 
 /* Options > Settings... (^,), as in the other AERA programs: how

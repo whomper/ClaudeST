@@ -48,6 +48,10 @@ class SpeedBackend(backends.DemoBackend):
             msgs += [("U", "Question %d: how do I make this loop faster?" % n), ("A", answer(n))]
         self.chats = {"long": {"title": "Long conversation", "project": None, "messages": msgs,
                                "updated": time.time()}, **self.chats}
+        for n in range(1, 31):      # Recents longer than it shows: it scrolls
+            self.chats["more%d" % n] = {"title": "Older chat %d" % n, "project": None,
+                                        "messages": [("U", "Question %d" % n), ("A", PARA)],
+                                        "updated": time.time() - n * 3600}
 
     def send(self, chat_id, project_id, text, on_delta, files=None):
         for i in range(0, len(REPLY), 12):

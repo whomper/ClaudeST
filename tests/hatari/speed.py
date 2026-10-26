@@ -52,6 +52,17 @@ def same(a, b, what):
     return ok
 
 
+def same_area(a, b, box, what):
+    """the part x, y, w, h of pictures a and b alike to the pixel"""
+    x, y, w, h = box
+    cut = []
+    for p in (a, b):
+        c = os.path.join(os.path.dirname(os.path.dirname(p)), os.path.basename(p)[:-4] + "-cut.png")
+        subprocess.run(["convert", p, "-crop", "%dx%d+%d+%d" % (w, h, x, y), "+repage", c], check=True)
+        cut.append(c)
+    return same(cut[0], cut[1], what)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("work")
@@ -110,6 +121,19 @@ def main():
         r.xdo("keyup", "shift")
         fails = not same(drawn, r.shot("streamed-whole"), "the reply as it streamed is the reply drawn whole")
         fails += not same(shot(r, 3), shot(r, 5), "five lines up and down again: the pane as it arrived")
+        # the list scrolled a row at a time: the rows that stay moved on the
+        # screen, those that come in drawn (Erez's film, 26 Oct 2026: each
+        # arrow blanked the list and its bar, then drew it all again)
+        bx, by, bw, bh = [int(v) for v in
+                          [l for l in r.console().splitlines() if l.startswith("LISTBAR ")][-1].split()[1:]]
+        r.act("the list a row down (Tab, 15 times)", speed.LINE, lambda: r.key(*["Tab"] * 15))
+        r.act("the list a row up (Shift+Tab, 15 times)", speed.LINE, lambda: r.key(*["shift+Tab"] * 15))
+        r.act("the list a row down (its bar's arrow, 5 clicks)", speed.LINE,
+              lambda: [r.click(bx + bw // 2, by + bh - 6) for _ in range(5)])
+        r.act("the list a row up (its bar's arrow, 5 clicks)", speed.LINE,
+              lambda: [r.click(bx + bw // 2, by + 6) for _ in range(5)])
+        fails += not same_area(shot(r, 17), shot(r, 19), (0, by, bx, bh),
+                               "five rows down and up again by the bar: the list as it was")
         lost = "the serial ring was full" in r.console()
         print(("FAIL  " if lost else "ok    ") + "no byte from the bridge lost (the ring never full)", flush=True)
         fails += lost
