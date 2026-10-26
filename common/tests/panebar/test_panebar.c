@@ -248,8 +248,8 @@ int main(void)
 	/* after a scroll: the slider's old and new places, a little more */
 	bar.top = 10;
 	m = pb_moved(&bar, 0);
-	check(m.y == 69 && m.h == (69 + 26 + 26 + 3) - 69 && m.x == bar.r.x && m.w == bar.r.w,
-	      "pb_moved: from the old slider's top to the new one's bottom");
+	check(m.y == 66 && m.h == (69 + 26 + 26 + 3) - 66 && m.x == bar.r.x && m.w == bar.r.w,
+	      "pb_moved: from the old slider's top to the new one's bottom, the raised edge over the arrow too");
 
 	/* pressed */
 	{
@@ -322,7 +322,7 @@ int main(void)
 		      "... the track between them, the slider at its left");
 		h.top = 10;
 		m = pb_moved(&h, 0);
-		check(m.x == 56 && m.w == 55 && m.y == 360 && m.h == 21, "... pb_moved along x");
+		check(m.x == 53 && m.w == 58 && m.y == 360 && m.h == 21, "... pb_moved along x");
 		h.top = 0;
 		press(s, 4);
 		bar = h;	/* scroll and goto_top move bar */

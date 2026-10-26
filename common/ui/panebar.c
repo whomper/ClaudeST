@@ -254,9 +254,12 @@ GRECT pb_moved(const PANEBAR *b, long old_top)
 	pb_slider(b, &ty, &th, &ny, &nh);
 	if (sh && nh && sh == nh) {
 		short p1 = sy < ny ? sy : ny, p2 = sy + sh > ny + nh ? sy + sh : ny + nh;
-		/* (a raised slider's edge: a few pixels more each way) */
-		short a = p1 - 3 < ty ? ty : p1 - 3;
-		short l = (p2 + 3 > ty + th ? ty + th : p2 + 3) - a;
+		/* a raised slider's edge stands a few pixels out each way, over
+		   the arrows' feet too (EContact: a line left under the up
+		   arrow in 3D): within the bar, not the track */
+		short b0 = b->across ? b->r.x : b->r.y, b1 = b0 + (b->across ? b->r.w : b->r.h);
+		short a = p1 - 3 < b0 ? b0 : p1 - 3;
+		short l = (p2 + 3 > b1 ? b1 : p2 + 3) - a;
 		if (b->across) {
 			r.x = a;
 			r.w = l;

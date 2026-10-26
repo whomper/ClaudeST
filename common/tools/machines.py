@@ -186,6 +186,19 @@ def xvfb(display, size="1024x768x24", timeout=20):
                 sock.close()
     if up():
         return None
+    # a lock left by an Xvfb that was killed (its process gone) keeps a new
+    # one from starting: "Xvfb didn't start" (EMail, 26 Oct 2026)
+    n = display.lstrip(":").split(".")[0]
+    lock = "/tmp/.X%s-lock" % n
+    try:
+        pid = int(open(lock).read().strip())
+        os.kill(pid, 0)
+    except (OSError, ValueError):
+        for f in (lock, "/tmp/.X11-unix/X" + n):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
     p = subprocess.Popen(["Xvfb", display, "-screen", "0", size],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     end = time.time() + timeout

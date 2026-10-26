@@ -364,10 +364,18 @@ typedef struct {
 static TZYEAR years[TZ_YEARS];
 static int years_next;
 
+/* field by field, not memcmp: two library calls a conversion were 0.38 s
+   of ECal's year view on an ST (26 Oct 2026) */
+static int same_change(const TZCHANGE *a, const TZCHANGE *b)
+{
+	return a->mon == b->mon && a->wday == b->wday && a->day == b->day && a->utc == b->utc &&
+	       a->min == b->min;
+}
+
 static int same_rules(const TZYEAR *y, const TZONE *z)
 {
-	return y->z == z && y->std == z->std && y->dst == z->dst &&
-	       !memcmp(&y->on, &z->on, sizeof(TZCHANGE)) && !memcmp(&y->off, &z->off, sizeof(TZCHANGE));
+	return y->z == z && y->std == z->std && y->dst == z->dst && same_change(&y->on, &z->on) &&
+	       same_change(&y->off, &z->off);
 }
 
 int tz_offset(const TZONE *z, CTIME utc)

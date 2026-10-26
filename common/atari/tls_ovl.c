@@ -53,27 +53,7 @@ static const TLS_HOST host = {
 	tos_supexec, get_cookie
 };
 
-/* the code just written into memory is what the CPU runs next: clear its
-   caches (a 68030's 256-byte instruction cache, a 68040's or 68060's
-   copyback data cache, and a 68060's branch cache, which CPUSHA leaves
-   alone: EWeb's js_ovl.c), in supervisor mode */
 static long cpu;
-static long flush(void)
-{
-	if (cpu >= 40)
-		__asm__ volatile(".short 0xf4f8" ::: "memory");		/* cpusha bc */
-	if (cpu >= 60)
-		__asm__ volatile(".short 0x4e7a,0x0002\n\t"		/* movec cacr,d0 */
-				 "ori.l #0x00400000,%%d0\n\t"		/* CABC: clear the branch cache */
-				 ".short 0x4e7b,0x0002"			/* movec d0,cacr */
-				 ::: "d0", "memory");
-	else if (cpu >= 20 && cpu < 40)
-		__asm__ volatile(".short 0x4e7a,0x0002\n\t"		/* movec cacr,d0 */
-				 "ori.w #0x0808,%%d0\n\t"		/* CI, CD: clear both */
-				 ".short 0x4e7b,0x0002"			/* movec d0,cacr */
-				 ::: "d0", "memory");
-	return 0;
-}
 
 int tls_ovl_loaded(void)
 {
@@ -113,7 +93,7 @@ int tls_ovl_load(char *err, int errlen)
 				 "beside CACERT.PEM", errlen);
 		return 0;
 	}
-	tos_supexec((void *)flush);
+	ovl_flush();		/* its code was written as data */
 	o = image;
 	if (o->magic != TLSOVL_MAGIC || o->size < (short)sizeof(TLS_OVL)) {
 		free(image);

@@ -245,6 +245,10 @@ looks for the needle's first letter before comparing the rest (`tests/istr`).
 2149, a day's minutes, a 400-year cycle's parts), not libgcc's long division (`tests/ctime`, also as
 68000 code). `pf_wopen`, `pf_wwrite` and `pf_wclose` save a file a piece at a time, as `pf_save`
 does in one (`tests/futil`).
+A TLS connection takes a turn for GEM (`pf_idle`) every 40 ms wherever it works long: a record's
+ChaCha20-Poly1305 in 2 KB pieces (`src/chapol.c`, `tests/chapol` against BearSSL's), the DSP's
+curves (`atari/dspec.c`, back to user mode between commands) and RSA (`atari/dsprsa.c`, the answer
+waited for in user mode), the chain's certificates, and a record that trickles in.
 
 ## People from EContact (17 Oct 2026)
 

@@ -6,7 +6,10 @@
  * and nothing else changed, the BSS zeroed, TLS_OVL's table at the start.
  * Then fixup tables made by hand: the first offset split across pieces,
  * the 254-byte steps, and damaged ones refused (an odd step, a fixup past
- * the data, a file cut short).
+ * the data, a file cut short). Then ovl_load_tail on files made here:
+ * the bytes after the fixups (EWEBJS.OVL's imports) handed out whole and
+ * in order, wherever the table ends in the pieces read, a tail refused
+ * making the file damaged, and why a load failed (for good or for now).
  *
  *     test_ovl TLS.OVL
  */
@@ -196,6 +199,119 @@ static void damaged(const char *path)
 	free(file);
 }
 
+/* a program file: 64 bytes of text with a fixup at 4, 8 of BSS, the
+   fixups' table (its first offset, steps of 254 (1) to make it ones bytes
+   long, its end), then ntail bytes */
+static void write_ovl(const char *path, long ones, const unsigned char *tl, long ntail)
+{
+	unsigned char hdr[28], text[64];
+	FILE *f = fopen(path, "wb");
+	long i;
+	memset(hdr, 0, sizeof(hdr));
+	hdr[0] = 0x60;
+	hdr[1] = 0x1A;
+	hdr[5] = 64;		/* text */
+	hdr[13] = 8;		/* BSS */
+	memset(text, 0, sizeof(text));
+	text[7] = 0x10;		/* the long at 4: 0x10, moved by where it lands */
+	fwrite(hdr, 1, sizeof(hdr), f);
+	fwrite(text, 1, sizeof(text), f);
+	fwrite("\0\0\0\4", 1, 4, f);
+	for (i = 0; i < ones; i++)
+		fputc(1, f);
+	fputc(0, f);
+	fwrite(tl, 1, (size_t)ntail, f);
+	fclose(f);
+}
+
+struct got {
+	unsigned char buf[4096];
+	long n;
+	int ends, pieces, refuse;
+	unsigned char *base;
+};
+
+static int tail(void *ud, unsigned char *base, const unsigned char *p, long n)
+{
+	struct got *g = ud;
+	g->base = base;
+	if (!n) {
+		g->ends++;
+		return 1;
+	}
+	if (g->n + n > (long)sizeof(g->buf))
+		return 0;
+	memcpy(g->buf + g->n, p, (size_t)n);
+	g->n += n;
+	g->pieces++;
+	return g->refuse ? 0 : 1;
+}
+
+static void tails(void)
+{
+	unsigned char tl[1500];
+	struct got g;
+	long taken, i;
+	char err[120];
+	unsigned char *img;
+	int later, ok;
+	for (i = 0; i < (long)sizeof(tl); i++)
+		tl[i] = (unsigned char)(i * 7 + 3);
+	/* the table ends inside the first piece read (5 bytes of 512) */
+	write_ovl("build/tail.ovl", 0, tl, sizeof(tl));
+	memset(&g, 0, sizeof(g));
+	img = ovl_load_tail("build/tail.ovl", &taken, err, sizeof(err), tail, &g, &later);
+	check(img && g.n == (long)sizeof(tl) && !memcmp(g.buf, tl, sizeof(tl)) && g.ends == 1 && g.base == img,
+	      "the bytes after the fixups handed out whole, in order, then the end");
+	check(img && be32(img + 4) == 0x10 + (uint32_t)(uintptr_t)img && taken == 72 && !img[64] && !img[71],
+	      "the image relocated and its BSS zeroed as by ovl_load");
+	check(g.pieces > 1, "in pieces as the file is read");
+	free(img);
+	/* the table ends with the first piece (4 + 507 + 1 bytes) */
+	write_ovl("build/tail2.ovl", 507, tl, sizeof(tl));
+	memset(&g, 0, sizeof(g));
+	img = ovl_load_tail("build/tail2.ovl", &taken, err, sizeof(err), tail, &g, &later);
+	check(img && g.n == (long)sizeof(tl) && !memcmp(g.buf, tl, sizeof(tl)) && g.ends == 1,
+	      "a table ending with a piece: the tail from the next");
+	free(img);
+	/* no tail at all */
+	write_ovl("build/tail3.ovl", 0, tl, 0);
+	memset(&g, 0, sizeof(g));
+	img = ovl_load_tail("build/tail3.ovl", &taken, err, sizeof(err), tail, &g, &later);
+	check(img && g.n == 0 && g.ends == 1, "no bytes after the table: only the end");
+	free(img);
+	/* ovl_load leaves a tail alone */
+	img = ovl_load("build/tail.ovl", &taken, err, sizeof(err));
+	check(img && be32(img + 4) == 0x10 + (uint32_t)(uintptr_t)img, "ovl_load loads a file with a tail");
+	free(img);
+	/* a tail refused: damaged, for good */
+	memset(&g, 0, sizeof(g));
+	g.refuse = 1;
+	later = -1;
+	img = ovl_load_tail("build/tail.ovl", &taken, err, sizeof(err), tail, &g, &later);
+	check(!img && strstr(err, "damaged") && later == 0 && !fh[0], "a tail refused: damaged, for good, closed");
+	later = -1;
+	img = ovl_load_tail("build/none.ovl", &taken, err, sizeof(err), tail, &g, &later);
+	check(!img && strstr(err, "missing") && later == 0, "a missing file: for good");
+	/* more than any overlay: refused as damaged before any memory is asked */
+	ok = 1;
+	{
+		FILE *f = fopen("build/huge.ovl", "wb");
+		unsigned char hdr[28];
+		memset(hdr, 0, sizeof(hdr));
+		hdr[0] = 0x60;
+		hdr[1] = 0x1A;
+		hdr[2] = 0x7f;		/* 2 GB of text */
+		fwrite(hdr, 1, sizeof(hdr), f);
+		fclose(f);
+		later = -1;
+		img = ovl_load_tail("build/huge.ovl", &taken, err, sizeof(err), tail, &g, &later);
+		ok = !img && strstr(err, "damaged") && later == 0;
+	}
+	check(ok, "a header bigger than any overlay: damaged");
+	ovl_flush();		/* (nothing here: the Atari's caches) */
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -205,6 +321,7 @@ int main(int argc, char **argv)
 	real(argv[1]);
 	made();
 	damaged(argv[1]);
+	tails();
 	printf("%s\n", fails ? "FAILED" : "all passed");
 	return fails != 0;
 }

@@ -855,3 +855,33 @@ short dlg_modal_save(OBJECT *tree, short start, short cancel)
 {
 	return modal(tree, start, cancel, 1);
 }
+
+/* the pen nearest a colour: the pens are the system's, set by TOS, NVDI
+   or the user, not ours (a TT's 16 have light colours where a Falcon's
+   have dark ones: EUpdate's "New release" came out pale yellow) */
+short pen_nearest(short h, short npens, short r, short g, short b, int text)
+{
+	short p, best = -1, rgb[3];
+	long bd = 0x7fffffffL;
+	int pass;
+	if (npens > 16)
+		npens = 16;		/* pens 16 and up are pictures' (5.x) */
+	for (pass = 0; pass < 2 && best < 0; pass++)
+		for (p = 0; p < npens; p++) {
+			long dr, dg, db, d;
+			vq_color(h, p, rgb);
+			/* text on white: no pen lighter than this, while one is left */
+			if (text && !pass && 299L * rgb[0] + 587L * rgb[1] + 114L * rgb[2] > 600000L)
+				continue;
+			dr = rgb[0] - r;
+			dg = rgb[1] - g;
+			db = rgb[2] - b;
+			d = 3 * dr * dr + 4 * dg * dg + 2 * db * db;
+			if (d < bd) {
+				bd = d;
+				best = p;
+			}
+		}
+	return best < 0 ? 1 : best;
+}
+

@@ -24,10 +24,24 @@
 #include "plat.h"
 #include "util.h"
 #include "tls.h"
+#include "chapol.c"	/* ChaCha20-Poly1305 a piece at a time */
 #ifdef TLS_030
 #include "rsa030.h"
 #endif
 #include "tlsovl.h"
+
+/* a turn for GEM between a record's pieces (chapol.c), 40 ms at most
+   apart: a 16 KB record took a stock Falcon 370 ms in one go */
+static unsigned long turn_ms;
+
+static void record_turn(void)
+{
+	unsigned long now = pf_ms();
+	if (pf_idle && now - turn_ms >= 40) {
+		pf_idle();
+		turn_ms = pf_ms();
+	}
+}
 
 /* from BearSSL's inner.h */
 #define BR_MAX_RSA_SIZE 4096
@@ -371,7 +385,15 @@ static void add_anchor(const unsigned char *der, size_t len)
 	if (!dn.p)
 		return;
 	br_x509_decoder_init(&dc, grow_add, &dn);
-	br_x509_decoder_push(&dc, der, len);
+	/* in pieces with turns between: BearSSL's decoder takes a stock
+	   Falcon some 0.5 s a certificate */
+	while (len > 0) {
+		size_t n = len < 256 ? len : 256;
+		br_x509_decoder_push(&dc, der, n);
+		der += n;
+		len -= n;
+		record_turn();
+	}
 	pk = br_x509_decoder_get_pkey(&dc);
 	if (!pk || !dn.p) {
 		free(dn.p);
@@ -441,23 +463,31 @@ static unsigned long file_sum(const char *path, long *size)
 	char small[4096], *chunk;
 	unsigned long h = 2166136261UL;		/* FNV-1a */
 	long got, n;
-	int f = pf_open(path, PF_READ);
+	int f = -1;
 	*size = -1;
-	if (f < 0)
+	/* read at offsets where the app says so (an accessory: no file open
+	   across the turns below, the guidelines 2.2) */
+	if (!tls_read_at && (f = pf_open(path, PF_READ)) < 0)
 		return 0;
 	*size = 0;
 	chunk = piece_buf(small, &n);
-	while ((got = pf_read(f, chunk, n)) > 0) {
+	while ((got = tls_read_at ? tls_read_at(path, *size, chunk, n) : pf_read(f, chunk, n)) > 0) {
 		long i;
 		for (i = 0; i < got; i++) {
 			/* times the FNV prime 2^24 + 403 in shifts: the 68000 has
 			   no 32-bit multiply */
 			h ^= (unsigned char)chunk[i];
 			h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+			if ((i & 4095) == 4095)
+				record_turn();	/* CACERT.PEM is 186 KB: 1.2 s on a stock Falcon */
 		}
 		*size += got;
+		record_turn();
 	}
-	pf_close(f);
+	if (tls_read_at && got < 0 && !*size)
+		*size = -1;			/* not there */
+	if (f >= 0)
+		pf_close(f);
 	if (chunk != small)
 		free(chunk);
 	return h & 0xffffffffUL;
@@ -689,8 +719,8 @@ int tls_load_anchors(const char *path, char *err, int errlen)
 		tls_note("Reading the root certificates (only this once, it takes a while)...");
 	/* read in pieces: the whole list is about 190 KB, more than a
 	   1 MB Falcon wants to hold at once next to the program. 32 KB
-	   pieces where the memory is there (6.5), decoded 4 KB at a time
-	   with pf_idle between (2.2's 50 ms) */
+	   pieces where the memory is there (6.5), decoded 1 KB at a time
+	   with a turn for GEM every 40 ms (record_turn) */
 	if (!tls_read_at && (h = pf_open(path, PF_READ)) < 0) {
 		snprintf(err, errlen, "no root certificates: can't open %s", path);
 		return 0;
@@ -706,13 +736,12 @@ int tls_load_anchors(const char *path, char *err, int errlen)
 		off += got;
 		while (pos < got) {
 			long n = got - pos;
-			if (pos - slice >= 4096) {
+			if (pos - slice >= 1024) {
 				slice = pos;
-				if (pf_idle)
-					pf_idle();
+				record_turn();
 			}
-			if (n > slice + 4096 - pos)
-				n = slice + 4096 - pos;
+			if (n > slice + 1024 - pos)
+				n = slice + 1024 - pos;
 			pos += (long)br_pem_decoder_push(&pc, chunk + pos, (size_t)n);
 			switch (br_pem_decoder_event(&pc)) {
 			case BR_PEM_BEGIN_OBJ:
@@ -1285,6 +1314,7 @@ static int xt_check(XTIME *x, unsigned need)
 		(*in)->start_cert(in, (uint32_t)n);
 		(*in)->append(in, x->der + x->at[i], n);
 		(*in)->end_cert(in);
+		record_turn();		/* each certificate's signature checked */
 	}
 	r = (*in)->end_chain(in);
 	pk = r ? 0 : (*in)->get_pkey(in, &usages);
@@ -1325,7 +1355,7 @@ static const br_x509_class xt_vtable = {
 static int pump(TLS *t, unsigned want, int blocking)
 {
 	br_ssl_engine_context *eng = &t->cc.eng;
-	unsigned long start = pf_ms();
+	unsigned long start = pf_ms(), slice = start;
 	for (;;) {
 		unsigned st = br_ssl_engine_current_state(eng);
 		if (st & BR_SSL_CLOSED)
@@ -1356,6 +1386,15 @@ static int pump(TLS *t, unsigned want, int blocking)
 			if (r > 0) {
 				br_ssl_engine_recvrec_ack(eng, (size_t)r);
 				start = pf_ms();
+				/* bytes coming as fast as they are read keep this loop
+				   going: a turn every 40 ms (a 16 KB record at a
+				   NetUSBee's pace held a stock Falcon 900 ms) */
+				if (start - slice >= 40 && !(br_ssl_engine_current_state(eng) & want)) {
+					if (!blocking)
+						return 0;
+					record_turn();
+					slice = start = pf_ms();
+				}
 				if (t->wait0) {
 					t->waited += start - t->wait0;
 					t->wait0 = 0;
@@ -1404,6 +1443,8 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 	}
 	t->sock = sock;
 	br_ssl_client_init_full(&t->cc, &t->xc, anchors, nanchors);
+	br_ssl_engine_set_poly1305(&t->cc.eng, chapol_run);
+	chapol_turn = record_turn;
 	br_ssl_engine_set_versions(&t->cc.eng, BR_TLS12, BR_TLS12);
 	if (chacha_only)
 		br_ssl_engine_set_suites(&t->cc.eng, suites_chacha, rsa_only ? 1 : 2);

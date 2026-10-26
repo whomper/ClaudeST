@@ -71,6 +71,7 @@ typedef struct {
 #define WM_UNICONIFY   35
 #define WM_ALLICONIFY  36
 #define AP_TERM     50
+#define COLORS_CHANGED 84	/* AES 4.1 and others: the system palette was set again (theme again, redraw) */
 #define AC_OPEN     40
 #define AC_CLOSE    41
 #define WM_HSLID    25
@@ -172,6 +173,7 @@ short menu_tnormal(OBJECT *tree, short title, short normal);
 short menu_register(short apid, const char *name);
 short rsrc_obfix(OBJECT *tree, short obj);
 void  rsrc_obfix_all(OBJECT *tree, short n);	/* objects 0..n-1, no AES call each */
+short wind_x8(short kind, short x, short y, short w, short h);	/* border x: work x on 8 */
 short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
 short aes_version(void);
@@ -283,6 +285,13 @@ short vqt_font_format(short h, short index);	/* 1 bitmap, 2 Speedo, 4 TrueType, 
 short vst_font(short h, short id);
 short vst_point(short h, short point, short *cw, short *ch);
 short vqt_width(short h, short c);	/* cell width of character c */
+/* the text attributes in force: a[0] font id, [1] colour, [2] angle,
+   [3] horizontal and [4] vertical alignment, [5] writing mode, [6] [7]
+   a character's width and height, [8] [9] its cell's. The writing mode
+   counts from 0 in TOS 1.04 (replace 0, transparent 1) and from 1 in
+   EmuTOS 1.4, as the books have it (ClaudeST, 26 Oct 2026): to read it,
+   set a known mode once and see what comes back */
+void vqt_attributes(short h, short *a);
 short vqt_extent_n(short h, const char *s, short n);	/* width n characters draw, effects in force */
 /* n characters drawn to len pixels wide, the gaps between characters
    (char_space 1) and words (word_space 1) stretched or shrunk to fit */

@@ -252,7 +252,11 @@ class Rig:
             self.hatari.kill()
         self.m.stop()
         if self.x:
-            self.x.kill()
+            self.x.terminate()      # not kill: Xvfb removes its lock as it goes
+            try:
+                self.x.wait(5)
+            except Exception:
+                self.x.kill()
 
 
 def selftest(work, machine):
