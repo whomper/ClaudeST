@@ -259,6 +259,9 @@ u32 tos_ms(void);
    it ("the 200 Hz clock runs at 312.5 Hz: times corrected"), for a log */
 const char *tos_clock(void);
 short boot_drive(void);		/* 0 = A: */
+/* the program's command line, from the basepage or the ARGV way (MiNT,
+   MagiC): the words after its name, joined by spaces ("" for none) */
+const char *cmd_line(void);
 void nf_debug(const char *s);	/* emulator console (NatFeats); no-op on hardware */
 
 #endif

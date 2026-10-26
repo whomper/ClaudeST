@@ -46,6 +46,70 @@ static void sup_bootdev(void)
 	__asm__ volatile("move.w 0x446.w,%0" : "=d"(bootdev));	/* _bootdev */
 }
 
+/* the command line: the basepage's, or, where the parent passed it the
+   ARGV way (MiNT and MagiC launching a GEM program: the length byte 127
+   and the words in the environment after "ARGV="), the words after the
+   program's name, joined by spaces, a word with a space in quotes */
+/* (no C library here, nor _BasePage: FAKESTNG links tos.c alone, with a
+   start of its own) */
+extern void *_BasePage __attribute__((weak));
+
+static long slen(const char *s)
+{
+	long n = 0;
+	while (s[n])
+		n++;
+	return n;
+}
+
+const char *cmd_line(void)
+{
+	static char arg[256];
+	const unsigned char *bp = &_BasePage ? (const unsigned char *)_BasePage : 0;
+	const unsigned char *cmd = bp ? bp + 0x80 : 0;
+	long n = 0, k, i;
+	if (!cmd)
+		return "";
+	if (cmd[0] == 127) {
+		const char *env = *(const char *const *)(bp + 0x2c);
+		while (env && *env && !(env[0] == 'A' && env[1] == 'R' && env[2] == 'G' && env[3] == 'V' &&
+					env[4] == '='))
+			env += slen(env) + 1;
+		if (env && *env) {
+			env += slen(env) + 1;			/* "ARGV=..." */
+			if (*env)
+				env += slen(env) + 1;		/* the program's name */
+			while (*env && n < (long)sizeof(arg) - 4) {
+				int q = 0;
+				k = slen(env);
+				for (i = 0; i < k; i++)
+					if (env[i] == ' ')
+						q = 1;
+				if (n)
+					arg[n++] = ' ';
+				if (q)
+					arg[n++] = '"';
+				if (k > (long)sizeof(arg) - 3 - n)
+					k = (long)sizeof(arg) - 3 - n;
+				for (i = 0; i < k; i++)
+					arg[n++] = env[i];
+				if (q)
+					arg[n++] = '"';
+				env += slen(env) + 1;
+			}
+			arg[n] = 0;
+			return arg;
+		}
+	}
+	n = cmd[0] < 127 ? cmd[0] : 126;
+	for (i = 0; i < n; i++)
+		arg[i] = (char)cmd[1 + i];
+	arg[n] = 0;
+	while (n > 0 && (arg[n - 1] == ' ' || arg[n - 1] == '\r' || arg[n - 1] == '\n'))
+		arg[--n] = 0;
+	return arg;
+}
+
 short boot_drive(void)
 {
 	Supexec(sup_bootdev);

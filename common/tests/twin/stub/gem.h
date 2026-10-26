@@ -12,4 +12,5 @@ short appl_write(short id, short len, const void *buf);
 short appl_search(short mode, char *name, short *type, short *id);
 short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);
 short aes_version(void);
+short evnt_timer_(unsigned long ms);
 short evnt_multi_(short flags, short clicks, short mask, short state, unsigned long timer, short *msg, AEVENT *ev);

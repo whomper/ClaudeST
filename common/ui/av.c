@@ -74,15 +74,7 @@ void av_post(short id, short what, short w3, const char *p)
 
 const char *av_command(void)
 {
-	static char arg[128];
-	const unsigned char *cmd = (const unsigned char *)_BasePage + 0x80;	/* p_cmdlin */
-	int n = cmd[0] < 127 ? cmd[0] : 126;
-	memcpy(arg, cmd + 1, n);
-	arg[n] = 0;
-	n = (int)strlen(arg);
-	while (n > 0 && (arg[n - 1] == ' ' || arg[n - 1] == '\r' || arg[n - 1] == '\n'))
-		arg[--n] = 0;
-	return arg;
+	return cmd_line();
 }
 
 /* NAME=value from our environment, or 0 */

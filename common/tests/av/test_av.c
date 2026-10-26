@@ -289,6 +289,22 @@ int main(void)
 	check(!strcmp(av_command(), "C:\\A.ICS"), "av_command: the command line, without the CR");
 	basepage[0x80] = 0;
 	check(!strcmp(av_command(), ""), "av_command: none");
+	{	/* MiNT and MagiC: length 127, the words after "ARGV=" */
+		static const char argv_env[] = "PATH=C:\\\0ARGV=\0C:\\EMAIL.PRG\0C:\\A.ICS\0C:\\MY FILES\\B.ICS\0";
+		char keep[sizeof(environment)];
+		memcpy(keep, environment, sizeof(keep));
+		memset(environment, 0, sizeof(environment));
+		memcpy(environment, argv_env, sizeof(argv_env));
+		basepage[0x80] = 127;
+		check(!strcmp(av_command(), "C:\\A.ICS \"C:\\MY FILES\\B.ICS\""),
+		      "av_command: ARGV words, one with a space quoted");
+		memcpy(environment, "PATH=C:\\\0", 9);
+		memset(environment + 9, 0, sizeof(environment) - 9);
+		memcpy(basepage + 0x81, "C:\\A.ICS\0", 9);
+		check(!strcmp(av_command(), "C:\\A.ICS"), "av_command: 127 without ARGV= reads the basepage");
+		basepage[0x80] = 0;
+		memcpy(environment, keep, sizeof(keep));
+	}
 
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;

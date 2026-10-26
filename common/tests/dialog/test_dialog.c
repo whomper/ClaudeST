@@ -1091,6 +1091,20 @@ int main(void)
 		dlg_close();
 	}
 
+	setup();
+	ap_count = -1;
+	{
+		/* a PEOPLE question (0x4ae0 here) and AP_TERM while the dialog
+		   waits, then a WM_FULLED for the dialog's own window */
+		static const STEP s[] = { MSG(0x4ae0, 0), MSG(50, 0), MSG(WM_FULLED, DLGWIN), KEY(KEY_RETURN), END };
+		script = s;
+		posts = 0;
+		r = dlg_modal(tree, 0, CANCEL);
+		check(r == OK && posts == 2 && posted[0] == 50, "other messages kept and given back as they came when the dialog closes");
+		check(posts == 2, "... the dialog window's own WM_FULLED not given back");
+		tidy("kept messages");
+	}
+
 	/* the app's own drawing in a dialog window */
 	setup();
 	ap_count = -1;

@@ -9,9 +9,14 @@
 #include "ui.h"
 #include "../src/tlsovl.h"
 
+/* RSA and the curves both: falcon_dsp_ec_init() follows every
+   falcon_dsp_init() (the family's rule), and a program that left it out
+   had its curves on the 68030 on a Falcon (EFTP's and EMail's, 25 Oct
+   2026); falcon_dsp_ec_init() again does no harm */
 void falcon_dsp_init(void)
 {
 	tls_ovl_dsp(0, opt.falcon && opt.dsp);
+	tls_ovl_dsp(1, opt.falcon && opt.dsp);
 }
 
 const char *falcon_dsp_state(void)

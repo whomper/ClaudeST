@@ -36,7 +36,7 @@ These files were the same code in ECal, EContact, EMail and EFTP when they moved
 | `ui/` | `dsp.c` | checks the DSP and turns it on for a Direct connection |
 | `dsp/` | `rsa.a56`, `rsa_prog.h`, `mkh.py` | the DSP program (source, and as a C array); `ec.a56` since 18 Oct 2026, `jpeg.a56` since 20 Oct 2026, `dither.a56` since 21 Oct 2026 (below) |
 | `tools/` | `elf2tos.py`, `mkroots.c`, `build-hcp.sh` | ELF to TOS program header; root certificates to `ROOTS.DAT`; `build-hcp.sh DIR` builds the `hcp` help compiler (th-otto/hypview at a fixed commit) for `make help` and the Release workflow |
-| `third_party/bearssl/` | BearSSL 0.6 | TLS for a Direct connection (MIT licence) |
+| `third_party/bearssl/` | BearSSL 0.6 | TLS for a Direct connection (MIT licence); as upstream: TLS.OVL builds `tlsovl/i31_montmul_030.c` (its loop in 68030 assembly) in place of `src/int/i31_montmul.c` |
 | `certs/` | `CACERT.PEM` | Mozilla's root certificates (MPL 2.0) |
 
 ### What the app provides
@@ -215,6 +215,19 @@ runs. It allocates nothing, so an accessory may use it at any time. Built with `
 `make prg` and `run.py etos512us.img` run `BGT.PRG` in Hatari: 300 ms of work in one go shows as
 300 ms, and 3 s of work through bgwork never held the machine longer than 85 ms on an ST (80 ms
 slices) and 40 ms on a Falcon (40 ms slices).
+
+## Speed (26 Oct 2026)
+
+The guidelines' Speed section (Erez: the stock machines set it) times what the user waits for as the
+longest stretch between event calls. Built with `-DAES_PROFILE=20`, `atari/gem.c` also reports the
+start, from `appl_init` to the first event call, as `AESSTART <ms> ms`. `tests/speed/speed.py` is
+the family's speed rig: an app's own `tests/hatari/speed.py` imports it, starts its program on one
+of the family's machines, does the user's actions one at a time (keys, clicks, menu entries), and
+checks each action's longest stretch against the guidelines' time (`speed.LINE`, `PAGE`, `DIALOG`,
+`WINDOW`, `ACC`, `START`); `report()` prints the table. `make prg` and
+`speed.py --selftest WORK [MACHINE]` run `SPT.PRG`, whose stretches are known (300, 30, 200 and
+80 ms). On `ST` (TOS 1.04) and `Falcon-4` (TOS 4.04) each is read back to the millisecond, and only
+the 200 ms one is over its time.
 
 ## People from EContact (17 Oct 2026)
 

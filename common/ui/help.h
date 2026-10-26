@@ -5,6 +5,11 @@
  * the app's hypertext in the viewer that runs: EHypView first, then
  * ST-Guide and HypView, with VA_START "C:\FOLDER\NAME.HYP page" (or
  * "*:\NAME.HYP page", which the viewer looks for along its own paths).
+ * Where none runs and the AES runs several programs at once (MiNT,
+ * MagiC), EHYPVIEW.PRG is started beside the app with the same text on
+ * its command line: its folder is FOLDER= in the boot drive's
+ * EHYPVIEW.INF (Erez, 25 Oct 2026). On TOS only a running viewer (an
+ * accessory) can show it.
  *
  * The strings go in memory the other program may read: global memory
  * (Mxalloc mode 0x2B) under MiNT and MagiC, whose memory protection

@@ -43,7 +43,10 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
    wind_update: EContact saw ECal's whole turn of 160 ms run inside its
    graf_mkstate, 21 Oct 2026). The time inside those calls, 5 ms or more a
    call, isn't ours: it is left out of the stretch and, when it reaches
-   AES_PROFILE, goes out as "AESOTHER <ms> ms <tag>". */
+   AES_PROFILE, goes out as "AESOTHER <ms> ms <tag>".
+   The first stretch, from appl_init to the first event call (the start,
+   the guidelines' Speed), goes out as "AESSTART <ms> ms" whatever its
+   length, and is no AESGAP (tests/speed reads it). */
 #include <stdio.h>
 #if AES_PROFILE < 2
 #undef AES_PROFILE
@@ -51,6 +54,7 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
 #endif
 static const char *gap_tag = "start";
 static u32 gap_from, gap_max, other;
+static int starting;
 
 void aes_profile_tag(const char *tag)
 {
@@ -68,7 +72,14 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 	int ev = op >= 20 && op <= 25;		/* evnt_keybd ... evnt_multi */
 	int idle = op == 12 || op == 13 || op == 79 || op == 107;	/* no work of ours */
 	u32 t0 = 0;
-	if (ev && gap_from) {
+	if (ev && gap_from && starting) {
+		u32 g = tos_ms() - gap_from;
+		char b[48];
+		g = g > other ? g - other : 0;
+		snprintf(b, sizeof(b), "AESSTART %lu ms\n", (unsigned long)g);
+		nf_debug(b);
+		starting = 0;
+	} else if (ev && gap_from) {
 		u32 g = tos_ms() - gap_from;
 		char b[96];
 		g = g > other ? g - other : 0;
@@ -91,9 +102,10 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 		if (d >= 5)
 			other += d;
 	}
-	if (ev) {
+	if (ev || (op == 10 && !gap_from)) {
 		gap_from = tos_ms();
 		other = 0;
+		starting = !ev;
 	}
 	return r;
 }

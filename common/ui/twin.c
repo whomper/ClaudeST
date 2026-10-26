@@ -154,10 +154,43 @@ static int await(short id, short what, short tenths)
 	return got;
 }
 
+/* at boot a multitasking AES may start the program before the accessory
+   has registered (XaAES runs XAAES.CNF's run lines while the accessories
+   still start): NAME.ACC in the boot drive's root, in the first minute
+   after a reset, is waited for (EHypView, 25 Oct 2026) */
+static int acc_coming(void)
+{
+	const char *p = names;
+	char m[9], path[16];
+	short i;
+	if (tos_hz200() > 60UL * 200)
+		return 0;
+	while (*p) {
+		p = next_name(p, m);
+		for (i = 8; i > 0 && m[i - 1] == ' '; i--)
+			;
+		path[0] = (char)('A' + boot_drive());
+		path[1] = ':';
+		path[2] = '\\';
+		memcpy(path + 3, m, i);
+		memcpy(path + 3 + i, ".ACC", 5);
+		if (Fattrib(path, 0, 0) >= 0)
+			return 1;
+	}
+	return 0;
+}
+
 int twin_handover(const char *cmd)
 {
-	short id;
-	if (!can_search() || (id = find(KIND_ACC)) < 0)
+	short id, n;
+	if (!can_search())
+		return 0;
+	id = find(KIND_ACC);
+	for (n = id < 0 && acc_coming() ? 30 : 0; id < 0 && n > 0; n--) {
+		evnt_timer_(100);		/* up to 3 s */
+		id = find(KIND_ACC);
+	}
+	if (id < 0)
 		return 0;
 	post(id, VA_START, shared(cmd ? cmd : ""));
 	/* AV_STARTED: it has its copy, and we may go. An ACC that doesn't

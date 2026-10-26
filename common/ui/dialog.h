@@ -108,7 +108,9 @@ void dlg_band(short obj);
 /* the app's redraw for its own windows while a dialog window is open
    (msg is WM_REDRAW's); without it the AES's requests are kept, a
    window's areas as one, and given back to the app as WM_REDRAW when the
-   last dialog window closes */
+   last dialog window closes. So are the app's other messages that come
+   while a dialog loop that takes none waits (a PEOPLE question, VA_START,
+   AP_TERM): up to eight, given back as they came */
 extern void (*dlg_redraw_hook)(const short *msg);
 
 /* 1 for Esc and Undo, as evnt_multi gives them (scan code in the high

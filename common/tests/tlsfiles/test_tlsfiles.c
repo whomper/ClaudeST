@@ -12,6 +12,11 @@
  *                  tls_read_at; the anchors the same each way
  *   seed DIR N     a handshake's seed: run N of a session (1: SEED.DAT is
  *                  made; later: read, then written over in place; no looks)
+ *   retry DIR      when a ChaCha20-only hello is tried again with every
+ *                  cipher: no answer at all, or an alert first, yes; a
+ *                  close after the server's certificates (openssl
+ *                  s_server, which took ChaCha20), no; and a whole
+ *                  handshake's log names the curve and the server's key
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +24,12 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <time.h>
 #include "plat.h"
 #include "tls.h"
 
@@ -97,9 +108,17 @@ int pf_save(const char *path, const void *data, long len)
 	return w == len ? 0 : -1;
 }
 
+static int real_now;		/* retry: the build machine's clock, for openssl's certificates */
+
 void pf_now(PFTIME *t)
 {
 	t->year = 2026, t->mon = 10, t->day = 18, t->hour = 12, t->min = t->sec = 0;
+	if (real_now) {
+		time_t now = time(0);
+		struct tm *g = gmtime(&now);
+		t->year = g->tm_year + 1900, t->mon = g->tm_mon + 1, t->day = g->tm_mday;
+		t->hour = g->tm_hour, t->min = g->tm_min, t->sec = g->tm_sec;
+	}
 }
 
 unsigned long pf_ms(void) { return 0; }
@@ -111,8 +130,38 @@ void pf_entropy(unsigned char *buf, int n)
 		buf[i] = (unsigned char)(i * 7 + 1);
 }
 
-long net_write(int h, const void *buf, long n) { (void)h; (void)buf; (void)n; return -1; }
-long net_read(int h, void *buf, long max) { (void)h; (void)buf; (void)max; return -1; }
+/* the network: refused (the roots and seed runs); in retry, the hello
+   goes out and then nothing comes, or an alert, or (h >= 0) a real
+   server until our second flight, after its certificates */
+enum { NET_REFUSE, NET_QUIET, NET_ALERT, NET_SOCKET };
+static int net_mode, net_writes, net_drop = 2;	/* hung up at that write */
+static long net_at;
+
+long net_write(int h, const void *buf, long n)
+{
+	if (net_mode == NET_REFUSE)
+		return -1;
+	net_writes++;
+	if (net_mode == NET_SOCKET)
+		return (long)write(h, buf, (size_t)n);
+	return n;
+}
+
+long net_read(int h, void *buf, long max)
+{
+	static const unsigned char alert[] = { 21, 3, 3, 0, 2, 2, 40 };	/* fatal handshake_failure */
+	long r;
+	if (net_mode == NET_ALERT && net_at < (long)sizeof(alert)) {
+		r = (long)sizeof(alert) - net_at < max ? (long)sizeof(alert) - net_at : max;
+		memcpy(buf, alert + net_at, (size_t)r);
+		net_at += r;
+		return r;
+	}
+	if (net_mode != NET_SOCKET || (net_drop && net_writes >= net_drop))
+		return -1;		/* hung up */
+	r = (long)read(h, buf, (size_t)max);
+	return r > 0 ? r : -1;
+}
 
 static void idle(void) { idles++; }
 void (*pf_idle)(void) = idle;
@@ -258,13 +307,143 @@ static int seed(const char *dir, int run)
 	return 0;
 }
 
+static char logged[2000];
+
+static void log_line(const char *msg)
+{
+	if (strlen(logged) + strlen(msg) + 2 < sizeof(logged))
+		strcat(strcat(logged, msg), "\n");
+}
+
+static int connect_to(const char *port)
+{
+	struct sockaddr_in a;
+	int s, i;
+	memset(&a, 0, sizeof(a));
+	a.sin_family = AF_INET;
+	a.sin_port = htons((unsigned short)atoi(port));
+	a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	for (i = 0; i < 100; i++) {
+		s = socket(AF_INET, SOCK_STREAM, 0);
+		if (connect(s, (struct sockaddr *)&a, sizeof(a)) == 0)
+			return s;
+		close(s);
+		usleep(50000);
+	}
+	return -1;
+}
+
+static int retry_of(int mode, int sock, char *err, int errlen)
+{
+	int retry = -1;
+	net_mode = mode, net_writes = 0, net_at = 0;
+	tls_start(sock, "localhost", TLS_CHACHA_ONLY, &retry, err, errlen);
+	net_mode = NET_REFUSE;
+	return retry;
+}
+
+static int retry_test(const char *dir)
+{
+	char key[300], crt[300], ca[300], cmd[1200], port[16], err[200];
+	TLS *t;
+	pid_t srv;
+	int s = -1, r, i;
+	snprintf(tls_seed_path, sizeof(tls_seed_path), "%s/SEED.DAT", dir);
+	tls_load_anchors("../../certs/CACERT.PEM", err, sizeof(err));
+	printf("== retry\n");
+	r = retry_of(NET_QUIET, -1, err, sizeof(err));
+	check(r == TLS_RETRY_ANY_CIPHER, "no answer to the hello: again with every cipher");
+	r = retry_of(NET_ALERT, -1, err, sizeof(err));
+	check(r == TLS_RETRY_ANY_CIPHER, "a handshake_failure alert first: again with every cipher");
+
+	/* a test authority (RSA 3072) and the server's certificate it signed */
+	snprintf(key, sizeof(key), "%s/key.pem", dir);
+	snprintf(crt, sizeof(crt), "%s/crt.pem", dir);
+	snprintf(ca, sizeof(ca), "%s/ca.pem", dir);
+	snprintf(cmd, sizeof(cmd),
+		 "cd %s && openssl req -x509 -newkey rsa:3072 -nodes -keyout cakey.pem -out ca.pem -days 2 "
+		 "-subj /CN=Test-CA >/dev/null 2>&1 && openssl req -newkey rsa:2048 -nodes -keyout key.pem "
+		 "-out req.pem -subj /CN=localhost >/dev/null 2>&1 && printf 'subjectAltName=DNS:localhost\\n' "
+		 "> ext.cnf && openssl x509 -req -in req.pem -CA ca.pem -CAkey cakey.pem -CAcreateserial "
+		 "-days 2 -sha256 -extfile ext.cnf -out crt.pem >/dev/null 2>&1", dir);
+	if (system(cmd) != 0)
+		return check(0, "openssl makes a certificate"), 0;
+	snprintf(port, sizeof(port), "%d", 20000 + (int)(getpid() % 20000));
+	fflush(stdout);
+	srv = fork();
+	if (srv == 0) {
+		char acc[40];
+		snprintf(acc, sizeof(acc), "127.0.0.1:%s", port);
+		if (!freopen("/dev/null", "w", stdout) || !freopen("/dev/null", "w", stderr))
+			_exit(127);
+		execlp("openssl", "openssl", "s_server", "-accept", acc, "-cert", crt, "-key", key, "-tls1_2",
+		       "-cipher", "ECDHE-RSA-CHACHA20-POLY1305", "-groups", "X25519", "-naccept", "3", "-quiet", (char *)0);
+		_exit(127);
+	}
+	s = connect_to(port);
+	check(s >= 0, "openssl s_server answers");
+	if (s >= 0) {
+		r = retry_of(NET_SOCKET, s, err, sizeof(err));
+		check(net_writes >= 2, "the server took ChaCha20 and sent its certificates");
+		check(r == 0, "closed after the certificates: no new try");
+		close(s);
+	}
+	/* whole handshakes, the test authority a root: the log names the
+	   curve and the server's key; the authority's signature on the
+	   server's certificate is checked once, then known (SIGS.DAT) */
+	tls_free_anchors();
+	tls_load_anchors(ca, err, sizeof(err));
+	snprintf(tls_sigs_path, sizeof(tls_sigs_path), "%s/SIGS.DAT", dir);
+	unlink(tls_sigs_path);
+	real_now = 1;
+	for (i = 0; i < 2; i++) {
+		s = connect_to(port);
+		if (s < 0)
+			break;
+		logged[0] = 0;
+		tls_forget_sessions();	/* a whole handshake each time */
+		tls_log = log_line;
+		net_mode = NET_SOCKET, net_writes = 0, net_drop = 0;
+		t = tls_start(s, "localhost", 0, 0, err, sizeof(err));
+		net_drop = 2;
+		tls_log = 0;
+		if (t)
+			tls_close(t);
+		net_mode = NET_REFUSE;
+		close(s);
+		if (i == 0) {
+			check(t != 0, "a whole handshake, the chain up to the test authority");
+			check(strstr(logged, "the key exchange: x25519, ") &&
+			      strstr(logged, "; the server's key: RSA 2048 bits, its signature "),
+			      "the log: the key exchange's curve, the server's key and their times");
+			check(strstr(logged, "; 0 of 1 RSA signatures checked before") != 0,
+			      "the authority's RSA signature checked");
+		} else {
+			check(t != 0 && strstr(logged, "; 1 of 1 RSA signatures checked before") != 0,
+			      "the next time: known, not checked again");
+		}
+		if (!t || !strstr(logged, "RSA signatures checked before"))
+			printf("%s(%s)\n", logged, err);
+	}
+	real_now = 0;
+	{
+		struct stat st;
+		check(stat(tls_sigs_path, &st) == 0 && st.st_size == 8 + 64 * 32, "SIGS.DAT as long as before");
+	}
+	kill(srv, SIGTERM);
+	waitpid(srv, 0, 0);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc >= 3 && !strcmp(argv[1], "roots"))
 		roots(argv[2]);
 	else if (argc >= 4 && !strcmp(argv[1], "seed"))
 		seed(argv[2], atoi(argv[3]));
+	else if (argc >= 3 && !strcmp(argv[1], "retry"))
+		retry_test(argv[2]);
 	else
-		return printf("usage: test_tlsfiles roots DIR | seed DIR N\n"), 2;
+		return printf("usage: test_tlsfiles roots DIR | seed DIR N | retry DIR\n"), 2;
 	return failed != 0;
 }
