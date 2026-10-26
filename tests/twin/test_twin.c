@@ -26,6 +26,24 @@ static int answer_ask = 1, answer_va = 1;	/* what the other program does */
 static unsigned long now_ms;
 void (*av_twin_here)(short id);
 unsigned long tos_ms(void) { return now_ms; }
+static unsigned long hz200;
+static const char *acc_file;		/* the one file Fattrib finds */
+static short timers, appear_after = -1;	/* the accessory appears after that many */
+static PROC late;
+unsigned long tos_hz200(void) { return hz200; }
+short boot_drive(void) { return 2; }
+long Fattrib(const char *name, short wflag, short attr)
+{
+	(void)wflag; (void)attr;
+	return acc_file && !strcmp(name, acc_file) ? 0 : -33;
+}
+short evnt_timer_(unsigned long ms)
+{
+	(void)ms;
+	if (++timers == appear_after)
+		procs[nprocs++] = late;
+	return 1;
+}
 long get_cookie(long id) { return id == 0x4D616758L ? cookie_magx : 0; }
 char *av_shared(char *local, long size) { (void)size; return local; }
 short appl_id(void) { return me; }
@@ -206,6 +224,37 @@ int main(void)
 	check(twin_handover("") == 0 && waits == 30, "an accessory that doesn't answer in 3 s: the program runs");
 	reset();
 	check(twin_prg() == -1, "the program: no program of its own");
+
+	/* at boot (XaAES's run line) the accessory may register after the
+	   program looks: with C:\ECAL.ACC there, it is waited for, 3 s */
+	late = procs[1];
+	procs[1] = procs[2];
+	nprocs = 2;
+	acc_file = "C:\\ECAL.ACC";
+	hz200 = 10 * 200;
+	appear_after = 7;
+	timers = 0;
+	reset();
+	check(twin_handover("C:\\NEW.ICS") == 1 && timers == 7 && sent_to[0] == 3,
+	      "at boot: the accessory registered 0.7 s later is waited for and handed over to");
+	nprocs = 2;
+	appear_after = -1;
+	timers = 0;
+	reset();
+	check(twin_handover("") == 0 && timers == 30, "  one that doesn't come: 3 s, then the program runs");
+	acc_file = "C:\\OTHER.ACC";
+	timers = 0;
+	reset();
+	check(twin_handover("") == 0 && timers == 0, "  no ECAL.ACC or ECALST.ACC in the root: no wait");
+	acc_file = "C:\\ECALST.ACC";
+	hz200 = 61 * 200;
+	timers = 0;
+	reset();
+	check(twin_handover("") == 0 && timers == 0, "  a minute after a reset: no wait");
+	acc_file = 0;
+	procs[1] = late;
+	procs[2] = (PROC){ "ECAL    ", APP_APPLICATION, 5 };
+	nprocs = 3;
 
 	me = 3;
 	reset();

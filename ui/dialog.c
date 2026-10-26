@@ -10,6 +10,7 @@
  * before form_keybd and objc_edit see them.
  */
 #include <stdlib.h>
+#include <string.h>
 #include "tos.h"
 #include "gem.h"
 #include "dialog.h"
@@ -122,6 +123,20 @@ static void keep_redraw(const short *msg)
 		later[k].y2 = y2;
 }
 
+/* the app's other messages, asked while a dialog window was open by a
+   loop that doesn't take messages (a PEOPLE question, VA_START, AP_TERM,
+   AC_CLOSE): on TOS they would wait in the pipe; here they are kept and
+   given back, as they came, when the last dialog closes (EContact's
+   finding) */
+#define DLG_KEPT 8
+static short kept[DLG_KEPT][8], nkept;
+
+static void keep_msg(const short *msg)
+{
+	if (nkept < DLG_KEPT)
+		memcpy(kept[nkept++], msg, 16);
+}
+
 static void give_back_redraws(void)
 {
 	short k, m[8];
@@ -137,6 +152,9 @@ static void give_back_redraws(void)
 		appl_write(m[1], 16, m);
 	}
 	nlater = 0;
+	for (k = 0; k < nkept; k++)
+		appl_write(appl_id(), 16, kept[k]);
+	nkept = 0;
 }
 
 int dlg_windowed(void)
@@ -465,6 +483,10 @@ short dlg_evnt(short flags, short clicks, short mask, short state,
 				keep_redraw(msg);	/* for when the dialog is gone */
 			} else if (msg[0] == WM_TOPPED || msg[0] == WM_NEWTOP || msg[0] == WM_ONTOP) {
 				wind_set(dw[i].h, WF_TOP, 0, 0, 0, 0);	/* the dialog stays in front of ours */
+			} else if (k <= i && dw[k].h > 0 && msg[0] >= WM_REDRAW && msg[0] < 40) {
+				/* a dialog window's own (fulled, iconified...): nothing */
+			} else if (!(flags & MU_MESAG)) {
+				keep_msg(msg);		/* for when the dialog is gone */
 			} else {
 				mine = 0;
 			}

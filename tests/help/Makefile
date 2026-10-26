@@ -19,6 +19,27 @@ $(B)/fakeview.elf: $(B)/crt0.o $(B)/fakeview.o $(B)/gem.o $(B)/tos.o $(B)/libc.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/fakeview.o: fakeview.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
+# for prg_help.py: an app pressing Help (HELPT.PRG) and a stand-in
+# EHYPVIEW.PRG (FAKEPRG.PRG) that reports its command line
+U       := ../../ui
+S       := ../../src
+prg: $(B)/HELPT.PRG $(B)/FAKEPRG.PRG
+$(B)/HELPT.PRG: $(B)/helpt.elf ../../tools/elf2tos.py
+	python3 ../../tools/elf2tos.py $< $@
+$(B)/FAKEPRG.PRG: $(B)/fakeprg.elf ../../tools/elf2tos.py
+	python3 ../../tools/elf2tos.py $< $@
+$(B)/helpt.elf: $(B)/crt0.o $(B)/helpt.o $(B)/help.o $(B)/av.o $(B)/alert.o $(B)/dialog.o $(B)/bidi.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
+	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
+$(B)/fakeprg.elf: $(B)/crt0.o $(B)/fakeprg.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
+	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
+$(B)/helpt.o: helpt.c | $(B)
+	$(CC) $(CFLAGS) -I$(U) -I$(S) -c -o $@ $<
+$(B)/fakeprg.o: fakeprg.c | $(B)
+	$(CC) $(CFLAGS) -c -o $@ $<
+$(B)/%.o: $(U)/%.c | $(B)
+	$(CC) $(CFLAGS) -I$(U) -I$(S) -c -o $@ $<
+$(B)/bidi.o: $(S)/bidi.c | $(B)
+	$(CC) $(CFLAGS) -I$(S) -c -o $@ $<
 $(B)/%.o: $(A)/%.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(B)/crt0.o: $(A)/crt0.S | $(B)
@@ -29,4 +50,4 @@ $(B):
 	mkdir -p $@
 clean:
 	rm -rf $(B)
-.PHONY: clean
+.PHONY: clean prg

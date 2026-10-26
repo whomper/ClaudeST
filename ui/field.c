@@ -15,6 +15,7 @@
 #include "clip.h"
 #endif
 #include "field.h"
+#include "dialog.h"
 
 #define SC_BACKSPACE 0x0e
 #define SC_DELETE    0x53
@@ -161,12 +162,10 @@ static void place(LFIELD *f, short *idx)
 	}
 }
 
+/* through the dialog window's rectangles, where it is in one (dialog.c) */
 static void draw(LFIELD *f)
 {
-	OBJECT *tree = f->tree;
-	short x, y;
-	objc_offset(tree, f->obj, &x, &y);
-	objc_draw(tree, 0, 8, x - 2, y - 2, tree[f->obj].ob_width + 4, tree[f->obj].ob_height + 4);
+	dlg_draw(f->tree, f->obj);
 }
 
 void lf_enter(LFIELD *f, short *idx)

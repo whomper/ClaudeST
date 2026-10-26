@@ -30,8 +30,11 @@ $(B)/crt0.o: $(A)/crt0.S | $(B)
 	$(CC) -m68000 -DSTACK_SIZE=4096 -c -o $@ $<
 $(B)/nf.o: $(A)/nf.S | $(B)
 	$(CC) -m68000 -c -o $@ $<
-$(B)/test_av: test_av.c ../../ui/av.c ../../ui/av_people.c ../../ui/av.h | $(B)
-	cc $(CFLAGS) -o $@ test_av.c ../../ui/av.c ../../ui/av_people.c
+$(B)/test_av: test_av.c ../../ui/av.c ../../ui/av_people.c ../../ui/av.h $(B)/cmdline.c | $(B)
+	cc $(CFLAGS) -o $@ test_av.c ../../ui/av.c ../../ui/av_people.c $(B)/cmdline.c
+# cmd_line() as tos.c has it, for the build machine (the rest of tos.c is TOS's)
+$(B)/cmdline.c: $(A)/tos.c | $(B)
+	sed -n '/^extern void \*_BasePage/,/^}$$/p;/^const char \*cmd_line(void)$$/,/^}$$/p' $< > $@
 $(B):
 	mkdir -p $@
 test: $(B)/test_av

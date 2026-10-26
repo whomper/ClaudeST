@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 # The files src/tls.c opens and looks up (the guidelines, 6.5), counted
-# on the build machine: make test
+# on the build machine, and when a ChaCha20-only hello is tried again
+# (openssl s_server): make test
 BSSL   := ../../third_party/bearssl
 CFLAGS := -O1 -Wall -Wextra -Wno-unused-parameter -Istub -I../../src -I$(BSSL)/inc -I$(BSSL)/src
 BDEF   := -DBR_USE_URANDOM=0 -DBR_USE_GETENTROPY=0 -DBR_USE_UNIX_TIME=0
@@ -21,6 +22,7 @@ test: $(B)/test_tlsfiles
 	./$(B)/test_tlsfiles roots $(B)/w
 	./$(B)/test_tlsfiles seed $(B)/w 1
 	./$(B)/test_tlsfiles seed $(B)/w 2
+	./$(B)/test_tlsfiles retry $(B)/w
 clean:
 	rm -rf $(B)
 .PHONY: test clean
