@@ -61,6 +61,19 @@ or 1.3) and hands the answer back as it comes:
     the time of the slowest four, not one after another. What isn't asked
     for in three minutes goes, 48 MB at most are kept, and the Atari's
     next list drops what of its last hasn't begun.
+  - a script asked for with "X-Gateway-Script: TAG" (EWeb's QuickJS's
+    bytecode tag) comes compiled, when aerajsc (EWeb's tools/jsc, built
+    from EWeb's own QuickJS) has the same tag: QuickJS's bytecode, which
+    EWeb reads in a twentieth of the time compiling it takes the 68030,
+    as application/x-eweb-qjs with X-Gateway-Script: TAG (EWeb asks for
+    them once it has seen http://webgate/scripts answer "aerajsc TAG";
+    a server's own X-Gateway- headers never pass), the server's
+    other headers (its ETag and dates: EWeb keeps it and asks again with
+    them) as they came. aerajsc answers on a socket (--js-socket,
+    /run/webgate-js.sock: systemd starts one a connection, as its own
+    user, with little memory and time). Without it, with another tag, or
+    when the script doesn't compile, the script comes as it came (EWeb
+    compiles it itself). The server is asked for it unpacked.
 
 Snapshots (--browser): a GET with "X-Gateway-Snapshot: 1" is opened in an
 ordinary Chromium on the Pi (its own profile: your logins stay there), and
@@ -137,6 +150,14 @@ HOP_BY_HOP = {
     "host", "content-length", "accept-encoding",
 }
 
+
+def theirs(name, skip=HOP_BY_HOP):
+    """a server's header passed on to the Atari: not a hop's, and not one of
+    webgate's own (X-Gateway-...), which only webgate may say: EWeb runs
+    a script's compiled code only with webgate's X-Gateway-Script"""
+    n = name.lower()
+    return n not in skip and not n.startswith("x-gateway-")
+
 PIECE = 65536
 PICTURE_MAX = 40 << 20  # the most of a picture's file webgate takes in to make smaller
 PICTURE_PIXELS = 40_000_000     # and the most pixels it unpacks: a few kilobytes can claim gigabytes
@@ -144,6 +165,10 @@ PALETTES_KEPT = 16              # the Ataris' colours kept for pens, the oldest 
 PENS_TIME = 6                   # seconds aerapens may take (its unit stops it after 5)
 PENS_ANSWER_MAX = 6 << 20       # the most of its answer read: 4 megapixels of pens and a mask
 PENS_SEEN = [None]              # the aerapens last logged ("aerapens COMMON BUILD")
+SCRIPT_MAX = 4 << 20            # the most of a script webgate has compiled (aerajsc's SOURCE_MAX)
+JS_TIME = 8                     # seconds aerajsc may take (it stops compiling after 5)
+JS_ANSWER_MAX = 16 << 20        # the most of its answer read
+JS_SEEN = [None]                # the aerajsc last logged ("aerajsc TAG")
 CHECK_MAX = 512 << 10           # the most of a 403 or 503 from Cloudflare read to see if it is its check
 VISIT_KEEP = 25 * 60            # seconds a site behind the check stays on the browser after its last page
 VISITS = {}                     # host -> when its last page went through the browser
@@ -237,17 +262,16 @@ def pens_input(data):
         return data
 
 
-def pens_ask(request):
-    """aerapens' answer to request, over its socket (Config.pens_socket:
-    systemd starts one aerapens a connection, with little memory and
-    time), or None (no socket, an error, too slow, too long)"""
-    path = Config.pens_socket
+def sock_ask(path, request, wait, most):
+    """the answer to request of the tool behind the socket at path
+    (systemd starts one a connection), or None (no socket, an error, too
+    slow, too long)"""
     if not path or not os.path.exists(path):
         return None
-    deadline = time.monotonic() + PENS_TIME
+    deadline = time.monotonic() + wait
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.settimeout(PENS_TIME)
+            s.settimeout(wait)
             s.connect(path)
             s.sendall(request)
             s.shutdown(socket.SHUT_WR)
@@ -262,11 +286,54 @@ def pens_ask(request):
                     break
                 parts.append(b)
                 size += len(b)
-                if size > PENS_ANSWER_MAX:
+                if size > most:
                     return None
             return b"".join(parts)
     except OSError:
         return None
+
+
+def js_ask(source):
+    """aerajsc's answer for source (b"": which it is): ("aerajsc TAG",
+    the rest) or None"""
+    a = sock_ask(Config.js_socket, b"EWJQ\1" + len(source).to_bytes(4, "big") + source, JS_TIME, JS_ANSWER_MAX)
+    line, nl, rest = (a or b"").partition(b"\n")
+    if not nl or not line.startswith(b"aerajsc ") or len(line) > 200:
+        return None
+    return line.decode("ascii", "replace"), rest
+
+
+def js_which():
+    """which aerajsc answers on the socket ("aerajsc TAG"), or None"""
+    got = js_ask(b"")
+    return got[0] if got else None
+
+
+def compile_script(source, tag):
+    """source compiled by aerajsc for tag (EWeb's X-Gateway-Script):
+    (bytes, what was done) or (None, why not)"""
+    if len(source) > SCRIPT_MAX:
+        return None, "too big to compile"
+    got = js_ask(source)
+    if got is None:
+        return None, "not compiled: no aerajsc"
+    which, out = got
+    if which != JS_SEEN[0]:
+        JS_SEEN[0] = which
+        aeragate.say("webgate: scripts compiled by %s" % which)
+    if which.split(" ", 1)[1] != tag:
+        return None, "not compiled: EWeb's QuickJS is %s" % tag
+    head = ("EWQJS %s\n" % tag).encode()
+    if not out.startswith(head):
+        return None, "not compiled"     # (aerajsc's "error ...": a script QuickJS can't compile)
+    return out, "compiled, %d KB to %d KB" % ((len(source) + 1023) // 1024, (len(out) + 1023) // 1024)
+
+
+def pens_ask(request):
+    """aerapens' answer to request, over its socket (Config.pens_socket:
+    systemd starts one aerapens a connection, with little memory and
+    time), or None (no socket, an error, too slow, too long)"""
+    return sock_ask(Config.pens_socket, request, PENS_TIME, PENS_ANSWER_MAX)
 
 
 def pens_request(ed, n, w, h, rgb=b"", data=b""):
@@ -379,6 +446,7 @@ class Config:
     live_settle = 1.0       # seconds the browser has after a click before the next picture
     insecure = False        # tests only: don't check certificates
     pens_socket = "/run/webgate-pens.sock"  # aerapens' socket (systemd's); not there: no pens
+    js_socket = "/run/webgate-js.sock"      # aerajsc's socket (systemd's); not there: scripts as they come
 
 
 def _dial(address, timeout=None, source_address=None):
@@ -507,7 +575,7 @@ def picture_answer(resp, conn, u, port, want):
     pens = make_pens(data, want) if want["pens"] else None
     made = (pens[0], "application/x-aera-pens", pens[1]) if pens else make_picture(data, want["fit"])
     skip = HOP_BY_HOP | ({"content-type", "content-length"} if made else set())
-    headers = [(k, v) for k, v in resp.getheaders() if k.lower() not in skip]
+    headers = [(k, v) for k, v in resp.getheaders() if theirs(k, skip)]
     if made:
         data = made[0]
         headers += [("Content-Type", made[1]), ("X-Gateway-Picture", made[2])]
@@ -693,7 +761,7 @@ def make_ahead(url, pic, cookie, headers):
     if len(data) > PREFETCH_PLAIN_MAX or (resp.getheader("Transfer-Encoding") or "").lower() not in ("", "identity"):
         UP.drop(u.scheme, u.hostname, port)
         return None
-    headers = [(k, v) for k, v in resp.getheaders() if k.lower() not in HOP_BY_HOP]
+    headers = [(k, v) for k, v in resp.getheaders() if theirs(k)]
     tls = tls_of(conn)
     if tls:
         headers.append(("X-Gateway-TLS", tls))
@@ -774,6 +842,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.for_browser and u.hostname == "webgate" and u.path == "/prefetch":
             self.prefetch(body)
             return
+        if not self.for_browser and u.hostname == "webgate" and u.path == "/scripts":
+            # which scripts webgate compiles: "aerajsc TAG" (EWeb asks for
+            # them compiled only of a webgate that answers this, one that
+            # drops the servers' own X-Gateway- headers)
+            which = js_which()
+            if which:
+                self.send_body(200, which.encode() + b"\n", "text/plain")
+            else:
+                self.send_body(404, b"webgate: no aerajsc\n", "text/plain")
+            self.note(200 if which else 404, 0, " (%s)" % (which or "no aerajsc"))
+            return
         if u.scheme not in ("http", "https") or not u.hostname:
             self.reply(400, "webgate: expected a request like GET https://host/path\n")
             return
@@ -811,6 +890,10 @@ class Handler(BaseHTTPRequestHandler):
         # what the Atari unpacks itself, and nothing it can't
         asked = (self.headers.get("Accept-Encoding") or "").lower()
         headers["Accept-Encoding"] = ", ".join(e for e in ("gzip", "deflate") if e in asked) or "identity"
+        script = self.headers.get("X-Gateway-Script") if self.command == "GET" and not self.for_browser else None
+        if script:
+            headers.pop("X-Gateway-Script", None)
+            headers["Accept-Encoding"] = "identity"     # (compiled here: it comes unpacked)
         for attempt in (1, 2):
             conn = UP.get(u.scheme, u.hostname, port)
             try:
@@ -850,6 +933,9 @@ class Handler(BaseHTTPRequestHandler):
                 (resp.getheader("Content-Type") or "").lower().startswith("image/") and \
                 (resp.getheader("Content-Encoding") or "identity").lower() == "identity":
             self.picture(resp, conn, u, port, want)
+        elif script and resp.status == 200 and \
+                (resp.getheader("Content-Encoding") or "identity").lower() == "identity":
+            self.script(resp, conn, u, port, script.strip())
         else:
             self.pass_on(resp, conn, u, port)
 
@@ -913,6 +999,31 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(502, a)
         else:
             self.send_answer(a)
+
+    def script(self, resp, conn, u, port, tag):
+        """a script compiled for EWeb (compile_script), or as it came"""
+        try:
+            data = resp.read(SCRIPT_MAX + 1)
+        except (OSError, http.client.HTTPException):
+            UP.drop(u.scheme, u.hostname, port)
+            self.reply(502, "webgate: %s closed the connection\n" % u.hostname)
+            return
+        if len(data) > SCRIPT_MAX:
+            # (more than is compiled: the rest as it comes)
+            self.pass_on(resp, conn, u, port, first=data)
+            return
+        if resp.will_close:
+            UP.drop(u.scheme, u.hostname, port)
+        made, what = compile_script(data, tag)
+        skip = HOP_BY_HOP | ({"content-type", "content-length"} if made else {"content-length"})
+        headers = [(k, v) for k, v in resp.getheaders() if theirs(k, skip)]
+        if made:
+            data = made
+            headers += [("Content-Type", "application/x-eweb-qjs"), ("X-Gateway-Script", tag)]
+        tls = tls_of(conn)
+        if tls:
+            headers.append(("X-Gateway-TLS", tls))
+        self.send_answer(Answer(resp.status, resp.reason, headers, data, " (%s)" % what))
 
     def send_answer(self, a, more=""):
         """an Answer (a picture made, or one made ahead: Prefetch)"""
@@ -1097,7 +1208,7 @@ class Handler(BaseHTTPRequestHandler):
         empty = self.command == "HEAD" or resp.status in (204, 304) or 100 <= resp.status < 200
         self.send_response(resp.status, resp.reason)
         for k, v in resp.getheaders():
-            if k.lower() not in HOP_BY_HOP:
+            if theirs(k):
                 self.send_header(k, v)
         tls = tls_of(conn)
         if tls:
@@ -1290,6 +1401,8 @@ def parser():
     ap.add_argument("--browser-port", type=int, default=8281, help="where webgate-ext asks (127.0.0.1 only)")
     ap.add_argument("--pens-socket", default="/run/webgate-pens.sock",
                     help="aerapens' socket, for pictures as the Atari's pens (not there: none)")
+    ap.add_argument("--js-socket", default="/run/webgate-js.sock",
+                    help="aerajsc's socket, for scripts compiled for EWeb (not there: none)")
     ap.add_argument("--insecure", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("-v", "--verbose", action="store_true")
     return ap
@@ -1305,6 +1418,7 @@ def main(argv=None):
     Config.browser = a.browser
     Config.browser_port = a.browser_port
     Config.pens_socket = a.pens_socket
+    Config.js_socket = a.js_socket
     srv = ThreadingHTTPServer((a.bind, a.port), Handler)
     srv.daemon_threads = True
     if a.browser:
@@ -1316,6 +1430,9 @@ def main(argv=None):
     PENS_SEEN[0] = pens_which()
     aeragate.say("webgate: pictures as pens by %s" % PENS_SEEN[0] if PENS_SEEN[0] else
                  "webgate: no pictures as pens (nothing answers on %s)" % Config.pens_socket)
+    JS_SEEN[0] = js_which()
+    aeragate.say("webgate: scripts compiled by %s" % JS_SEEN[0] if JS_SEEN[0] else
+                 "webgate: no scripts compiled (nothing answers on %s)" % Config.js_socket)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
