@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * net_tos.c - TCP for the AERA programs on the Atari, like the GFA Troll does it:
+ * net_tos.c - TCP for the AERA programs on the Atari:
  *   - STinG / STiK (TOS, MagiC, or MiNT with GlueSTiK) through its TPL,
  *   - MiNTnet sockets (FreeMiNT, MagiC-Net) through GEMDOS calls.
  * Names are resolved with STinG when it is there, otherwise with a

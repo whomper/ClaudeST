@@ -283,12 +283,14 @@ try:
     menu = shot("1-desk-menu")
     for _ in range(5):
         # a first boot under NVDI on a 4 MB Falcon can take more than a
-        # second to draw it (EUpdate 1.19's run, 27 Oct 2026)
-        if differs(desk, menu) > 500:
+        # second to draw it (EUpdate 1.19's run, 27 Oct 2026); the title
+        # alone turned black is some 1,300 pixels ("ClaudeST", 1.68), the
+        # menu's box many more
+        if differs(desk, menu) > 4000:
             break
         time.sleep(1)
         menu = shot("1-desk-menu")
-    check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
+    check(differs(desk, menu) > 4000, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
     alert_rows = set()
     if alerts & set(want):
         # which rows open an alert: the TOS orders the Desk menu as it
@@ -318,6 +320,7 @@ try:
         for i in range(len(want)):            # the Desk menu's order is the loading order
             before = shot("%d-%d-before" % (rnd, i))
             click(30, 8)
+            time.sleep(2 if nvdi else 1)             # the menu drawn (NVDI on Falcon-4: over a second)
             click(60, 64 + 16 * i)                   # its row, under About and the line
             time.sleep(8 if st else 5)
             after = shot("%d-%d-opened" % (rnd, i))
