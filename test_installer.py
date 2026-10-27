@@ -557,7 +557,8 @@ class DavFtpTest(Base):
         self.assertFalse(make[3].startswith(os.path.dirname(ag.HERE)))      # never in the copy itself
         self.assertTrue(self.pi.exists("/opt/aera-gateway-jsc/aerajsc"))
         sock, svc = self.pi.read("/etc/systemd/system/webgate-js.socket"), self.unit("webgate-js@")
-        for want in ("ListenStream=/run/webgate-js.sock", "Accept=yes", "SocketUser=webgate", "SocketMode=0600"):
+        for want in ("ListenStream=/run/webgate-js.sock", "Accept=yes", "SocketUser=webgate", "SocketMode=0600",
+                     "MaxConnections=2"):
             self.assertIn(want, sock)
         for want in ("ExecStart=/opt/aera-gateway-jsc/aerajsc", "StandardInput=socket", "DynamicUser=yes",
                      "LimitAS=512M", "RuntimeMaxSec=8", "PrivateNetwork=yes", "RestrictAddressFamilies=AF_UNIX"):
@@ -566,6 +567,16 @@ class DavFtpTest(Base):
         cmds = [c for c in self.pi.cmds if c[:2] == ("systemctl", "restart")]
         self.assertLess(cmds.index(("systemctl", "restart", "webgate-js.socket")),
                         cmds.index(("systemctl", "restart", "webgate.service")))
+        # built from the same jsc/: kept, not built again; another: built
+        self.assertEqual(self.pi.read("/opt/aera-gateway-jsc/SOURCE").strip(), ag.Web().jsc_sum())
+        builds = lambda: len([c for c in self.pi.cmds if c[0] == "make" and os.path.basename(c[3]) == "jsc"])
+        n = builds()
+        self.assertEqual(self.run_ag("install", "web"), 0, self.err)
+        self.assertEqual(builds(), n)
+        self.assertTrue(self.pi.exists("/opt/aera-gateway-jsc/aerajsc"))
+        self.pi.write("/opt/aera-gateway-jsc/SOURCE", "another\n")
+        self.assertEqual(self.run_ag("install", "web"), 0, self.err)
+        self.assertEqual(builds(), n + 1)
         self.assertEqual(self.run_ag("remove", "web"), 0, self.err)
         self.assertIsNone(self.pi.read("/etc/systemd/system/webgate-js.socket"))
         self.assertFalse(self.pi.exists("/opt/aera-gateway-jsc"))
@@ -588,7 +599,7 @@ class DavFtpTest(Base):
         self.assertIsNone(self.unit("ecalgate"))
 
     def test_unknown(self):
-        self.assertEqual(self.run_ag("install", "troll"), 2)
+        self.assertEqual(self.run_ag("install", "nosuch"), 2)
         self.assertIn("no such service", self.err)
 
 
