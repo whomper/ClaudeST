@@ -480,13 +480,16 @@ static void make_free(BLK *b, size_t s)
 	bin_put(b, bin_of(s));
 }
 
-#ifdef HEAP_TEST
-static char *area_lo[64], *area_hi[64];
+/* the areas: where each one's blocks are, and the GEMDOS block it is
+   (0: heap_add's, never given back) for heap_trim */
+#define MAX_AREAS 64
+static char *area_lo[MAX_AREAS], *area_hi[MAX_AREAS];
+static void *area_mem[MAX_AREAS];
+static size_t area_bytes[MAX_AREAS];
 static int areas;
-#endif
 
 /* a new area: one free block, and the fence */
-static int add_area(void *p, size_t bytes)
+static int add_area(void *p, size_t bytes, void *mem)
 {
 	char *lo = (char *)(((unsigned long)p + ALIGN - 1) & ~(unsigned long)(ALIGN - 1));
 	char *hi = (char *)(((unsigned long)p + bytes) & ~(unsigned long)(ALIGN - 1));
@@ -495,20 +498,27 @@ static int add_area(void *p, size_t bytes)
 	hi -= WORD;
 	((BLK *)hi)->head = INUSE;
 	make_free((BLK *)lo, (size_t)(hi - lo));
-#ifdef HEAP_TEST
-	area_lo[areas] = lo;
-	area_hi[areas++] = hi;
-#endif
+	if (areas < MAX_AREAS) {	/* (beyond, it is never given back) */
+		area_lo[areas] = lo;
+		area_hi[areas] = hi;
+		area_mem[areas] = mem;
+		area_bytes[areas++] = bytes;
+	}
 	return 1;
 }
 
 void heap_add(void *p, size_t bytes)
 {
-	add_area(p, bytes);
+	add_area(p, bytes, 0);
 	heap_fixed = 1;
 }
 
 #define MAX_BLOCKS 40		/* TOS's pool is shared with every program and folder */
+/* the heap doubles up to this, then grows by it: what it takes is never
+   much more than it needs (EWeb on a 128 MB TT RAM Falcon held 109 MB
+   after a page needed some 64, 27 Oct 2026), and 40 blocks still reach
+   290 MB */
+#define HEAP_STEP (8L << 20)
 
 long heap_tt, heap_st;		/* bytes the heap took from TT/Fast and ST RAM (About) */
 long heap_early;		/* of those, an accessory's before its heap_add (its log says so) */
@@ -517,10 +527,11 @@ extern short _is_acc;		/* crt0.S (tests/heap: its own) */
 
 /* more memory from GEMDOS for a block of need bytes (kept out of malloc,
    whose registers it would cost) */
+static short blocks;		/* GEMDOS blocks taken, a pool entry each */
+static size_t taken;		/* bytes taken from GEMDOS and held */
+
 static __attribute__((noinline)) int more_core(size_t need)
 {
-	static short blocks;		/* GEMDOS blocks taken, a pool entry each */
-	static size_t taken;		/* bytes taken from GEMDOS so far */
 	size_t least = need + WORD + 2 * ALIGN, want;	/* the block, the fence, alignment */
 	void *h = 0;
 	if (heap_fixed)
@@ -544,13 +555,13 @@ static __attribute__((noinline)) int more_core(size_t need)
 			heap_tt += want;
 		else
 			heap_st += want;
-		return add_area(h, want);
+		return add_area(h, want, h);
 	}
 	/* Every GEMDOS block takes an entry in TOS's small internal pool, and
 	   when that runs out TOS halts the machine ("OUT OF INTERNAL MEMORY").
 	   So few blocks: 512 KB at first, then each as big as all before it,
-	   so the heap doubles and 16 MB takes six. Less if that much isn't
-	   free; at worst exactly what is needed. */
+	   so the heap doubles up to 8 MB in five, then HEAP_STEP at a time.
+	   Less if that much isn't free; at worst exactly what is needed. */
 	want = least < 512L * 1024 ? 512L * 1024 : least;
 	if (!taken) {
 		/* the first block: with no TT RAM, at most a quarter of what is
@@ -564,7 +575,7 @@ static __attribute__((noinline)) int more_core(size_t need)
 		}
 	}
 	if (want < taken)
-		want = taken;
+		want = taken <= HEAP_STEP ? taken : want > HEAP_STEP ? want : HEAP_STEP;
 	if (blocks >= MAX_BLOCKS)
 		return 0;		/* "out of memory" beats a halted machine */
 	while (!h) {
@@ -584,7 +595,43 @@ static __attribute__((noinline)) int more_core(size_t need)
 		heap_tt += want;
 	else
 		heap_st += want;
-	return add_area(h, want);
+	return add_area(h, want, h);
+}
+
+/* Every GEMDOS block but the first that is all free again goes back to
+   TOS: what the heap held for a page that is gone is the system's again
+   (and other programs'). A program's, not an accessory's (its memory
+   isn't its own to give). The bytes given back. */
+long heap_trim(void)
+{
+	long back = 0;
+	int a;
+	if (heap_fixed || _is_acc)
+		return 0;
+	for (a = areas - 1; a >= 1; a--) {
+		BLK *b = (BLK *)area_lo[a];
+		size_t bytes = area_bytes[a];
+		if (!area_mem[a] || (b->head & INUSE) || AT(b, SIZE(b)) != (BLK *)area_hi[a])
+			continue;
+		if (b == dv)
+			dv = 0;
+		else
+			bin_take(b, bin_of(SIZE(b)));
+		if ((unsigned long)area_mem[a] >= 0x01000000UL)
+			heap_tt -= (long)bytes;
+		else
+			heap_st -= (long)bytes;
+		Mfree(area_mem[a]);
+		taken -= bytes;
+		blocks--;
+		back += (long)bytes;
+		areas--;		/* the last in its place (the first stays first) */
+		area_lo[a] = area_lo[areas];
+		area_hi[a] = area_hi[areas];
+		area_mem[a] = area_mem[areas];
+		area_bytes[a] = area_bytes[areas];
+	}
+	return back;
 }
 
 static size_t block_for(size_t n)

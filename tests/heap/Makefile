@@ -9,7 +9,7 @@ M68K   ?= m68k-linux-gnu-gcc
 QEMU   ?= qemu-m68k-static
 SRC    := test_heap.c ../../atari/libc.c
 B      := build
-CASES  := fixed accearly frag grow limited tos1 st1 maxblocks exact bins dv1 dv2
+CASES  := fixed accearly frag grow trim limited tos1 st1 maxblocks exact bins dv1 dv2
 
 $(B)/test_heap: $(SRC) stub/tos.h | $(B)
 	cc $(CFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ $(SRC)

@@ -35,10 +35,13 @@ int main(void)
 	notify_init("NOTET");
 	notify_clicked = clicked;
 	evnt_timer_(3000);		/* BGEM.NG up first */
-	snprintf(b, sizeof(b), "NOTET sent %d\n",
-		 notify_send("New mail", "3 new messages|from the test", "Open|Later", 42));
-	say(b);
+	notify_ask();
 	for (t = 0; t < 300; t++) {	/* 30 s of messages */
+		if (t == 20) {		/* 2 s on: its answer has come */
+			snprintf(b, sizeof(b), "NOTET sent %d\n",
+				 notify_send("New mail", "3 new messages|from the test", "Open|Later", 42));
+			say(b);
+		}
 		evnt_multi_(MU_MESAG | MU_TIMER, 0, 0, 0, 100, m, &e);
 		if (!(e.which & MU_MESAG))
 			continue;

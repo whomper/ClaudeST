@@ -2,10 +2,11 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * ui/notify.c on the host: the text BGEM.NG is given, and the protocol
- * (bgemng.hyp's API page) against a stand-in "BUBBLE  ": the question
- * first, a notification sent once the answer says it may, nothing where
- * there is no BGEM.NG or an old BubbleGEM answers nothing, a button's
- * click given to the app. make test
+ * (bgemng.hyp's API page) against a stand-in "BUBBLE  ": the question at
+ * start, a notification sent only once the answer says it may (0 before,
+ * so the app tells it its own way), nothing where there is no BGEM.NG or
+ * an old BubbleGEM answers nothing, a button's click given to the app.
+ * make test
  */
 #include <stdio.h>
 #include <string.h>
@@ -92,26 +93,28 @@ int main(void)
 	check(shared_asked == 1, "notify_init takes global memory");
 	check(!notify_send("t", "x", 0, 1) && nsent == 0, "no BUBBLE: 0, nothing sent");
 
-	/* BGEM.NG runs: asked first; the notification waits for the answer */
+	/* BGEM.NG runs: asked at start; nothing is sent until it answers */
 	bubble = 5;
-	check(notify_send("New mail", "1 new message", "Open", 7) == 1, "BUBBLE runs: 1");
+	notify_ask();
 	check(nsent == 1 && (unsigned short)sent[0][0] == BGEMNG_INQUIRE && sent[0][1] == 3,
-	      "... asked with BGEMNG_INQUIRE first");
-	check(!notify_ok(), "... no answer yet");
+	      "notify_ask: BGEMNG_INQUIRE to BUBBLE");
+	check(!notify_send("New mail", "1 new message", "Open", 7) && nsent == 1,
+	      "before its answer: notify_send gives 0 (the app tells it its own way), not asked twice");
 	memset(m, 0, sizeof(m));
 	m[0] = (short)BGEMNG_INQUIRE;
 	m[1] = 5;
 	m[7] = 0x0f;
 	check(notify_message(m) == 1, "the answer is notify.c's");
 	check(notify_ok(), "... notifications (4) said");
+	check(notify_send("New mail", "1 new message", "Open", 7) == 1, "then notify_send gives 1");
 	check(nsent == 2 && (unsigned short)sent[1][0] == BUBBLEGEM_SHOW && sent[1][1] == 3 && sent[1][2] == 7 &&
-	      sent[1][7] == 0x10, "... then the waiting one sent: SHOW, our id 7, a notification (0x10)");
+	      sent[1][7] == 0x10, "... SHOW, our id 7, a notification (0x10)");
 	check(!strcmp(text_of(sent[1]), "[ Title=\"New mail\" From=\"EMAIL   \" ][0][1 new message][Open]"),
 	      "... its text in the global memory, From the AES name padded to 8");
 
 	/* the next goes at once, in the other half (the first may not be read yet) */
 	check(notify_send(0, "second", 0, 8) == 1 && nsent == 3 && (unsigned short)sent[2][0] == BUBBLEGEM_SHOW,
-	      "once answered: sent at once, not asked again");
+	      "the next: sent at once, not asked again");
 	check(text_of(sent[2]) != text_of(sent[1]), "... in the other buffer");
 
 	/* the ACKs: taken (no button), then a click */
@@ -126,18 +129,22 @@ int main(void)
 	m[0] = 0x4711;
 	check(notify_message(m) == 0, "another message: the app's");
 
-	/* an old BubbleGEM (another id): asked, answers nothing that says notifications */
+	/* an old BubbleGEM (another id): never answers; notify_send gives 0 each time */
 	bubble = 9;
 	nsent = 0;
-	check(notify_send(0, "x", 0, 1) == 1 && nsent == 1 && (unsigned short)sent[0][0] == BGEMNG_INQUIRE,
-	      "a new BUBBLE: asked again");
+	check(!notify_send(0, "x", 0, 1) && nsent == 1 && (unsigned short)sent[0][0] == BGEMNG_INQUIRE,
+	      "a new BUBBLE: asked, 0 given (ECal's reminders stay alerts)");
+	check(!notify_send(0, "y", 0, 1) && !notify_send(0, "z", 0, 1) && nsent == 1,
+	      "... no answer: 0 every time, asked once");
+	/* one that answers without notifications */
 	memset(m, 0, sizeof(m));
 	m[0] = (short)BGEMNG_INQUIRE;
 	m[1] = 9;
 	m[7] = 0x01;
 	notify_message(m);
-	check(nsent == 1 && !notify_ok(), "... it says no notifications: the waiting one isn't sent");
-	check(!notify_send(0, "y", 0, 1) && nsent == 1, "... and later ones give 0");
+	check(!notify_ok() && !notify_send(0, "w", 0, 1) && nsent == 1, "an answer without notifications: still 0");
+	bubble = -1;
+	check(!notify_send(0, "v", 0, 1), "BUBBLE gone: 0");
 
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;

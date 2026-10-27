@@ -51,6 +51,18 @@ short wind_calc(short type, short kind, short x, short y, short w, short h,
 
 static int d3_ok;
 int dlg_3d_on = 1;
+static short n_aes = -1;		/* the AES's global[1]: 1 on TOS and EmuTOS */
+
+short aes_count(void)
+{
+	return n_aes;
+}
+
+long get_cookie(long id)
+{
+	(void)id;
+	return 0;
+}
 static int d3_calls;
 
 int dlg_3d_ok(void)
@@ -234,6 +246,11 @@ int main(void)
 	pb_draw(&bar, &clip);
 	check((drawn[2].ob_spec & 0xff) == 0x91, "DIALOGS3D=0: flat again");
 	dlg_3d_on = 1;
+	n_aes = 1;
+	pb_draw(&bar, &clip);
+	check((drawn[2].ob_spec & 0xff) == 0x91 && !(drawn[3].ob_flags & 0x0600),
+	      "TOS 4 (3D dialogs, flat window sliders): flat, as the window's own slider beside it");
+	n_aes = -1;
 	bar.total = 5;
 	pb_draw(&bar, &clip);
 	check(drawn[3].ob_flags & HIDETREE, "everything shown: the slider hidden");
