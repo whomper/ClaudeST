@@ -238,8 +238,10 @@ static long save_bytes;
 /* disk work in big pieces (the guidelines, 6.5): Save to disk gathers the
    file in memory and writes it in one go, Attach reads 16 KB (68000) or
    32 KB (68030 and up) at a time. The memory is big_alloc's, TT RAM when
-   the machine has it; with too little free, this buffer. */
-#define DISK_BUF (16L * 1024)
+   the machine has it; with too little free, this buffer, 4 KB: at 16 KB it
+   held back memory the AES needs (1.68 on a 4 MB Falcon with NVDI and four
+   accessories left too little to drop the Desk menu; the hub, 27 Oct 2026) */
+#define DISK_BUF (4L * 1024)
 static char disk_buf[DISK_BUF];
 static char *save_buf;			/* what is gathered, save_len of save_cap */
 static long save_cap, save_len;
