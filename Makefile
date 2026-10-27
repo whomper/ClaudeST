@@ -6,7 +6,9 @@
 #   make            binary/CLAUDEST.PRG (make -C st; apt install gcc-m68k-linux-gnu)
 #   make help       binary/CLAUDEST.HYP and .REF (needs hcp:
 #                   common/tools/build-hcp.sh builds it; HCP=/path/to/hcp)
-#   make test       the bridge's tests and the right-to-left layout's
+#   make test       the bridge's tests and the right-to-left layout's, and
+#                   the 68000 build checked for word and long accesses at an
+#                   odd stack offset (common/tools/oddaccess.py; The machines)
 #   make icons      the icon again, from common/icons/CLAUDEST.txt: icons/, st/icon*.h, docs/icon*.png
 #   make dist       a release's files in dist/: each file, and CLAUDEST-x.y.zip
 #
@@ -28,6 +30,8 @@ help:
 test:
 	cd bridge && python3 -m unittest test_bridge
 	$(MAKE) -C st test
+	$(MAKE) -C st
+	python3 common/tools/oddaccess.py st/claudest.elf
 
 icons:
 	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --rscnv icons/CLSTNV.RSC \
