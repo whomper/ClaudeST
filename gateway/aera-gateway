@@ -33,6 +33,7 @@ import contextlib
 import getpass
 import glob
 import grp
+import hashlib
 import importlib.util
 import io
 import json
@@ -48,7 +49,7 @@ import tempfile
 import time
 import urllib.request
 
-VERSION = "1.12"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.13"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -677,7 +678,8 @@ class Web(Gateway):
     JSC_SRC = os.path.join(os.path.dirname(HERE), "jsc")
     JSC_DIR = "/opt/aera-gateway-jsc"
     JSC_SOCKET = "/run/webgate-js.sock"
-    jsc_built = None                        # this install's aerajsc, built in prepare()
+    jsc_built = None                        # this install's aerajsc, built in prepare() ("kept": as it is)
+    jsc_source = None                       # the sum of the jsc/ it is built from (jsc_sum)
 
     def options(self, ap):
         super().options(ap)
@@ -863,6 +865,11 @@ class Web(Gateway):
         self.jsc_built = None
         if not os.path.isdir(os.path.join(self.JSC_SRC, "eweb")):
             return              # an app's copy of gateway/: no jsc/ beside it
+        self.jsc_source = self.jsc_sum()
+        if pi.exists(self.JSC_DIR + "/aerajsc") and \
+                (pi.read(self.JSC_DIR + "/SOURCE") or "").strip() == self.jsc_source:
+            self.jsc_built = "kept"     # built from this very jsc/ before: not again
+            return
         need = [pkg for prog, pkg in (("cc", "gcc"), ("make", "make")) if not pi.which(prog)]
         if need:
             heading("Installing %s, to build aerajsc (scripts compiled for EWeb)" % " and ".join(need))
@@ -879,6 +886,20 @@ class Web(Gateway):
             shutil.rmtree(tmp, ignore_errors=True)
             say("aerajsc didn't build: scripts come as they are, and EWeb compiles them.")
 
+    def jsc_sum(self):
+        """a sum of this copy's jsc/ (what aerajsc is built from): the same
+        sum, the same aerajsc"""
+        h = hashlib.sha256()
+        for top, dirs, files in sorted(os.walk(self.JSC_SRC)):
+            dirs[:] = sorted(d for d in dirs if d != "build")
+            for f in sorted(files):
+                if f != "aerajsc":
+                    path = os.path.join(top, f)
+                    h.update(os.path.relpath(path, self.JSC_SRC).encode() + b"\0")
+                    with open(path, "rb") as fh:
+                        h.update(fh.read())
+        return h.hexdigest()
+
     def jsc_units(self):
         """(the socket's unit, the service's): one aerajsc a connection, as
         a user of its own, with memory for a big script and little time,
@@ -886,7 +907,7 @@ class Web(Gateway):
         socket_unit = "\n".join([
             "[Unit]", "Description=aerajsc's socket: scripts compiled for EWeb, for webgate", "",
             "[Socket]", "ListenStream=" + self.JSC_SOCKET, "Accept=yes",
-            "SocketUser=" + self.name, "SocketGroup=" + self.name, "SocketMode=0600", "MaxConnections=8", "",
+            "SocketUser=" + self.name, "SocketGroup=" + self.name, "SocketMode=0600", "MaxConnections=2", "",
             "[Install]", "WantedBy=sockets.target", ""])
         service = "\n".join([
             "[Unit]", "Description=aerajsc: one script compiled for EWeb, for webgate", "",
@@ -925,11 +946,13 @@ class Web(Gateway):
     def jsc_start(self, pi):
         if not self.jsc_built:
             return
-        try:
-            pi.copy(os.path.join(self.jsc_built, "jsc", "aerajsc"), self.JSC_DIR + "/aerajsc", 0o755)
-        finally:
-            shutil.rmtree(self.jsc_built, ignore_errors=True)
-            self.jsc_built = None
+        if self.jsc_built != "kept":
+            try:
+                pi.copy(os.path.join(self.jsc_built, "jsc", "aerajsc"), self.JSC_DIR + "/aerajsc", 0o755)
+                pi.write(self.JSC_DIR + "/SOURCE", self.jsc_source + "\n")
+            finally:
+                shutil.rmtree(self.jsc_built, ignore_errors=True)
+        self.jsc_built = None
         socket_unit, service = self.jsc_units()
         pi.write(unit_path("webgate-js").replace(".service", ".socket"), socket_unit)
         pi.write(unit_path("webgate-js@"), service)
