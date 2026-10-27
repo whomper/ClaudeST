@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """run.py WORK EMUTOS.IMG PRG [--copy FILE ...] [--display :97] [--wait S]
-          [--steps "..."] [--size MB]
+          [--steps "..."] [--size MB] [--setenv NAME=VALUE ...] [--cnf LINE ...]
 
 An Atari GEM program in Hatari under FreeMiNT 1.17.0 with XaAES, an AES
 that iconifies windows, multitasks and does drag and drop, on a Falcon
@@ -24,6 +24,10 @@ Hatari runs in a window on an Xvfb display (started when none answers on
 --display), with --cmd-fifo WORK/cmd.fifo, --screenshot-dir WORK/shots
 and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
 
+--setenv    NAME=VALUE: a setenv line in XAAES.CNF, before the run line
+            (the AES's environment, which shel_envrn reads)
+--cnf       a line of its own in XAAES.CNF, before the run line
+            ("xa_bubble = 0", "run c:\\BGEMNG\\BGEMNG.PRG")
 --wait S    without --steps: run S seconds (default: until stopped); with
             --steps: S seconds before the first step
 --steps     separated by ';', X Y in Atari screen coordinates:
@@ -69,6 +73,8 @@ def main():
     ap.add_argument("--steps")
     ap.add_argument("--size", type=int, default=32)
     ap.add_argument("--later", type=int)
+    ap.add_argument("--setenv", action="append", default=[], metavar="NAME=VALUE")
+    ap.add_argument("--cnf", action="append", default=[], metavar="LINE")
     a = ap.parse_args()
     if not os.path.isdir(BASE):
         sys.exit("no %s: make base" % BASE)
@@ -104,6 +110,11 @@ def run(a):
             f.write("%d C:\\%s\r\n" % (a.later, name))
         first = "LATER.PRG"
     with open(os.path.join(mintdir, ver, "xaaes", "xaaes.cnf"), "a") as f:
+        for e in a.setenv:
+            k, v = e.split("=", 1)
+            f.write("setenv %s %s\n" % (k, v))
+        for l in a.cnf:
+            f.write(l + "\n")
         f.write("run c:\\%s\n" % first)
     img = os.path.join(work, "hd.img")
     fatimg.build(hd, img, a.size)

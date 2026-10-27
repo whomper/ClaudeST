@@ -125,6 +125,12 @@ extern void (*dlg_redraw_hook)(const short *msg);
 /* 1 for Esc and Undo, as evnt_multi gives them (scan code in the high
    byte) */
 int dlg_esc(short key);
+/* 1 for Undo alone */
+int dlg_undo(short key);
+/* 1 when key cancels a dialog (the guidelines, 3.5; Erez, 27 Oct 2026):
+   Undo always, Esc only where no text field has the cursor (in_field 0).
+   In a text field Esc empties the field, as GEM's form_do does */
+int dlg_cancel_key(short key, int in_field);
 
 /* the AES's own 3D look (the guidelines, 5.x; Erez, 24 Oct 2026), where it
    has one (AES 3.4 and newer: TOS 4, MagiC, N.AES, XaAES; asked through
@@ -134,11 +140,11 @@ int dlg_esc(short key);
    before it is drawn; dlg_modal calls it itself. Nothing changes on an
    AES without 3D (TOS 1 to 3; EmuTOS in fewer than 16 colours). */
 void dlg_3d(OBJECT *tree);
-/* 1 where the AES draws 3D objects: the app's Settings tick is greyed
-   where it doesn't */
+/* 1 where the AES draws 3D objects */
 int dlg_3d_ok(void);
-/* the app's setting, DIALOGS3D= in its INF (1, the default: 3D where the
-   AES has it; 0: flat everywhere), taken by every dlg_3d after it is set */
+/* 1, the default: 3D wherever the AES has it. No app sets it: there is no
+   setting for it (a tester, Erez 27 Oct 2026: an AES without 3D ignores
+   the flags anyway). The tests set 0 to see the flat look on a 3D AES */
 extern int dlg_3d_on;
 
 /* the pen of the first npens (16 at most: the UI's) whose colour is nearest

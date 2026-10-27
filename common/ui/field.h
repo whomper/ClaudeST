@@ -22,8 +22,8 @@
  *   lf_key(f, key, ch, kstate, &idx)  1 when it was the field's key: the
  *        letters (ch, the character to type: the key's own, or the Hebrew
  *        keyboard's), Backspace, Delete, the cursor keys (Shift: to the
- *        start or the end), ClrHome, ^C ^X ^V. Return, Tab, the arrows up
- *        and down and Esc are the dialog's (0).
+ *        start or the end), ClrHome, Esc (empties it, as GEM's fields), ^C ^X ^V.
+ *        Return, Tab, the arrows up and down and Undo are the dialog's (0).
  * dlg_do (dialog.c) does both for the fields given to lf_init.
  *
  * lf_edit() is the editing alone, without the AES (tests/field).

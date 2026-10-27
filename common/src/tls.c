@@ -680,7 +680,7 @@ static void cache_stamp(int ver, long size, unsigned long sum, unsigned long sta
 #endif
 }
 
-int tls_load_anchors(const char *path, char *err, int errlen)
+static int load_anchors(const char *path, char *err, int errlen)
 {
 	br_pem_decoder_context pc;
 	GROW der;
@@ -985,6 +985,22 @@ static void sigs_save(void)
 	if (sigs_changed && tls_sigs_path[0])
 		put_file(tls_sigs_path, sig_file, SIGS_LEN);
 	sigs_changed = 0;
+}
+
+/* everything TLS reads from the disk once a session, together: the root
+   certificates, SIGS.DAT and the seed (its first use reads and writes
+   it: 2.9 s on a DFB1's disk). conn.c calls it before it opens a
+   connection, so that no server waits for a hello meanwhile */
+int tls_load_anchors(const char *path, char *err, int errlen)
+{
+	unsigned char seed[48];
+	int n = load_anchors(path, err, errlen);
+	if (n && !seed_have) {
+		sigs_load();
+		get_seed(seed);
+		memset(seed, 0, sizeof(seed));
+	}
+	return n;
 }
 
 /* a certificate's RSA signature (x509_minimal's): looked up, or checked
@@ -1616,6 +1632,10 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 	t0 = pf_ms();
 	get_seed(seed);
 	step("random seed ready in %lu ms", pf_ms() - t0);
+	/* a new connection's start had no turn from the connect to the first
+	   wait for the server: 200 ms on a stock Falcon (EUpdate, 26 Oct
+	   2026), the seed and the hello's making each a part of it */
+	record_turn();
 	br_ssl_engine_inject_entropy(&t->cc.eng, seed, sizeof(seed));
 	memset(seed, 0, sizeof(seed));
 	{
@@ -1631,6 +1651,7 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 		free(t);
 		return 0;
 	}
+	record_turn();
 	sigs_known = sigs_checked = rsa_known = rsa_checked = 0;
 	t->hs = 1;
 	t->sent = t0 = pf_ms();

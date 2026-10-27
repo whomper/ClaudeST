@@ -22,6 +22,7 @@
 #define SC_LEFT      0x4b
 #define SC_RIGHT     0x4d
 #define SC_CLRHOME   0x47
+#define SC_ESC       0x01
 #define LEFT_KEY     0x4b00
 
 /* what the field shows: the text from off, as far as it shows, with the
@@ -65,6 +66,8 @@ int lf_edit(LFIELD *f, short key, short ch, short kstate)
 	   character ('4', '6', '7'), and TOS 1.04's AES sends the key with
 	   kstate 0 */
 	int shift = (kstate & 3) != 0 || ((scan == SC_LEFT || scan == SC_RIGHT || scan == SC_CLRHOME) && c);
+	if (c == 0x1b)
+		scan = SC_ESC;		/* ^[ is ASCII's Esc */
 	switch (scan) {
 	case SC_LEFT:
 		f->cur = shift ? 0 : f->cur - 1;
@@ -84,6 +87,10 @@ int lf_edit(LFIELD *f, short key, short ch, short kstate)
 	case SC_DELETE:
 		if (f->cur < len)
 			memmove(f->text + f->cur, f->text + f->cur + 1, (size_t)(len - f->cur));
+		break;
+	case SC_ESC:			/* empties the field, as GEM's do */
+		f->text[0] = 0;
+		f->cur = 0;
 		break;
 	default:
 		if (c < 32 || c == 127)

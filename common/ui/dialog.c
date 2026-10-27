@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * dialog.c - form_do with Esc and Undo as Cancel (see dialog.h).
+ * dialog.c - form_do with Undo as Cancel (see dialog.h).
  *
  * The loop is the AES's own form_do (GEM 2.x fm_do, as the Atari
  * Compendium and the Profibuch write it out): evnt_multi for a key or a
  * click, form_keybd for Return, Tab and the arrows, objc_edit for the
- * rest of the keys, form_button for clicks. Esc and Undo are taken out
- * before form_keybd and objc_edit see them.
+ * rest of the keys, form_button for clicks. Undo is taken out before
+ * form_keybd and objc_edit see it, and so is Esc in a dialog without a
+ * text field; in a text field Esc empties it, as GEM's form_do does.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,16 @@ int dlg_esc(short key)
 {
 	short scan = (key >> 8) & 0xff;
 	return scan == 0x01 || scan == 0x61 || (key & 0xff) == 0x1b;
+}
+
+int dlg_undo(short key)
+{
+	return ((key >> 8) & 0xff) == 0x61;
+}
+
+int dlg_cancel_key(short key, int in_field)
+{
+	return dlg_undo(key) || (!in_field && dlg_esc(key));
 }
 
 /* the first editable field, as form_do finds it; 0 when there is none */
@@ -593,9 +604,9 @@ short dlg_evnt(short flags, short clicks, short mask, short state,
 					wind_get(dw[k].h, WF_WORKXYWH, &dw[k].tree[0].ob_x,
 						 &dw[k].tree[0].ob_y, &d1, &d1);
 			} else if (msg[0] == WM_CLOSED && k == i) {
-				/* the closer: as Esc */
+				/* the closer: as Undo (Esc may be a field's) */
 				e->which |= MU_KEYBD;
-				e->kreturn = 0x011b;
+				e->kreturn = 0x6100;
 				e->kstate = 0;
 			} else if (msg[0] == WM_REDRAW && dlg_redraw_hook) {
 				wind_update(END_UPDATE);
@@ -656,9 +667,11 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 		lf = lf_of && edit > 0 ? lf_of(tree, edit) : 0;
 		dlg_evnt(MU_KEYBD | MU_BUTTON, 2, 1, 1, 0, m, &e);
 		if (e.which & MU_KEYBD) {
-			if (lf && !dlg_esc(e.kreturn) && lf_key(lf, e.kreturn, e.kreturn & 0xff, e.kstate, &idx)) {
-				/* the long field took it */
-			} else if (dlg_esc(e.kreturn)) {
+			if (dlg_esc(e.kreturn) && !dlg_undo(e.kreturn))
+				e.kreturn = 0x011b;	/* ^[ too: the key objc_edit empties a field on */
+			if (lf && !dlg_undo(e.kreturn) && lf_key(lf, e.kreturn, e.kreturn & 0xff, e.kstate, &idx)) {
+				/* the long field took it (Esc empties it) */
+			} else if (dlg_cancel_key(e.kreturn, edit > 0)) {
 				/* Cancel: the field isn't given the key, so it keeps its text */
 				next = cancel;
 				cont = 0;
@@ -792,7 +805,7 @@ void dlg_3d(OBJECT *tree)
 	for (i = 0;; i++) {
 		t = tree[i].ob_type & 0xff;
 		f = tree[i].ob_flags & ~FL3DMASK;
-		if (!dlg_3d_on)		/* flat, as asked (the setting) */
+		if (!dlg_3d_on)		/* flat (the tests) */
 			t = -1;
 		/* buttons, and what is clicked to act or to choose (a pop-up, an
 		   arrow box), out of a list, raised as the AES's buttons; a box

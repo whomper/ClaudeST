@@ -212,6 +212,7 @@ short scrp_write(const char *path);
 /* mode 7: msg (8 words) to every program (AES 4.0 with appl_getinfo(10)'s
    low byte 7 or more, MagiC) */
 short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const void *tail);
+short shel_envrn(char **value, const char *name);
 short wind_find(short x, short y);
 OBJECT *rsrc_tree(short index);
 short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h);

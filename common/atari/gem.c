@@ -508,6 +508,16 @@ short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const vo
 	return aes(121, 3, 1, 2, 0);
 }
 
+/* the AES's environment: *value points after "NAME=" (name given with
+   its '='), or is 0 where it isn't set */
+short shel_envrn(char **value, const char *name)
+{
+	*value = 0;
+	addrin[0] = (void *)value;
+	addrin[1] = (void *)name;
+	return aes(125, 0, 1, 2, 0);
+}
+
 short aes_version(void)
 {
 	return global[0];
