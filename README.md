@@ -68,6 +68,7 @@ These had drifted between the apps; each is now the most complete copy, with eve
 |---|---|---|
 | `atari/sting.c/.h`, `atari/net_tos.c` | EFTP | `net_close_wait()` (close once everything sent has gone out); **and a random DNS query ID** (was the fixed "TR", which let anyone on the network answer for the name server) |
 | `atari/cpucheck.c` | EUpdate | `main()` of a program built for the 68020 or better, built `-m68000`: on an ST the program's `cpu_alert` and quit, else `app_main()` (the app defines `cpu_need`, `cpu_alert`, `app_main`) |
+| `tools/oddaccess.py` | hub | word and long accesses at an odd stack or frame offset in a 68000 ELF's functions (GCC's initialised char arrays): run by `make test` |
 | `atari/tos.c` | ECal | `boot_drive()`; 32-bit multiply and divide with `mulu.w`/`divu.w` instead of bit loops (checked against the 68020's own instructions on 2 million cases under QEMU); `__clzsi2`/`__ctzsi2` (EPDF), libgcc's being 68020 code |
 | `atari/include/tos.h` | EFTP + ECal | `Dfree`, `Fattrib`, `Fdatime`, `Drvmap`, `boot_drive` |
 | `atari/include/stdlib.h` | ECal | `heap_add()` (the accessories' fixed heap) |

@@ -281,6 +281,13 @@ try:
     click(30, 8)                                     # the Desk menu (the first title's middle:
     time.sleep(1)                                    # EWeb's "EWeb" starts past x 18)
     menu = shot("1-desk-menu")
+    for _ in range(5):
+        # a first boot under NVDI on a 4 MB Falcon can take more than a
+        # second to draw it (EUpdate 1.19's run, 27 Oct 2026)
+        if differs(desk, menu) > 500:
+            break
+        time.sleep(1)
+        menu = shot("1-desk-menu")
     check(differs(desk, menu) > 500, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
     alert_rows = set()
     if alerts & set(want):
