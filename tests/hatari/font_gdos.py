@@ -168,14 +168,14 @@ def main():
         fam_rows = (list_x, list_y, list_x + list_w, list_y + 4 * ch)	# its first four rows
 
         def font_dialog(name):
-            """Options > Font...: Options is the fifth title (" Desk "
-            starts two cells in; Chat before it since 1.67), Font... its
-            twelfth item. The first
+            """Options > Font...: Options is the fifth title (the first,
+            " ClaudeST " since 1.68, starts two cells in; Chat before
+            Options since 1.67), Font... its twelfth item. The first
             time, every GDOS font is measured before the selector shows:
             minutes at 16 MHz with Erez's 137 families"""
-            r.move(16 + 8 * (6 + 6 + 6 + 6) + 8 * 4, bar // 2)
+            r.move(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar // 2)
             time.sleep(1)
-            r.click(16 + 8 * (6 + 6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
+            r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
             end = time.time() + 900
             while time.time() < end:
                 time.sleep(3)

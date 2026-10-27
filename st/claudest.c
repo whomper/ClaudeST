@@ -389,7 +389,7 @@ static const MBAR_ITEM m_help[] = {
 	{ 0, 0, 0 }
 };
 static const MBAR_TITLE bar[] = {
-	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Chat ", m_chat },
+	{ " ClaudeST ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Chat ", m_chat },
 	{ " Options ", m_opts }, { " Help ", m_help }, { 0, 0 }
 };
 static MBAR mb;
