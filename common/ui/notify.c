@@ -31,8 +31,6 @@ static char *buf = local;		/* global memory, two in turn */
 static short turn;
 static short server = -1;		/* "BUBBLE  " that we asked */
 static short features = -1;		/* its answer; -1: none yet */
-static short pending = -1;		/* a notification waiting for it: its id */
-static char *pending_text;
 
 void notify_init(const char *aes_name)
 {
@@ -88,12 +86,15 @@ void notify_format(char *out, long n, const char *name, const char *title, const
 	add(out, n, "]", 0);
 }
 
-/* "BUBBLE  " asked what it is, once for each one that runs */
+/* "BUBBLE  " asked what it is, once for each one that runs: 1 when one runs */
 static int ask(void)
 {
 	short id = appl_find("BUBBLE  "), msg[8];
-	if (id < 0)
+	if (id < 0) {
+		server = -1;
+		features = -1;
 		return 0;
+	}
 	if (id == server)
 		return 1;
 	server = id;
@@ -118,21 +119,23 @@ static void show(char *text, short id)
 	appl_write(server, 16, msg);
 }
 
+void notify_ask(void)
+{
+	if (from[0])
+		ask();
+}
+
 int notify_send(const char *title, const char *text, const char *buttons, short id)
 {
 	char *b;
-	if (!from[0] || !ask())
+	/* only once BGEM.NG said it shows notifications: an old BubbleGEM
+	   never answers, and a notification waiting for an answer that never
+	   comes would be lost (ECal's reminders, 27 Oct 2026) */
+	if (!from[0] || !ask() || !notify_ok())
 		return 0;
-	if (features >= 0 && !notify_ok())
-		return 0;		/* an old BubbleGEM: no notifications */
 	b = buf + turn * BUF;
 	turn ^= 1;
 	notify_format(b, BUF, from, title, text, buttons);
-	if (features < 0) {		/* asked, no answer yet: it goes then */
-		pending = id;
-		pending_text = b;
-		return 1;
-	}
 	show(b, id);
 	return 1;
 }
@@ -144,9 +147,6 @@ int notify_message(const short *msg)
 		if (msg[1] != server)
 			return 1;
 		features = msg[7];
-		if (pending_text && notify_ok())
-			show(pending_text, pending);
-		pending_text = 0;
 		return 1;
 	}
 	if (m == BUBBLEGEM_ACK) {

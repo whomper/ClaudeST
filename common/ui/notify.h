@@ -16,6 +16,10 @@
  *        must: the text goes in global memory, taken then). The name is
  *        the app's AES name, 8 characters, which BGEM.NG shows as the
  *        sender.
+ *   notify_ask()             then: asks "BUBBLE  " (BGEMNG_INQUIRE). Its
+ *        answer comes as a message (notify_message); until it has said
+ *        notifications, notify_send gives 0. An old BubbleGEM never
+ *        answers. notify_send asks again when another BUBBLE runs.
  *   notify_message(msg)      in the app's message loop, for every
  *        message: 1 when it was BGEM.NG's (its answer, a notification
  *        shown, a button clicked), which the app then leaves alone.
@@ -23,8 +27,8 @@
  *        title: up to 32 characters, or 0; text: what it says ('|'
  *        breaks a line); buttons: "Open|Later", or 0 for none; id: the
  *        app's number for it, given back with the button. 1 when it went
- *        to BGEM.NG (or waits for its answer to our question: then it
- *        goes when that comes); 0 where there is no BGEM.NG.
+ *        to BGEM.NG; 0 where there is no BGEM.NG, or it hasn't answered
+ *        yet: then the app tells it its own way.
  *   notify_clicked           the app's function for a button:
  *        notify_clicked(id, button), button 1 the leftmost.
  *   notify_ok()              1 once BGEM.NG said it shows notifications.
@@ -37,6 +41,7 @@
 #define BGEMNG_INQUIRE 0xABAB
 
 void notify_init(const char *aes_name);
+void notify_ask(void);
 int notify_message(const short *msg);
 int notify_send(const char *title, const char *text, const char *buttons, short id);
 int notify_ok(void);

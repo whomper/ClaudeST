@@ -5,7 +5,9 @@
  * heap_add) on the build machine, with a GEMDOS of the test's own:
  *
  *   fixed        an accessory's heap: fill it, empty it, it is one block again
- *   grow         a program's heap: 512 KB from GEMDOS, then doubling
+ *   grow         a program's heap: 512 KB from GEMDOS, then doubling up to
+ *                8 MB, then 8 MB at a time
+ *   trim         blocks all free again back to GEMDOS (but the first)
  *   limited      GEMDOS with little memory: smaller blocks, then "no memory"
  *   tos1         no Mxalloc (TOS 1.x): Malloc instead
  *   st1          a 1 MB ST: the first block a quarter of what is free
@@ -96,6 +98,20 @@ void *Malloc(long n)
 	if (n == -1)
 		return (void *)st_left();
 	return take(n);
+}
+
+static void *freed[64];		/* the blocks given back (the pool doesn't reuse them) */
+static int nfreed;
+
+long Mfree(void *p)
+{
+	int i;
+	for (i = 0; i < nfreed; i++)
+		if (freed[i] == p)
+			return -40;	/* twice: EIMBA */
+	if (nfreed < 64)
+		freed[nfreed++] = p;
+	return 0;
 }
 
 /* ---- the blocks' bytes ---- */
@@ -317,16 +333,65 @@ static void case_grow(void)
 		int k;
 		for (k = 0; k < i; k++)
 			before += grants[k];
-		check(grants[i] == before, "grow: then as much as all before");
+		check(grants[i] == (before < (8L << 20) ? before : 8L << 20),
+		      "grow: then as much as all before, up to 8 MB");
 	}
-	check(ngrants <= 8, "grow: few GEMDOS blocks");
+	check(ngrants <= 10, "grow: few GEMDOS blocks");
 	for (i = 0; i < ngrants; i++)
 		sum += grants[i];
 	check(heap_tt + heap_st == sum, "grow: heap_tt + heap_st add up");
+	check(sum < 40L * 1004 * 1000 + (8L << 20), "grow: never 8 MB more than it needs");
+	check(heap_trim() == 0, "grow: nothing to give back while it is used");
 	check(heap_check(0) >= 0, "grow: checks out");
 	for (i = 0; i < n; i++)
 		heap_free(v[i]);
 	check(heap_check(&nfree) >= 0 && nfree == ngrants, "grow: emptied: one free block an area");
+	free(v);
+}
+
+/* a page's worth used and let go: the blocks all free again go back to
+   GEMDOS, the first one stays; then the heap grows again from there */
+static void case_trim(void)
+{
+	long before, back, nfree;
+	int i, n = 0, k;
+	void *keep;
+	void **v = malloc(sizeof(void *) * 30000);
+	pool_new(128L << 20);
+	keep = heap_malloc(100);	/* the program's own, in the first block */
+	for (i = 0; i < 30000; i++)
+		if ((v[n] = heap_malloc(1000)))
+			n++;
+	check(n == 30000 && ngrants >= 5, "trim: 30 MB in several blocks");
+	before = heap_tt + heap_st;
+	for (i = 0; i < n; i++)
+		heap_free(v[i]);
+	back = heap_trim();
+	check(back > 0 && back == before - (heap_tt + heap_st), "trim: what it gives back adds up");
+	check(nfreed == ngrants - 1, "trim: every block but the first back to GEMDOS");
+	for (i = 0; i < nfreed; i++)
+		check(freed[i] != (void *)(pool + 2), "trim: not the first");
+	check(heap_check(&nfree) >= 0 && nfree == 1, "trim: one area left, free but for its block");
+	check(heap_trim() == 0, "trim: nothing more");
+	/* used again: it grows as it did, from what it holds */
+	k = ngrants;
+	for (i = 0; i < 5000; i++)
+		check((v[i] = heap_malloc(1000)) != 0, "trim: grows again");
+	check(ngrants > k && grants[k] <= 8L << 20, "trim: from GEMDOS again, a block no bigger than 8 MB");
+	check(heap_check(0) >= 0, "trim: checks out");
+	/* a block still in use keeps its area */
+	memset(v[4999], 0x5a, 1000);
+	heap_free(keep);
+	for (i = 0; i < 4999; i++)
+		heap_free(v[i]);
+	heap_trim();
+	for (i = 0; i < 1000 && ((unsigned char *)v[4999])[i] == 0x5a; i++)
+		;
+	check(i == 1000 && heap_check(0) >= 0, "trim: a block in use kept, as it was");
+	heap_free(v[4999]);
+	heap_trim();
+	check(heap_tt + heap_st == grants[0] && heap_check(&nfree) >= 0 && nfree == 1,
+	      "trim: all free: the first block only");
 	free(v);
 }
 
@@ -698,6 +763,8 @@ int main(int argc, char **argv)
 		case_fixed();
 	else if (!strcmp(c, "grow"))
 		case_grow();
+	else if (!strcmp(c, "trim"))
+		case_trim();
 	else if (!strcmp(c, "replay") && argc > 2)
 		case_replay(argv[2]);
 	else if (!strcmp(c, "frag"))
@@ -723,7 +790,7 @@ int main(int argc, char **argv)
 	else if (!strcmp(c, "random") && argc > 3)
 		case_random(atol(argv[2]), strtoul(argv[3], 0, 10));
 	else {
-		fprintf(stderr, "test_heap fixed|grow|limited|tos1|maxblocks|exact|bins|dv1|dv2|random N SEED\n");
+		fprintf(stderr, "test_heap fixed|grow|trim|limited|tos1|maxblocks|exact|bins|dv1|dv2|random N SEED\n");
 		return 2;
 	}
 	printf("%s %s\n", failed ? "FAIL" : "ok  ", c);

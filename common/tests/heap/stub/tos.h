@@ -16,6 +16,7 @@ typedef uint32_t u32;
 
 void *Mxalloc(long n, int mode);
 void *Malloc(long n);
+long Mfree(void *p);
 
 #define malloc  heap_malloc
 #define free    heap_free
@@ -27,6 +28,7 @@ void heap_free(void *p);
 void *heap_calloc(size_t n, size_t m);
 void *heap_realloc(void *p, size_t n);
 void heap_add(void *p, size_t bytes);
+long heap_trim(void);
 long heap_check(long *nfree);
 extern long heap_check_big;
 unsigned heap_bin(size_t s);

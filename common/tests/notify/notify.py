@@ -7,7 +7,7 @@ a stand-in for BGEM.NG that does what bgemng.hyp's API page says
 NOTET.PRG sends a notification with two buttons, as an app does for new
 mail.
 
-  1. the stand-in is asked first (BGEMNG_INQUIRE) and answers;
+  1. the stand-in is asked at start (notify_ask: BGEMNG_INQUIRE) and answers;
   2. the notification goes once the answer came: BUBBLEGEM_SHOW, our id,
      0x10 (a notification), the text read from NOTET's global memory by
      another program, header and buttons as BGEM.NG wants them;

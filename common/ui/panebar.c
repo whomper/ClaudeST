@@ -168,12 +168,23 @@ static void ground(OBJECT *o, const GRECT *r, int d3)
 	o->ob_height = r->h - 2 * !d3;
 }
 
+/* 3D where the AES draws its windows' own sliders in 3D: MagiC, XaAES,
+   N.AES and MyAES (the AESes that run several programs). TOS 4 and
+   EmuTOS draw dialogs in 3D but a window's sliders flat (a dotted track,
+   a white slider), and a pane bar beside the window's own looks as that
+   one does (Erez's EContact on TOS 4.04, 27 Oct 2026: two kinds of bar
+   side by side) */
+static int bar_3d(void)
+{
+	return dlg_3d_ok() && dlg_3d_on && (aes_count() != 1 || get_cookie(0x4D616758L));	/* MagX */
+}
+
 void pb_draw(const PANEBAR *b, const GRECT *clip)
 {
 	OBJECT t[O_N];
 	short ah = arrow(b), ty, th, sy, sh, i;
 	short len = length(b), wide = b->across ? b->r.h : b->r.w;
-	int d3 = dlg_3d_ok() && dlg_3d_on, across = b->across != 0;
+	int d3 = bar_3d(), across = b->across != 0;
 	GRECT c = *clip;
 	if (len < 2 * ah + 4 || !within(&c, &b->r))
 		return;
@@ -239,7 +250,7 @@ void pb_corner(const GRECT *r, const GRECT *clip)
 	GRECT c = *clip;
 	if (!within(&c, r))
 		return;
-	ground(&t[0], r, dlg_3d_ok() && dlg_3d_on);
+	ground(&t[0], r, bar_3d());
 	t[0].ob_flags |= LASTOB;
 	objc_draw(t, 0, 0, c.x, c.y, c.w, c.h);
 }
