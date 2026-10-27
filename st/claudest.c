@@ -25,6 +25,7 @@
 #include "grect.h"
 #include "popup.h"
 #include "aboutbox.h"
+#include "aboutline.h"
 #include "iconify.h"
 #include "clip.h"
 #include "dd.h"
@@ -34,6 +35,7 @@
 #include "panebar.h"
 #include "plat.h"
 #include "text.h"
+#include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
 #undef fill
@@ -197,6 +199,7 @@ static char status[64] = "Waiting for bridge...";
 static short busy;
 static short online;
 static short win_icon;			/* shown as ClaudeST's icon (WM_ICONIFY) */
+static short norm_x, norm_y, norm_w, norm_h;	/* where it was before */
 static short usage_pct = -1;		/* session usage from the bridge's u line; -1: none */
 static char usage_rst[12];		/* and the time until it resets, "2h 10m" */
 
@@ -331,7 +334,8 @@ static char home_dir[128];		/* where CLAUDEST.PRG was started */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH,
+	C_CLOSE
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -340,13 +344,13 @@ static const MBAR_ITEM m_desk[] = {
 	{ "About ClaudeST...", 0, C_ABOUT },
 	{ 0, 0, 0 }
 };
+/* File keeps the program's commands; the chats' own are under Chat, New
+   among them (the guidelines, 3.1; a tester, Erez 27 Oct 2026). ^U closes
+   the one window, so ClaudeST quits (3.2) */
 static const MBAR_ITEM m_file[] = {
-	{ "New chat", "^N", C_NEW },
-	{ "Search chats", "^F", C_FIND },
-	{ "Attach file...", "^O", C_ATTACH },
-	{ "-", 0, 0 },
 	{ "Reconnect", "^R", C_REF },
 	{ "-", 0, 0 },
+	{ "Close window", "^U", C_CLOSE },
 	{ "Quit", "^Q", C_QUIT },
 	{ 0, 0, 0 }
 };
@@ -356,6 +360,12 @@ static const MBAR_ITEM m_edit[] = {
 	{ "Paste", "^V", C_PASTE },
 	{ "-", 0, 0 },
 	{ "Copy Claude's answer", 0, C_ANSWER },
+	{ 0, 0, 0 }
+};
+static const MBAR_ITEM m_chat[] = {
+	{ "New chat", "^N", C_NEW },
+	{ "Search chats", "^F", C_FIND },
+	{ "Attach file...", "^O", C_ATTACH },
 	{ 0, 0, 0 }
 };
 static const MBAR_ITEM m_opts[] = {
@@ -379,8 +389,8 @@ static const MBAR_ITEM m_help[] = {
 	{ 0, 0, 0 }
 };
 static const MBAR_TITLE bar[] = {
-	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Options ", m_opts },
-	{ " Help ", m_help }, { 0, 0 }
+	{ " Desk ", m_desk }, { " File ", m_file }, { " Edit ", m_edit }, { " Chat ", m_chat },
+	{ " Options ", m_opts }, { " Help ", m_help }, { 0, 0 }
 };
 static MBAR mb;
 
@@ -1248,10 +1258,13 @@ static void layout(void)
 	list_rows = (status_y - 2 - (list_y + row_h)) / row_h;
 	if (list_rows < 1)
 		list_rows = 1;
+	/* the bar's own frame is the lines the list meets: the sidebar's
+	   edge, the line over the list and the one over the status (the
+	   guidelines, 5.7: one line, never two side by side) */
 	lbar.r.w = pb_width();
-	lbar.r.x = wx + sb_w - lbar.r.w;
-	lbar.r.y = list_y - 2;
-	lbar.r.h = status_y - 2 - lbar.r.y;
+	lbar.r.x = wx + sb_w + 1 - lbar.r.w;
+	lbar.r.y = list_y - 3;
+	lbar.r.h = status_y - 2 - lbar.r.y + 1;
 #ifdef AES_PROFILE
 	{
 		/* where the list's bar is, for the speed rig's clicks */
@@ -2128,6 +2141,33 @@ static void item_flags(ITEM *it, const char *q)
 
 static void redraw_dot(short i);
 
+/* Claude's answer has come while the window is behind another or an
+   icon: a notification where BGEM.NG runs (the guidelines, 4.5; a tester,
+   Erez 27 Oct 2026), its Show bringing the window to the front; elsewhere
+   nothing, as before */
+static void on_resize(void);
+
+static void answer_show(short id, short button)
+{
+	(void)id;
+	if (button != 1)
+		return;
+	if (win_icon) {
+		wind_set(win, WF_UNICONIFY, norm_x, norm_y, norm_w, norm_h);
+		win_icon = 0;
+		on_resize();
+	}
+	wind_set(win, WF_TOP, 0, 0, 0, 0);
+}
+
+static void answered(void)
+{
+	short top, d;
+	wind_get(0, WF_TOP, &top, &d, &d, &d);
+	if (win_icon || top != win)
+		notify_send("Claude answered", chat_title[0] ? chat_title : "A new chat", "Show", 1);
+}
+
 static void handle_line(char *s)
 {
 	char *f[4];
@@ -2358,7 +2398,12 @@ static void handle_line(char *s)
 		}
 		break;
 	case 'Y':			/* Y 0|1 : busy */
-		busy = n > 1 && f[1][0] == '1';
+		{
+			short was = busy;
+			busy = n > 1 && f[1][0] == '1';
+			if (was && !busy)
+				answered();
+		}
 		dirty |= D_TITLE | D_INPUT;
 		break;
 	case 'A':			/* A <text> : alert box */
@@ -2680,7 +2725,8 @@ static short inf_setting(const char *l)
 		u16 n = inf_num(&v);
 		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
 	} else if (inf_key(l, "DIALOGS3D", &v))
-		dlg_3d_on = *v != '0';
+		;	/* no setting any more (the guidelines, 5.6; a tester, Erez
+			   27 Oct 2026): read without it, and not kept */
 	else if (inf_key(l, "SIDEBAR", &v))
 		sb_user = inf_num(&v);
 	else if (inf_key(l, "MODEL", &v)) {
@@ -2850,8 +2896,6 @@ static void save_config(void)
 		    "FONT", v);
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
-	p = inf_put_num(p, "1 = dialogs and alerts in 3D where the AES draws it (TOS 4, MagiC, XaAES, EmuTOS in colour), 0 = flat",
-			"DIALOGS3D", dlg_3d_on);
 	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
 	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
@@ -3336,21 +3380,67 @@ static void toggle_hebrew(void);
 static short dlg_x, dlg_y, dlg_w, dlg_h, fld_x, fld_y, fld_w, fld_cols;
 static short btn_y, btn_h, ok_x, cancel_x, btn_w;
 
-static void dlg_button(short x, const char *label, short is_default)
+/* The own dialogs' AES objects (the guidelines, 5.6: "Buttons are the
+ * AES's"; a tester, Erez 27 Oct 2026): the box, its exit buttons and its
+ * choices are a tree the AES draws (objc_draw), in its look, 3D where it
+ * has one (dlg_3d); the text and the fields go over it with the VDI. A
+ * dialog's place() builds it where the parts are now (own_begin,
+ * own_add); its paint draws it first (own_frame). */
+enum { OWN_MAX = 12 };
+static OBJECT own_t[OWN_MAX];
+static short own_ax[OWN_MAX], own_ay[OWN_MAX], own_n;
+static short own_c[4];			/* the clip the paint keeps to */
+
+static void own_begin(void)
 {
-	short n = strlen(label);
-	fill(x, btn_y, x + btn_w - 1, btn_y + btn_h - 1, 0);
-	line(x, btn_y, x + btn_w - 1, btn_y, 1);
-	line(x + btn_w - 1, btn_y, x + btn_w - 1, btn_y + btn_h - 1, 1);
-	line(x + btn_w - 1, btn_y + btn_h - 1, x, btn_y + btn_h - 1, 1);
-	line(x, btn_y + btn_h - 1, x, btn_y, 1);
-	if (is_default) {	/* the default button gets the thick GEM border */
-		line(x - 1, btn_y - 1, x + btn_w, btn_y - 1, 1);
-		line(x + btn_w, btn_y - 1, x + btn_w, btn_y + btn_h, 1);
-		line(x + btn_w, btn_y + btn_h, x - 1, btn_y + btn_h, 1);
-		line(x - 1, btn_y + btn_h, x - 1, btn_y - 1, 1);
-	}
-	text(x + (btn_w - n * cw) / 2, btn_y + (btn_h - ch) / 2, label, n, is_default ? 1 : 0, 1);
+	memset(own_t, 0, sizeof(own_t));
+	own_t[0].ob_next = own_t[0].ob_head = own_t[0].ob_tail = -1;
+	own_t[0].ob_type = G_BOX;
+	own_n = 1;
+}
+
+/* a button at x, y on the screen: an exit button, or a choice (RBUTTON) */
+static short own_add(short x, short y, short w, short h, short flags, const char *label)
+{
+	short i = own_n++;
+	OBJECT *o = &own_t[i];
+	o->ob_next = 0;
+	o->ob_head = o->ob_tail = -1;
+	o->ob_type = G_BUTTON;
+	o->ob_flags = SELECTABLE | flags;
+	o->ob_spec = (long)label;
+	o->ob_width = w;
+	o->ob_height = h;
+	own_ax[i] = x;
+	own_ay[i] = y;
+	if (own_t[0].ob_head < 0)
+		own_t[0].ob_head = i;
+	else
+		own_t[i - 1].ob_next = i;
+	own_t[0].ob_tail = i;
+	return i;
+}
+
+/* object i and what is in it, within the paint's clip */
+static void own_draw(short i)
+{
+	objc_draw(own_t, i, 8, own_c[0], own_c[1], own_c[2] - own_c[0] + 1, own_c[3] - own_c[1] + 1);
+}
+
+/* x1..x2, y1..y2 as the box has it: the AES's ground, never white
+   (the guidelines, 5.6) */
+static void own_clear(short x1, short y1, short x2, short y2)
+{
+	if (x1 < own_c[0])
+		x1 = own_c[0];
+	if (y1 < own_c[1])
+		y1 = own_c[1];
+	if (x2 > own_c[2])
+		x2 = own_c[2];
+	if (y2 > own_c[3])
+		y2 = own_c[3];
+	if (x1 <= x2 && y1 <= y2)
+		objc_draw(own_t, 0, 8, x1, y1, x2 - x1 + 1, y2 - y1 + 1);
 }
 
 static void dlg_field(const char *buf, short len, short cur, short *start)
@@ -3364,27 +3454,8 @@ static void dlg_field(const char *buf, short len, short cur, short *start)
 		fill(bx - 2, fld_y + 1, bx + 2 * cw + 1, fld_y + ch + 4, 1);
 		text(bx, ty_, "HE", 2, 1, 0);
 	} else {
-		fill(fld_x + fld_w + cw / 2 - 2, fld_y + 1, fld_x + fld_w + 3 * cw, fld_y + ch + 4, 0);
+		own_clear(fld_x + fld_w + cw / 2 - 2, fld_y + 1, fld_x + fld_w + 3 * cw, fld_y + ch + 4);
 	}
-}
-
-/* a dialog box with a shadow and a double border, like a GEM alert */
-static void dlg_frame(short x, short y, short w, short h)
-{
-	/* the shadow as its two strips, not a box the size of the dialog
-	   under it: a fill that size costs an ST ~33 ms (the guidelines'
-	   Speed) */
-	fill(x + w, y + 3, x + w + 2, y + h + 2, 1);
-	fill(x + 3, y + h, x + w - 1, y + h + 2, 1);
-	fill(x, y, x + w - 1, y + h - 1, 0);
-	line(x, y, x + w - 1, y, 1);
-	line(x + w - 1, y, x + w - 1, y + h - 1, 1);
-	line(x + w - 1, y + h - 1, x, y + h - 1, 1);
-	line(x, y + h - 1, x, y, 1);
-	line(x + 2, y + 2, x + w - 3, y + 2, 1);
-	line(x + w - 3, y + 2, x + w - 3, y + h - 3, 1);
-	line(x + w - 3, y + h - 3, x + 2, y + h - 3, 1);
-	line(x + 2, y + h - 3, x + 2, y + 2, 1);
 }
 
 /* ClaudeST's own dialogs (the text box, Keys, Settings), drawn with the
@@ -3423,6 +3494,7 @@ static void own_piece(short x, short y, short w, short h)
 	c[2] = x + w - 1;
 	c[3] = y + h - 1;
 	text_clip(vh, c);
+	memcpy(own_c, c, sizeof(own_c));
 	own_paint(0);
 }
 
@@ -3470,6 +3542,7 @@ static void own_open(const char *name, short head, void (*place)(void), void (*p
 	own_clipr[2] = scr_w - 1;
 	own_clipr[3] = scr_h - 1;
 	text_clip(vh, own_clipr);
+	memcpy(own_c, own_clipr, sizeof(own_c));
 	paint(1);
 }
 
@@ -3500,6 +3573,7 @@ static short own_cut(void)
 	c[2] = x + w - 1;
 	c[3] = y + h - 1;
 	text_clip(vh, c);
+	memcpy(own_c, c, sizeof(own_c));
 	return 1;
 }
 
@@ -3532,13 +3606,26 @@ static void own_close(void)
 	form_dial(FMD_FINISH, dlg_x, dlg_y, dlg_w + 3, dlg_h + 3);
 }
 
-/* the box's frame: GEM's over the screen, the AES's window's otherwise */
+/* the box and its buttons, drawn by the AES: over the screen with a
+   form's outline, a line round it; in a window, whose frame is the
+   AES's, none */
 static void own_frame(short framed)
 {
-	if (framed)
-		dlg_frame(dlg_x, dlg_y, dlg_w, dlg_h);
-	else
-		fill(dlg_x, dlg_y, dlg_x + dlg_w - 1, dlg_y + dlg_h - 1, 0);
+	OBJECT *r = own_t;
+	short i, k = framed ? 3 : 0;
+	r->ob_x = dlg_x + k;
+	r->ob_y = dlg_y + k;
+	r->ob_width = dlg_w - 2 * k;
+	r->ob_height = dlg_h - 2 * k;
+	r->ob_state = framed ? OUTLINED : 0;
+	r->ob_spec = framed ? 0x00011100L : 0x00001100L;	/* white inside */
+	for (i = 1; i < own_n; i++) {
+		own_t[i].ob_x = own_ax[i] - r->ob_x;
+		own_t[i].ob_y = own_ay[i] - r->ob_y;
+	}
+	own_t[own_n - 1].ob_flags |= LASTOB;
+	dlg_3d(own_t);
+	own_draw(0);
 }
 
 /* the text box's state, for its paint */
@@ -3553,6 +3640,9 @@ static void td_place(void)
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
+	own_begin();
+	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
+	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, td_ok);
 }
 
 static void td_paint(short framed)
@@ -3565,14 +3655,13 @@ static void td_paint(short framed)
 	line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
 	line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
 	dlg_field(td_edit, td_len, td_cur, &td_start);
-	dlg_button(cancel_x, "Cancel", 0);
-	dlg_button(ok_x, td_ok, 1);
 }
 
 /* Asks for a line of text. buf holds the starting text and receives the
  * result (up to max-1 characters). Returns 1 for OK, 0 for Cancel.
- * Keys: typing, Backspace, Clr/Home clears, F10 Hebrew, Return OK, Esc/Undo
- * cancel. Mouse: the buttons. */
+ * Keys: typing, Backspace, Esc and Clr/Home empty the field, F10 Hebrew,
+ * Return OK, Undo (and the window's closer) Cancel (the guidelines, 3.5).
+ * Mouse: the buttons. */
 static short text_dialog(const char *title, const char *ok_label, char *buf, short max)
 {
 	short res = -1, m[8];
@@ -3613,9 +3702,9 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 			short changed = 1;
 			if (as == 0x0d)
 				res = 1;
-			else if (as == 0x1b || sc == 0x61)
+			else if (dlg_cancel_key(e.kreturn, 1))	/* Undo, the closer */
 				res = 0;
-			else if (sc == 0x47)		/* Clr/Home clears */
+			else if (as == 0x1b || sc == 0x47)	/* Esc, Clr/Home: empty it */
 				td_len = td_cur = td_start = 0;
 			else if (sc == 0x44)
 				toggle_hebrew();
@@ -3668,7 +3757,7 @@ static const char *const keys_k[][2] = {
 	{ "^R", "reconnect to the gateway" },
 	{ "^,", "settings: the gateway, serial" },
 	{ "Help", "the user guide" },
-	{ "^W  ^Q", "quit" },
+	{ "^U  ^Q", "close the window: quit" },
 };
 enum { KEYS_N = sizeof(keys_k) / sizeof(keys_k[0]), KEYCOL = 13 };
 static short keys_lh;
@@ -3677,6 +3766,8 @@ static void keys_place(void)
 {
 	btn_y = dlg_y + dlg_h - btn_h - ch / 2 - 2;
 	ok_x = dlg_x + (dlg_w - btn_w) / 2;
+	own_begin();
+	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
 }
 
 static void keys_paint(short framed)
@@ -3692,7 +3783,6 @@ static void keys_paint(short framed)
 		text(x0, y, keys_k[i][0], strlen(keys_k[i][0]), 1, 1);
 		text(x0 + KEYCOL * cw, y, keys_k[i][1], n < cols ? n : cols, 0, 1);
 	}
-	dlg_button(ok_x, "OK", 1);
 }
 
 static void keys_dialog(void)
@@ -3972,28 +4062,26 @@ static void help(void)
 }
 
 /* the About box: the AERA programs' shared one (common/ui/aboutbox.c),
- * with how ClaudeST is connected and the trademarks it names */
+ * with its status lines in the family's words (the guidelines, 1.3; Erez,
+ * 27 Oct 2026): how ClaudeST is connected, then the memory. Line 2, what
+ * the app holds, is left out: the chats are claude.ai's, none kept here.
+ * And the trademarks it names */
 static void about(void)
 {
-	static char conn[64];
-	ABOUT a = { "ClaudeST", APP_VERSION, "Claude.ai for the Atari ST, TT and Falcon", { conn, 0, 0 },
+	static char conn[64], mem[64];
+	ABOUT a = { "ClaudeST", APP_VERSION, "Claude.ai for the Atari ST, TT and Falcon", { conn, mem, 0 },
 		    { "Unofficial client, not affiliated with Anthropic or Atari.",
 		      "Claude is a trademark of Anthropic PBC.",
 		      "Atari is a trademark of Atari Interactive." },
 		    icon_bits, icon16_px, icon16_rgb, icon256_px, icon256_rgb };
-	if (link == LINK_TCP && tcp_ip) {
-		char *p;
-		strcpy(conn, "Gateway ");
-		ip_to_str(tcp_ip, conn + 8);
-		p = conn + strlen(conn);
-		*p++ = ':';
-		p = put_num(p, tcp_port);
-		strcpy(p, online ? "  \xF9  online" : "  \xF9  offline");
-	} else {
+	if (link == LINK_TCP)	/* no address or port on the line */
+		about_net_line(conn, sizeof(conn), "STinG", ABOUT_GATEWAY, online ? ABOUT_ONLINE : ABOUT_OFFLINE);
+	else {
 		strcpy(conn, baud == BAUD_4800 ? "Serial port, 4800 baud" :
 		       baud == BAUD_9600 ? "Serial port, 9600 baud" : "Serial port, 19200 baud");
 		strcpy(conn + strlen(conn), online ? "  \xF9  online" : "  \xF9  offline");
 	}
+	about_mem_line(mem, sizeof(mem));
 	about_show(&a);
 }
 
@@ -4737,9 +4825,9 @@ static void move_cursor(short d)
 
 /* Options > Settings... (^,), as in the other AERA programs: how
  * ClaudeST reaches its gateway. Network: the gateway's address and port;
- * serial: the speed. Tab moves between the two fields, Return is OK, Esc
- * or Undo Cancel. The 3D dialogs tick (guideline 5.6) sits on the buttons'
- * row, greyed where the AES draws no 3D. */
+ * serial: the speed. Tab moves between the two fields, Return is OK, Undo
+ * Cancel; Esc empties the field with the cursor (the guidelines, 3.5).
+ * The choices are the AES's radio buttons, the rest its buttons (5.6). */
 static const char *const sp_label[3] = { "4800", "9600", "19200" };
 static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
 /* where the system and bitmap fonts keep the Hebrew letters (the Font
@@ -4748,9 +4836,10 @@ static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
 /* what Settings shows, for its paint, and where */
 static char sd_f[2][24];
 static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
-static short sd_nl, sd_nb, sd_nh, sd_n3, sd_ok3, sd_focus;
+static short sd_nl, sd_nb, sd_nh, sd_focus;
 static short sd_lh, sd_ly[5], sd_chw, sd_ch_x[2], sd_fx[2], sd_fy[2];
-static short sd_sp_w, sd_sp_x[3], sd_hb_w, sd_hb_x[3], sd_tk_x, sd_tk_y;
+static short sd_sp_w, sd_sp_x[3], sd_hb_w, sd_hb_x[3], sd_obj[8];
+static unsigned short sd_shown[8];	/* the choices' states as drawn */
 
 static void sd_place(void)
 {
@@ -4773,38 +4862,40 @@ static void sd_place(void)
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
-	sd_tk_x = dlg_x + 2 * cw;		/* the tick: a box two characters wide */
-	sd_tk_y = btn_y + (btn_h - ch) / 2;
-}
-
-/* the parts that change: the choices, the tick, the fields */
-static void sd_live(void)
-{
-	short i, tk_x = sd_tk_x, tk_y = sd_tk_y;
-	/* the choices: the chosen one drawn inverted */
+	own_begin();
 	for (i = 0; i < 8; i++) {
 		short x = i < 2 ? sd_ch_x[i] : i < 5 ? sd_sp_x[i - 2] : sd_hb_x[i - 5];
 		short w = i < 2 ? sd_chw : i < 5 ? sd_sp_w : sd_hb_w, y = sd_ly[i < 2 ? 0 : i < 5 ? 3 : 4] - 3;
 		const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
+		sd_obj[i] = own_add(x, y, w, ch + 6, RBUTTON, l);
+	}
+	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
+	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
+}
+
+/* the choices' states, as chosen now */
+static void sd_states(void)
+{
+	short i;
+	for (i = 0; i < 8; i++) {
 		short on = i < 2 ? (i == 0) == (sd_nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == sd_nb : sd_nh == i - 5;
-		short n = strlen(l);
-		/* its border and inside as fills: two calls, not five */
-		fill(x, y, x + w - 1, y + ch + 5, 1);
-		if (!on)
-			fill(x + 1, y + 1, x + w - 2, y + ch + 4, 0);
-		{
-			/* centred, on a byte where it still fits inside */
-			short lx = x + (w - n * cw) / 2, bx = on_byte(lx, x);
-			text(bx + n * cw < x + w - 1 ? bx : lx, y + 3, l, n, 0, on ? 0 : 1);
+		own_t[sd_obj[i]].ob_state = on ? SELECTED : 0;
+	}
+}
+
+/* the parts that change: the choices, the fields */
+static void sd_live(void)
+{
+	short i;
+	/* the choices the AES draws again: those chosen or let go since (an
+	   ST draws one in ~20 ms; all eight each pass took Settings 425 ms
+	   to open) */
+	sd_states();
+	for (i = 0; i < 8; i++)
+		if (own_t[sd_obj[i]].ob_state != sd_shown[i]) {
+			own_draw(sd_obj[i]);
+			sd_shown[i] = own_t[sd_obj[i]].ob_state;
 		}
-	}
-	/* the tick: crossed when on */
-	fill(tk_x, tk_y, tk_x + 2 * cw - 1, tk_y + ch - 1, 1);
-	fill(tk_x + 1, tk_y + 1, tk_x + 2 * cw - 2, tk_y + ch - 2, 0);
-	if (sd_n3) {
-		line(tk_x + 2, tk_y + 2, tk_x + 2 * cw - 3, tk_y + ch - 3, 1);
-		line(tk_x + 2 * cw - 3, tk_y + 2, tk_x + 2, tk_y + ch - 3, 1);
-	}
 	/* the fields: the one with the cursor is edited */
 	for (i = 0; i < 2; i++) {
 		fld_x = sd_fx[i];
@@ -4826,16 +4917,17 @@ static void sd_live(void)
 
 static void sd_paint(short framed)
 {
-	own_frame(framed);
+	short i;
+	sd_states();
+	own_frame(framed);	/* the choices too */
+	for (i = 0; i < 8; i++)
+		sd_shown[i] = own_t[sd_obj[i]].ob_state;
 	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
-	text(sd_tk_x + 3 * cw, sd_tk_y, "3D dialogs", 10, sd_ok3 ? 0 : 2, 1);	/* 2: light, greyed */
 	text(dlg_x + 2 * cw, sd_ly[0], "Connect through", 15, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[1], "Gateway address", 15, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[2], "Gateway port", 12, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[3], "Serial speed", 12, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[4], "Hebrew in fonts", 15, 0, 1);
-	dlg_button(cancel_x, "Cancel", 0);
-	dlg_button(ok_x, "OK", 1);
 	if (!framed)
 		sd_live();	/* over the screen the loop draws these next */
 }
@@ -4857,11 +4949,9 @@ static void settings_dialog(void)
 	sd_nl = link;
 	sd_nb = baud;
 	sd_nh = hebfont;
-	sd_n3 = dlg_3d_on != 0;
-	sd_ok3 = dlg_3d_ok();
 	sd_focus = 0;
 
-	sd_lh = ch + 8;
+	sd_lh = ch + (dlg_3d_ok() ? 12 : 8);	/* raised choices don't touch */
 	btn_w = 10 * cw;
 	btn_h = ch + 6;
 	dlg_w = 52 * cw;
@@ -4892,11 +4982,11 @@ static void settings_dialog(void)
 			short fo = sd_focus;
 			if (as == 0x0d)
 				res = 1;
-			else if (as == 0x1b || sc == 0x61)
+			else if (dlg_cancel_key(e.kreturn, 1))	/* Undo, the closer */
 				res = 0;
 			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
 				sd_focus ^= 1;
-			else if (sc == 0x47)		/* Clr/Home clears */
+			else if (as == 0x1b || sc == 0x47)	/* Esc, Clr/Home: empty it */
 				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
 			else if (clip_key(e.kreturn))
 				field_clip(clip_key(e.kreturn), f[fo], &sd_len[fo], &sd_cur[fo],
@@ -4924,8 +5014,6 @@ static void settings_dialog(void)
 					res = 1;
 				else if (mx >= cancel_x && mx < cancel_x + btn_w)
 					res = 0;
-				else if (sd_ok3 && mx >= sd_tk_x && mx < sd_tk_x + 13 * cw)
-					sd_n3 = !sd_n3;
 			}
 		}
 		/* an address that doesn't read as one: back to it */
@@ -4957,7 +5045,6 @@ static void settings_dialog(void)
 		tcp_port = port;
 		if (sd_nb != baud)
 			set_baud(sd_nb);
-		dlg_3d_on = sd_n3;		/* the next dialog follows it */
 		if (sd_nh != hebfont) {	/* the window's Hebrew, drawn anew */
 			hebfont = sd_nh;
 			on_resize();
@@ -4971,17 +5058,20 @@ static void settings_dialog(void)
 
 static void do_list(const char *kind);
 
-/* Esc and Undo in the window (AERA guideline 3.5): they never throw
-   away what was typed or attached; they leave Search for Chats, keeping
-   its text, and let go of the item picked in the sidebar */
+/* Esc in the window (the guidelines, 3.5; a tester, Erez 27 Oct 2026):
+   the reply, several lines, is never emptied by it (Shift+Delete does
+   that); a search, a field of one line, is, and Esc does nothing else
+   there. It lets go of the item picked in the sidebar */
 static void esc_key(void)
 {
 	if (lcur >= 0) {
 		lcur = -1;
 		dirty |= D_LIST;
 	}
-	if (search_mode)	/* back to Chats, the typing kept in the line */
-		do_list("CHATS");
+	if (search_mode && inlen) {
+		inlen = in_cur = in_start = 0;
+		dirty |= D_INPUT;
+	}
 }
 
 static void handle_key(short kstate, short kr)
@@ -4997,7 +5087,7 @@ static void handle_key(short kstate, short kr)
 	case 0x50: scroll_text(shift ? rows - 1 : 1); return;		/* down */
 	case 0x47: scroll_text(shift ? 32000 : -32000); return;		/* Clr/Home */
 	case 0x62: help(); return;					/* Help */
-	case 0x61: esc_key(); return;					/* Undo */
+	case 0x61: return;	/* Undo: undoes nothing yet (3.2: as ^Z, not Esc) */
 	case 0x52:						/* Insert: item menu */
 		{
 			short i = lcur;
@@ -5044,7 +5134,8 @@ static void handle_key(short kstate, short kr)
 	case 0x0f: choose_attach(); return;	/* ^O */
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
-	case 0x17: quit = 1; return;		/* ^W: closes the one window */
+	case 0x15: quit = 1; return;		/* ^U: closes the one window (3.2) */
+	case 0x17: return;			/* ^W: the next window; there is one */
 	case 0x0d:				/* Return / Enter */
 		if (inlen == 0 && !search_mode && lcur >= 0 && lcur < nitems) {
 			short i = lcur;
@@ -5225,6 +5316,8 @@ static void icon_window(GRECT *area)
 
 static void handle_msg(short *msg)
 {
+	if (notify_message(msg))	/* BGEM.NG's own */
+		return;
 	switch (msg[0]) {
 	case MN_SELECTED:
 		switch (mbar_command(&mb, msg[4])) {
@@ -5250,7 +5343,8 @@ static void handle_msg(short *msg)
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
 		case C_ANSWER: copy_answer(); break;
-		case C_QUIT: quit = 1; break;
+		case C_QUIT:
+		case C_CLOSE: quit = 1; break;
 		case C_B48: set_baud(BAUD_4800); break;
 		case C_B96: set_baud(BAUD_9600); break;
 		case C_B192: set_baud(BAUD_19200); break;
@@ -5286,6 +5380,7 @@ static void handle_msg(short *msg)
 		over_divider = 0;
 		graf_mouse(ARROW, 0);
 		win_icon = 1;
+		wind_get(win, WF_CURRXYWH, &norm_x, &norm_y, &norm_w, &norm_h);
 		wind_set(win, WF_ICONIFY, msg[4], msg[5], msg[6], msg[7]);
 		break;
 	case WM_UNICONIFY:
@@ -5424,6 +5519,9 @@ int main(void)
 		return 1;
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
 	dlg_title = "ClaudeST";		/* dialogs in a window (3.5) */
+	notify_init("CLAUDEST");	/* BGEM.NG's notifications (4.5) */
+	notify_ask();
+	notify_clicked = answer_show;
 	dlg_redraw_hook = dialog_redraw;
 	sys_cw = cst_gl_wchar = cw;
 	sys_ch = cst_gl_hchar = ch;
@@ -5438,7 +5536,7 @@ int main(void)
 			strcat(home_dir, "\\");
 	}
 	pf_size_open = pf_handle_size;	/* futil.c's pf_load: open, then ask */
-	load_config();		/* before the first alert: DIALOGS3D (5.6) */
+	load_config();
 	crash_install(home_dir, "ClaudeST", APP_VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */

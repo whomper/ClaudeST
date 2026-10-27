@@ -204,10 +204,11 @@ release.
 | F10 | Hebrew keyboard on or off |
 | ^O | Attach a file to the next message (Backspace on the empty reply line removes the last one) |
 | ^, | Settings: the gateway's address and port, or the serial port |
-| Esc / Undo | Cancel any box or alert; leave Search. Never throws away what you typed |
+| Undo | Cancel any dialog or alert |
+| Esc | Empty the box with the cursor in a dialog (in Search, the search); cancel an alert or a dialog without a box. Never empties the reply line |
 | Shift+Delete | Clear the reply line (^X cuts it to the clipboard) |
 | Help | Help in EHypView or ST-Guide, or the keys (also in the Help menu) |
-| ^Q | Quit |
+| ^U, ^Q | Close the window, quit (ClaudeST has one window: ^W does nothing) |
 
 The guide has [all the keys](docs/GUIDE.md#all-keys).
 

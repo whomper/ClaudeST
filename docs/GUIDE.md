@@ -155,7 +155,8 @@ and moves the chat into it.
 ![Move to project, with New project at the top](move-to-project.png)
 
 **Rename…** opens a dialog with the current name: edit it and press
-`Return`, or `Esc` to cancel. A name can be longer than the box, up to
+`Return`, or `Undo` to cancel (`Esc` empties the box, as in any GEM
+dialog). A name can be longer than the box, up to
 71 characters: the text scrolls with the cursor, and `Shift+←` and
 `Shift+→` go to its start and end. **Delete…** always asks first. In menus,
 the arrow keys and `Return` work too, and `Esc` closes them.
@@ -262,7 +263,7 @@ started instead.
 
 ## Attaching files
 
-**File ▸ Attach file…** (`Ctrl+O`) picks a file in the file selector and
+**Chat ▸ Attach file…** (`Ctrl+O`) picks a file in the file selector and
 attaches it to your next message, as the paperclip does on claude.ai.
 ClaudeST sends it to the gateway straight away ("Attaching 40%" in the
 title bar), and the reply line shows it: `[NOTES.TXT]`, or `[2 files]`.
@@ -371,7 +372,10 @@ also picks it.
 the window, the keys, the settings and troubleshooting. Keep it next to
 `CLAUDEST.PRG` (or in the viewer's help folder); with EHypView, ST-Guide
 or HypView running (as an accessory, or as a program under MultiTOS or
-MagiC), `Help` in ClaudeST opens it. Without a viewer, `Help` says how to
+MagiC), `Help` in ClaudeST opens it. Under MiNT or MagiC, the viewer
+named by `STGUIDE=` in the AES's environment (`setenv STGUIDE
+C:\HYPVIEW\HYPVIEW.APP` in XAAES.CNF, `#_ENV STGUIDE=` in MAGX.INF) is
+asked first, and started when it isn't running. Without a viewer, `Help` says how to
 get one and offers ClaudeST's keys instead (also **Help ▸ Keys…**). It also
 opens on its own in any of them.
 
@@ -392,14 +396,16 @@ opens on its own in any of them.
 | `Insert` | The picked item's menu |
 | `←` `→`, `Shift+←/→`, `Ctrl+←/→` | Move in the reply line: by character, to the start or end, by word |
 | `Shift+Delete` | Clear the reply line (`^X` cuts it to the clipboard) |
-| `Esc` / `Undo` | Leave Search, keeping what you typed, and let go of the item picked in the sidebar. They never throw away typing or attached files; in any box or alert they cancel |
+| `Esc` | Empty the search box (in Search), and let go of the item picked in the sidebar. It never empties the reply line. In a dialog: empties the box with the cursor; in a dialog without one, or an alert, cancels |
+| `Undo` | In any dialog: Cancel (as the dialog window's closer) |
 | `Backspace` on the empty reply line | Remove the last attached file |
-| `Ctrl+O` | File ▸ Attach file…: attach a file to the next message |
+| `Ctrl+O` | Chat ▸ Attach file…: attach a file to the next message |
 | `Ctrl+R` | Reconnect to the bridge |
 | `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
-| `Ctrl+Q`, `Ctrl+W` | Quit (Ctrl+W closes the window, ClaudeST's only one) |
+| `Ctrl+U`, `Ctrl+Q` | File ▸ Close window, Quit: closing ClaudeST's only window quits |
+| `Ctrl+W` | The next window: ClaudeST has one, so nothing |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
 sets the gateway address, and `/serial` switches to the serial port.
@@ -410,11 +416,11 @@ sets the gateway address, and `/serial` switches to the serial port.
 **Network** (through STinG) with the gateway's address and port, or
 **Serial** with the speed, and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
-moves between the two fields, `Clr/Home` clears the one with the
-cursor, and Return is OK. **3D dialogs**, next to the buttons, gives the
-alerts and the Font dialog the AES's 3D look where it has one (TOS 4,
-MagiC, XaAES, EmuTOS in 16 colours or more); untick it for the flat look. It is greyed where the AES
-has no 3D look.
+moves between the two fields, `Esc` or `Clr/Home` empties the one with
+the cursor, Return is OK and `Undo` cancels. The dialogs and alerts have
+the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in 16
+colours or more), as every other program's there; there is no setting
+for it.
 
 ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
 (strictly, in the folder that is current when ClaudeST starts, which the
@@ -433,7 +439,6 @@ on) is still read, and written in the new form the next time.
 | `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
 | `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
-| `DIALOGS3D=1` | Options ▸ Settings, *3D dialogs*: 1 (the default) for the AES's 3D look where it has one, 0 for flat |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
