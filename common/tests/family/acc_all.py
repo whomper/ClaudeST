@@ -6,7 +6,7 @@ EHypView and EMail's EMail check (EMAILCHK.ACC), their latest releases
 (getrelease.py), loaded together on a 4 MB machine, as on Erez's own:
 
     common/tests/family/acc_all.py WORK [MACHINE] [--nvdi [--font]] [--display :N] [--use FILE]...
-                                   [--accs ECal,EContact] [--prg EMail]
+                                   [--accs ECal,EContact] [--prg EMail] [--again]
 
 MACHINE is ST (4 MB, TOS 1.04: ECALST.ACC and ECONTST.ACC, the ST
 editions, while a release has them; ECAL.ACC and ECONTACT.ACC when it
@@ -19,14 +19,18 @@ of that name, for the hub's run before the release; the report names it. --accs 
 --prg APP starts that program's latest release (EMAIL.PRG; APP:FILE[:MORE...] for another
 edition and the files it needs, as EWeb:EWEBST.PRG:EWEB.FNT on an ST) first, as Erez works: the accessories
 are then opened from its own Desk menu, and at the end the program is quit (^Q) and must give
-the desktop back. The Atari boots to the desktop,
+the desktop back; the program's own accessory (EHYPVIEW.ACC with --prg EHypView) is left
+out, since it hands over to the program. The Atari boots to the desktop,
 each accessory is opened from the Desk menu in turn, the three windows
 left open over each other, then each opened again; the Desk menu and every
 step are screenshots in WORK/shots. Checks: the desktop came, the Desk
 menu lists three accessories, each opening changed the screen (its
 window drew), Hatari still runs at the end, and no CRASH.LOG anywhere.
 Each accessory's own log (LOG=1 is the apps' default where they have
-one) is copied next to the shots. Run by the hub on Erez's TOS images;
+one) is copied next to the shots. --again boots the same WORK/hd once
+more, with the same arguments: the accessories' INFs as the first boot
+left them, so each takes what it measured (MEMKB), as on Erez's machine
+from the second boot on, not a first boot's share. Run by the hub on Erez's TOS images;
 on EmuTOS it runs too (AERA_TOS=emutos).
 """
 import os
@@ -42,6 +46,7 @@ import machines  # noqa: E402
 
 args = [a for a in sys.argv[1:]]
 nvdi = "--nvdi" in args
+again = "--again" in args
 font = "--font" in args
 display = ":90"
 if "--display" in args:
@@ -78,10 +83,19 @@ def check(ok, what):
     fails += not ok
 
 
-shutil.rmtree(work, ignore_errors=True)
 hd, shots, rel = (os.path.join(work, d) for d in ("hd", "shots", "rel"))
-for d in (hd, shots, rel):
-    os.makedirs(d)
+if again:
+    # the same disk once more: the accessories' INFs as the first boot
+    # left them, so each takes what it measured (MEMKB), not a first
+    # boot's share (EUpdate's "0 KB free", 27 Oct 2026)
+    if not os.path.isdir(hd):
+        sys.exit("acc_all --again: no %s from an earlier run" % hd)
+    shutil.rmtree(shots, ignore_errors=True)
+    os.makedirs(shots)
+else:
+    shutil.rmtree(work, ignore_errors=True)
+    for d in (hd, shots, rel):
+        os.makedirs(d)
 m = machines.Machine(machine + ("" if ":" in machine or not st else ":mono"), hd)
 if nvdi and not m.nvdi():
     sys.exit("acc_all: no NVDI here (machines.py, AERA_NVDI)")
@@ -103,6 +117,13 @@ repo = {"EMailCheck": "EMail"}
 # accessories whose Desk entry shows an alert rather than a window: Esc
 # closes it again, each round (EMail check's [Check now|About|OK])
 alerts = {"EMailCheck"}
+# the program's own accessory is left out: with the program running it
+# hands over to it (its twin, the guidelines 2.1) and draws no window of
+# its own, and a ^Q too many would quit the program
+twin = prg.split(":")[0] if prg else None
+if twin in accs:
+    accs.remove(twin)
+    print("note  %s's accessory left out: it hands over to %s's program in front" % (twin, twin), flush=True)
 want = {a: (f[0] if st and f[1] not in use else f[1], f[1]) for a, f in want.items() if a in accs}
 for app, (f, one) in list(want.items()):
     if not get(repo.get(app, app), [f]):
@@ -110,20 +131,23 @@ for app, (f, one) in list(want.items()):
             sys.exit("acc_all: %s's release has no %s" % (app, f))
         f = one
     want[app] = f
-    shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, f))
+    if not again:
+        shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, f))
 # ECal and EContact as set up already (their folders, named in C:\NAME.INF),
 # so that no first-time question holds the Desk menu
 for name in ("ECAL", "ECONTACT"):
+    if again:
+        break
     os.makedirs(os.path.join(hd, name))
     with open(os.path.join(hd, name + ".INF"), "w", newline="") as f:
         f.write("[OPTIONS]\r\nFOLDER=C:\\%s\r\n" % name)
-if "EMailCheck" in want:
+if "EMailCheck" in want and not again:
     # EMail check told where EMail is (C:\EMAIL, --prg EMail's folder), so
     # that its first-time question doesn't hold the Desk menu
     os.makedirs(os.path.join(hd, "EMAIL"), exist_ok=True)
     with open(os.path.join(hd, "EMAILCHK.INF"), "w", newline="") as f:
         f.write("; EMail's folder, where EMAIL.PRG and EMAIL.INF are\r\nFOLDER=C:\\EMAIL\r\n\r\n")
-if font:
+if font and not again:
     with open(os.path.join(hd, "EHYPVIEW.INF"), "w", newline="") as f:
         f.write("FOLDER=C:\\\r\nFONT=Courier 10 Pitch\r\nPOINT=10\r\n")
 auto = []
@@ -134,10 +158,11 @@ if prg:
     prg, pf, more = (parts[0], parts[1], parts[2:]) if len(parts) > 1 else (prg, prg.upper() + ".PRG", [])
     if not get(prg, [pf] + more):
         sys.exit("acc_all: %s's release has no %s" % (prg, " ".join(n for n in [pf] + more if n not in use)))
-    os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
-    shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
-    for f in more:
-        shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
+    if not again:
+        os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
+        shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
+        for f in more:
+            shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
     auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
 versions = ", ".join("%s %s" % (a, use[f] if f in use else
                                  open(os.path.join(rel, repo.get(a, a).upper() + ".VERSION")).read().strip())
@@ -145,17 +170,28 @@ versions = ", ".join("%s %s" % (a, use[f] if f in use else
 if prg:
     versions += ", %s %s in front" % (prg, use[pf] if pf in use else
                                       open(os.path.join(rel, prg.upper() + ".VERSION")).read().strip())
-print("on %s%s; %s" % (m.describe(), " with NVDI" if nvdi else "", versions), flush=True)
+print("on %s%s; %s%s" % (m.describe(), " with NVDI" if nvdi else "", versions,
+                         "; booted again (the accessories at what they measured)" if again else ""), flush=True)
 
 x = machines.xvfb(display)
+fifo = os.path.join(work, "cmd.fifo")
+if os.path.exists(fifo):
+    os.remove(fifo)
 env = m.env(dict(os.environ, DISPLAY=display, SDL_VIDEODRIVER="x11"))
 hatari = subprocess.Popen(["hatari", "--statusbar", "no", "--borders", "no", "--zoom", "1",
-                           "--fast-boot", "yes", "--natfeats", "yes", "--log-level", "warn"] + m.args() + auto, env=env,
+                           "--fast-boot", "yes", "--natfeats", "yes", "--log-level", "warn",
+                           "--cmd-fifo", fifo] + m.args() + auto, env=env,
                           stdout=open(work + "/hatari.log", "w"), stderr=subprocess.STDOUT)
 
 
 def xdo(*a):
     return subprocess.run(["xdotool", *a], env=env, capture_output=True, text=True).stdout
+
+
+def undo():
+    """Undo (scancode 0x61, which X has no key for), through Hatari's fifo"""
+    with open(fifo, "w") as f:
+        f.write("hatari-event keypress 0x61\n")
 
 
 def win():
@@ -217,11 +253,13 @@ try:
                   "its own alert, see 0-desktop.png" % prg)
     if prg and prg.upper() == "EMAIL":
         # a first start's welcome (EMail's "Let's set up your mail account"),
-        # then the account dialog: Esc closes each (only EMail's: in EFTP,
-        # Return opens the drive row A:, and TOS asks for a disk). On a slow
+        # then the account dialog: Undo closes each (Esc cancels the
+        # welcome alert, but in a dialog with a text field it empties the
+        # field since 27 Oct 2026, the guidelines 3.5; and in EFTP Return
+        # opens the drive row A:, and TOS asks for a disk). On a slow
         # machine (a 4 MB Falcon with NVDI) each came later than the keys
         # were sent, and a Return on the dialog would save an empty account:
-        # Esc once the screen is still, again until two Escs change nothing
+        # Undo once the screen is still, again until two change nothing
         def still(name, most=10):
             prev = shot(name)
             for _ in range(most):
@@ -234,9 +272,9 @@ try:
         idle = 0
         for k in range(6):
             before = still("0a-%d" % k)
-            xdo("key", "Escape")
+            undo()
             time.sleep(3)
-            idle = idle + 1 if differs(before, still("0a-%d-esc" % k)) < 500 else 0
+            idle = idle + 1 if differs(before, still("0a-%d-undo" % k)) < 500 else 0
             if idle == 2:
                 break
         desk = shot("0b-%s-ready" % prg.lower())
@@ -265,9 +303,10 @@ try:
     time.sleep(1)
     for rnd in (1, 2):
         if rnd == 2 and len(want) == 1:
-            # its window is still on top: closed (^W), so that opening it
-            # again draws it
-            xdo("key", "ctrl+w")
+            # its window is still on top: closed (^Q, which closes an
+            # accessory's window in every release, before and after ^U
+            # took over from ^W), so that opening it again draws it
+            xdo("key", "ctrl+q")
             time.sleep(3)
         for i in range(len(want)):            # the Desk menu's order is the loading order
             before = shot("%d-%d-before" % (rnd, i))
@@ -288,10 +327,13 @@ try:
                 shot("%d-%d-welcomed" % (rnd, i))
             check(n > 2000, "round %d: the Desk menu's accessory %d drew its window (%d pixels)" % (rnd, i + 1, n))
     if prg:
-        # the accessories' windows closed (^W, the top one each time), then
-        # the program quit: the desktop must come back
+        # the accessories' windows closed (^Q, the top one each time: an
+        # accessory's ^Q closes its window in every release, while ^W
+        # closed before 27 Oct 2026 and ^U after, and a ^U that reached
+        # the program quit it, the next ^W opening drive W: on the
+        # desktop), then the program quit: the desktop must come back
         for i in range(len(want) - len(alerts & set(want))):
-            xdo("key", "ctrl+w")
+            xdo("key", "ctrl+q")
             time.sleep(3)
         before = shot("8-accessories-closed")
         xdo("key", "ctrl+q")

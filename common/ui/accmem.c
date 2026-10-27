@@ -13,6 +13,23 @@ long acc_heap_bytes, acc_heap_avail;
 short acc_heap_tt;
 long acc_heap_leave = 32L * 1024;
 
+/* the accessories in the boot drive's root, which TOS loads at boot: at
+   least this one */
+static int acc_count(void)
+{
+	char dta[44], path[9] = "C:\\*.ACC";
+	void *was = Fgetdta();
+	int n = 0;
+	path[0] = (char)('A' + boot_drive());
+	Fsetdta(dta);
+	if (Fsfirst(path, 0) == 0)
+		do
+			n++;
+		while (n < 64 && Fsnext() == 0);
+	Fsetdta(was);
+	return n < 1 ? 1 : n;
+}
+
 long acc_heap_take(long first, long tt_first, long heapkb, long memkb)
 {
 	long avail = (long)Malloc(-1L), alt = (long)Mxalloc(-1L, 1), want, cap;
@@ -32,8 +49,16 @@ long acc_heap_take(long first, long tt_first, long heapkb, long memkb)
 	/* the rest left to the programs run after, and the other accessories:
 	   not known yet, a quarter where 1 MB or more is free (on a 4 MB
 	   Falcon with NVDI's fonts only about 1.5 MB is free when the
-	   accessories load, and two halves left EMail none for NVDI) */
-	cap = !known && avail >= 1024L * 1024 ? avail / 4 : avail / 2;
+	   accessories load, and two halves left EMail none for NVDI), and
+	   with more than two accessories to load, half of it shared out
+	   among them: four first boots of a quarter each took two thirds of
+	   that 1.5 MB, and EUpdate found 0 KB for its screen (27 Oct 2026) */
+	if (!known && avail >= 1024L * 1024) {
+		int n = acc_count();
+		cap = avail / (n > 2 ? 2 * n : 4);
+	} else {
+		cap = avail / 2;
+	}
 	if (want > cap) {
 		want = cap & ~1L;
 		/* little memory (a 1 MB ST): half is under 96 KB; then all but

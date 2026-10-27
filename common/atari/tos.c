@@ -285,6 +285,37 @@ unsigned long __mulsi3(unsigned long a, unsigned long b)
 	return r;
 }
 
+/* __builtin_clz/__builtin_ctz on a 68000: libgcc's are 68020 code
+   (bfffo), an illegal instruction on an ST (EPDF, 27 Oct 2026). Halving
+   steps, not a loop GCC could turn back into a call of itself */
+int __clzsi2(unsigned int x)
+{
+	int n = 0;
+	if (!x)
+		return 32;
+	if (!(x & 0xffff0000UL)) { n += 16; x <<= 16; }
+	if (!(x & 0xff000000UL)) { n += 8; x <<= 8; }
+	if (!(x & 0xf0000000UL)) { n += 4; x <<= 4; }
+	if (!(x & 0xc0000000UL)) { n += 2; x <<= 2; }
+	if (!(x & 0x80000000UL))
+		n += 1;
+	return n;
+}
+
+int __ctzsi2(unsigned int x)
+{
+	int n = 0;
+	if (!x)
+		return 32;
+	if (!(x & 0xffff)) { n += 16; x >>= 16; }
+	if (!(x & 0xff)) { n += 8; x >>= 8; }
+	if (!(x & 0xf)) { n += 4; x >>= 4; }
+	if (!(x & 0x3)) { n += 2; x >>= 2; }
+	if (!(x & 0x1))
+		n += 1;
+	return n;
+}
+
 static unsigned long udivmod(unsigned long n, unsigned long d, unsigned long *rem)
 {
 	unsigned long q = 0, bit = 1;
