@@ -625,12 +625,25 @@ static void test_long_fields(void)
 	for (i = 0; i < 30; i++)
 		s[n++] = (STEP)KEY(0x4b00);
 	s[n++] = (STEP)KEY(K('#'));
-	s[n++] = (STEP)KEY(KEY_ESC);
+	s[n++] = (STEP)KEY(KEY_UNDO);
 	s[n] = (STEP)END;
 	r = run(F1, CANCEL, s);
 	check(r == CANCEL && big[63] == '#' && !strcmp(big + 64, TOKEN + 63) && strlen(big) == 94,
-	      "Left 30 times, then a letter: put in there; Esc cancels and the text stays");
-	check(ed_char_esc == 0 && cursor == 0, "... Esc never reached objc_edit");
+	      "Left 30 times, then a letter: put in there; Undo cancels and the text stays");
+	check(ed_char_esc == 0 && cursor == 0, "... Undo never reached objc_edit");
+
+	/* Esc in a long field empties it, as GEM's fields; the dialog stays */
+	setup();
+	ted[0].te_ptmplt = tmpl;
+	strcpy(big, TOKEN);
+	lf_init(&f, tree, F1, big, 99, 0);
+	{
+		static const STEP e[] = { KEY(KEY_ESC), KEY(K('n')), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, e);
+	}
+	check(r == OK && !strcmp(big, "n") && !strcmp(f.view, "n") && f.cur == 1,
+	      "Esc in a long field: emptied, the dialog open; typing goes on from there");
+	check(ed_char_esc == 0, "... the long field's own, not objc_edit's");
 
 	/* the clipboard: a paste takes the whole token; a password is never copied out */
 	setup();
@@ -739,11 +752,11 @@ int main(void)
 
 	setup();
 	{
-		static const STEP s[] = { KEY(K('x')), KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(K('x')), KEY(KEY_ESC), KEY(K('y')), KEY(KEY_RETURN), END };
 		r = run(0, CANCEL, s);
-		check(r == CANCEL, "Esc in a text field: Cancel");
-		check(!strcmp(text[0], "hellox"), "... and the field keeps its text (form_do would clear it)");
-		check(ed_char_esc == 0, "... Esc never reached objc_edit");
+		check(r == OK, "Esc in a text field: the dialog stays open (GEM's form_do; Erez, 27 Oct 2026)");
+		check(!strcmp(text[0], "y"), "... the field emptied by objc_edit, as form_do's");
+		check(ed_char_esc == 1, "... Esc given to objc_edit once");
 		check(!(tree[CANCEL].ob_state & SELECTED), "... Cancel not selected");
 		tidy("Esc");
 	}
@@ -758,17 +771,17 @@ int main(void)
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_CTRLBR), END };
+		static const STEP s[] = { KEY(KEY_CTRLBR), KEY(KEY_UNDO), END };
 		r = run(0, CANCEL, s);
-		check(r == CANCEL && !strcmp(text[0], "hello"), "^[ (ASCII's Esc): Cancel too");
+		check(r == CANCEL && !strcmp(text[0], "") && ed_char_esc == 1, "^[ (ASCII's Esc): empties the field too");
 	}
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_TAB), KEY(K('z')), KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_TAB), KEY(K('z')), KEY(KEY_ESC), KEY(KEY_UNDO), END };
 		r = run(0, CANCEL, s);
-		check(r == CANCEL && !strcmp(text[1], "worldz") && !strcmp(text[0], "hello"),
-		      "Tab to the second field, typing, Esc: Cancel, both fields kept");
+		check(r == CANCEL && !strcmp(text[1], "") && !strcmp(text[0], "hello"),
+		      "Tab to the second field, typing, Esc: that field emptied, the first kept; Undo: Cancel");
 		tidy("Tab");
 	}
 
@@ -784,19 +797,37 @@ int main(void)
 	setup();
 	tree[CANCEL].ob_state |= SELECTED;
 	{
-		static const STEP s[] = { KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_UNDO), END };
 		draws = 0;
 		r = run(0, CANCEL, s);
 		check(r == CANCEL && !(tree[CANCEL].ob_state & SELECTED) && draws == 1,
-		      "Esc with Cancel shown selected: deselected and drawn again");
+		      "Undo with Cancel shown selected: deselected and drawn again");
+	}
+
+	/* a dialog without a text field: Esc is Cancel */
+	setup();
+	tree[F1].ob_flags &= ~EDITABLE;
+	tree[F2].ob_flags &= ~EDITABLE;
+	{
+		static const STEP s[] = { KEY(KEY_ESC), END };
+		r = run(0, CANCEL, s);
+		check(r == CANCEL && !ed_char_esc && !strcmp(text[0], "hello"), "no text field: Esc is Cancel");
+	}
+	setup();
+	tree[F1].ob_flags &= ~EDITABLE;
+	tree[F2].ob_flags &= ~EDITABLE;
+	{
+		static const STEP s[] = { KEY(KEY_CTRLBR), END };
+		r = run(0, CANCEL, s);
+		check(r == CANCEL, "no text field: ^[ is Cancel too");
 	}
 
 	setup();
 	{
-		static const STEP s[] = { KEY(K('k')), KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(K('k')), KEY(KEY_UNDO), END };
 		draws = 0;
 		r = run(0, -1, s);
-		check(r == -1, "cancel -1 (no do-nothing button): Esc gives -1, told apart from every button");
+		check(r == -1, "cancel -1 (no do-nothing button): Undo gives -1, told apart from every button");
 		check(!strcmp(text[0], "hellok") && !ed_char_esc, "... the field kept");
 		check(draws == 0 && !(tree[OK].ob_state & SELECTED) && !(tree[CANCEL].ob_state & SELECTED),
 		      "... nothing drawn or selected");
@@ -805,17 +836,19 @@ int main(void)
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_UNDO), END };
+		static const STEP s[] = { KEY(KEY_ESC), END };
+		tree[F1].ob_flags &= ~EDITABLE;
+		tree[F2].ob_flags &= ~EDITABLE;
 		r = run(0, -1, s);
-		check(r == -1, "cancel -1: Undo gives -1 too");
+		check(r == -1, "cancel -1, no text field: Esc gives -1 too");
 	}
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_UNDO), END };
 		script = s;
 		r = dlg_modal(tree, 0, -1);
-		check(r == -1 && dial_start == 1 && dial_finish == 0 && blits == 2, "dlg_modal, cancel -1: Esc gives -1, the dialog put away (the screen put back)");
+		check(r == -1 && dial_start == 1 && dial_finish == 0 && blits == 2, "dlg_modal, cancel -1: Undo gives -1, the dialog put away (the screen put back)");
 		check(!(tree[OK].ob_state & SELECTED) && !(tree[CANCEL].ob_state & SELECTED), "... no object changed");
 		tidy("dlg_modal cancel -1");
 	}
@@ -879,7 +912,7 @@ int main(void)
 	pre_keys[0] = KEY_RETURN;
 	npre = 1;
 	{
-		static const STEP s[] = { KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_UNDO), END };
 		r = run(0, CANCEL, s);
 		check(r == CANCEL && npre == 0, "a Return typed before the dialog came doesn't answer it");
 	}
@@ -905,18 +938,18 @@ int main(void)
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_UNDO), END };
 		script = s;
 		r = dlg_modal(tree, 0, CANCEL);
-		check(r == CANCEL && !strcmp(text[0], "hello"), "dlg_modal: Esc gives Cancel, the field kept");
+		check(r == CANCEL && !strcmp(text[0], "hello"), "dlg_modal: Undo gives Cancel, the field kept");
 	}
 
 	setup();
 	{
-		static const STEP s[] = { KEY(KEY_ESC), END };
+		static const STEP s[] = { KEY(KEY_UNDO), END };
 		script = s;
 		r = dlg_modal_save(tree, 0, CANCEL);
-		check(r == CANCEL, "dlg_modal_save: Esc gives Cancel");
+		check(r == CANCEL, "dlg_modal_save: Undo gives Cancel");
 		check(blits == 2 && blit_dir[0] == 1 && blit_dir[1] == 0 && dial_finish == 0,
 		      "dlg_modal_save: the screen saved and put back, no redraw");
 		/* x 160, less 4 for the outline: from 144 (a word) to 496 (whole words) */
@@ -979,7 +1012,7 @@ int main(void)
 		static const STEP s[] = { KEY(K('c')), MSG(WM_CLOSED, DLGWIN), END };
 		script = s;
 		r = dlg_modal(tree, 0, CANCEL);
-		check(r == CANCEL && !strcmp(text[0], "helloc"), "the window's closer: as Esc, Cancel, the field kept");
+		check(r == CANCEL && !strcmp(text[0], "helloc"), "the window's closer: as Undo, Cancel, the field kept");
 		tidy("closer");
 	}
 
@@ -1155,6 +1188,10 @@ int main(void)
 
 	check(dlg_esc(KEY_ESC) && dlg_esc(KEY_UNDO) && !dlg_esc(KEY_RETURN) && !dlg_esc(K('a')) &&
 	      !dlg_esc(0x0e08), "dlg_esc: Esc and Undo only");
+	check(dlg_undo(KEY_UNDO) && !dlg_undo(KEY_ESC) && !dlg_undo(KEY_CTRLBR), "dlg_undo: Undo only");
+	check(dlg_cancel_key(KEY_UNDO, 1) && dlg_cancel_key(KEY_UNDO, 0) && dlg_cancel_key(KEY_ESC, 0) &&
+	      dlg_cancel_key(KEY_CTRLBR, 0) && !dlg_cancel_key(KEY_ESC, 1) && !dlg_cancel_key(KEY_CTRLBR, 1) &&
+	      !dlg_cancel_key(KEY_RETURN, 0), "dlg_cancel_key: Undo always, Esc where no field has the cursor");
 
 		/* pen_nearest on a TT's 16 */
 	check(pen_nearest(1, 16, 0, 0, 900, 1) == 4, "pen_nearest: blue is pen 4");

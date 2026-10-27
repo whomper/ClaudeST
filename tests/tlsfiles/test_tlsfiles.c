@@ -280,7 +280,7 @@ static int roots(const char *dir)
 static int seed(const char *dir, int run)
 {
 	char pem[300], err[200], before[32], after[32];
-	int r = 0, i;
+	int r = 0, i, at_load;
 	FILE *f;
 	snprintf(pem, sizeof(pem), "../../certs/CACERT.PEM");
 	snprintf(tls_seed_path, sizeof(tls_seed_path), "%s/SEED.DAT", dir);
@@ -291,9 +291,12 @@ static int seed(const char *dir, int run)
 		r = (int)fread(before, 1, sizeof(before), f);
 		fclose(f);
 	}
-	tls_load_anchors(pem, err, sizeof(err));
+	/* the seed read and written with the root certificates, before
+	   any connection (conn.c), none of it in the handshakes */
 	strcpy(watch, tls_seed_path);
 	opens = looks = 0;
+	tls_load_anchors(pem, err, sizeof(err));
+	at_load = opens;
 	for (i = 0; i < 2; i++)
 		tls_start(-1, "example.org", 0, 0, err, sizeof(err));
 	printf("== seed, run %d\n", run);
@@ -303,9 +306,11 @@ static int seed(const char *dir, int run)
 		fclose(f);
 	check(memcmp(before, after, sizeof(after)) != 0, "a new seed written");
 	if (run == 1)
-		check(r == 0 && looks == 0, "there was none before; made with no look at the directory");
+		check(r == 0 && looks == 0 && opens == at_load,
+		      "there was none before; made with the roots, with no look at the directory");
 	else
-		check(opens == 2 && looks == 0, "two opens (read, then written over), no look, for two handshakes");
+		check(at_load == 2 && opens == 2 && looks == 0,
+		      "two opens (read, then written over) with the roots, none in two handshakes, no look");
 	return 0;
 }
 

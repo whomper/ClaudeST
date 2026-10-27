@@ -113,8 +113,9 @@ void text_fx(short h, short x, short y, const char *s, long n, short fx, short c
 {
 	short tw = (short)(n * cw);
 	if (fx & 1) {
-		/* bold: the text's box ORed onto itself a pixel to the right;
-		   TOS's raster copies aren't clipped, so it is cut by hand */
+		/* bold: the text's box ORed onto itself a pixel to the right,
+		   cut to the clip by hand (the VDI clips raster copies too, TOS's
+		   and NVDI's: EFTP, 26 Oct 2026; the cut costs nothing) */
 		short x1 = (short)(x + 1), x2 = (short)(x + tw), y1 = y, y2 = (short)(y + ch - 1);
 		if (clipping) {
 			if (x1 < clip_now[0])

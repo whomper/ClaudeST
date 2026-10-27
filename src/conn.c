@@ -47,6 +47,29 @@ static void log_tls_step(const char *msg)
 	conn_log("TLS", log_hold ? " -- " : " .. ", msg, strlen(msg));
 }
 
+/* what TLS reads from the disk (TLS.OVL, the root certificates, the
+   seed, SIGS.DAT), once a session: done before a connection is opened,
+   as a server waiting for the hello hangs up (seconds on a real Atari
+   disk: demozoo.org, Cloudflare's, on a stock Falcon, 26 Oct 2026); and
+   with TLS.OVL in, the first hello knows what the DSP does fast */
+static int tls_ready(const char *name, char *err, int errlen)
+{
+	char msg[80];
+	unsigned long t0;
+	int n;
+	if (tls_anchor_count())
+		return 1;
+	t0 = pf_ms();
+	n = tls_load_anchors(conn_cacert, err, errlen);
+	if (!n) {
+		conn_log(name, " !! ", err, strlen(err));
+		return 0;
+	}
+	snprintf(msg, sizeof(msg), "%d root certificates read in %lu ms", n, pf_ms() - t0);
+	conn_log("TLS", " -- ", msg, strlen(msg));
+	return 1;
+}
+
 /* TLS on the open socket of c; host names the server for its
    certificate and for the session kept to resume */
 static int handshake(CONN *c, const char *host, char *err, int errlen)
@@ -57,17 +80,8 @@ static int handshake(CONN *c, const char *host, char *err, int errlen)
 	char msg[200];
 	unsigned long t0;
 	conn_tls_retry = 0;
-	if (!tls_anchor_count()) {
-		int n;
-		t0 = pf_ms();
-		n = tls_load_anchors(conn_cacert, err, errlen);
-		if (!n) {
-			conn_log(c->name, " !! ", err, strlen(err));
-			return 0;
-		}
-		snprintf(msg, sizeof(msg), "%d root certificates read in %lu ms", n, pf_ms() - t0);
-		conn_log("TLS", " -- ", msg, strlen(msg));
-	}
+	if (!tls_ready(c->name, err, errlen))
+		return 0;
 	t0 = pf_ms();
 	/* RSA certificates first, as the DSP checks them fast; unless it
 	   does the elliptic curves as well (tls_ec_fast) */
@@ -97,9 +111,13 @@ static int handshake(CONN *c, const char *host, char *err, int errlen)
 /* the handshake's lines stay in the log's buffer until it ends: written
    out one at a time, they cost about half a second each on an Atari disk,
    and the times in them would be the disk's */
+static void conn_turn(void);
+
 static int start_tls(CONN *c, const char *host, char *err, int errlen)
 {
 	int ok;
+	conn_turn();	/* the connect and the handshake's start were one
+			   stretch (EUpdate, 26 Oct 2026) */
 	log_hold = 1;
 	tls_log = log_tls_step;
 	ok = handshake(c, host, err, errlen);
@@ -286,6 +304,8 @@ CONN *conn_open(const char *name, const char *host, unsigned short port, long bu
 {
 	int attempt;
 	unsigned long refused = 0;	/* the handshakes of the tries before */
+	if ((sec == SEC_TLS || sec == SEC_STARTTLS) && !tls_ready(name, err, errlen))
+		return 0;
 	for (attempt = 0; attempt < 3; attempt++) {	/* ChaCha20 alone, then ECDSA */
 		CONN *c = open_plain(name, host, port, bufsize, err, errlen);
 		if (!c || sec != SEC_TLS)

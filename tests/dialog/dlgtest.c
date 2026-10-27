@@ -104,6 +104,7 @@ int main(void)
 	ask_alert("a_click", 1, "[3][Can't reach the server.|Check the network and try again.][Retry|Skip|Cancel]");
 	ask_alert("a_ok", 1, "[1][The folder was saved.][ OK ]");
 	ask_dialog("d_esc", CANCEL);
+	ask_dialog("d_escundo", CANCEL);
 	ask_dialog("d_return", CANCEL);
 	ask_dialog("d_undo", CANCEL);
 	ask_dialog("d_none", -1);

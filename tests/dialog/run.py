@@ -27,10 +27,11 @@ CASES = [
     ("a_esc3", ["key 0x01"], "3"),
     ("a_click", ["click Skip"], "2"),
     ("a_ok", ["key 0x01"], "1"),
-    ("d_esc", ["key x", "key y", "key 0x01"], "4 helloxy 0"),
+    ("d_esc", ["key x", "key y", "key 0x01", "key z", "key 0x1c"], "3 z 0"),
+    ("d_escundo", ["key x", "key 0x01", "key 0x61"], "4  0"),
     ("d_return", ["key z", "key 0x1c"], "3 helloz 0"),
     ("d_undo", ["key 0x61"], "4 hello 0"),
-    ("d_none", ["key q", "key 0x01"], "-1 helloq 0"),
+    ("d_none", ["key q", "key 0x61"], "-1 helloq 0"),
     ("d_click", ["click OK"], "3 hello 0"),
     ("d_close", ["key x", "close"], "4 hellox 0"),
     ("d_band", ["key 0x1c"], "3 hello 0"),
@@ -213,10 +214,10 @@ def run_mode(a, mode):
                     time.sleep(0.3)
                 elif verb == "close":
                     # the window's closer, at the left of its title bar;
-                    # on TOS (no window) Esc does what it does
+                    # on TOS (no window) Undo does what it does
                     wm = re.findall(r"DLG window (\d+) (\d+) (\d+) (\d+)", got[pos:k if k > 0 else None])
                     if mode != "xaaes":
-                        r.cmd("hatari-event keypress 0x01")
+                        r.cmd("hatari-event keypress 0x61")
                         continue
                     if not check(bool(wm), "%s %s: in a window" % (mode, name)):
                         continue

@@ -56,10 +56,11 @@ static int multitasking(void)
    AES can (Erez, 25 Oct 2026): its folder is FOLDER= in the boot drive's
    EHYPVIEW.INF, which the program writes there itself. 1 when the AES
    took it */
+static int start_prg(const char *prg, const char *args);
+
 static int start_viewer(const char *args)
 {
-	static char prg[200];
-	static char tail[128];
+	char prg[200];
 	char inf[16] = "C:\\EHYPVIEW.INF", buf[256], line[200];
 	long fh, n, i;
 	short k = 0, found = 0;
@@ -95,25 +96,80 @@ static int start_viewer(const char *args)
 	if (prg[strlen(prg) - 1] != '\\')
 		add(prg, sizeof(prg), "\\");
 	add(prg, sizeof(prg), "EHYPVIEW.PRG");
-	if (Fattrib(prg, 0, 0) < 0)
+	return start_prg(prg, args);
+}
+
+/* STGUIDE= in the AES's environment, where MiNT and MagiC users name
+   the help viewer they use (ST-Guide's own convention; a tester, 27 Oct
+   2026): its path in prg, its AES name (the file's name, 8 characters
+   with spaces) in name. 0 where it isn't set */
+static int env_viewer(char *prg, long n, char *name)
+{
+	char *v = 0, *p, *base;
+	short k;
+	shel_envrn(&v, "STGUIDE=");
+	if (!v || !*v)
 		return 0;
-	/* the command line: its length, then the text (as Pexec's) */
+	while (*v == ' ' || *v == '"')
+		v++;
+	prg[0] = 0;
+	add(prg, n, v);
+	for (p = prg + strlen(prg); p > prg && (p[-1] == ' ' || p[-1] == '"'); )
+		*--p = 0;
+	if (!prg[0])
+		return 0;
+	base = prg;
+	for (p = prg; *p; p++)
+		if (*p == '\\' || *p == '/' || *p == ':')
+			base = p + 1;
+	for (k = 0; k < 8 && base[k] && base[k] != '.'; k++)
+		name[k] = (char)(base[k] >= 'a' && base[k] <= 'z' ? base[k] - 32 : base[k]);
+	for (; k < 8; k++)
+		name[k] = ' ';
+	name[8] = 0;
+	return 1;
+}
+
+/* 1 for a name that ends in .ACC: an accessory, which runs from boot or not at all */
+static int is_acc(const char *prg)
+{
+	long l = (long)strlen(prg);
+	return l > 4 && prg[l - 4] == '.' && (prg[l - 3] | 32) == 'a' && (prg[l - 2] | 32) == 'c' &&
+		(prg[l - 1] | 32) == 'c';
+}
+
+/* prg started beside us with args (MiNT, MagiC), as Pexec's command
+   line (its length, then the text): a GEM program, at once and beside
+   us, MagiC's SHW_PARALLEL 100, MultiTOS's and XaAES's 1. 1 when the AES
+   took it */
+static int start_prg(const char *prg, const char *args)
+{
+	static char cmd[200];
+	static char tail[128];
+	short k;
+	if (is_acc(prg) || Fattrib(prg, 0, 0) < 0)
+		return 0;
+	cmd[0] = 0;
+	add(cmd, sizeof(cmd), prg);
 	k = (short)strlen(args);
 	if (k > (short)sizeof(tail) - 2)
 		k = (short)sizeof(tail) - 2;
 	tail[0] = (char)k;
 	memcpy(tail + 1, args, k);
 	tail[k + 1] = 0;
-	/* a GEM program, at once and beside us: MagiC's SHW_PARALLEL is 100,
-	   MultiTOS's and XaAES's 1 */
-	return shel_write(1, 1, get_cookie(0x4D616758L) ? 100 : 1, prg, tail) > 0;
+	return shel_write(1, 1, get_cookie(0x4D616758L) ? 100 : 1, cmd, tail) > 0;
 }
 
 int help_show(const char *dir, const char *hyp, const char *page)
 {
 	static const char *const viewers[] = { "EHYPVIEW", "ST-GUIDE", "HYPVIEW ", "HYP_VIEW" };
+	char env_prg[200], env_name[9];
+	int env = env_viewer(env_prg, sizeof(env_prg), env_name);
 	short id = -1, i;
 	long n = (long)sizeof(local_help);
+	/* the user's own viewer first, when it runs; then the ones we know */
+	if (env)
+		id = appl_find(env_name);
 	for (i = 0; i < 4 && id < 0; i++)
 		id = appl_find(viewers[i]);
 	if (id < 0 && !multitasking())
@@ -138,7 +194,7 @@ int help_show(const char *dir, const char *hyp, const char *page)
 		add(help_buf, n, page);
 	}
 	if (id < 0)
-		return start_viewer(help_buf);
+		return (env && start_prg(env_prg, help_buf)) || start_viewer(help_buf);
 	send(id, help_buf);
 	return 1;
 }
