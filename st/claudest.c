@@ -990,37 +990,37 @@ static void heb_runs(short x, short y, const char *s, short n)
 	}
 }
 
-/* in transparent mode (every bold caller's); bold black text the fast way
-   (the guidelines' Speed: "Text through text_n") */
+/* in transparent mode (every bold caller's). Bold is never vst_effects'
+   here, where text sits in cells: NVDI widens each letter by a pixel or
+   more, out of its cell (EHypView, from Erez's photo, 27 Oct 2026). Black
+   bold the fast way, the plain text ORed a pixel to the right (text_fx);
+   other bold the plain text struck again a pixel to the right
+   (text_bold_strike); the guidelines' Speed, text */
 static void text(short x, short y, const char *s, short n, short fx, short color)
 {
-	short fast = color == 1 && text_fx_fast(fx, 1);
-	vst_effects(vh, fx);
+	short fast = color == 1 && text_fx_fast(fx, 1), bold = fx & 1;
+	char m[128];
+	vst_effects(vh, fx & ~1);
 	vst_color(vh, color);
 	if (n > 0 && (heb_mode != HM_MAP || hebfont != HEB_ATARI) && has_heb(s, n)) {
-		char m[128];
 		if (n > (short)sizeof(m))
 			n = sizeof(m);
 		if (heb_mode != HM_MAP) {
+			vst_effects(vh, fx);	/* a vector font's, in its own cells */
 			heb_runs(x, y, s, n);
 			return;
 		}
 		memcpy(m, s, n);
 		heb_font_map(m, n, hebfont);
-		text_n(vh, x, y, m, n);
-		return;
-	}
-	if (fast) {
-		/* bold as a copy of the plain text ORed a pixel to the right
-		   (text.c): black ORs to black on any even ground, as TOS's
-		   own bold drawn transparent; it may leave the mode replace */
-		vst_effects(vh, 0);
-		text_n(vh, x, y, s, n);
-		text_fx(vh, x, y, s, n, fx, color);
-		vswr_mode(vh, 2);
-		return;
+		s = m;
 	}
 	text_n(vh, x, y, s, n);
+	if (fast)
+		text_fx(vh, x, y, s, n, fx, color);
+	else if (bold)
+		text_bold_strike(vh, x, y, s, n);
+	if (fast || bold)
+		vswr_mode(vh, 2);	/* both may leave it replace */
 }
 
 /* draw a string that may contain Hebrew in visual order; a right-to-left
