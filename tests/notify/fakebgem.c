@@ -20,11 +20,12 @@
 int main(void)
 {
 	char b[700];
-	short m[8], r[8], t;
+	short m[8], r[8];
+	long t;
 	AEVENT e;
 	appl_init();
 	nf_debug("BUBBLE up\n");
-	for (t = 0; t < 600; t++) {
+	for (t = 0; t < 18000; t++) {	/* 30 minutes: an app's reminder may come late */
 		evnt_multi_(MU_MESAG | MU_TIMER, 0, 0, 0, 100, m, &e);
 		if (!(e.which & MU_MESAG))
 			continue;

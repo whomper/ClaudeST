@@ -40,6 +40,34 @@ void *Mxalloc(long n, int mode)
 	return area;
 }
 
+static int n_accs = 1, found;		/* the *.ACC in the boot root */
+static char path_asked[16];
+
+void *Fgetdta(void)
+{
+	return area;
+}
+long Fsetdta(void *p)
+{
+	(void)p;
+	return 0;
+}
+long Fsfirst(const char *path, int attr)
+{
+	(void)attr;
+	strncpy(path_asked, path, sizeof(path_asked) - 1);
+	found = 0;
+	return found < n_accs ? (found++, 0) : -33;
+}
+long Fsnext(void)
+{
+	return found < n_accs ? (found++, 0) : -49;
+}
+short boot_drive(void)
+{
+	return 2;
+}
+
 void heap_add(void *p, size_t bytes)
 {
 	(void)p;
@@ -66,6 +94,7 @@ int main(void)
 {
 	char line[160];
 	long a, b;
+	int i;
 
 	/* the 4 MB Falcon with NVDI: 3660 KB free; ECal, then EContact */
 	a = take(3660 * KB, 0, 1536 * KB, 4096 * KB, 0, 0);
@@ -87,6 +116,27 @@ int main(void)
 	check(a == 388 * KB, "4 MB Falcon with NVDI, 1552 KB free: a quarter, 388 KB");
 	b = take(st_free, 0, 1536 * KB, 0, 0, 0);
 	check(b == 291 * KB, "  the second a quarter of the rest, 291 KB: 873 KB left for the program");
+
+	/* the same, all four accessories in C:\ (ECal, EContact, EHypView,
+	   EMail check): each first boot a share of half of what is free,
+	   an eighth, and half and more left for the program (EUpdate found
+	   0 KB with four quarters, 27 Oct 2026) */
+	n_accs = 4;
+	st_free = 1552 * KB;
+	for (i = 0, b = 0; i < 4; i++) {
+		a = take(st_free, 0, 2048 * KB, 0, 0, 0);
+		if (i == 0)
+			check(a == 194 * KB && !strcmp(path_asked, "C:\\*.ACC"), "four accessories in C:\\: an eighth, 194 KB");
+		b += a;
+	}
+	check(st_free > 900 * KB, "  all four: over 900 KB left for the program");
+	a = take(1552 * KB, 0, 2048 * KB, 0, 300, 0);
+	check(a == 300 * KB, "  measured (MEMKB=300): 300 KB, however many there are");
+	n_accs = 2;
+	st_free = 1552 * KB;
+	a = take(1552 * KB, 0, 2048 * KB, 0, 0, 0);
+	check(a == 388 * KB, "  two accessories: a quarter, as before");
+	n_accs = 1;
 
 	/* a 1 MB ST with STinG: 400 KB free; one accessory */
 	a = take(400 * KB, 0, 2048 * KB, 0, 0, 0);

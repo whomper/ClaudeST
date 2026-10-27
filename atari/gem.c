@@ -253,6 +253,26 @@ short graf_rubberbox(short x, short y, short minw, short minh, short *w, short *
 	return r;
 }
 
+/* drag a w x h box from x,y within the bounds bx,by,bw,bh while the
+   button is held (the AES draws its outline); where it was let go */
+short graf_dragbox(short w, short h, short x, short y, short bx, short by, short bw, short bh,
+		   short *nx, short *ny)
+{
+	short r;
+	aintin[0] = w;
+	aintin[1] = h;
+	aintin[2] = x;
+	aintin[3] = y;
+	aintin[4] = bx;
+	aintin[5] = by;
+	aintin[6] = bw;
+	aintin[7] = bh;
+	r = aes(71, 8, 3, 0, 0);
+	*nx = aintout[1];
+	*ny = aintout[2];
+	return r;
+}
+
 /* rectangle for MU_M1: leave=0 waits for entering it, 1 for leaving */
 static short m1[5];
 

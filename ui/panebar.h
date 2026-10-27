@@ -37,6 +37,12 @@ typedef struct {
 				   the arrows left and right (PB_UP is left) */
 } PANEBAR;
 
+/* 1 where the AES draws its windows' own widgets in 3D (MagiC, XaAES,
+   N.AES, MyAES), 0 on TOS and EmuTOS: the look of the pane bars and of
+   anything else drawn in a window, a toolbar's buttons among them
+   (the guidelines, 5.1 and 5.6) */
+int win_look_3d(void);
+
 /* a bar down's width and its arrow box's height, a bar across's height
    (its arrow boxes are pb_width() long): the AES's gadget sizes */
 short pb_width(void);

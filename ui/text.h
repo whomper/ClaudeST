@@ -43,4 +43,13 @@ void text_n(short h, short x, short y, const char *s, long n);
 int text_fx_fast(short fx, short mode);
 void text_fx(short h, short x, short y, const char *s, long n, short fx, short colour);
 
+/* bold where text_fx_fast says no (NVDI, a GDOS font, another writing
+   mode): the n characters s just drawn plain at (x, y) struck again a
+   pixel to the right, transparent. Never vst_effects' bold for text laid
+   out in fixed cells: NVDI widens each letter by a pixel or more, and the
+   next run drawn in MD_REPLACE covers the last letters (EHypView 1.30,
+   Erez's accessory under NVDI: "On the Falcon itsel"). It leaves the
+   writing mode MD_REPLACE */
+void text_bold_strike(short h, short x, short y, const char *s, long n);
+
 #endif

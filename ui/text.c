@@ -104,6 +104,13 @@ void text_n(short h, short x, short y, const char *s, long n)
 		run(h, (short)(xs + m * cw), y, s + i0 + m, 1);	/* cut on the right */
 }
 
+void text_bold_strike(short h, short x, short y, const char *s, long n)
+{
+	vswr_mode(h, 2);	/* MD_TRANS */
+	text_n(h, (short)(x + 1), y, s, n);
+	vswr_mode(h, 1);
+}
+
 int text_fx_fast(short fx, short mode)
 {
 	return fast && mode == 1 && fx && !(fx & ~9);	/* MD_REPLACE; bold, underline */
