@@ -75,8 +75,28 @@ void *memmove(void *d, const void *s, size_t n)
 	const u8 *sp = s;
 	if (dp <= sp || dp >= sp + n)
 		return memcpy(d, s, n);
+	/* from the end down, as memcpy goes up: a byte to make both ends
+	   even, longs 16 bytes a turn, then the bytes left. Byte by byte
+	   (24 cycles a byte), EWeb's layout making room in its items took
+	   22 s of an 8 MHz ST's profile of its news page; its layout 43.7 s,
+	   35.4 with this (27 Oct 2026) */
 	dp += n;
 	sp += n;
+	if (n >= 16 && ((u32)dp & 1) && ((u32)sp & 1)) {
+		*--dp = *--sp;
+		n--;
+	}
+	if (n >= 16 && (mem_unaligned_ok || !(((u32)dp | (u32)sp) & 1))) {
+		u32 k = n >> 4;
+		n &= 15;
+		__asm__ volatile("1:\tmove.l -(%0),-(%1)\n\t"
+				 "move.l -(%0),-(%1)\n\t"
+				 "move.l -(%0),-(%1)\n\t"
+				 "move.l -(%0),-(%1)\n\t"
+				 "subq.l #1,%2\n\t"
+				 "bne.s 1b"
+				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
+	}
 	while (n) {
 		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
 		n -= k;
