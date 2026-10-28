@@ -251,8 +251,9 @@ try:
         if "v_opnvwk -> 0" in open(work + "/hatari.log", errors="replace").read():
             print("NOTE  %s couldn't open its screen (v_opnvwk 0): the accessories hold the memory; "
                   "its own alert, see 0-desktop.png" % prg)
-    if prg and prg.upper() == "EMAIL":
-        # a first start's welcome (EMail's "Let's set up your mail account"),
+    if prg and prg.upper() in ("EMAIL", "ECAL", "ECONTACT"):
+        # a first start's welcome (EMail's "Let's set up your mail account",
+        # ECal's "Welcome to ECal!"),
         # then the account dialog: Undo closes each (Esc cancels the
         # welcome alert, but in a dialog with a text field it empties the
         # field since 27 Oct 2026, the guidelines 3.5; and in EFTP Return

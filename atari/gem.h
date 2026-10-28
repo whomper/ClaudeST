@@ -215,6 +215,11 @@ short scrp_write(const char *path);
    low byte 7 or more, MagiC) */
 short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const void *tail);
 short shel_envrn(char **value, const char *name);
+short shel_read(char *cmd, char *tail);
+/* the program's own folder (X:\PATH\ with its backslash), from its shel_read command: not the
+   current folder, which TOS leaves at the desktop's when another program starts
+   it (guidelines 6.2). A program only */
+const char *app_dir(void);
 short wind_find(short x, short y);
 OBJECT *rsrc_tree(short index);
 short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h);
