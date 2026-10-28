@@ -327,7 +327,7 @@ static void finish_save(void);
 static void save_config(void);
 static void say_notice(const char *s);
 static char *put_num(char *p, u16 v);
-static char home_dir[128];		/* where CLAUDEST.PRG was started */
+static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 
 /* ------------------------------------------------------------------ */
 /* menu bar (built in code, so no .RSC file is needed)                 */
@@ -2773,12 +2773,14 @@ static long inf_open(void)
 		inf_path(path, sizeof(path), "CLAUDEST.IN$");
 		fd = Fopen(path, 0);
 	}
-	if (fd < 0)			/* the current folder, as before 1.38 */
-		fd = Fopen("CLAUDEST.INF", 0);
-	if (fd < 0)
-		fd = Fopen("ECLAUDE.INF", 0);	/* settings from before the renames: */
-	if (fd < 0)
-		fd = Fopen("CLAUDE.INF", 0);	/* EClaude's, then Claude ST's */
+	if (fd < 0) {			/* settings from before the renames: */
+		inf_path(path, sizeof(path), "ECLAUDE.INF");
+		fd = Fopen(path, 0);
+	}
+	if (fd < 0) {			/* EClaude's, then Claude ST's */
+		inf_path(path, sizeof(path), "CLAUDE.INF");
+		fd = Fopen(path, 0);
+	}
 	return fd;
 }
 
@@ -5527,16 +5529,10 @@ int main(void)
 	dlg_redraw_hook = dialog_redraw;
 	sys_cw = cst_gl_wchar = cw;
 	sys_ch = cst_gl_hchar = ch;
-	{
-		/* our folder, for the help file: the current one at start */
-		short drv = (short)Dgetdrv();
-		home_dir[0] = 'A' + drv;
-		home_dir[1] = ':';
-		home_dir[2] = 0;
-		Dgetpath(home_dir + 2, 0);
-		if (home_dir[strlen(home_dir) - 1] != '\\')
-			strcat(home_dir, "\\");
-	}
+	/* our folder, for CLAUDEST.INF, the font list and the help: the
+	   program's own, not the current one, which TOS leaves at the
+	   desktop's when another program starts us (guidelines 6.1) */
+	strlcpy_(home_dir, app_dir(), sizeof(home_dir));
 	pf_size_open = pf_handle_size;	/* futil.c's pf_load: open, then ask */
 	load_config();
 	crash_install(home_dir, "ClaudeST", APP_VERSION);
