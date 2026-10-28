@@ -6,14 +6,18 @@ binary/CLAUDEST.PRG (make first), and the help front page's picture.
 
     tools/docshots.py [WORK] [--only NAME,NAME]
 
-Three runs, one machine at a time (common/tools/machines.py, your own
-TOS images when ~/.aera/tos has them):
-  ST:mono, the demo backend   st-high-mono, tooltip, context-menu, move-to-project,
-                              model-menu, code, account, hebrew, about
+Five runs, one machine at a time (common/tools/machines.py, your own
+TOS images when ~/.aera/tos has them). The app is shown in 256 colours
+(Erez, 28 Oct 2026); only the pictures there to show another mode are
+taken in it:
+  Falcon:256, the demo        tooltip, context-menu, move-to-project, model-menu,
+  backend                     code, account, hebrew
+  Falcon:256, the showcase    falcon-colour (the README's), about-colour
+  account (tools/reel)
+  ST:mono, the demo backend   st-high-mono and about (black and white)
   ST:med, the demo backend    st-medium-colour (a project's chat)
-  Falcon:16, the showcase     falcon-colour (the README's), about-colour,
-  account (tools/reel)        and docs/help/WINDOW.IMG from falcon-colour
-                              (common/tools/helpfront.py thumb)
+  Falcon:16, the showcase     docs/help/WINDOW.IMG (common/tools/helpfront.py
+                              thumb), which ST-Guide shows in 16 colours
 Each picture goes to docs/NAME.png, one bit deep where it is black and
 white. Look at them before committing: a slow machine can leave one
 half drawn.
@@ -65,12 +69,13 @@ def stop(r):
     r.bridge_proc.kill()
 
 
-def keep(r, name, mono):
-    """the screen as docs/NAME.png"""
+def keep(r, name, colours):
+    """the screen as docs/NAME.png, in 2, 4, 16 or 256 colours"""
     from PIL import Image
     path = r.shot(name)
     im = Image.open(path)
-    im = im.convert("1", dither=Image.NONE) if mono else im.convert("P", palette=Image.ADAPTIVE, colors=16)
+    im = (im.convert("1", dither=Image.NONE) if colours == 2 else
+          im.convert("P", palette=Image.ADAPTIVE, colors=colours, dither=Image.NONE))
     dst = os.path.join(ROOT, "docs", name + ".png")
     im.save(dst, optimize=True)
     print("  docs/%s.png" % name, flush=True)
@@ -88,37 +93,34 @@ def open_nth(r, area, n):
     r.wait(5)
 
 
-def about(r, name, mono):
+def about(r, name, colours):
     r.move(40, 9)              # Desk: the menu drops as the pointer reaches it
     time.sleep(0.8)
     r.click(45, 27)            # About ClaudeST..., straight down (not across File)
     r.wait(3)
     r.move(*REST)
-    keep(r, name, mono)
+    keep(r, name, colours)
     r.key(K["RETURN"])
     r.wait(2)
 
 
-def st_mono(work, want):
-    r = boot(work, "ST:mono", False)
+def features(work, want):
+    r = boot(work, "Falcon:256", False)
     try:
         open_nth(r, F2, 1)                      # Atari Falcon DSP tricks
-        if want("st-high-mono"):                # BUILD_STORY's
-            r.move(*REST)
-            keep(r, "st-high-mono", True)
         if want("tooltip"):
             r.key(F2)
             r.wait(4)
             open_nth(r, F2, 4)                  # the Hebrew chat
-            r.move(90, 277)                     # a name cut off: its tooltip
+            r.move(90, 341)                     # a name cut off: its tooltip
             r.wait(2)
-            keep(r, "tooltip", True)
+            keep(r, "tooltip", 256)
             r.move(*REST)
             open_nth(r, F2, 1)
         if want("context-menu"):
             r.rclick(90, 297)                   # Fix my GFA BASIC loop
             r.wait(1)
-            keep(r, "context-menu", True)
+            keep(r, "context-menu", 256)
             r.key(K["ESC"])
             r.wait(1)
         if want("move-to-project"):
@@ -129,32 +131,43 @@ def st_mono(work, want):
                 time.sleep(0.3)
             r.key(K["RETURN"])
             r.wait(3)
-            keep(r, "move-to-project", True)
+            keep(r, "move-to-project", 256)
             r.key(K["ESC"])
             r.wait(1)
         r.move(*REST)
         if want("model-menu"):
             r.key(F9)
             r.wait(1)
-            keep(r, "model-menu", True)
+            keep(r, "model-menu", 256)
             r.key(K["ESC"])
             r.wait(1)
         if want("account"):
             r.key(F8)
             r.wait(3)
-            keep(r, "account", True)
+            keep(r, "account", 256)
             r.key(K["ESC"])
             r.wait(2)
         if want("code"):
             open_nth(r, F6, 1)
             r.move(*REST)
-            keep(r, "code", True)
+            keep(r, "code", 256)
         if want("hebrew"):
             open_nth(r, F2, 4)
             r.move(*REST)
-            keep(r, "hebrew", True)
+            keep(r, "hebrew", 256)
+    finally:
+        stop(r)
+
+
+def st_mono(work, want):
+    r = boot(work, "ST:mono", False)
+    try:
+        open_nth(r, F2, 1)                      # Atari Falcon DSP tricks
+        if want("st-high-mono"):                # BUILD_STORY's
+            r.move(*REST)
+            keep(r, "st-high-mono", 2)
         if want("about"):
-            about(r, "about", True)
+            about(r, "about", 2)
     finally:
         stop(r)
 
@@ -169,24 +182,34 @@ def st_med(work, want):
         r.key(K["RETURN"])
         r.wait(5)
         r.move(*REST)
-        keep(r, "st-medium-colour", False)
+        keep(r, "st-medium-colour", 4)
     finally:
         stop(r)
 
 
 def falcon(work, want):
-    r = boot(work, "Falcon:16", True)
+    r = boot(work, "Falcon:256", True)
     try:
         open_nth(r, F2, 1)                      # 68000: fastest way to clear the screen
         r.move(*REST)
-        path = keep(r, "falcon-colour", False)
-        if want("WINDOW"):
-            subprocess.run([sys.executable, os.path.join(ROOT, "common", "tools", "helpfront.py"), "thumb",
-                            path, os.path.join(ROOT, "docs", "help", "WINDOW.IMG"), WINDOW_CROP] +
-                           list(WINDOW_BADGES), check=True)
-            print("  docs/help/WINDOW.IMG", flush=True)
+        if want("falcon-colour"):
+            keep(r, "falcon-colour", 256)
         if want("about-colour"):
-            about(r, "about-colour", False)
+            about(r, "about-colour", 256)
+    finally:
+        stop(r)
+
+
+def window(work, want):
+    """the help front page's picture, from the same window in 16 colours"""
+    r = boot(work, "Falcon:16", True)
+    try:
+        open_nth(r, F2, 1)
+        r.move(*REST)
+        subprocess.run([sys.executable, os.path.join(ROOT, "common", "tools", "helpfront.py"), "thumb",
+                        r.shot("window"), os.path.join(ROOT, "docs", "help", "WINDOW.IMG"), WINDOW_CROP] +
+                       list(WINDOW_BADGES), check=True)
+        print("  docs/help/WINDOW.IMG", flush=True)
     finally:
         stop(r)
 
@@ -200,10 +223,11 @@ def main():
 
     def want(name):
         return only is None or name in only
-    runs = [(st_mono, ("st-high-mono", "tooltip", "context-menu", "move-to-project", "model-menu", "account", "code",
-                       "hebrew", "about")),
+    runs = [(features, ("tooltip", "context-menu", "move-to-project", "model-menu", "account", "code", "hebrew")),
+            (falcon, ("falcon-colour", "about-colour")),
+            (st_mono, ("st-high-mono", "about")),
             (st_med, ("st-medium-colour",)),
-            (falcon, ("falcon-colour", "WINDOW", "about-colour"))]
+            (window, ("WINDOW",))]
     for run, names in runs:
         if any(want(n) for n in names):
             print(run.__name__, flush=True)

@@ -540,9 +540,9 @@ install the Pi with `--network --atari <the modem's IP>`.
 **Desk ▸ About ClaudeST…** shows the About box, with a
 colour icon on screens with 16 colours or more.
 
-![The About box](about.png)
+![The About box in black and white, on an ST](about.png)
 
-![The About box in colour, on a Falcon](about-colour.png)
+![The About box on a Falcon in 256 colours](about-colour.png)
 
 The icon is 32×32 pixel art, the family's way (each app its own object):
 a terminal window with Claude's orange spark and a green prompt, drawn
@@ -642,10 +642,12 @@ running EmuTOS.
 
 ### Retaking the screenshots
 
-`tools/docshots.py` (after `make`) boots the family's ST in high and
-medium resolution with the demo backend, and the Falcon in 16 colours
-with the showcase account, and takes this guide's and the README's
-pictures into `docs/`, and the help front page's into
+`tools/docshots.py` (after `make`) boots the family's Falcon in 256
+colours with the demo backend and with the showcase account, the ST in
+high and medium resolution with the demo backend, and the Falcon in 16
+colours for the help front page. It takes this guide's and the README's
+pictures into `docs/`, all on the 256-colour Falcon except those that
+show the ST's own modes, and the help front page's into
 `docs/help/WINDOW.IMG`. `--only about,code` takes just those. Look at
 them before committing: a slow machine can leave one half drawn.
 

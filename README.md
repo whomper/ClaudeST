@@ -25,7 +25,7 @@ Falcon, through a Raspberry Pi bridge.
 
 The [user guide](docs/GUIDE.md) describes every feature.
 
-![ClaudeST on a Falcon in 16 colours](docs/falcon-colour.png)
+![ClaudeST on a Falcon in 256 colours](docs/falcon-colour.png)
 
 ## Getting started
 
