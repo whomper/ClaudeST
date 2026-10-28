@@ -493,9 +493,15 @@ short evnt_timer_(unsigned long ms)
 	return aes(24, 2, 1, 0, 0);
 }
 
+/* asked only where the AES has it (AES 4.0 and later, the ?AGI cookie,
+   MagiC): TOS 4.04's AES 3.40 answers with "Illegal AES function call"
+   (EMail, 28 Oct 2026). 0 elsewhere, as for a question it can't answer */
 short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4)
 {
 	short r;
+	*o1 = *o2 = *o3 = *o4 = 0;
+	if (global[0] < 0x0400 && !get_cookie(0x3F414749L) && !get_cookie(0x4D616758L))	/* ?AGI, MagX */
+		return 0;
 	aintin[0] = type;
 	r = aes(130, 1, 5, 0, 0);
 	*o1 = aintout[1];
@@ -748,8 +754,59 @@ short wind_calc(short type, short kind, short x, short y, short w, short h,
 	return r;
 }
 
+/* TOS 3 and 4's AES (Erez's Falcon, TOS 4.04) send a click on a window's
+   arrow or on its slider's track twice: a second WM_ARROWED, the same,
+   waits in the queue by the time the program asks again, the button let
+   go, so the window moved two pages a click (TOS 1.04 sends one:
+   common/tests/arrowed). It is dropped here: one that comes at once after
+   the same one, the button up. A held button's repeats come with it down
+   and are kept. Not on MagiC or MiNT, nor on EmuTOS, which do otherwise */
+static short arr_win = -1, arr_what;
+static unsigned long os_magic;
+
+static void sup_magic(void)
+{
+	const unsigned char *os;
+	__asm__ volatile("move.l 0x4f2.w,%0" : "=a"(os));	/* _sysbase */
+	os_magic = *(const unsigned long *)(os + 0x2c);
+}
+
+static int arrow_echoes(void)
+{
+	static short k = -1;
+	if (k < 0) {
+		Supexec(sup_magic);
+		k = global[0] >= 0x0300 && global[0] < 0x0400 && os_magic != 0x45544F53L	/* 'ETOS' */
+		    && !get_cookie(0x4D616758L) && !get_cookie(0x4D694E54L);	/* MagX, MiNT */
+	}
+	return k;
+}
+
+static short evnt_multi_aes(short flags, short clicks, short mask, short state,
+			    unsigned long timer, short *msg, AEVENT *ev);
+
 short evnt_multi_(short flags, short clicks, short mask, short state,
 		  unsigned long timer, short *msg, AEVENT *ev)
+{
+	for (;;) {
+		u32 t0 = arr_win >= 0 ? tos_ms() : 0;
+		short which = evnt_multi_aes(flags, clicks, mask, state, timer, msg, ev);
+		if (!(which & MU_MESAG) || msg[0] != WM_ARROWED || !arrow_echoes())
+			return which;
+		if (msg[3] == arr_win && msg[4] == arr_what && !(ev->mbutton & 1) && tos_ms() - t0 < 40) {
+			arr_win = -1;		/* the echo: dropped */
+			if (which & ~MU_MESAG)
+				return ev->which = (short) (which & ~MU_MESAG);
+			continue;
+		}
+		arr_win = msg[3];
+		arr_what = msg[4];
+		return which;
+	}
+}
+
+static short evnt_multi_aes(short flags, short clicks, short mask, short state,
+			    unsigned long timer, short *msg, AEVENT *ev)
 {
 	short i;
 	aintin[0] = flags;

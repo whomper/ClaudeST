@@ -21,7 +21,8 @@
 typedef struct {
 	short count[16];		/* codes of each length */
 	short sym[320];			/* symbols by code */
-	unsigned short fast[1 << FAST];	/* (len << 9) | sym, 0: longer code (2 KB) */
+	unsigned short fast[1 << FAST];	/* (sym << 4) | len, 0: longer code (2 KB) */
+	short first, index;		/* a longer code's search where the table's ends */
 } HUFF;
 
 typedef struct {
@@ -59,6 +60,17 @@ static unsigned take(ST *s, int n)
 	return v;
 }
 
+/* a byte's bits the other way round */
+static const unsigned char rev8[256] = {
+#define R2(n) n, n + 2 * 64, n + 1 * 64, n + 3 * 64
+#define R4(n) R2(n), R2(n + 2 * 16), R2(n + 1 * 16), R2(n + 3 * 16)
+#define R6(n) R4(n), R4(n + 2 * 4), R4(n + 1 * 4), R4(n + 3 * 4)
+	R6(0), R6(2), R6(1), R6(3)
+#undef R2
+#undef R4
+#undef R6
+};
+
 /* the canonical code for lengths len[0..n): 0 or -1 when it isn't one */
 static int build(HUFF *h, const unsigned char *len, int n)
 {
@@ -81,22 +93,27 @@ static int build(HUFF *h, const unsigned char *len, int n)
 		if (len[i])
 			h->sym[offs[len[i]]++] = (short)i;
 	/* the lookup table: each code of up to FAST bits, bit-reversed, in
-	   every slot it prefixes */
+	   every slot it prefixes. (A code reversed through rev8: bit by bit,
+	   two shifts by a count each, it took 190,000 cycles a table on an
+	   8 MHz ST, three tables a stream: EWeb's 16 font faces 1.1 s) */
 	memset(h->fast, 0, sizeof(h->fast));
 	code = 0;
 	{
 		int idx = 0;
 		for (l = 1; l <= FAST; l++) {
-			int k;
+			int k, step = 1 << l;
 			for (k = 0; k < h->count[l]; k++, idx++) {
-				int rev = 0, b, c = code + k, fill;
-				for (b = 0; b < l; b++)
-					rev |= ((c >> b) & 1) << (l - 1 - b);
-				for (fill = rev; fill < (1 << FAST); fill += 1 << l)
-					h->fast[fill] = (unsigned short)((l << 9) | h->sym[idx]);
+				unsigned c = (unsigned) (code + k) << (16 - l);
+				unsigned short e = (unsigned short) (h->sym[idx] << 4 | l);
+				unsigned short *f = h->fast + (rev8[c >> 8] | rev8[c & 0xff] << 8);
+				unsigned short *fe = h->fast + (1 << FAST);
+				for (; f < fe; f += step)
+					*f = e;
 			}
 			code = (code + h->count[l]) << 1;
 		}
+		h->first = (short) code;
+		h->index = (short) idx;
 	}
 	return 0;
 }
@@ -114,9 +131,9 @@ static int decode(ST *s, const HUFF *h)
 	if (s->nbits >= FAST) {
 		unsigned e = h->fast[s->bits & ((1 << FAST) - 1)];
 		if (e) {
-			s->bits >>= e >> 9;
-			s->nbits -= e >> 9;
-			return e & 511;
+			s->bits >>= e & 15;
+			s->nbits -= e & 15;
+			return e >> 4;
 		}
 	}
 	/* a long code, or the last few bits: one bit at a time */
@@ -147,6 +164,30 @@ static const unsigned short dbase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 4
 static const unsigned char dext[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
 					7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13 };
 
+/* a code longer than FAST bits (rare: a font face's stream had 1,415 in
+   47,500), read off bits a bit at a time from where the table ends (its
+   first FAST bits, reversed, are the code so far): its (symbol << 4) |
+   length, as the table's entries are; 0 when it isn't one. Apart, so
+   that codes' loop keeps its state in registers */
+static __attribute__((noinline)) unsigned slow_code(const HUFF *h, unsigned long bits)
+{
+	unsigned b = (unsigned) bits & ((1 << FAST) - 1);
+	int code = (rev8[b & 0xff] << 8 | rev8[b >> 8]) >> (16 - FAST - 1);
+	int first = h->first, index = h->index, l, count;
+	for (l = FAST + 1; l < 16; l++) {
+		code |= (int) (bits >> (l - 1)) & 1;
+		count = h->count[l];
+		if (code - count < first)
+			return (unsigned) (h->sym[index + (code - first)] << 4 | l);
+		index += count;
+		first = (first + count) << 1;
+		code <<= 1;
+	}
+	return 0;
+}
+
+static const unsigned short emask[14] = { 0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191 };
+
 /* a block's codes to the end of the block. The hot loop: the bits and
    the output kept in locals, each symbol looked up in the 10-bit table or,
    for a longer code, read off the bits already there (a font face of
@@ -157,10 +198,13 @@ static int codes(ST *s, const HUFF *lc, const HUFF *dc)
 {
 	SBUF *o = s->out;
 	const unsigned char *in = s->in, *end = s->end;
+	const unsigned short *lf = lc->fast, *df = dc->fast;
 	unsigned long bits = s->bits;
 	int nbits = s->nbits, pad = 0, r = -1;
-	long olen = o->len, lim;
-	char *op = o->s;
+	long lim;
+	/* w: where the next byte goes; wl: as far as it may go before the
+	   output needs room (or is too big) */
+	char *w, *wl;
 
 #define NEED(n) \
 	while (nbits < (n)) { \
@@ -170,53 +214,50 @@ static int codes(ST *s, const HUFF *lc, const HUFF *dc)
 			pad++; \
 		nbits += 8; \
 	}
-#define DECODE(H, SYM) \
+#define DECODE(F, H, SYM) \
 	do { \
 		unsigned e_; \
 		NEED(15); \
-		e_ = (H)->fast[bits & ((1 << FAST) - 1)]; \
-		if (e_) { \
-			bits >>= e_ >> 9; \
-			nbits -= e_ >> 9; \
-			SYM = (int) (e_ & 511); \
-		} else { \
-			int code_ = 0, first_ = 0, index_ = 0, l_, count_; \
+		e_ = (F)[bits & ((1 << FAST) - 1)]; \
+		if (e_ == 0 && (e_ = slow_code(H, bits)) == 0) { \
 			SYM = -1; \
-			for (l_ = 1; l_ < 16; l_++) { \
-				code_ |= (int) (bits >> (l_ - 1)) & 1; \
-				count_ = (H)->count[l_]; \
-				if (code_ - count_ < first_) { \
-					SYM = (H)->sym[index_ + (code_ - first_)]; \
-					bits >>= l_; \
-					nbits -= l_; \
-					break; \
-				} \
-				index_ += count_; \
-				first_ = (first_ + count_) << 1; \
-				code_ <<= 1; \
-			} \
+			break; \
 		} \
+		bits >>= e_ & 15; \
+		nbits -= e_ & 15; \
+		SYM = (int) (e_ >> 4); \
+	} while (0)
+#define ROOM(n) \
+	do { \
+		long olen_ = w - o->s; \
+		o->len = olen_; \
+		if (olen_ + (n) > s->max || !sb_room(o, (n))) { \
+			s->bad = 2; \
+			goto out; \
+		} \
+		w = o->s + olen_; \
+		lim = o->cap - 1 < s->max ? o->cap - 1 : s->max; \
+		wl = o->s + lim; \
 	} while (0)
 
-	/* lim: where the output may go before it needs room (or is too big) */
+	/* (a buffer to point into: an empty one has none yet) */
+	if (o->s == NULL && !sb_room(o, 256)) {
+		s->bad = 2;
+		return -1;
+	}
+	w = o->s + o->len;
 	lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
+	wl = o->s + lim;
 	for (;;) {
-		int sym, len, d;
+		int sym, len, d, x;
 		unsigned long dist;
-		DECODE(lc, sym);
-		if (sym < 0 || nbits < 8 * pad)
+		DECODE(lf, lc, sym);
+		if (sym < 0 || (pad && nbits < 8 * pad))
 			break;			/* damaged, or past the input's end */
 		if (sym < 256) {
-			if (olen >= lim) {
-				o->len = olen;
-				if (olen >= s->max || !sb_room(o, 4096)) {
-					s->bad = 2;
-					break;
-				}
-				op = o->s;
-				lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
-			}
-			op[olen++] = (char) sym;
+			if (w >= wl)
+				ROOM(4096);
+			*w++ = (char) sym;
 			continue;
 		}
 		if (sym == 256) {
@@ -227,40 +268,48 @@ static int codes(ST *s, const HUFF *lc, const HUFF *dc)
 		if (sym >= 29)
 			break;
 		NEED(5);
-		len = lbase[sym] + (int) (bits & ((1UL << lext[sym]) - 1));
-		bits >>= lext[sym];
-		nbits -= lext[sym];
-		DECODE(dc, d);
+		x = lext[sym];
+		len = lbase[sym] + (int) ((unsigned) bits & emask[x]);
+		bits >>= x;
+		nbits -= x;
+		DECODE(df, dc, d);
 		if (d < 0 || d >= 30)
 			break;
 		NEED(13);
-		dist = dbase[d] + (bits & ((1UL << dext[d]) - 1));
-		bits >>= dext[d];
-		nbits -= dext[d];
-		if (nbits < 8 * pad || dist > (unsigned long) olen)
+		x = dext[d];
+		dist = dbase[d] + ((unsigned) bits & emask[x]);
+		bits >>= x;
+		nbits -= x;
+		if ((pad && nbits < 8 * pad) || dist > (unsigned long) (w - o->s))
 			break;
-		if (olen + len > lim) {
-			o->len = olen;
-			if (olen + len > s->max || !sb_room(o, len)) {
-				s->bad = 2;
-				break;
-			}
-			op = o->s;
-			lim = o->cap - 1 < s->max ? o->cap - 1 : s->max;
-		}
+		if (w + len > wl)
+			ROOM(len);
 		{
-			/* the copy may overlap itself: byte by byte */
-			char *p = op + olen, *q = p - dist, *e = p + len;
-			while (p < e)
-				*p++ = *q++;
-			olen += len;
+			/* the copy may overlap itself: byte by byte (on the 68000
+			   a dbra loop, 22 cycles a byte, where GCC's took 46) */
+			const char *q = w - dist;
+#ifdef __mc68000__
+			{
+				short k = (short) (len - 1);
+				__asm__ volatile ("1:\tmove.b (%1)+,(%0)+\n\tdbra %2,1b"
+						  : "+a" (w), "+a" (q), "+d" (k) : : "memory");
+			}
+#else
+			{
+				char *e = w + len;
+				while (w < e)
+					*w++ = *q++;
+			}
+#endif
 		}
 	}
+out:
+	o->len = w - o->s;
+#undef ROOM
 #undef DECODE
 #undef NEED
-	o->len = olen;
-	if (op != NULL)
-		op[olen] = 0;
+	if (o->s != NULL)
+		o->s[o->len] = 0;
 	/* the zeros read past the end given back: they were never there */
 	if (nbits < 8 * pad) {
 		s->bad = s->bad ? s->bad : 1;
@@ -527,9 +576,9 @@ static int z_decode(INFLATE *z, const HUFF *h)
 	if (z->nbits >= FAST) {
 		unsigned e = h->fast[z->bits & ((1 << FAST) - 1)];
 		if (e) {
-			z->bits >>= e >> 9;
-			z->nbits -= e >> 9;
-			return e & 511;
+			z->bits >>= e & 15;
+			z->nbits -= e & 15;
+			return e >> 4;
 		}
 	}
 	for (l = 1; l < 16; l++) {
@@ -661,19 +710,11 @@ INFLATE *inflate_open(int (*get)(void *u, unsigned char *buf, long n), void *u)
    its symbol, and its length in *used; -1 when there is none */
 static int long_code(const HUFF *h, unsigned long bits, unsigned *used)
 {
-	int code = 0, first = 0, index = 0, l, count;
-	for (l = 1; l < 16; l++) {
-		code |= (int) (bits >> (l - 1)) & 1;
-		count = h->count[l];
-		if (code - count < first) {
-			*used = (unsigned) l;
-			return h->sym[index + (code - first)];
-		}
-		index += count;
-		first = (first + count) << 1;
-		code <<= 1;
-	}
-	return -1;
+	unsigned e = slow_code(h, bits);
+	if (e == 0)
+		return -1;
+	*used = e & 15;
+	return (int) (e >> 4);
 }
 
 long inflate_read(INFLATE *z, unsigned char *out, long n)
@@ -741,8 +782,8 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 						break;
 					v = fast[bits & ((1 << FAST) - 1)];
 					if (v != 0) {
-						l = v >> 9;
-						v &= 511;
+						l = v & 15;
+						v >>= 4;
 					} else {
 						int c;
 						if (nbits < 15 || (c = long_code(z->lc, bits, &l)) < 0)
@@ -773,8 +814,8 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 					}
 					v = nbits >= FAST ? dfast[bits & ((1 << FAST) - 1)] : 0;
 					if (v != 0) {
-						l = v >> 9;
-						v &= 511;
+						l = v & 15;
+						v >>= 4;
 					} else {
 						int c = nbits >= 15 ? long_code(z->dc, bits, &l) : -1;
 						v = c < 0 ? 30 : (unsigned) c;

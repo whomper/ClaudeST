@@ -180,7 +180,7 @@ short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
 short aes_version(void);
 short aes_count(void);		/* global[1]: 1 on TOS, -1 on a multitasking AES */
-short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);	/* 0: not known */
+short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);	/* 0: not known, or no appl_getinfo (AES < 4.0 without ?AGI or MagiC) */
 short fsel_exinput(char *path, char *name, short *button, const char *title);
 short form_do(OBJECT *tree, short start);
 short form_keybd(OBJECT *tree, short obj, short next, short ch, short *onext, short *och);

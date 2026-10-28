@@ -8,9 +8,13 @@ start it in the desktop's folder whatever the caller set; app_dir()
 must still say A:\\APP\\. A: is a real FAT floppy (mtools), since
 Hatari's emulated C: keeps one current folder for all programs and hid
 it. Then the probe started from the desktop as Hatari's --auto does
-(C:\\APP\\PROBE.PRG): app_dir() says C:\\APP\\.
+(C:\\APP\\PROBE.PRG): app_dir() says C:\\APP\\. The probe also says the
+screen it got. Use a machine without TT RAM for a program flagged to load
+there (PRGFLAGS 2): the floppy's DMA can't reach TT RAM, and on Falcon
+(128 MB) such a program never starts from A: (no _FRB here). Falcon-4 is
+the Falcon to use.
 
-    make && python3 run.py WORK [MACHINE...]     (ST and Falcon by default)
+    make && python3 run.py WORK [MACHINE...]     (ST and Falcon-4 by default)
 """
 import os, shutil, subprocess, sys, time
 
@@ -20,7 +24,7 @@ import machines  # noqa: E402
 
 B = os.path.join(HERE, "build")
 work = os.path.abspath(sys.argv[1])
-specs = sys.argv[2:] or ["ST", "Falcon"]
+specs = sys.argv[2:] or ["ST", "Falcon-4"]
 failed = 0
 
 
@@ -45,6 +49,12 @@ def run(name, spec, auto, floppy):
         subprocess.run(["mmd", "-i", img, "::/APP"], check=True, capture_output=True)
         subprocess.run(["mcopy", "-i", img, os.path.join(B, "PROBE.PRG"), "::/APP/PROBE.PRG"], check=True,
                        capture_output=True)
+        # with a floppy in A:, Hatari's start-up desktop file has no screen
+        # mode, and a Falcon comes up in ST low (320 wide: the family's
+        # programs then only say they need 640). A mono monitor has one
+        # mode, 640x400
+        if "--monitor" in args:
+            args[args.index("--monitor") + 1] = "mono"
         args += ["--disk-a", img]
     log = os.path.join(w, "hatari.log")
     p = subprocess.Popen(args, env=m.env(), stdout=open(log, "w"), stderr=subprocess.STDOUT)
@@ -62,9 +72,9 @@ def run(name, spec, auto, floppy):
 for spec in specs:
     what, line = run("launched-" + spec.replace(":", "-"), spec, "C:\\LAUNCH.PRG", True)
     print("on %s: %s" % (what, line or "(no PROBE line)"), flush=True)
-    check(line.endswith(" app A:\\APP\\"), "started by another program from A:\\APP: app_dir() says A:\\APP\\")
+    check(" app A:\\APP\\ " in line, "started by another program from A:\\APP: app_dir() says A:\\APP\\")
     what, line = run("desktop-" + spec.replace(":", "-"), spec, "C:\\APP\\PROBE.PRG", False)
     print("on %s: %s" % (what, line or "(no PROBE line)"), flush=True)
-    check(line.endswith(" app C:\\APP\\"), "started as from the desktop: app_dir() says C:\\APP\\")
+    check(" app C:\\APP\\ " in line, "started as from the desktop: app_dir() says C:\\APP\\")
 print("all passed" if not failed else "%d failed" % failed)
 sys.exit(1 if failed else 0)
