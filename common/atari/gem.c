@@ -528,6 +528,55 @@ short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const vo
 	return aes(121, 3, 1, 2, 0);
 }
 
+short shel_read(char *cmd, char *tail)
+{
+	addrin[0] = cmd;
+	addrin[1] = tail;
+	return aes(120, 0, 1, 2, 0);
+}
+
+/* the program's own folder, X:\PATH\ with its backslash, from the command the AES
+   started it with (shel_read), where its own files are. Not the current
+   folder: a program started by another one with shel_write gets the
+   desktop's on TOS 1.04 and 4.04, whatever folder the caller set (EMail
+   starting EWeb, which then missed its fonts: Erez, 28 Oct 2026; EmuTOS
+   and the multitasking AESes do set it). A command without a folder (a
+   name alone, the desktop starting it from its own window, which makes
+   that folder current) gives the current folder. For a program only: an
+   accessory's command is the program's in front */
+const char *app_dir(void)
+{
+	static char dir[256];
+	static char cmd[256], tail[256];
+	short i, end = -1, drv;
+	cmd[0] = 0;
+	if (shel_read(cmd, tail) == 0)
+		cmd[0] = 0;
+	cmd[sizeof(cmd) - 1] = 0;
+	for (i = 0; cmd[i]; i++)
+		if (cmd[i] == '\\' || cmd[i] == ':')
+			end = i;
+	if (end > 1 && cmd[end] == '\\' && cmd[1] == ':') {
+		for (i = 0; i <= end; i++)	/* the command's own X:\...\ */
+			dir[i] = cmd[i];
+		dir[i] = 0;
+		return dir;
+	}
+	/* no drive and folder of its own: the current ones */
+	drv = (short)Dgetdrv();
+	dir[0] = (char)('A' + drv);
+	dir[1] = ':';
+	if (Dgetpath(dir + 2, drv + 1) < 0)
+		dir[2] = 0;
+	for (i = 2; dir[i] && i < (short)sizeof(dir) - 2; i++)
+		;
+	if (i == 2 || dir[i - 1] != '\\') {
+		dir[i++] = '\\';
+		dir[i] = 0;
+	}
+	return dir;
+}
+
 /* the AES's environment: *value points after "NAME=" (name given with
    its '='), or is 0 where it isn't set */
 short shel_envrn(char **value, const char *name)
