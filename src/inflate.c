@@ -694,6 +694,18 @@ static void z_put(INFLATE *z, unsigned char c)
 	z->total++;
 }
 
+/* k bytes (at most the window's size) into the window, as z_put does */
+static void win_put(INFLATE *z, const unsigned char *p, unsigned k)
+{
+	unsigned a = WIN - z->wpos;
+	if (a > k)
+		a = k;
+	memcpy(z->win + z->wpos, p, a);
+	memcpy(z->win, p + a, k - a);
+	z->wpos = (z->wpos + k) & (WIN - 1);
+	z->total += k;
+}
+
 INFLATE *inflate_open(int (*get)(void *u, unsigned char *buf, long n), void *u)
 {
 	INFLATE *z = malloc(sizeof(INFLATE));
@@ -744,15 +756,41 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 				return done ? done : -1;
 			}
 		} else if (z->state == Z_STORED) {
-			while (z->stored && done < n) {
-				int c = z_abyte(z);
-				if (c < 0) {
-					z->state = Z_BAD;
-					return done ? done : -1;
-				}
-				z_put(z, (unsigned char)c);
-				out[done++] = (unsigned char)c;
+			/* a stored block (EWEB.FNT is nearly all stored blocks): the
+			   bytes read ahead in the bits one by one, then the input
+			   buffer's in a copy each to the output and the window. A
+			   call a byte (z_abyte) took a stock Falcon 28 to 33 s for
+			   EWEB.FNT, by where the code lay (the 68030's 256-byte
+			   cache missed it and inflate_read's loop in turn) */
+			while (z->stored && done < n && z->nbits >= 8) {
+				unsigned char c = (unsigned char) z->bits;
+				z->bits >>= 8;
+				z->nbits -= 8;
+				z_put(z, c);
+				out[done++] = c;
 				z->stored--;
+			}
+			while (z->stored && done < n) {
+				long k;
+				if (z->ip >= z->il) {
+					long got = z->get(z->u, z->in, sizeof(z->in));
+					if (got <= 0) {
+						z->state = Z_BAD;
+						return done ? done : -1;
+					}
+					z->il = (int) got;
+					z->ip = 0;
+				}
+				k = z->il - z->ip;
+				if (k > z->stored)
+					k = z->stored;
+				if (k > n - done)
+					k = n - done;
+				memcpy(out + done, z->in + z->ip, (size_t) k);
+				win_put(z, z->in + z->ip, (unsigned) k);
+				z->ip += (int) k;
+				z->stored -= k;
+				done += k;
 			}
 			if (!z->stored)
 				z->state = z->last ? Z_END : Z_HEAD;

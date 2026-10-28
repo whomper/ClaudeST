@@ -17,7 +17,7 @@
 
 int main(void)
 {
-	short win, msg[8], pos = 500, busy = 0, mx, my, mb, ks, x, y, w, h;
+	short win, msg[8], pos = 0, busy = 0, mx, my, mb, ks, x, y, w, h;
 	char line[80];
 	AEVENT ev;
 	u32 t0;
