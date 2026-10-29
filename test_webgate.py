@@ -794,6 +794,26 @@ class LiveTest(unittest.TestCase):
         self.assertIn('<input type=image name=at', page)
         self.assertIn('action="http://webgate/live/click"', page)
 
+    def test_nothing_open_yet(self):
+        # live view before the browser has opened anything: Go to, not a
+        # picture the extension can't take of a blank tab
+        webgate.BRIDGE.shown = None
+        r, data, w = self.ask("http://webgate/live", turn=False)
+        self.assertEqual(r.status, 200)
+        page = data.decode("utf-8")
+        self.assertIn("has no page open yet", page)
+        self.assertNotIn("<input type=image", page)
+        self.assertIn('<form action="http://webgate/live"><input name=url', page)
+
+    def test_go_to_without_scheme(self):
+        r, data, w = self.ask("http://webgate/live?url=example.com%2Fstart")
+        self.assertEqual(w["url"], "https://example.com/start")
+        page = data.decode("utf-8")
+        self.assertIn("<input type=image name=at", page)
+        self.assertIn('value="https://example.com/start"', page)   # what the browser shows, in Go to
+        r, data, w = self.ask("http://webgate/live", turn=False)  # and after: still its screen
+        self.assertIn("<input type=image name=at", data.decode("utf-8"))
+
     def test_live_refuses_files_and_home(self):
         r, data, w = self.ask("http://webgate/live?url=file%3A%2F%2F%2Fetc%2F", turn=False)
         self.assertEqual(r.status, 400)

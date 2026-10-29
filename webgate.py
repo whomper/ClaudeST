@@ -112,7 +112,10 @@ button, a field to type into and buttons for keys. A click on the picture
 is a real click on the Pi's screen (xdotool, in the browser's X display:
 the browser runs full screen there), typing real typing; then the page
 comes again with a new picture. http://webgate/live?url=ADDRESS opens
-ADDRESS first; "As a page" ends with a snapshot of what is shown.
+ADDRESS first (https:// when it has no scheme), as the page's Go to
+field does; until the browser has opened a page, the page says so and
+shows no picture (the extension can't take one of a blank tab). "As a
+page" ends with a snapshot of what is shown.
 
 A request that can't be made is answered 502 (403 for the home network,
 504 for a server that is too slow) with a line starting "webgate:", which
@@ -514,6 +517,7 @@ class Bridge:
         self.done = {}                      # id -> snapshot
         self.asked = None                   # the id being waited for
         self.n = 0
+        self.shown = None                   # the address the browser last opened (None: none yet)
 
     def ask(self, url, wait, **more):
         """url opened in the browser: its snapshot ({"url", "title",
@@ -529,7 +533,10 @@ class Bridge:
             if self.wanted and self.wanted["id"] == str(me):
                 self.wanted = None
             self.asked = None
-            return self.done.pop(str(me), None) if ok else None
+            got = self.done.pop(str(me), None) if ok else None
+            if url and got is not None:
+                self.shown = got.get("url") or url
+            return got
 
     def next(self, wait=25):
         """for the extension: the next address, or None after wait seconds"""
@@ -1111,7 +1118,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_snap(snap, snap.get("url") or self.path)
             return
-        url = a.get("url", [""])[0]
+        url = a.get("url", [""])[0].strip()
+        if url and "://" not in url:
+            url = "https://" + url          # (Go to's "www.example.com")
         title = "the Pi's browser"
         if url and not self.browser_may_open(url):
             return
@@ -1120,7 +1129,17 @@ class Handler(BaseHTTPRequestHandler):
             if snap:
                 title = snap.get("title") or url
         n = int(time.time() * 10)
-        page = LIVE_PAGE % {"title": html.escape(title), "n": n, "w": Config.live_width}
+        if BRIDGE.shown is None:
+            # nothing open in the browser yet (live view from a page that
+            # isn't on the web, or a webgate just started): no screen to
+            # show (the extension can't take a blank tab's), so Go to first
+            # (Erez, 28 Oct 2026: an address typed into the page's field
+            # went nowhere, and its picture never came)
+            screen = LIVE_NONE
+        else:
+            screen = LIVE_SCREEN % {"n": n, "w": Config.live_width}
+        page = LIVE_PAGE % {"title": html.escape(title), "screen": screen,
+                            "url": html.escape(BRIDGE.shown or "", quote=True), "n": n}
         self.send_body(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def browser_may_open(self, url, quiet=False):
@@ -1249,11 +1268,18 @@ LIVE = {}           # the browser's screen width, as the last picture said
 LIVE_KEYS = {"enter": "Return", "tab": "Tab", "backspace": "BackSpace", "esc": "Escape",
              "up": "Page_Up", "down": "Page_Down", "back": "alt+Left", "reload": "F5"}
 
+LIVE_SCREEN = """<form action="http://webgate/live/click"><input type=image name=at width=%(w)d
+ src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Pi's browser"></form>"""
+
+LIVE_NONE = """<p><b>The Pi's browser has no page open yet.</b> Put an address in the field above and
+ choose Go to; then its screen shows here, and a click on it is a click there.</p>"""
+
 LIVE_PAGE = """<!DOCTYPE html><html><head><meta charset=utf-8><title>Live: %(title)s</title>
 <style>body{margin:4px;font-family:sans-serif;background:#fff}form{display:inline;margin:0}
 p{margin:4px 0}input[type=image]{border:1px solid #888}</style></head><body>
-<form action="http://webgate/live/click"><input type=image name=at width=%(w)d
- src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Pi's browser"></form>
+<p><form action="http://webgate/live"><input name=url size=40 value="%(url)s">
+ <input type=submit value="Go to"></form></p>
+%(screen)s
 <p><form action="http://webgate/live/type"><input name=t size=40> <input type=submit value=Type>
  <input type=submit name=enter value="Type and Enter"></form></p>
 <p><form action="http://webgate/live/key"><button name=k value=enter>Enter</button>
