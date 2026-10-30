@@ -117,7 +117,9 @@ view at 1:1, as wide as EWeb's page and three of its screens tall
 (webgate-ext sizes the browser's window to it), so EWeb scrolls through
 it itself and asks for a new picture only after a click or past its
 third screen (Erez, 30 Oct 2026). Without them, the view is 1024x768,
-made 608 pixels wide. http://webgate/live?url=ADDRESS opens
+made 608 pixels wide. The picture button has its height too, and the
+picture honours X-Gateway-Picture: asked as pens, it comes as the
+Atari's pens, made by aerapens, as any other picture does. http://webgate/live?url=ADDRESS opens
 ADDRESS first (https:// when it has no scheme), as the page's Go to
 field does; until the browser has opened a page, the page says so and
 shows no picture (the extension can't take one of a blank tab). "As a
@@ -1119,6 +1121,13 @@ class Handler(BaseHTTPRequestHandler):
         a = parse_qs(u.query, keep_blank_values=True)
         part = u.path[len("/live"):]
         if part == "/shot.jpg":
+            # live view's picture as pens: with pens asked for, it comes as the Atari's screen
+            # shows it, nothing left for it to decode (Erez, 30 Oct 2026)
+            want = self.picture_ask()
+            if want["pens"] and PALETTES.get(want["pal"]) is None:
+                self.send_body(409, b"webgate: send the colours first\n", "text/plain", [("X-Gateway-Palette", "need")])
+                self.note(409, 0, " (no colours %08x)" % want["pal"])
+                return
             vw, vh, pw = live_size()
             r = BRIDGE.ask("", 20, shot=pw, w=vw, h=vh, quality=Config.live_quality)
             if not r or not r.get("pic"):
@@ -1127,7 +1136,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # where the picture is on the X screen, and how much smaller
             LIVE.update(full=r.get("w") or pw, pic=min(pw, r.get("w") or pw), ox=r.get("ox", 0), oy=r.get("oy", 0))
-            self.send_body(200, r["pic"], "image/jpeg")
+            pens = make_pens(r["pic"], want) if want["pens"] else None
+            if pens:
+                self.send_body(200, pens[0], "application/x-aera-pens",
+                               [("X-Gateway-Picture", pens[1]), ("X-Gateway-Pens", pens[2])])
+            else:
+                self.send_body(200, r["pic"], "image/jpeg")
             return
         if part == "/click":
             try:
@@ -1189,7 +1203,10 @@ class Handler(BaseHTTPRequestHandler):
             # went nowhere, and its picture never came)
             screen = LIVE_NONE
         else:
-            screen = LIVE_SCREEN % {"n": n, "w": live_size()[2]}
+            vw, vh, pw = live_size()
+            # its height too, so that EWeb knows the size it shows it at
+            # and asks for its pens at that size once
+            screen = LIVE_SCREEN % {"n": n, "w": pw, "h": vh * pw // vw}
         page = LIVE_PAGE % {"title": html.escape(title), "screen": screen,
                             "url": html.escape(BRIDGE.shown or "", quote=True), "n": n}
         self.send_body(200, page.encode("utf-8"), "text/html; charset=utf-8")
@@ -1338,7 +1355,7 @@ LIVE_KEYS = {"enter": "Return", "tab": "Tab", "backspace": "BackSpace", "esc": "
              "up": "Page_Up", "down": "Page_Down", "back": "alt+Left", "reload": "F5"}
 
 LIVE_SCREEN = """<form action="http://webgate/live/click"><input type=image name=at width=%(w)d
- src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Pi's browser"></form>"""
+ height=%(h)d src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Pi's browser"></form>"""
 
 LIVE_NONE = """<p><b>The Pi's browser has no page open yet.</b> Put an address in the field above and
  choose Go to; then its screen shows here, and a click on it is a click there.</p>"""
