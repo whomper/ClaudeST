@@ -749,12 +749,13 @@ class LiveTest(unittest.TestCase):
         webgate.Config.live_settle = 1.0
 
     shot_q = "w=1216"       # what the stand-in extension says of its picture
+    shot_body = None        # and the picture (None: JPEG)
 
     def setUp(self):
         if os.path.exists(self.log):
             os.remove(self.log)
         webgate.LIVE.clear()
-        self.shot_q = LiveTest.shot_q
+        self.shot_q, self.shot_body = LiveTest.shot_q, LiveTest.shot_body
 
     def extension(self):
         """one turn of webgate-ext, as background.js answers each kind"""
@@ -762,7 +763,7 @@ class LiveTest(unittest.TestCase):
         c.request("GET", "/next")
         w = json.loads(c.getresponse().read())
         if w.get("shot"):
-            c.request("POST", "/shot?id=%s&%s" % (w["id"], self.shot_q), body=JPEG)
+            c.request("POST", "/shot?id=%s&%s" % (w["id"], self.shot_q), body=self.shot_body or JPEG)
         else:
             body = json.dumps({"url": w["url"] or "https://example.com/now", "title": "Now",
                                "html": "<!DOCTYPE html><title>Now</title><p>shown"}).encode()
@@ -915,6 +916,60 @@ class LiveTest(unittest.TestCase):
         self.assertIn("width=790", data.decode("utf-8"))
         r, data, w = self.ask("http://webgate/live/shot.jpg?n=5")
         self.assertEqual((w["w"], w["h"]), (790, 1650))
+
+    def test_picture_height(self):
+        # the picture button's height as well: EWeb knows the size it shows
+        # it at before it comes (and asks for its pens at that size once)
+        webgate.BRIDGE.shown = "https://example.com/"
+        r, data, _ = self.ask("http://webgate/live", turn=False)
+        self.assertIn("width=608\n height=456 ", data.decode("utf-8"))        # 1024x768 made 608 wide
+        r, data, _ = self.ask("http://webgate/live?w=1000&h=750", turn=False)
+        self.assertIn("width=990\n height=2100 ", data.decode("utf-8"))       # 1:1
+
+    @unittest.skipUnless(PICS, "needs Pillow")
+    def test_picture_as_pens(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        fake = FakePens(os.path.join(d, "pens.sock"))
+        fake.start()
+        self.addCleanup(fake.stop)
+        webgate.Config.pens_socket = fake.path
+        self.addCleanup(setattr, webgate.Config, "pens_socket", "/run/webgate-pens.sock")
+        self.shot_body = PICS["big.jpg"][0]
+        rgb = ST16
+        crc = "%08x" % (__import__("zlib").crc32(rgb) & 0xFFFFFFFF)
+        ask = "fit=600; size=300x200; pens=16; pal=%s; ed=lj" % crc
+        def shot(turn=True):
+            seen = []
+            t = threading.Thread(target=lambda: seen.append(self.extension()))
+            if turn:
+                t.start()
+            c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=30)
+            self.addCleanup(c.close)
+            c.request("GET", "http://webgate/live/shot.jpg?n=7", headers={"X-Gateway-Picture": ask})
+            r = c.getresponse()
+            data = r.read()
+            if turn:
+                t.join()
+            return r, data
+        with webgate.PALETTES.lock:
+            webgate.PALETTES.kept.pop(int(crc, 16), None)
+        # colours not sent yet: 409, and the browser not asked
+        r, data = shot(turn=False)
+        self.assertEqual((r.status, r.getheader("X-Gateway-Palette")), (409, "need"))
+        self.assertIsNone(webgate.BRIDGE.wanted)
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("POST", "http://webgate/palette", body=rgb)
+        self.assertEqual(c.getresponse().status, 204)
+        r, data = shot()
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "application/x-aera-pens"))
+        self.assertIn("pens 300x200", r.getheader("X-Gateway-Picture"))
+        self.assertEqual(r.getheader("X-Gateway-Pens"), "aerapens 0123456789ab test")
+        self.assertEqual(data[:4], b"EWPN")
+        # no pens asked for: the JPEG as it came
+        r, data, _ = self.ask("http://webgate/live/shot.jpg?n=8")
+        self.assertEqual((r.status, r.getheader("Content-Type"), data), (200, "image/jpeg", PICS["big.jpg"][0]))
 
     def test_sizes_clamped(self):
         for q, want in (("w=200&h=100", (320, 570, 320)), ("w=4000&h=4000", (1260, 2970, 1260)),
