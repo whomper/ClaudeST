@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "webgate",
-  "version": "1.4",
+  "version": "1.5",
   "description": "AERA-Gateway's web service: each page this browser opens for EWeb, after its scripts have run, sent back to webgate on this Pi as a snapshot.",
   "permissions": ["tabs", "scripting", "alarms", "declarativeNetRequest"],
   "host_permissions": ["<all_urls>"],

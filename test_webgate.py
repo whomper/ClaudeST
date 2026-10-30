@@ -748,9 +748,13 @@ class LiveTest(unittest.TestCase):
         webgate.Config.snapshot_wait = 60
         webgate.Config.live_settle = 1.0
 
+    shot_q = "w=1216"       # what the stand-in extension says of its picture
+
     def setUp(self):
         if os.path.exists(self.log):
             os.remove(self.log)
+        webgate.LIVE.clear()
+        self.shot_q = LiveTest.shot_q
 
     def extension(self):
         """one turn of webgate-ext, as background.js answers each kind"""
@@ -758,7 +762,7 @@ class LiveTest(unittest.TestCase):
         c.request("GET", "/next")
         w = json.loads(c.getresponse().read())
         if w.get("shot"):
-            c.request("POST", "/shot?id=%s&w=1216" % w["id"], body=JPEG)
+            c.request("POST", "/shot?id=%s&%s" % (w["id"], self.shot_q), body=JPEG)
         else:
             body = json.dumps({"url": w["url"] or "https://example.com/now", "title": "Now",
                                "html": "<!DOCTYPE html><title>Now</title><p>shown"}).encode()
@@ -887,6 +891,37 @@ class LiveTest(unittest.TestCase):
         self.assertEqual(r.status, 303)
         self.assertTrue(r.getheader("Location").startswith("http://webgate/live?n="))
         self.assertEqual(self.typed(), ["mousemove 200 80 click 1"])
+
+    def test_click_without_a_size(self):
+        # an EWeb that gives no size: today's 1024x768 view, made 608 wide
+        r, data, w = self.ask("http://webgate/live/shot.jpg?n=2")
+        self.assertEqual((w["shot"], w["w"], w["h"]), (608, 1024, 768))
+        r, data, _ = self.ask("http://webgate/live", turn=False)
+        self.assertIn("width=608", data.decode("utf-8"))
+
+    def test_sized_one_to_one(self):
+        # EWeb's page 800x600: the picture 790 wide, the view three screens
+        # (560 each) less the Go to row, at 1:1; clicks at the view's place
+        webgate.BRIDGE.shown = "https://example.com/"
+        r, data, _ = self.ask("http://webgate/live?w=800&h=600", turn=False)
+        self.assertIn("width=790", data.decode("utf-8"))
+        self.shot_q = "w=790&ox=0&oy=87"
+        r, data, w = self.ask("http://webgate/live/shot.jpg?n=3")
+        self.assertEqual((w["shot"], w["w"], w["h"]), (790, 790, 3 * 560 - 30))
+        r, data, _ = self.ask("http://webgate/live/click?at.x=100&at.y=1200", turn=False)
+        self.assertEqual(self.typed(), ["mousemove 100 1287 click 1"])
+        # kept: the 303's /live and the next picture ask the same, unsent
+        r, data, _ = self.ask("http://webgate/live?n=4", turn=False)
+        self.assertIn("width=790", data.decode("utf-8"))
+        r, data, w = self.ask("http://webgate/live/shot.jpg?n=5")
+        self.assertEqual((w["w"], w["h"]), (790, 1650))
+
+    def test_sizes_clamped(self):
+        for q, want in (("w=200&h=100", (320, 570, 320)), ("w=4000&h=4000", (1260, 2970, 1260)),
+                        ("w=640&h=400", (630, 1050, 630)), ("w=x&h=1", None)):
+            webgate.LIVE.clear()
+            self.ask("http://webgate/live?" + q, turn=False)
+            self.assertEqual(webgate.live_size(), want or (1024, 768, 608))
 
     def test_type_and_keys(self):
         self.ask("http://webgate/live/type?t=hello+%D7%A9&enter=Type+and+Enter", turn=False)

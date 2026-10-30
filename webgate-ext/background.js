@@ -10,8 +10,33 @@
 const WEBGATE = "http://127.0.0.1:8281";
 let wanted = null;          // {id, url} being opened
 
-// the browser's view as a JPEG, width pixels wide (live view), and the
-// view's own width (the screen's, in kiosk mode)
+// the browser's view sized to w x h for live view: the window made a
+// normal one at the screen's top left, as big as that view and Chromium's
+// bar; then a moment for the page to lay itself out again. Returns where
+// the view is on the screen [ox, oy] (Erez, 30 Oct 2026: the picture as
+// wide as EWeb's page and three of its screens tall, at 1:1)
+async function fit(tab, w, h) {
+  let win = await chrome.windows.get(tab.windowId);
+  if (tab.width !== w || tab.height !== h) {
+    if (win.state !== "normal")
+      await chrome.windows.update(win.id, {state: "normal"});
+    // the bar a normal window has comes a moment after it leaves full
+    // screen: sized again until the tab is the size asked (3 tries)
+    for (let i = 0; i < 3 && (tab.width !== w || tab.height !== h); i++) {
+      win = await chrome.windows.get(win.id);
+      tab = await chrome.tabs.get(tab.id);
+      await chrome.windows.update(win.id, {left: 0, top: 0, width: w + (win.width - tab.width),
+                                           height: h + (win.height - tab.height)});
+      await new Promise(ok => setTimeout(ok, 500));
+      win = await chrome.windows.get(win.id);
+      tab = await chrome.tabs.get(tab.id);
+    }
+  }
+  return [win.left + (win.width - tab.width), win.top + (win.height - tab.height)];
+}
+
+// the browser's view as a JPEG, width pixels wide at most (live view),
+// and the view's own width
 async function shot(width, quality) {
   const url = await chrome.tabs.captureVisibleTab(null, {format: "png"});
   const bmp = await createImageBitmap(await (await fetch(url)).blob());
@@ -31,13 +56,16 @@ async function next() {
         const [tab] = await chrome.tabs.query({active: true, lastFocusedWindow: true});
         if (w.shot) {
           // live view: a picture of what the browser shows now
-          let pic = new Uint8Array(0), full = 0, why = "";
+          let pic = new Uint8Array(0), full = 0, why = "", at = [0, 0];
           try {
+            if (tab && w.w && w.h)
+              at = await fit(tab, w.w, w.h);
             [pic, full] = await shot(w.shot, w.quality || 0.7);
           } catch (e) {
             why = "&why=" + encodeURIComponent(String(e).slice(0, 200));
           }
-          await fetch(WEBGATE + "/shot?id=" + encodeURIComponent(w.id) + "&w=" + full + why, {method: "POST", body: pic});
+          await fetch(WEBGATE + "/shot?id=" + encodeURIComponent(w.id) + "&w=" + full + "&ox=" + at[0] +
+                      "&oy=" + at[1] + why, {method: "POST", body: pic});
         } else if (w.snap) {
           // the page shown now, as a snapshot (live view's "as a page")
           wanted = w;

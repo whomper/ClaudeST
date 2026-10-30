@@ -260,8 +260,10 @@ no monitor needed), with webgate's extension. EWeb then gets a page as
 it stands after its scripts ran (a snapshot), and `http://webgate/live`
 in EWeb shows the browser's screen: a click on the picture clicks on
 the Pi, typing types there, for the logins and CAPTCHAs a snapshot can't
-do. The browser's profile, with any logins, stays in
-`/var/lib/webgate/browser`.
+do. The picture is as wide as EWeb's page and three of its screens
+tall, so EWeb scrolls through it without asking the Pi again; only a
+click, or scrolling past the third screen, brings a new one. The
+browser's profile, with any logins, stays in `/var/lib/webgate/browser`.
 
 Sites behind Cloudflare's check ("Just a moment...") pass with it too:
 when a site answers EWeb with the check, a script for the big browsers,
