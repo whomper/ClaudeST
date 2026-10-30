@@ -111,7 +111,13 @@ for itself), a page with a picture of the browser's screen as a picture
 button, a field to type into and buttons for keys. A click on the picture
 is a real click on the Pi's screen (xdotool, in the browser's X display:
 the browser runs full screen there), typing real typing; then the page
-comes again with a new picture. http://webgate/live?url=ADDRESS opens
+comes again with a new picture. EWeb gives its page's size with the
+first /live (w=W&h=H, in pixels): the picture is then the browser's
+view at 1:1, as wide as EWeb's page and three of its screens tall
+(webgate-ext sizes the browser's window to it), so EWeb scrolls through
+it itself and asks for a new picture only after a click or past its
+third screen (Erez, 30 Oct 2026). Without them, the view is 1024x768,
+made 608 pixels wide. http://webgate/live?url=ADDRESS opens
 ADDRESS first (https:// when it has no scheme), as the page's Go to
 field does; until the browser has opened a page, the page says so and
 shows no picture (the extension can't take one of a blank tab). "As a
@@ -444,7 +450,7 @@ class Config:
     browser = False         # snapshots: the Pi's Chromium and webgate-ext are there
     browser_port = 8281     # where webgate-ext asks (127.0.0.1 only)
     snapshot_wait = 60      # seconds a page may take to settle
-    live_width = 608        # live view's picture, pixels wide (EWeb's page on a 640-pixel screen)
+    live_width = 608        # live view's picture, pixels wide, when EWeb gives no size (its page on a 640-pixel screen)
     live_quality = 0.7      # its JPEG quality: small for STinG, enough to read
     live_settle = 1.0       # seconds the browser has after a click before the next picture
     insecure = False        # tests only: don't check certificates
@@ -1113,12 +1119,14 @@ class Handler(BaseHTTPRequestHandler):
         a = parse_qs(u.query, keep_blank_values=True)
         part = u.path[len("/live"):]
         if part == "/shot.jpg":
-            r = BRIDGE.ask("", 20, shot=Config.live_width, quality=Config.live_quality)
+            vw, vh, pw = live_size()
+            r = BRIDGE.ask("", 20, shot=pw, w=vw, h=vh, quality=Config.live_quality)
             if not r or not r.get("pic"):
                 why = (r or {}).get("why") or BRIDGE.why()
                 self.reply(504, "webgate: the browser's screen didn't come: %s\n" % why[:200])
                 return
-            LIVE["full"] = r.get("w") or Config.live_width
+            # where the picture is on the X screen, and how much smaller
+            LIVE.update(full=r.get("w") or pw, pic=min(pw, r.get("w") or pw), ox=r.get("ox", 0), oy=r.get("oy", 0))
             self.send_body(200, r["pic"], "image/jpeg")
             return
         if part == "/click":
@@ -1126,8 +1134,10 @@ class Handler(BaseHTTPRequestHandler):
                 x, y = int(a.get("at.x", ["0"])[0]), int(a.get("at.y", ["0"])[0])
             except ValueError:
                 x = y = 0
-            k = LIVE.get("full", Config.live_width) / float(Config.live_width)
-            self.xdo("mousemove", str(int(x * k)), str(int(y * k)), "click", "1")
+            pic = LIVE.get("pic") or Config.live_width
+            k = LIVE.get("full", pic) / float(pic)       # 1 when the picture is the view at 1:1
+            self.xdo("mousemove", str(LIVE.get("ox", 0) + int(x * k)), str(LIVE.get("oy", 0) + int(y * k)),
+                     "click", "1")
             self.again()
             return
         if part == "/type":
@@ -1151,6 +1161,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_snap(snap, snap.get("url") or self.path)
             return
+        try:
+            ew, eh = int(a.get("w", ["0"])[0] or 0), int(a.get("h", ["0"])[0] or 0)
+        except ValueError:
+            ew = eh = 0
+        if ew and eh:
+            LIVE["page"] = (ew, eh)         # EWeb's page, kept for the 303s and shot.jpg
         url = a.get("url", [""])[0].strip()
         if url and "://" not in url:
             url = "https://" + url          # (Go to's "www.example.com")
@@ -1173,7 +1189,7 @@ class Handler(BaseHTTPRequestHandler):
             # went nowhere, and its picture never came)
             screen = LIVE_NONE
         else:
-            screen = LIVE_SCREEN % {"n": n, "w": Config.live_width}
+            screen = LIVE_SCREEN % {"n": n, "w": live_size()[2]}
         page = LIVE_PAGE % {"title": html.escape(title), "screen": screen,
                             "url": html.escape(BRIDGE.shown or "", quote=True), "n": n}
         self.send_body(200, page.encode("utf-8"), "text/html; charset=utf-8")
@@ -1299,7 +1315,23 @@ class Handler(BaseHTTPRequestHandler):
         self.note(resp.status, sent)
 
 
-LIVE = {}           # the browser's screen width, as the last picture said
+LIVE = {}           # EWeb's page size (page), and the last picture's place and scale (ox, oy, full, pic)
+LIVE_VIEW = (1024, 768)     # the browser's view when EWeb gives no size (as the screen was before 1.16)
+LIVE_ROW = 30               # the Go to row above the picture, in EWeb's first screen
+
+
+def live_size():
+    """(the browser's view width and height, the picture's width): EWeb's
+    page (LIVE["page"]: W, H) as the view at 1:1, PW = W less the body's
+    margin and the picture's border, VH = three of its screens less the
+    Go to row; else today's 1024x768 made live_width wide"""
+    if "page" not in LIVE:
+        return LIVE_VIEW[0], LIVE_VIEW[1], Config.live_width
+    w, h = LIVE["page"]
+    pw = max(320, min(1260, w - 10))
+    vh = 3 * max(200, min(1000, h - 40)) - LIVE_ROW
+    return pw, vh, pw
+
 
 # live view's keys: what EWeb's buttons send, what xdotool presses
 LIVE_KEYS = {"enter": "Return", "tab": "Tab", "backspace": "BackSpace", "esc": "Escape",
@@ -1395,8 +1427,11 @@ class ExtHandler(Handler):
         q = urlsplit(self.path)
         if q.path == "/shot":
             a = parse_qs(q.query)
-            BRIDGE.give(a.get("id", [""])[0], {"pic": data, "w": int(a.get("w", ["0"])[0] or 0),
-                                               "why": a.get("why", [""])[0]})
+            def num(k):
+                v = a.get(k, ["0"])[0]
+                return int(v) if v.lstrip("-").isdigit() else 0
+            BRIDGE.give(a.get("id", [""])[0], {"pic": data, "w": num("w"), "ox": max(0, num("ox")),
+                                               "oy": max(0, num("oy")), "why": a.get("why", [""])[0]})
             self.answer(200, b"{}")
             return
         if q.path != "/snapshot" or not q.query.startswith("id="):
