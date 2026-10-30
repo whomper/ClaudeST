@@ -518,6 +518,23 @@ class Bridge:
         self.asked = None                   # the id being waited for
         self.n = 0
         self.shown = None                   # the address the browser last opened (None: none yet)
+        self.polled = time.monotonic()      # the extension's last /next, begun or ended
+        self.polling = 0                    # its /next waiting now (it is listening)
+
+    GONE = 10   # seconds an address may wait untaken, with no /next, before the extension counts as gone
+
+    def gone(self):
+        """the extension isn't asking for addresses: Chromium not running,
+        or webgate-ext stopped in it (Erez's live view, 30 Oct 2026: it
+        waited the whole minute for a browser that wasn't listening)"""
+        return not self.polling and time.monotonic() - self.polled > self.GONE
+
+    def why(self):
+        """what to say when the browser didn't answer"""
+        if self.gone():
+            return ("the Pi's browser isn't listening (webgate-ext last asked %d s ago); "
+                    "on the Pi: sudo systemctl restart webgate-browser" % (time.monotonic() - self.polled))
+        return "it didn't answer"
 
     def ask(self, url, wait, **more):
         """url opened in the browser: its snapshot ({"url", "title",
@@ -529,7 +546,17 @@ class Bridge:
             self.wanted = dict({"id": str(me), "url": url}, **more)
             self.asked = str(me)
             self.cv.notify_all()
-            ok = self.cv.wait_for(lambda: str(me) in self.done, wait)
+            start = time.monotonic()
+            ok = False
+            while not ok:
+                left = wait - (time.monotonic() - start)
+                if left <= 0:
+                    break
+                ok = self.cv.wait_for(lambda: str(me) in self.done, min(left, 2))
+                # not taken, and no /next for a while: no one is listening
+                if not ok and self.wanted is not None and self.wanted["id"] == str(me) and \
+                        time.monotonic() - start >= self.GONE and self.gone():
+                    break
             if self.wanted and self.wanted["id"] == str(me):
                 self.wanted = None
             self.asked = None
@@ -541,8 +568,14 @@ class Bridge:
     def next(self, wait=25):
         """for the extension: the next address, or None after wait seconds"""
         with self.cv:
-            self.cv.wait_for(lambda: self.wanted is not None, wait)
+            self.polled = time.monotonic()
+            self.polling += 1
+            try:
+                self.cv.wait_for(lambda: self.wanted is not None, wait)
+            finally:
+                self.polling -= 1
             w, self.wanted = self.wanted, None
+            self.polled = time.monotonic()
             return w
 
     def give(self, id, snap):
@@ -1082,7 +1115,7 @@ class Handler(BaseHTTPRequestHandler):
         if part == "/shot.jpg":
             r = BRIDGE.ask("", 20, shot=Config.live_width, quality=Config.live_quality)
             if not r or not r.get("pic"):
-                why = (r or {}).get("why") or "it didn't answer"
+                why = (r or {}).get("why") or BRIDGE.why()
                 self.reply(504, "webgate: the browser's screen didn't come: %s\n" % why[:200])
                 return
             LIVE["full"] = r.get("w") or Config.live_width
@@ -1114,7 +1147,7 @@ class Handler(BaseHTTPRequestHandler):
         if part == "/page":
             snap = BRIDGE.ask("", Config.snapshot_wait, snap=1)
             if snap is None:
-                self.reply(504, "webgate: the browser's page didn't come\n")
+                self.reply(504, "webgate: the browser's page didn't come: %s\n" % BRIDGE.why())
                 return
             self.send_snap(snap, snap.get("url") or self.path)
             return
@@ -1129,7 +1162,10 @@ class Handler(BaseHTTPRequestHandler):
             if snap:
                 title = snap.get("title") or url
         n = int(time.time() * 10)
-        if BRIDGE.shown is None:
+        if BRIDGE.gone():
+            why = BRIDGE.why()
+            screen = LIVE_GONE % {"why": html.escape(why[0].upper() + why[1:], quote=False)}
+        elif BRIDGE.shown is None:
             # nothing open in the browser yet (live view from a page that
             # isn't on the web, or a webgate just started): no screen to
             # show (the extension can't take a blank tab's), so Go to first
@@ -1174,7 +1210,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         snap = BRIDGE.ask(self.path, Config.snapshot_wait)
         if snap is None:
-            self.reply(504, "webgate: the browser didn't finish %s in %d s\n" % (u.hostname, Config.snapshot_wait))
+            self.reply(504, "webgate: the browser didn't finish %s in %d s\n" % (u.hostname, Config.snapshot_wait)
+                       if not BRIDGE.gone() else "webgate: %s\n" % BRIDGE.why())
             return
         self.send_snap(snap, self.path)
 
@@ -1273,6 +1310,8 @@ LIVE_SCREEN = """<form action="http://webgate/live/click"><input type=image name
 
 LIVE_NONE = """<p><b>The Pi's browser has no page open yet.</b> Put an address in the field above and
  choose Go to; then its screen shows here, and a click on it is a click there.</p>"""
+
+LIVE_GONE = """<p><b>%(why)s.</b></p>"""
 
 LIVE_PAGE = """<!DOCTYPE html><html><head><meta charset=utf-8><title>Live: %(title)s</title>
 <style>body{margin:4px;font-family:sans-serif;background:#fff}form{display:inline;margin:0}
