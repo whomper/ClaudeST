@@ -1026,6 +1026,27 @@ static void text(short x, short y, const char *s, short n, short fx, short color
 		vswr_mode(vh, 2);	/* both may leave it replace */
 }
 
+/* text() for plain black text on a ground just filled white (a row of the
+   chat, the status line, a field being typed in): on TOS's own screen the
+   characters go straight into it (common text_plain, the guidelines'
+   Speed); there a cell written whole is what the VDI's transparent text
+   leaves on white. Everywhere else, and for any other text, it is text() */
+static void text_white(short x, short y, const char *s, short n, short fx, short color)
+{
+	short st = text_plain_state();
+
+	if (fx || color != 1 || st < 0 || n <= 0 || (x & 7) ||
+	    ((heb_mode != HM_MAP || hebfont != HEB_ATARI) && has_heb(s, n))) {
+		text(x, y, s, n, fx, color);
+		return;
+	}
+	if (st == 0) {		/* the first draw is the VDI's, then checked */
+		vst_effects(vh, 0);
+		vst_color(vh, 1);
+	}
+	text_plain(vh, x, y, s, n);
+}
+
 /* draw a string that may contain Hebrew in visual order; a right-to-left
  * string is right-aligned to `right` when that's given. Returns the x used. */
 static short text_bidi(short x, short y, const char *s, short n, short fx, short color, short right)
@@ -1372,7 +1393,7 @@ static void draw_status(short full)
 			k = n;
 		memcpy(t, status, k);
 		memset(t + k, ' ', n - k);
-		text(dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
+		text_white(dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
 	}
 	if (usage_pct >= 0 && room > 0) {
 		char *p = t;
@@ -1394,7 +1415,7 @@ static void draw_status(short full)
 		if (k > room)
 			k = room;
 		memset(t + k, ' ', room - k);
-		text(tx, status_y + row_h + (row_h - ch) / 2, t, room, 0, 1);
+		text_white(tx, status_y + row_h + (row_h - ch) / 2, t, room, 0, 1);
 	}
 	vswr_mode(vh, 2);
 }
@@ -1654,7 +1675,7 @@ static void draw_text(short from_row)
 			l = &lines[li];
 			x = tx + (l->role == 'U' ? 3 * cw : 0) + col * cw;
 			fill(x, y, px + pw - 1, y + ch - 1, 0);
-			text(x, y, tb + l->off + col, l->len - col,
+			text_white(x, y, tb + l->off + col, l->len - col,
 			     (l->kind & L_TYPE) == L_GREY ? 2 : 0, (l->kind & L_TYPE) == L_CODE ? code_colour() : 1);
 			continue;
 		}
@@ -1683,8 +1704,6 @@ static void draw_text(short from_row)
 			line(x + cw / 2, y, x + cw / 2, y + ch - 1, accent());
 			line(x + cw / 2 + 1, y, x + cw / 2 + 1, y + ch - 1, accent());
 			x += 3 * cw;
-		} else if (l->role == 'K') {
-			line(x + cw / 2, y, x + cw / 2, y + ch - 1, 1);
 		}
 		{
 			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : (l->kind & L_TYPE) == L_GREY ? 2 : 0;
@@ -1701,19 +1720,32 @@ static void draw_text(short from_row)
 					t = plain;
 					n = k;
 				} else {			/* runs, inline code in red */
-					for (i = 0; i <= n; i++) {
-						if (i < n && t[i] != MK_INL)
-							continue;
-						if (i > 0)
-							text(x, y, t, i, inl ? inl_fx() : fx, inl ? inl_colour() : colour);
-						x += i * cw;
-						if (i < n) {
-							inl = !inl;
-							t += i + 1;
-							n -= i + 1;
-							i = -1;
+					/* the plain runs first, which text_white may write
+					   whole cells of, then the code over them: its
+					   underline reaches into the next cell */
+					const char *t0 = t;
+					short n0 = n, x0 = x, inl0 = inl, pass;
+					for (pass = 0; pass < 2; pass++) {
+						t = t0;
+						n = n0;
+						x = x0;
+						inl = inl0;
+						for (i = 0; i <= n; i++) {
+							if (i < n && t[i] != MK_INL)
+								continue;
+							if (i > 0 && inl == pass)
+								text_white(x, y, t, i, inl ? inl_fx() : fx, inl ? inl_colour() : colour);
+							x += i * cw;
+							if (i < n) {
+								inl = !inl;
+								t += i + 1;
+								n -= i + 1;
+								i = -1;
+							}
 						}
 					}
+					if (l->role == 'K')
+						line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
 					continue;
 				}
 			}
@@ -1724,11 +1756,13 @@ static void draw_text(short from_row)
 				bidi_visual(t, n, rtl, vis);
 				if (rtl)	/* right-aligned, like dir="rtl" */
 					x = tx + cols * cw - n * cw;
-				text(x, y, vis, n, fx, colour);
+				text_white(x, y, vis, n, fx, colour);
 			} else {
-				text(x, y, t, n, fx, colour);
+				text_white(x, y, t, n, fx, colour);
 			}
 		}
+		if (l->role == 'K')	/* after the text, which may write its cells whole */
+			line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
 	}
 	y = ty + rows * ch;
 	if (row_visible(y, wy + wh - input_h - 1))
@@ -1740,7 +1774,6 @@ static void draw_text(short from_row)
 static short blit_scroll(short n)
 {
 	short r[4], pxy[8], k = n < 0 ? -n : n;
-	MFDB scr;
 
 	if (n == 0 || k >= rows)
 		return 0;
@@ -1748,7 +1781,6 @@ static short blit_scroll(short n)
 	if (r[0] != wx || r[1] != wy || r[2] != ww || r[3] != wh ||
 	    wx < 0 || wy < 0 || wx + ww > scr_w || wy + wh > scr_h)
 		return 0;
-	memset(&scr, 0, sizeof(scr));
 	pxy[0] = px;
 	pxy[1] = ty + (n > 0 ? k * ch : 0);
 	pxy[2] = px + pw - 1;
@@ -1760,7 +1792,7 @@ static short blit_scroll(short n)
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
 	text_noclip(vh);
-	vro_cpyfm(vh, 3, pxy, &scr, &scr);
+	scr_rows(vh, pxy);	/* by the CPU on TOS's own screen, else vro_cpyfm */
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
 	{
@@ -1897,7 +1929,7 @@ static void edit_draw(const char *buf, short len, short cur, short *start,
 	}
 	rtl = bidi_is_rtl(buf, len);
 	if (!rtl && !bidi_has_rtl(buf + *start, n)) {
-		text(x, y, buf + *start, n, 0, 1);
+		text_white(x, y, buf + *start, n, 0, 1);
 		xc = x + c * cw;
 	} else {
 		bidi_visual_map(buf + *start, n, rtl, vis, pos, odd);
@@ -4137,7 +4169,6 @@ static void redraw_item_row(short i)
 static short list_blit(short n)
 {
 	short r[4], pxy[8], k = n < 0 ? -n : n, y0 = list_y + row_h - 2;
-	MFDB scr;
 
 	if (n == 0 || k >= list_rows)
 		return 0;
@@ -4145,7 +4176,6 @@ static short list_blit(short n)
 	if (r[0] != wx || r[1] != wy || r[2] != ww || r[3] != wh ||
 	    wx < 0 || wy < 0 || wx + ww > scr_w || wy + wh > scr_h)
 		return 0;
-	memset(&scr, 0, sizeof(scr));
 	pxy[0] = pxy[4] = wx;
 	pxy[2] = pxy[6] = lbar.r.x - 1;
 	pxy[1] = y0 + (n > 0 ? k * row_h : 0);
@@ -4155,7 +4185,7 @@ static short list_blit(short n)
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
 	text_noclip(vh);
-	vro_cpyfm(vh, 3, pxy, &scr, &scr);
+	scr_rows(vh, pxy);	/* by the CPU on TOS's own screen, else vro_cpyfm */
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
 	return 1;
