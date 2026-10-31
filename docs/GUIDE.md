@@ -114,10 +114,10 @@ Replies still come in while it is iconified.
 
 ## Chats, projects and search
 
-- **Chats** lists your recent chats under date headings, as on claude.ai:
-  **Pinned** first (pinned chats also show a small diamond), then
-  **Today**, **Yesterday**, a date such as **Oct 4** for each of the
-  last seven days, and **Older** for the rest. Project chats, search
+- **Chats** lists your recent chats under date headings: **Pinned**
+  first (pinned chats also show a small diamond), then **Today**,
+  **Yesterday**, the day of the week (**Monday**) for the rest of the
+  last seven days, and before that the date (**Oct 22**). Project chats, search
   results and Code sessions are grouped the same way. The headings can't
   be clicked, and `Tab` skips them.
 - **Unread chats** have a small dot to the left of their name (blue in

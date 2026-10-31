@@ -5,6 +5,7 @@ protocol session against the demo backend. Run: python3 -m unittest"""
 import os
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -888,8 +889,8 @@ class MovedChats(unittest.TestCase):
 
 
 class DateHeadings(unittest.TestCase):
-    """Chat lists grouped like claude.ai's: Pinned, Today, Yesterday, the
-    rest of the week by date, then Older."""
+    """Chat lists grouped: Pinned, Today, Yesterday, the rest of the week
+    by the day's name, then by date (Erez, 29 Oct 2026)."""
 
     def test_headings(self):
         from datetime import datetime, timedelta, timezone
@@ -901,10 +902,14 @@ class DateHeadings(unittest.TestCase):
             return (local - timedelta(days=days)).replace(hour=12).isoformat()
         self.assertEqual(date_heading(ago(0), now), "Today")
         self.assertEqual(date_heading(ago(1), now), "Yesterday")
-        d = (local - timedelta(days=6))
-        self.assertEqual(date_heading(ago(6), now), "%s %d" % (d.strftime("%b"), d.day))
-        self.assertEqual(date_heading(ago(7), now), "Older")
-        self.assertEqual(date_heading(ago(400), now), "Older")
+        names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        for days in range(2, 7):
+            self.assertEqual(date_heading(ago(days), now), names[(local - timedelta(days=days)).weekday()])
+        self.assertEqual(date_heading(ago(2), now), "Monday")       # 7 Oct 2026 is a Wednesday
+        self.assertEqual(date_heading(ago(6), now), "Thursday")
+        self.assertEqual(date_heading(ago(7), now), "Sep 30")       # a week back: the date
+        self.assertEqual(date_heading(ago(30), now), "Sep 7")
+        self.assertEqual(date_heading(ago(400), now), "Sep 2, 2025")
         self.assertIsNone(date_heading(None, now))
         self.assertIsNone(date_heading("not a date", now))
 
@@ -918,7 +923,10 @@ class DateHeadings(unittest.TestCase):
         self.assertEqual(kinds[:2], [(b"X", b"Pinned"), (b"I", b"d3")])
         self.assertEqual(kinds[2:4], [(b"X", b"Today"), (b"I", b"d1")])
         self.assertEqual(kinds[4:6], [(b"X", b"Yesterday"), (b"I", b"d2")])
-        self.assertEqual(kinds[6:], [(b"X", b"Older"), (b"I", b"d4")])
+        from backends import date_heading
+        d4 = date_heading(s.be.chats["d4"]["updated"]).encode()       # 20 days back: a date
+        self.assertRegex(d4.decode(), r"^[A-Z][a-z]{2} \d+(, \d{4})?$")
+        self.assertEqual(kinds[6:], [(b"X", d4), (b"I", b"d4")])
 
     def test_projects_list_has_no_headings(self):
         link = FakeLink()
@@ -1220,6 +1228,8 @@ class CodeSessions(unittest.TestCase):
                 page = events[lo:hi][::-1]
                 return {"data": page, "has_more": lo > 0,
                         "first_id": ids[hi - 1] if page else None, "last_id": ids[lo] if page else None}
+            if params.get("after_id") and params["after_id"] not in ids:
+                raise RuntimeError("claude.ai's Code sessions were not found (HTTP 400).")
             if params.get("after_id"):
                 lo = ids.index(params["after_id"]) + 1
                 hi = min(lo + limit, n)
@@ -1268,6 +1278,63 @@ class CodeSessions(unittest.TestCase):
         title, msgs = be.get_code_session("session_l")
         self.assertLess(len(gets), 20)
         self.assertTrue(be.code_partial)
+
+    def clocked(self, be, secs_a_read=1.0):
+        """the backend's reads take SECS_A_READ each, on a clock of their own"""
+        import backends
+        now = [1000.0]
+        code = be._code
+
+        def timed(*a, **k):
+            now[0] += secs_a_read
+            return code(*a, **k)
+        be._code = timed
+        patch = unittest.mock.patch.object(backends.time, "time", lambda: now[0])
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_a_session_too_long_to_read_goes_on_where_it_stopped(self):
+        """Erez's long Code sessions (31 Oct 2026): served oldest first, they
+        ran out of time before their newest messages, each time. Where a
+        read got to is remembered, so the next one goes on from there, and
+        once at the end, opening the session starts near it"""
+        be, gets = self.long_session(False, n=20000, uuids=True)
+        self.clocked(be)
+        be.CODE_SECONDS = 30
+        title, msgs = be.get_code_session("session_l")
+        self.assertTrue(be.code_partial)
+        self.assertNotEqual(msgs[-1], ("A", "a19999"))
+        for _ in range(10):
+            title, msgs = be.get_code_session("session_l")
+            if not be.code_partial:
+                break
+        self.assertFalse(be.code_partial)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertGreaterEqual(len(msgs), 40)
+        del gets[:]
+        title, msgs = be.get_code_session("session_l")      # again: near the end at once
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertGreaterEqual(len(msgs), 40)
+        self.assertLess(len(gets), 20)
+
+    def test_a_long_read_says_how_far_it_got(self):
+        """with code_progress, the read may take minutes, saying how far
+        it got every few seconds (each line keeps the Atari waiting)"""
+        be, gets = self.long_session(False, n=20000, uuids=True)
+        self.clocked(be)
+        said = []
+        be.code_progress = said.append
+        title, msgs = be.get_code_session("session_l")
+        self.assertFalse(be.code_partial)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertGreater(len(said), 5)
+        self.assertEqual(said, sorted(said))
+
+    def test_a_remembered_place_that_is_gone(self):
+        be, gets = self.long_session(False, n=3000, uuids=True)
+        be._marks().set("session_l", "no-such-event")
+        title, msgs = be.get_code_session("session_l")
+        self.assertEqual(msgs[-1], ("A", "a2999"))
 
     def test_code_over_the_protocol(self):
         link = FakeLink()

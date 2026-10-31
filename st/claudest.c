@@ -139,6 +139,7 @@ static short status_y;
 #define MK_HEADER 0x10
 #define MK_BOLD   0x11
 #define MK_GREY   0x12		/* a tool step, in grey as on claude.ai */
+#define HEAD_FX   8		/* a date heading with too few colours for grey: underlined */
 #define MK_CODE   0x13		/* a line of a code block, in blue */
 #define MK_INL    0x14		/* starts or ends inline code, in red */
 
@@ -1449,8 +1450,14 @@ static void draw_sidebar(void)
 		if (n > lmaxc - (it->pinned ? 1 : 0))
 			n = lmaxc - (it->pinned ? 1 : 0);
 		if (it->heading) {
-			/* a date heading, in grey like claude.ai's */
-			text(x, y + (row_h - ch) / 2 - 1, it->label, n, 2, 1);
+			/* a date heading, in grey like claude.ai's: TOS's dark
+			   grey where the screen has it; with too few colours, not
+			   the dotted "light" text, which is hard to read (Erez,
+			   29 Oct 2026) */
+			if (ncolors >= 16)
+				text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, pen[9]);
+			else
+				text(x, y + (row_h - ch) / 2 - 1, it->label, n, HEAD_FX, 1);
 			continue;
 		}
 		{

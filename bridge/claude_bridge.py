@@ -272,8 +272,8 @@ class Session:
     def send_list(self, kind, title, items, back=False):
         """items: (id, label), (id, label, pinned), (id, label, pinned,
         when) or (id, label, pinned, when, unread); pinned ones go first. Items with a time are grouped under
-        date headings (X lines) as on claude.ai: Pinned, Today, Yesterday,
-        a date for the rest of the week, then Older."""
+        date headings (X lines): Pinned, Today, Yesterday, the day of the
+        week for the rest of the week, then the date."""
         self.list_kind = kind
         self.flags_sent = {}
         self._active_at = time.time()
@@ -507,7 +507,13 @@ class Session:
             return
         if kind == "CODE":
             self.notice("Loading session...")
-            title, msgs = self.be.get_code_session(oid)
+            if hasattr(self.be, "code_progress"):     # a long one: say how far, which keeps the Atari waiting
+                self.be.code_progress = lambda n: self.notice("Loading session... %s steps read" % format(n, ","))
+            try:
+                title, msgs = self.be.get_code_session(oid)
+            finally:
+                if hasattr(self.be, "code_progress"):
+                    self.be.code_progress = None
             self.chat_id, self.chat_kind = oid, "CODE"
             choice = getattr(self.be, "chat_choice", None)    # the session's model
             if choice and choice[0]:
@@ -524,8 +530,9 @@ class Session:
             for role, body in msgs:
                 self.message(role, body)
             if getattr(self.be, "code_partial", False):
-                self.message("I", "This session is too long to read to its end in time: "
-                             "later messages are not shown. Open it on claude.ai to see them.")
+                self.message("I", "This session is too long to read to its end at once: "
+                             "later messages are not shown yet. Open it again to read on "
+                             "from here, or open it on claude.ai.")
             self.online()
             return
         self.notice("Loading chat...")

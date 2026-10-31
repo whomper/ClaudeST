@@ -116,10 +116,16 @@ def default_effort(model):
     return "medium" if model == "claude-opus-5-5" else "high"
 
 
+# in English whatever the Pi's locale (strftime's %a and %b follow it)
+DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
 def date_heading(when, now=None):
-    """The heading a chat goes under in a list, as on claude.ai: "Today",
-    "Yesterday", the date ("Oct 5") for the rest of the last seven days,
-    and "Older" before that. `when` is an ISO time or a Unix time."""
+    """The heading a chat goes under in a list: "Today", "Yesterday", the
+    day of the week ("Monday") for the rest of the last seven days, and
+    before that the date ("Oct 22", "Oct 22, 2025" in another year; Erez,
+    29 Oct 2026). `when` is an ISO time or a Unix time."""
     from datetime import datetime, timezone
     if when in (None, ""):
         return None
@@ -138,10 +144,13 @@ def date_heading(when, now=None):
         return "Today"
     if days == 1:
         return "Yesterday"
+    local = t.astimezone()
     if days < 7:
-        local = t.astimezone()
-        return "%s %d" % (local.strftime("%b"), local.day)
-    return "Older"
+        return DAYS[local.weekday()]
+    if local.year != now.year:
+        return "%s %d, %d" % (MONTHS[local.month - 1], local.day, local.year)
+    return "%s %d" % (MONTHS[local.month - 1], local.day)
+
 
 
 def usage_bar(pct, width=20):
@@ -836,6 +845,7 @@ class ClaudeAiBackend(Backend):
         if state:
             os.makedirs(state, exist_ok=True)
         self.memory = ChoiceMemory(os.path.join(state, "chat-effort.json") if state else None)
+        self.marks = ChoiceMemory(os.path.join(state, "code-marks.json") if state else None)
 
     def _get(self, path, timeout=60, **params):
         r = self.http.get(self.BASE + path, params=params or None, timeout=timeout)
@@ -941,14 +951,22 @@ class ClaudeAiBackend(Backend):
         return events
 
     # seconds to spend walking forward through a session served oldest
-    # first: the bridge answers nothing meanwhile, and the Atari pings
-    # every 30 seconds
+    # first: the bridge answers nothing else meanwhile, and the Atari pings
+    # after 30 quiet seconds. With code_progress (a function of the events
+    # read, which the bridge shows on the Atari: any line keeps it waiting)
+    # it may take CODE_LONG
     CODE_SECONDS = 25
-    _code_tail, code_partial = None, False
+    CODE_LONG = 240
+    _code_tail, code_partial, code_progress = None, False, None
+
+    def _marks(self):
+        if not hasattr(self, "marks"):
+            self.marks = ChoiceMemory()
+        return self.marks
 
     def _code_recent(self, session_id, cap, want):
         path = "/sessions/%s/events" % session_id
-        deadline = time.time() + self.CODE_SECONDS
+        deadline = time.time() + (self.CODE_LONG if self.code_progress else self.CODE_SECONDS)
         self.code_partial = False
         page = self._code("get", path, limit=200)
         events = self._data(page)
@@ -977,14 +995,42 @@ class ClaudeAiBackend(Backend):
         latest = self._code_newest(session_id, path, events + newer, want, deadline)
         if latest:
             return latest
-        # else walk forward, keeping the latest
-        events = (events + newer)[-cap:]
+        # else walk forward, keeping the latest: from where the last read
+        # of this session got to (code-marks.json), or from the start
+        mark = self._marks().get(session_id)
+        if mark:
+            try:
+                got = self._code_walk(session_id, mark, [], cap, deadline)
+                if got:
+                    return got
+            except RuntimeError:
+                pass
+            self.code_partial = False           # the mark is gone: from the start
+        return self._code_walk(session_id, self._code_tail, events + newer, cap, deadline)
+
+    def _code_walk(self, session_id, start, events, cap, deadline):
+        """Forward from the end of EVENTS (with none, from START) to the
+        session's end, keeping the latest CAP events. Where they begin is remembered,
+        so the next read of the session starts there, not at its start;
+        out of time, the next read goes on from as far as this one got."""
+        mark, read, told = None if events else start, 0, time.time()
+        self._code_tail = event_id(events[-1]) if events else start
         while time.time() < deadline:
             more = self._code_events(session_id, after=self._code_tail, cap=cap, deadline=deadline)
             if not more:
-                return events
-            events = (events + more)[-cap:]
-        self.code_partial = True        # out of time before the end
+                break
+            events += more
+            read += len(more)
+            if len(events) > cap:
+                mark = event_id(events[-cap - 1]) or mark
+                events = events[-cap:]
+            if self.code_progress and time.time() - told >= 5:
+                self.code_progress(read)
+                told = time.time()
+        else:
+            self.code_partial = True    # out of time before the end
+        if mark:
+            self._marks().set(session_id, mark)
         return events
 
     def _code_newest(self, session_id, path, read, want, deadline):
