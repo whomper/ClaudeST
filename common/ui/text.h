@@ -37,6 +37,42 @@ void text_noclip(short h);
 /* n characters at (x, y), the cell's top left, as v_gtext_n */
 void text_n(short h, short x, short y, const char *s, long n);
 
+/* text_n for plain text: the caller has the writing mode MD_REPLACE, the
+   text in pen 1 (black) and no effects (vst_effects 0), as it would for
+   text_n. On TOS's own screen the characters go straight into it, the
+   system font's glyphs from Line-A (8x8 or 8x16, all 256), the same bytes
+   as the VDI's (tests/text) and some three times the speed on an ST; a
+   cell cut by the clip by its visible pixels, so a row cut at a window's
+   foot costs nothing more (EPDF, 31 Oct 2026). Where that can't be (a
+   cell not on a byte, NVDI, a GDOS font, a screen that isn't interleaved
+   planes, or the first draw's check finding the VDI's pixels elsewhere)
+   it is text_n. The caller hides the mouse, as for the VDI */
+void text_plain(short h, short x, short y, const char *s, long n);
+/* a box of the screen moved to another place in the same columns (a
+   scroll), as vro_cpyfm(h, 3, p, screen, screen) with p its eight
+   corners: on TOS's screen (where text_plain goes into it) the rows moved
+   by the CPU, some twice the speed of TOS's copy on an ST (EPDF, 31 Oct
+   2026), a 16-pixel group cut at either side moved by its pixels;
+   elsewhere, or when the box isn't wholly inside the clip text_clip set,
+   vro_cpyfm as before. The caller hides the mouse and holds
+   wind_update, as for the VDI */
+void scr_rows(short h, const short *p);
+
+/* the box p (x1, y1, x2, y2) inverted, as vr_recfl in MD_XOR with a solid
+   fill in pen 1 (every plane of each pixel turned over): a selection
+   shown, or taken off again. On TOS's screen (where text_plain goes into
+   it) by the CPU, cut to the clip text_clip set; elsewhere vswr_mode
+   MD_XOR, vsf_interior solid, vsf_color 1, vr_recfl. It leaves the
+   writing mode MD_REPLACE. The caller hides the mouse, as for the VDI */
+void scr_xor(short h, const short *p);
+
+/* the tests' and the logs': 1 text_plain goes into the screen, 0 not
+   checked yet; below 0 it is text_n: -1 not the system font or NVDI, or
+   the first draw's check failed, -2 a cell neither 8x8 nor 8x16, -3 no
+   such font in Line-A, -4 its header not as TOS's, -5 not 8 pixels a
+   glyph, -6 a screen not of interleaved planes */
+int text_plain_state(void);
+
 /* bold (fx 1) and underline (8) on the n characters s of plain text just
    drawn at (x, y) by text_n in pen colour, when text_fx_fast(fx, mode)
    says it can; else draw with vst_effects as before */
