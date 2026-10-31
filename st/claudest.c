@@ -5555,6 +5555,11 @@ int main(void)
 	short msg[8];
 	AEVENT ev;
 
+	/* the heap holds what ClaudeST uses (its menu, a few KB), not a
+	   quarter of what is free: the rest is GEM's, NVDI's and the
+	   accessories' (a 4 MB Falcon under NVDI, a 1 MB ST). What a dialog's
+	   screen or a copy took goes back once it is let go (heap_trim, below) */
+	heap_grain = 16384;
 	apid = appl_init();
 	if (apid < 0)
 		return 1;
@@ -5663,6 +5668,7 @@ int main(void)
 		if (win_icon)	/* an icon takes no keys or clicks */
 			ev.which &= ~(MU_KEYBD | MU_BUTTON);
 		ticks++;
+		heap_trim();	/* what a dialog or a copy let go, back to GEMDOS */
 		tip_poll(ev.which);
 		if (ev.which & MU_MESAG)
 			handle_msg(msg);
