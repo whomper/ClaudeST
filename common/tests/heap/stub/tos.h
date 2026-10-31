@@ -33,4 +33,5 @@ long heap_check(long *nfree);
 extern long heap_check_big;
 unsigned heap_bin(size_t s);
 extern long heap_tt, heap_st, heap_use, heap_peak, heap_early;
+extern long heap_grain;
 #endif

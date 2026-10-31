@@ -26,6 +26,7 @@ static unsigned long os_magic;
 static int sf;				/* 0 not checked yet, 1 on, -1 off */
 static const unsigned char *glyph;	/* the font's form: row r of c at [r * 256 + c] */
 static short sf_planes, sf_w, sf_h;
+static int sf_rows_cpu;			/* scr_rows by the CPU: a 68000 (on a 68030 TOS's copy is as fast) */
 static long sf_bpl;
 
 static void sup_os(void)
@@ -75,6 +76,7 @@ static int sf_setup(short height)
 		if (off[i] != i * 8)
 			return -5;
 	glyph = dat;
+	sf_rows_cpu = get_cookie(0x5F435055L) < 20;	/* '_CPU' */
 	sf_planes = la[0];		/* v_planes */
 	sf_bpl = la[1];			/* v_lin_wr */
 	sf_w = la[-6];			/* V_REZ_HZ */
@@ -394,11 +396,12 @@ void text_plain(short h, short x, short y, const char *s, long n)
 	}
 }
 
-/* n bytes (even) from s to d, 40 a turn by movem, then words */
-static void move_row(unsigned char *d, const unsigned char *s, short n)
+/* a row's middle from s to d: blocks of 40 bytes by movem, then longs
+   (0 to 9, by a jump into a run of moves) and a last word when tail.
+   The counts are worked out once a scroll, not a row: a short's / 40 is
+   a library call on the 68000 */
+static inline __attribute__((always_inline)) void move_row(unsigned char *d, const unsigned char *s, short blocks, short longs, short tail)
 {
-	short blocks = n / 40, words = (short)((n - blocks * 40) >> 1);
-
 	__asm__ volatile("move.w %2,%%d0\n\t"
 			 "bra.s 2f\n"
 			 "1:\tmovem.l (%0)+,%%d1-%%d7/%%a2-%%a4\n\t"
@@ -406,21 +409,50 @@ static void move_row(unsigned char *d, const unsigned char *s, short n)
 			 "lea 40(%1),%1\n"
 			 "2:\tdbra %%d0,1b\n\t"
 			 "move.w %3,%%d0\n\t"
-			 "bra.s 4f\n"
-			 "3:\tmove.w (%0)+,(%1)+\n"
-			 "4:\tdbra %%d0,3b"
+			 "add.w %%d0,%%d0\n\t"
+			 "neg.w %%d0\n\t"
+			 "jmp 3f(%%pc,%%d0.w)\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n\t"
+			 "move.l (%0)+,(%1)+\n"
+			 "3:\ttst.w %4\n\t"
+			 "beq.s 4f\n\t"
+			 "move.w (%0)+,(%1)+\n"
+			 "4:"
 			 : "+a"(s), "+a"(d)
-			 : "m"(blocks), "m"(words)
+			 : "m"(blocks), "m"(longs), "m"(tail)
 			 : "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "a2", "a3", "a4", "memory", "cc");
 }
 
-/* the planes' words of one 16-pixel group, the pixels in mask */
-static void move_group(unsigned short *d, const unsigned short *s, unsigned short mask)
+/* the planes' words of one 16-pixel group, the pixels in mask; np
+   planes (1, 2, 4 or 8) unrolled, each word d ^ ((d ^ s) & mask): with
+   a loop over sf_planes it was some 300 cycles a call, the most of a
+   narrow pane's scroll (EContact's list, 31 Oct 2026) */
+static inline void move_group(unsigned short *d, const unsigned short *s, unsigned short mask, short np)
 {
-	short p;
-
-	for (p = 0; p < sf_planes; p++)
-		d[p] = (unsigned short)((d[p] & ~mask) | (s[p] & mask));
+	switch (np) {
+	case 8:
+		d[7] ^= (d[7] ^ s[7]) & mask;
+		d[6] ^= (d[6] ^ s[6]) & mask;
+		d[5] ^= (d[5] ^ s[5]) & mask;
+		d[4] ^= (d[4] ^ s[4]) & mask;
+		/* fall through */
+	case 4:
+		d[3] ^= (d[3] ^ s[3]) & mask;
+		d[2] ^= (d[2] ^ s[2]) & mask;
+		/* fall through */
+	case 2:
+		d[1] ^= (d[1] ^ s[1]) & mask;
+		/* fall through */
+	default:
+		d[0] ^= (d[0] ^ s[0]) & mask;
+	}
 }
 
 void scr_rows(short h, const short *p)
@@ -430,7 +462,12 @@ void scr_rows(short h, const short *p)
 	unsigned char *base;
 	long bpl;
 
-	if (sf != 1 || p[4] != x1 || p[6] != x2 || p[7] - ty != y2 - y1 || x1 < 0 || x2 < x1 || x2 >= sf_w || y1 < 0 ||
+	/* by the CPU only on a 68000 and a box at least 384 pixels wide: a
+	   row has its overhead and two cut groups, so a narrow box is
+	   faster through TOS's copy (TOS 1.04 ST:mono, 192 wide: vro_cpyfm
+	   27 ms, the CPU 51), and on a 68030 TOS's copy is as fast (Falcon-4:
+	   592 wide, 35 against 36) */
+	if (sf != 1 || !sf_rows_cpu || x2 - x1 < 383 || p[4] != x1 || p[6] != x2 || p[7] - ty != y2 - y1 || x1 < 0 || x2 < x1 || x2 >= sf_w || y1 < 0 ||
 	    y2 < y1 || y2 >= sf_h || ty < 0 || p[7] >= sf_h ||
 	    (clipping && (x1 < clip_now[0] || x2 > clip_now[2] || ty < clip_now[1] || p[7] > clip_now[3]))) {
 		MFDB scr;
@@ -464,7 +501,19 @@ void scr_rows(short h, const short *p)
 		short mid = (short)((m1 - m0 + 1) * step), left = m0 > g0 || (g0 == g1 && lmask != 0xFFFF),
 		      right = g1 != g0 && m1 < g1;
 		unsigned char *s, *d;
+		short blocks = 0, longs = 0, tail = 0, np = sf_planes;
 
+		if (mid > 0) {
+			/* once a scroll: 40-byte blocks, longs, a word */
+			short rest = mid;
+
+			while (rest >= 40) {
+				rest -= 40;
+				blocks++;
+			}
+			longs = (short)(rest >> 2);
+			tail = (short)(rest & 2);
+		}
 		if (ty <= y1) {
 			s = base + (long)y1 * bpl;
 			d = base + (long)ty * bpl;
@@ -475,11 +524,11 @@ void scr_rows(short h, const short *p)
 		}
 		for (r = rows; r > 0; r--, s += line, d += line) {
 			if (left)
-				move_group((unsigned short *)(d + l), (const unsigned short *)(s + l), lmask);
+				move_group((unsigned short *)(d + l), (const unsigned short *)(s + l), lmask, np);
 			if (mid > 0)
-				move_row(d + m, s + m, mid);
+				move_row(d + m, s + m, blocks, longs, tail);
 			if (right)
-				move_group((unsigned short *)(d + rr), (const unsigned short *)(s + rr), rmask);
+				move_group((unsigned short *)(d + rr), (const unsigned short *)(s + rr), rmask, np);
 		}
 	}
 }

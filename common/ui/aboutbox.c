@@ -50,13 +50,16 @@ static void clip_screen(void)
 	clip_on(&s);
 }
 
+static int off_white;		/* draw_off made the box's ground white already */
+
 static void box(short x, short y, short w, short h)
 {
 	/* the shadow: its two strips, not a box-sized fill painted over (on
 	   a stock Falcon 15 ms of the About box's 155) */
 	rect_fill(x + w, y + 3, x + w + 2, y + h + 2, 1);
 	rect_fill(x + 3, y + h, x + w - 1, y + h + 2, 1);
-	rect_fill(x, y, x + w - 1, y + h - 1, 0);
+	if (!off_white)		/* the box's and the button's grounds: 40 ms of an ST's About box */
+		rect_fill(x, y, x + w - 1, y + h - 1, 0);
 	line(x, y, x + w - 1, y);
 	line(x + w - 1, y, x + w - 1, y + h - 1);
 	line(x + w - 1, y + h - 1, x, y + h - 1);
@@ -84,6 +87,25 @@ static void draw_icon(const unsigned short *bits, short x, short y, short sx, sh
 	icon_sx = sx;
 	icon_sy = sy;
 	memset(icon_big, 0, sizeof(icon_big));
+	if (sx == 2) {
+		/* each byte's bits doubled (b7 to bits 15 and 14 ...), and a
+		   row copied for sy 2: a pixel at a time, below, took an 8 MHz
+		   ST 90 ms */
+		for (r = 0; r < ICON_H; r++) {
+			unsigned short *o = icon_big + r * sy * wpl;
+			for (k = 0; k < 4; k++) {
+				unsigned short v = bits[r * 2 + (k >> 1)];
+				unsigned short b = (unsigned short)((k & 1) ? (v & 0xFF) : (v >> 8));
+				b = (unsigned short)((b | (b << 4)) & 0x0F0F);
+				b = (unsigned short)((b | (b << 2)) & 0x3333);
+				b = (unsigned short)((b | (b << 1)) & 0x5555);
+				o[k] = (unsigned short)(b | (b << 1));
+			}
+			for (k = 1; k < sy; k++)
+				memcpy(o + k * wpl, o, (size_t)wpl * 2);
+		}
+		goto made;
+	}
 	for (r = 0; r < ICON_H; r++)
 		for (c = 0; c < ICON_W; c++) {
 			if (!(bits[r * 2 + c / 16] & (0x8000 >> (c & 15))))
@@ -280,7 +302,8 @@ static void center(short y, const char *s, short flags)
 static void button(short x, short y, short w, short h, const char *label)
 {
 	short n = (short)strlen(label);
-	rect_fill(x, y, x + w - 1, y + h - 1, 0);
+	if (!off_white)		/* the box's and the button's grounds: 40 ms of an ST's About box */
+		rect_fill(x, y, x + w - 1, y + h - 1, 0);
 	line(x, y, x + w - 1, y);
 	line(x + w - 1, y, x + w - 1, y + h - 1);
 	line(x + w - 1, y + h - 1, x, y + h - 1);
@@ -433,6 +456,7 @@ static long xb_setscreen(void *log)
 }
 
 static int off_ok;		/* 1 the logical screen moves the VDI's drawing, -1 it doesn't */
+static int white_ok;		/* 1 pen 0 is every plane clear: the box's ground made by the CPU */
 
 /* the screen's bytes a line, as the VDI has them (Line-A's v_lin_wr) */
 static long screen_bpl(void)
@@ -442,10 +466,21 @@ static long screen_bpl(void)
 	return la[1];		/* v_lin_wr */
 }
 
+/* n bytes (even, the rows even too) of each row: memcpy's 16-byte
+   longs, then the rest a word at a time (memcpy's last bytes went one at
+   a time: some 16 ms of an ST's About box) */
 static void rows_copy(unsigned char *d, long ds, const unsigned char *s, long ss, short rows, long n)
 {
-	for (; rows > 0; rows--, d += ds, s += ss)
-		memcpy(d, s, n);
+	long nl = n & ~15L;
+	short k, rest = (short)((n & 15) >> 1);
+	for (; rows > 0; rows--, d += ds, s += ss) {
+		unsigned short *dw = (unsigned short *)(d + nl);
+		const unsigned short *sw = (const unsigned short *)(s + nl);
+		if (nl)
+			memcpy(d, s, nl);
+		for (k = 0; k < rest; k++)
+			dw[k] = sw[k];
+	}
 }
 
 /* the box's rows: the screen under it kept (to put back) and the box
@@ -544,15 +579,56 @@ static int draw_off(void (*draw)(int framed))
 			return 0;
 		}
 	}
+	if (!white_ok) {
+		/* is pen 0 every plane clear? the box's top left pixel filled
+		   with it in the buffer, its bit looked at in each plane's word
+		   (overwritten below anyway) */
+		const unsigned short *w = (const unsigned short *)(buf + (long)(dx >> 4) * planes * 2);
+		unsigned short bit = (unsigned short)(0x8000u >> (dx & 15));
+		short q;
+		GRECT px;
+		px.x = dx;
+		px.y = dy;
+		px.w = 1;
+		px.h = 1;
+		xb_setscreen(base);
+		clip_on(&px);
+		fill(&px, 0);
+		clip_off();
+		xb_setscreen(scr);
+		white_ok = 1;
+		for (q = 0; q < planes && q < 16; q++)
+			if (w[q] & bit)
+				white_ok = -1;
+	}
 	{
 		/* where the box leaves the screen showing: the shadow's rows
 		   in whole, and the words at its edges, a word at a time (a
-		   memcpy a row took an ST 60 ms) */
+		   memcpy a row took an ST 60 ms). The box's own pixels are made
+		   white here, by the CPU, where pen 0 is every plane clear (the
+		   probe's): the VDI's fills of the box's and the button's
+		   grounds took an ST 40 ms */
 		short r, i, g = planes, lw = (dx & 15) ? g : 0, rw = (short)(ob.n >> 1) - 2 * g;
 		unsigned short *d = (unsigned short *)(buf + ob.off);
 		const unsigned short *u = (const unsigned short *)ob.under;
 		long ds = ob.bpl >> 1, us = ob.n >> 1;
+		short x1 = (short)(x0 + (short)(ob.n / (planes * 2)) * 16);
+		unsigned short lkeep = (unsigned short)~(0xFFFFu >> (dx & 15)), rkeep[2];
+		int white = white_ok > 0 && rw >= lw;
+		for (i = 0; i < 2; i++) {
+			short gx = (short)(x1 - 32 + 16 * i);		/* the group's first pixel */
+			short in = (short)(dx + dw - gx);		/* the box's pixels in it */
+			rkeep[i] = in >= 16 ? 0 : in <= 0 ? 0xFFFF : (unsigned short)(0xFFFFu >> in);
+		}
 		for (r = 0; r < ob.rows; r++, d += ds, u += us) {
+			if (white && r < dh) {
+				for (i = 0; i < lw; i++)
+					d[i] = u[i] & lkeep;
+				memset(d + lw, 0, (size_t)(rw - lw) * 2);
+				for (i = rw; i < rw + 2 * g; i++)
+					d[i] = u[i] & rkeep[(i - rw) >= g];
+				continue;
+			}
 			if (r < 3 || r >= ob.rows - 3) {
 				memcpy(d, u, ob.n);
 				continue;
@@ -563,6 +639,7 @@ static int draw_off(void (*draw)(int framed))
 				for (i = rw; i < rw + 2 * g; i++)
 					d[i] = u[i];
 		}
+		off_white = white;
 	}
 	c.x = dx;
 	c.y = dy;
@@ -571,6 +648,7 @@ static int draw_off(void (*draw)(int framed))
 	xb_setscreen(base);
 	clip_on(&c);				/* nothing past the buffer's rows */
 	draw(1);
+	off_white = 0;
 	clip_off();
 	xb_setscreen(scr);
 	rows_copy(ob.screen, ob.bpl, buf + ob.off, ob.bpl, ob.rows, ob.n);

@@ -55,6 +55,8 @@ DIALOG = 150    # a dialog, pop-up or alert opened
 WINDOW = 300    # the main window drawn whole; what a move or resize uncovers
 ACC = 500       # the accessory opened
 START = 2000    # the program started
+JOB_000 = 100   # a sliced job's turns between event calls on a 68000 (guidelines 2.2, Speed)
+JOB_030 = 50    # and on a 68020 or better
 
 
 class Rig:
@@ -200,9 +202,14 @@ class Rig:
         time.sleep(1)
         self.click(title_x + 20, row_y)
 
-    def act(self, what, budget, do):
+    def act(self, what, budget, do, job=False):
         """does it, waits until the Atari is still, and keeps the longest
-        stretch that came meanwhile"""
+        stretch that came meanwhile. job=True for an action that starts a
+        sliced job (a long Copy, a load): its first stretch, the key's own,
+        is held to budget, and the turns after it to a background slice's
+        time (JOB_000 on a 68000, JOB_030 else), a second line in the
+        table: what the user feels is the key answered at once and Esc
+        between turns (the hub, 31 Oct 2026, from EPDF's Copy)"""
         start = os.path.getsize(self.log)
         self.in_act = True
         try:
@@ -218,6 +225,10 @@ class Rig:
         gaps = [int(g) for g in re.findall(r"AESGAP (\d+) ms", new)]
         self.n += 1
         self.shot("%02d-%s" % (self.n, re.sub(r"[^a-z0-9]+", "-", what.lower()).strip("-")))
+        if job and len(gaps) > 1:
+            self.results.append((what, gaps[0], budget))
+            self.results.append((what + ": its turns", max(gaps[1:]), JOB_000 if self.st else JOB_030))
+            return gaps[0]
         self.results.append((what, max(gaps) if gaps else 0, budget))
         return max(gaps) if gaps else 0
 

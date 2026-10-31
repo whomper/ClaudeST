@@ -12,6 +12,12 @@ void heap_add(void *p, size_t bytes);	/* a fixed heap (accessories) */
 /* a program's GEMDOS blocks that are all free again (but the first) back
    to TOS; the bytes given back */
 long heap_trim(void);
+/* a program whose lasting heap is small and whose big needs pass (a
+   dialog's screen, a copy): set before its first malloc, every GEMDOS
+   block the heap takes is what is needed, rounded up to heap_grain bytes,
+   not 512 KB or a quarter of what is free; heap_trim gives the rest back
+   once they are free again. 0 (the default): the heap as it is */
+extern long heap_grain;
 /* the heap's bytes in use (whole blocks), and the most since the app last
    set heap_peak (to heap_use, say): what its data really needs */
 extern long heap_use, heap_peak;
