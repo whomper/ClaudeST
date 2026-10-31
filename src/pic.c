@@ -696,7 +696,22 @@ typedef struct {
 	unsigned char *row;
 	int stopped;
 	int dsp_on;			/* the DSP is held (let go if libjpeg gives up) */
+	struct jpeg_progress_mgr prog;
 } LJ;
+
+/* libjpeg's progress hook, before each row of MCUs it reads: a
+   progressive picture's scans are all read first, in one call
+   (jpeg_read_coefficients, jpeg_start_decompress), and a 320 by 240 one
+   was 1.2 s of a stock Falcon without a turn (EWeb's speed rig, 31 Oct
+   2026): pic_poll's turn there too, and stopped as anywhere else */
+static void lj_progress(j_common_ptr c)
+{
+	LJ *j = (LJ *) (void *) c;	/* (ci is its first) */
+	if (pic_poll != NULL && !pic_poll()) {
+		j->stopped = 1;
+		__builtin_longjmp(j->err.jmp, 1);
+	}
+}
 
 /* ---------------------------------------------------------------- JPEG on the DSP */
 
@@ -1465,6 +1480,8 @@ static int decode_lj(const unsigned char *d, long n, PIC *p, SCALER *sc, int *wh
 		goto done;
 	}
 	jpeg_create_decompress(&j->ci);
+	j->prog.progress_monitor = lj_progress;
+	j->ci.progress = &j->prog;
 	j->src.init_source = src_init;
 	j->src.fill_input_buffer = src_fill;
 	j->src.skip_input_data = src_skip;

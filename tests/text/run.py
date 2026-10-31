@@ -21,7 +21,7 @@ r = speed.Rig(a[0], a[1], nvdi="--nvdi" in sys.argv, display=":91")
 bad = 1
 try:
     r.put(os.path.join(HERE, "build", "atari", "TXT.PRG"))
-    r.start("C:\\TXT.PRG", ready="TXT done")
+    r.start("C:\\TXT.PRG", ready="TXT done", boot=400)    # an ST takes minutes for the moves
     print("text on", r.describe())
     for l in r.console().splitlines():
         if l.startswith("TXT ") and l != "TXT done":
