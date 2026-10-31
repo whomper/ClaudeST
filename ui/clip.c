@@ -158,16 +158,32 @@ int clip_put_begin(void)
 
 int clip_put_step(const char *text, long n)
 {
-	long i;
+	const char *p = text, *e = text + n;
 	if (!cw.on)
 		return 0;
-	/* lines end CR LF, whichever the program uses */
-	for (i = 0; i < n && cw.ok; i++) {
-		if (cw.k >= cw.size - 2)
+	/* lines end CR LF, whichever the program uses. The buffer's place,
+	   its room and the last character in locals, so the loop runs in
+	   registers: with them in cw's fields it took an ST 75 ms for 2 KB
+	   (EPDF's Copy, 31 Oct 2026). Room for two is kept as before: a
+	   character may bring its CR */
+	while (p < e && cw.ok) {
+		char *b = cw.buf + cw.k, last = cw.last;
+		long room = cw.size - 2 - cw.k;
+		if (room <= 0) {
 			cw_flush();
-		if (text[i] == '\n' && cw.last != '\r')
-			cw.buf[cw.k++] = '\r';
-		cw.buf[cw.k++] = cw.last = text[i];
+			continue;
+		}
+		while (p < e && room > 0) {
+			char c = *p++;
+			if (c == '\n' && last != '\r') {
+				*b++ = '\r';
+				room--;
+			}
+			*b++ = last = c;
+			room--;
+		}
+		cw.k = (long)(b - cw.buf);
+		cw.last = last;
 	}
 	return cw.ok;
 }

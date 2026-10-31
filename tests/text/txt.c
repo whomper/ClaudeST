@@ -253,7 +253,7 @@ static void move_cases(void)
 	for (dy = -1; dy <= 1; dy += 2) {
 		move_case(0, (short)(sw - 1), dy);			/* the whole width */
 		for (k = 0; k < 16; k++) {
-			move_case((short)(32 + k), (short)(400 + k), dy);	/* both sides cut */
+			move_case((short)(32 + k), (short)(500 + k), dy);	/* both sides cut (wide enough for the CPU: 384) */
 			move_case((short)(64 + k), (short)(64 + k + 3), dy);	/* inside one group, or two */
 		}
 		move_case(16, 31, dy);					/* one whole group */
@@ -399,6 +399,24 @@ static void timing(void)
 			scr_rows(vh, p);
 		snprintf(line, sizeof(line), "TXT time: a window's scroll by a row: scr_rows %lu ms", (unsigned long)(tos_ms() - t) / 4);
 		say(line);
+		/* a narrow pane's (EContact's list: 192 wide, x 8 mod 16, a
+		   cut group at each side of every row) */
+		p[0] = p[4] = 24;
+		p[2] = p[6] = 24 + 192 - 1;
+		vs_clip(vh, 1, cc);
+		t = tos_ms();
+		for (k = 0; k < 4; k++)
+			vro_cpyfm(vh, 3, p, &scr, &scr);
+		snprintf(line, sizeof(line), "TXT time: a narrow pane's scroll by a row: vro_cpyfm %lu ms", (unsigned long)(tos_ms() - t) / 4);
+		say(line);
+		text_clip(vh, cc);
+		t = tos_ms();
+		for (k = 0; k < 4; k++)
+			scr_rows(vh, p);
+		snprintf(line, sizeof(line), "TXT time: a narrow pane's scroll by a row: scr_rows %lu ms", (unsigned long)(tos_ms() - t) / 4);
+		say(line);
+		p[0] = p[4] = 16;
+		p[2] = p[6] = 16 + 592 - 1;
 		/* a window's rows selected: each row's box inverted, as a
 		   selection is drawn */
 		t = tos_ms();

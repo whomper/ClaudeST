@@ -541,6 +541,7 @@ void heap_add(void *p, size_t bytes)
 #define HEAP_STEP (8L << 20)
 
 long heap_tt, heap_st;		/* bytes the heap took from TT/Fast and ST RAM (About) */
+long heap_grain;		/* stdlib.h: blocks of what is needed, in these steps */
 long heap_early;		/* of those, an accessory's before its heap_add (its log says so) */
 
 extern short _is_acc;		/* crt0.S (tests/heap: its own) */
@@ -571,6 +572,25 @@ static __attribute__((noinline)) int more_core(size_t need)
 		blocks++;
 		taken += want;
 		heap_early += want;
+		if ((unsigned long)h >= 0x01000000UL)
+			heap_tt += want;
+		else
+			heap_st += want;
+		return add_area(h, want, h);
+	}
+	if (heap_grain > 0) {
+		/* blocks of what is needed (stdlib.h, heap_grain): what a program
+		   holds is what it uses, and heap_trim gives the rest back */
+		if (blocks >= MAX_BLOCKS)
+			return 0;
+		want = (least + (size_t)heap_grain - 1) / (size_t)heap_grain * (size_t)heap_grain;
+		h = Mxalloc(want, 3);
+		if ((long)h == -32 || (long)h <= 0)
+			h = Malloc(want);
+		if ((long)h <= 0)
+			return 0;
+		taken += want;
+		blocks++;
 		if ((unsigned long)h >= 0x01000000UL)
 			heap_tt += want;
 		else
