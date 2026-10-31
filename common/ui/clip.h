@@ -8,6 +8,13 @@
  *   clip_put(text, n)          ^C, ^X: the clipboard is this text now (the
  *                              old SCRAP.* go; other programs are told,
  *                              SC_CHANGED, where the AES can tell them all)
+ *   clip_put_begin()           a long text in slices (a whole document),
+ *   clip_put_step(text, n)     each slice's text in turn, and
+ *   clip_put_end(ok)           ok 1: the clipboard is it now, as clip_put;
+ *                              ok 0: given up, the old clipboard kept. It
+ *                              is written 16 KB at a time (32 KB on a
+ *                              68020 or better), one Fwrite a piece, and
+ *                              no file stays open between the calls.
  *   n = clip_get(buf, size)    ^V: SCRAP.TXT, at most size - 1 bytes, NUL
  *                              ended, lines ending '\n'; 0 when the
  *                              clipboard has no text
@@ -31,6 +38,9 @@
 enum { CLIP_NONE, CLIP_COPY, CLIP_CUT, CLIP_PASTE };
 
 int clip_put(const char *text, long n);		/* 1 when written */
+int clip_put_begin(void);			/* 1 when the folder is there */
+int clip_put_step(const char *text, long n);	/* 0 once it failed */
+int clip_put_end(int ok);			/* 1 when written */
 long clip_get(char *buf, long size);
 char *clip_line(char *buf);
 int clip_key(short key);

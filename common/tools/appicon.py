@@ -84,6 +84,30 @@ REG256 = dict(K=29, W=16, w=17, l=19, g=21, m=23, d=26, R=120, r=187, q=229, T=1
 # (brand/tools/nvdi256.txt, read from the hardware under NVDI, 23 Oct 2026)
 REGNV = dict(K=15, W=0, w=250, l=187, g=253, m=8, d=254, R=201, r=232, q=9, T=201, O=207, o=165, p=93,
              Y=219, A=213, B=171, b=93, U=32, u=31, n=23, N=22, S=44, s=37, E=46, e=40, f=28)
+# more steps of the grey and red ramps, for a [256] drawing shaded as a
+# 256-colour picture is (EPDF's red book; Erez, 30 Oct 2026): each a TOS
+# 4.04 register, its lit step, its nearest on NVDI's palette
+C256.update(h="dddddd", i="bbbbbb", j="999999", k="777777", v="666666", x="444444", y="333333",
+            F="ff0000", V="ff1100", J="ff4400", L="ff5500", z="bb3300", Q="bb2200", G="bb0000",
+            H="770000", I="440000", Z="441100")
+LIT256.update(h="w", i="l", j="g", k="m", v="k", x="d", y="x", F="T", V="T", J="O", L="O", z="J",
+              Q="V", G="Q", H="G", I="H", Z="I")
+REG256.update(h=18, i=20, j=22, k=24, v=25, x=27, y=28, F=32, V=121, J=118, L=117, z=185, Q=186,
+              G=122, H=188, I=230, Z=253)
+REGNV.update(h=7, i=252, j=144, k=8, v=101, x=254, y=58, F=195, V=195, J=201, L=207, z=165, Q=165,
+             G=232, H=9, I=235, Z=235)
+# and of the blue and green ramps, for EPlay's loudspeaker (Erez, 31 Oct
+# 2026: "much more refined in terms of shading"); digits and signs, the
+# letters being used up
+C256.update({"1": "001177", "2": "002277", "3": "0044bb", "4": "0066bb", "6": "0066ff", "7": "0088ff",
+             "8": "0099ff", "9": "00aaff", "0": "00ccff", '"': "004400", "!": "004411", "%": "007711",
+             "=": "00bb11", "*": "00bb22", "+": "00ff22"})
+LIT256.update({"1": "n", "2": "3", "3": "4", "4": "U", "6": "7", "7": "9", "8": "S", "9": "0", "0": "0",
+               '"': "%", "!": "f", "%": "=", "=": "e", "*": "+", "+": "E"})
+REG256.update({"1": 203, "2": 204, "3": 148, "4": 150, "6": 68, "7": 70, "8": 71, "9": 72, "0": 74,
+               '"': 246, "!": 245, "%": 215, "=": 165, "*": 164, "+": 90})
+REGNV.update({"1": 12, "2": 23, "3": 25, "4": 31, "6": 32, "7": 38, "8": 38, "9": 38, "0": 44,
+              '"': 242, "!": 242, "%": 10, "=": 239, "*": 40, "+": 46})
 
 
 def load(name):
@@ -283,7 +307,7 @@ def write_docs(dirname, d, z=8):
         image(d[depth], depth).resize((W * z, H * z), Image.NEAREST).save(os.path.join(dirname, fn))
 
 
-NAMES = ["ECAL", "ECONTACT", "EMAIL", "EFTP", "EHYPVIEW", "CLAUDEST", "EWEB", "EUPDATE", "EDOS", "EFTPXL", "GATEWAY"]
+NAMES = ["ECAL", "ECONTACT", "EMAIL", "EFTP", "EHYPVIEW", "CLAUDEST", "EWEB", "EUPDATE", "EDOS", "EFTPXL", "GATEWAY", "EPLAY"]
 
 
 def write_sheet(path, z=4):

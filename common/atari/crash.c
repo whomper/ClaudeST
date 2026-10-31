@@ -385,6 +385,74 @@ void crash_landing(void)
 	Pterm(1);
 }
 
+/* ---------------- who hooks the system ---------------- */
+
+/* A crash outside the program (TOS's record of it) is mostly something
+   that runs at interrupt time: a network or USB driver from the timer, a
+   VBL routine. Its report says who sits on the interrupt and trap
+   vectors, by their XBRA names (the 4 letters a hooking program puts
+   before its handler), and where each chain ends: the next crash names
+   them. Read in supervisor mode (the vectors are protected on a TT or a
+   Falcon); only an even address in ST RAM, TT RAM or the ROM is
+   followed. */
+static char hk[400];
+static int hkl;
+
+static int hk_safe(u32 a)
+{
+	u32 st = (u32)*low(0x42EL);			/* phystop */
+	if ((a & 1) || a < 0x800UL + 12)
+		return 0;
+	if (a < st || (a >= 0xE00000UL && a < 0xF00000UL))
+		return 1;
+	return a >= 0x01000000UL && *low(0x5A8L) == 0x1357BD13L && a < (u32)*low(0x5A4L);	/* ramvalid, ramtop */
+}
+
+static void hk_chain(const char *name, long vec)
+{
+	u32 a = (u32)*low(vec);
+	int n;
+	if (crash_cpu < 20)
+		a &= 0xFFFFFFUL;			/* TOS 1.x: the vector's number on top */
+	if (hkl < (int)sizeof(hk) - 40)
+		hkl += snprintf(hk + hkl, sizeof(hk) - hkl, " %s", name);
+	for (n = 0; n < 8 && hk_safe(a); n++) {
+		const long *p = (const long *)a;
+		u32 id = (u32)p[-2];
+		int i;
+		if (p[-3] != 0x58425241L)		/* 'XBRA' */
+			break;
+		if (hkl < (int)sizeof(hk) - 8) {
+			hk[hkl++] = ' ';
+			for (i = 24; i >= 0; i -= 8) {
+				char c = (char)(id >> i);
+				hk[hkl++] = c > ' ' && c < 127 ? c : '?';
+			}
+		}
+		a = (u32)p[-1];
+		if (crash_cpu < 20)
+			a &= 0xFFFFFFUL;
+	}
+	if (hkl < (int)sizeof(hk) - 12)
+		hkl += snprintf(hk + hkl, sizeof(hk) - hkl, " $%06lX;", (unsigned long)a);
+}
+
+static void sup_hooks(void)
+{
+	hkl = 0;
+	hk_chain("HBL", 0x68L);
+	hk_chain("VBL", 0x70L);
+	hk_chain("timer-C", 0x114L);
+	hk_chain("ACIA", 0x118L);
+	hk_chain("timer-B", 0x120L);
+	hk_chain("timer-A", 0x134L);
+	hk_chain("etv_timer", 0x400L);
+	hk_chain("GEMDOS", 0x84L);
+	hk_chain("BIOS", 0xB4L);
+	hk_chain("XBIOS", 0xB8L);
+	hk[hkl] = 0;
+}
+
 /* ---------------- setting up ---------------- */
 
 void crash_install(const char *workdir, const char *name, const char *version)
@@ -443,6 +511,10 @@ void crash_install(const char *workdir, const char *name, const char *version)
 		for (n = 0; n < 16; n++)
 			add(" %04X", f[n]);
 		add("\r\n");
+		if (pc < text_lo || pc >= text_hi) {
+			Supexec(sup_hooks);
+			add("hooks now (XBRA names, then where each chain ends):%s\r\n", hk);
+		}
 		save();
 		if (pc >= text_lo && pc < text_hi)
 			prev_name = name;

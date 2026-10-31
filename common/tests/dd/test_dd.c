@@ -95,8 +95,8 @@ long Psignal(short sig, long handler)
 
 /* ---- the files ---- */
 #define NFILE 8
-static struct { char name[64]; char data[512]; long len; int used; } files[NFILE];
-static int writing = -1, reading = -1;
+static struct { char name[64]; char data[200000]; long len; int used; } files[NFILE];
+static int writing = -1, reading = -1, opens, writes;
 static long read_at;
 static DTA *dta;
 static int search_at;
@@ -125,7 +125,6 @@ static void put_file(const char *name, const char *data)
 
 long Fopen(const char *name, short mode)
 {
-	(void)mode;
 	if (!strncmp(name, "U:\\PIPE\\", 8)) {
 		strcpy(opened, name);
 		return PIPE;
@@ -133,12 +132,22 @@ long Fopen(const char *name, short mode)
 	if ((reading = find(name)) < 0)
 		return -33;
 	read_at = 0;
+	if (mode == 1)
+		writing = reading;
+	opens++;
 	return 10 + reading;
+}
+
+long Fseek(long off, short fd, short mode)
+{
+	(void)fd;
+	return mode == 2 ? files[writing].len + off : off;	/* writes go at the end */
 }
 
 long Fcreate(const char *name, short attr)
 {
 	(void)attr;
+	opens++;
 	put_file(name, "");
 	writing = find(name);
 	return 10 + writing;
@@ -167,6 +176,7 @@ long Fwrite(short fd, long n, const void *buf)
 		out_n += n;
 		return n;
 	}
+	writes++;
 	memcpy(files[writing].data + files[writing].len, buf, n);
 	files[writing].len += n;
 	files[writing].data[files[writing].len] = 0;
@@ -350,6 +360,61 @@ int main(void)
 	boot = 0;
 	check(clip_put("z", 1) && !strcmp(scrap_written, "C:\\CLIPBRD\\"),
 	      "the boot drive can't be written: \\CLIPBRD\\ on the drive we run from");
+
+	/* the sliced writer: a long text in slices, written a piece at a time */
+	{
+		static char big[150000], want[160000];
+		long i, k = 0, at;
+		int f, ok;
+		boot = 2;
+		aes_ver = 0x0410;
+		strcpy(scrap_dir, "C:\\CLIPBRD\\");
+		for (i = 0; i < (long)sizeof(big) - 1; i++)
+			big[i] = (i % 61 == 60) ? '\n' : (char)('a' + i % 26);
+		for (i = 0; i < (long)sizeof(big) - 1; i++) {
+			if (big[i] == '\n')
+				want[k++] = '\r';
+			want[k++] = big[i];
+		}
+		want[k] = 0;
+		put_file("C:\\CLIPBRD\\SCRAP.TXT", "old");
+		put_file("C:\\CLIPBRD\\SCRAP.RTF", "old rtf");
+		opens = writes = 0;
+		broadcasts = 0;
+		ok = clip_put_begin();
+		for (at = 0; at < (long)sizeof(big) - 1 && ok; at += 4096)
+			ok = clip_put_step(big + at, at + 4096 < (long)sizeof(big) - 1 ? 4096 : (long)sizeof(big) - 1 - at);
+		ok = ok && clip_put_end(1);
+		f = find("C:\\CLIPBRD\\SCRAP.TXT");
+		check(ok && f >= 0 && files[f].len == k && !memcmp(files[f].data, want, (size_t)k),
+		      "clip_put_step: 150 KB in 4 KB slices, CR LF added, the same text");
+		check(writes == (int)((k + 16383 - 2) / (16384 - 2)) && opens == writes,
+		      "clip_put_step: one open and one Fwrite a 16 KB piece");
+		check(find("C:\\CLIPBRD\\SCRAP.RTF") < 0 && broadcasts == 1,
+		      "clip_put_end: the old SCRAP.* gone, SC_CHANGED told");
+		/* a CR LF already there, split between two slices, isn't doubled */
+		clip_put_begin();
+		clip_put_step("a\r", 2);
+		clip_put_step("\nb\n", 3);
+		clip_put_end(1);
+		check(!strcmp(files[find("C:\\CLIPBRD\\SCRAP.TXT")].data, "a\r\nb\r\n"),
+		      "clip_put_step: CR LF across two slices kept as it is");
+		/* given up before the first piece: the old clipboard stays */
+		put_file("C:\\CLIPBRD\\SCRAP.TXT", "keep me");
+		opens = 0;
+		clip_put_begin();
+		clip_put_step("never", 5);
+		check(clip_put_end(0) == 0 && !strcmp(files[find("C:\\CLIPBRD\\SCRAP.TXT")].data, "keep me") && opens == 0,
+		      "clip_put_end(0) before a piece: the old clipboard untouched");
+		/* given up after a piece: no half a text left */
+		clip_put_begin();
+		clip_put_step(big, 40000);
+		check(clip_put_end(0) == 0 && find("C:\\CLIPBRD\\SCRAP.TXT") < 0,
+		      "clip_put_end(0) after a piece: SCRAP.TXT removed");
+		/* an empty text */
+		check(clip_put("", 0) == 1 && (f = find("C:\\CLIPBRD\\SCRAP.TXT")) >= 0 && files[f].len == 0,
+		      "clip_put of nothing: an empty SCRAP.TXT");
+	}
 
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;
