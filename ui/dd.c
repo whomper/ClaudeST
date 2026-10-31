@@ -53,10 +53,14 @@ static long lf(char *s, long n)
    at a time, until we take one or it gives up */
 static int from_pipe(const short *msg, int want, DROP *d)
 {
-	char name[] = "U:\\PIPE\\DRAGDROP.AA", kinds[1 + DD_EXTSIZE], type[5], skip[64];
+	/* copied, not initialised: GCC 13 at -O2 fills an initialised char
+	   array with long moves, at an odd stack offset here (an address
+	   error on a 68000: tools/oddaccess.py, EPDF 31 Oct 2026) */
+	char name[20], kinds[1 + DD_EXTSIZE], type[5], skip[64];
 	long fd, oldsig, size, tries;
 	short hdr, k;
 	int got = DD_REFUSED;
+	strcpy(name, "U:\\PIPE\\DRAGDROP.AA");
 	name[17] = (char)(msg[7] >> 8);
 	name[18] = (char)msg[7];
 	fd = Fopen(name, 2);

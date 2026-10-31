@@ -13,6 +13,7 @@ long Fcreate(const char *name, short attr);
 long Fread(short fd, long n, void *buf);
 long Fwrite(short fd, long n, const void *buf);
 long Fclose(short fd);
+long Fseek(long off, short fd, short mode);
 long Fdelete(const char *name);
 long Fsfirst(const char *pat, short attr);
 long Fsnext(void);

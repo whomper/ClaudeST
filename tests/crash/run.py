@@ -154,5 +154,6 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
     check("found TOS's record of a crash before this run" in rep and "bus error, 2 bombs at" in rep,
           tag + " CRASH.LOG has TOS's record")
     check("CRASHT previous none" in con, tag + " not counted as the program's (it wasn't in its code)")
+    check(re.search(r"hooks now .* VBL AERT \$[0-9A-F]{6};", rep) is not None, tag + " the hooks named (VBL AERT)")
 print("%d failed" % failed)
 sys.exit(1 if failed else 0)

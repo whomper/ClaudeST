@@ -183,6 +183,28 @@ static void sting_unhook(void)
 	*v8 = *(long *)(sting_block + 15);
 }
 
+/* ---- after the reset: a VBL hook with an XBRA name ("AERT"), which
+   the report of TOS's record must name. 'XBRA', the id, the old vector,
+   then the handler: move.l old(pc),-(sp); rts */
+static const unsigned short xbra_code[] = {
+	0x5842, 0x5241, 0x4145, 0x5254, 0x0000, 0x0000,	/* 'XBRA' 'AERT' old */
+	0x2F3A, 0xFFFA,		/* move.l old(pc),-(sp)            */
+	0x4E75			/* rts                             */
+};
+static unsigned short *xbra_block;
+static volatile long *volatile v70 = (volatile long *)0x70L;	/* VBL */
+
+static void xbra_hook(void)		/* supervisor mode */
+{
+	*(long *)(xbra_block + 4) = *v70;
+	*v70 = (long)(xbra_block + 6);
+}
+
+static void xbra_unhook(void)
+{
+	*v70 = *(long *)(xbra_block + 4);
+}
+
 int main(void)
 {
 	char inf[8];
@@ -245,7 +267,11 @@ int main(void)
 			return 1;
 		Supexec(pass4_hook);
 	}
+	if (Fopen("C:\\STAGE1.TXT", 0) >= 0 && (xbra_block = outside(xbra_code, sizeof xbra_code)))
+		Supexec(xbra_hook);
 	crash_install("C:\\", "CrashTest", "1.0");
+	if (xbra_block)
+		Supexec(xbra_unhook);
 	crash_cleanup = cleanup;
 	crash_report = report;
 	prev = crash_previous();
