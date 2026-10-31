@@ -579,6 +579,10 @@ static int draw_off(void (*draw)(int framed))
 			return 0;
 		}
 	}
+	if (!white_ok && get_cookie(0x5F435055L) >= 20)	/* '_CPU' */
+		white_ok = -1;		/* a 68030's VDI fills the grounds faster than its
+					   CPU clears the rows: a stock Falcon's About box
+					   took 160 ms with it, 145 without */
 	if (!white_ok) {
 		/* is pen 0 every plane clear? the box's top left pixel filled
 		   with it in the buffer, its bit looked at in each plane's word
