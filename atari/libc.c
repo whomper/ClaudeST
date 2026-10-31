@@ -584,11 +584,16 @@ static __attribute__((noinline)) int more_core(size_t need)
 		if (blocks >= MAX_BLOCKS)
 			return 0;
 		want = (least + (size_t)heap_grain - 1) / (size_t)heap_grain * (size_t)heap_grain;
-		h = Mxalloc(want, 3);
-		if ((long)h == -32 || (long)h <= 0)
-			h = Malloc(want);
-		if ((long)h <= 0)
-			return 0;
+		for (;;) {
+			h = Mxalloc(want, 3);
+			if ((long)h == -32 || (long)h <= 0)
+				h = Malloc(want);
+			if ((long)h > 0)
+				break;
+			if (want == least)
+				return 0;
+			want = least;	/* memory short: exactly what is needed, as before */
+		}
 		taken += want;
 		blocks++;
 		if ((unsigned long)h >= 0x01000000UL)

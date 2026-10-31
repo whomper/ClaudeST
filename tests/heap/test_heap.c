@@ -419,6 +419,13 @@ static void case_grain(void)
 	heap_free(keep);
 	check(heap_trim() == 0 && heap_check(&nfree) >= 0 && nfree == 1, "grain: the first block stays");
 	check(heap_check(0) >= 0, "grain: checks out");
+	/* memory short (no 32 KB block free): exactly what is needed, as
+	   without heap_grain, not "out of memory" */
+	cap = 30000;
+	more = heap_malloc(20000);	/* more than the first block holds */
+	check(more != 0 && grants[ngrants - 1] < 32768 && grants[ngrants - 1] >= 20000,
+	      "grain: memory short: what is needed, not 32 KB");
+	check(heap_check(0) >= 0, "grain: short: checks out");
 }
 
 /* an accessory's malloc before its heap_add: 16 KB steps, not 512 KB */
