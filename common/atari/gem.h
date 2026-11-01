@@ -170,6 +170,8 @@ short graf_rubberbox(short x, short y, short minw, short minh, short *w, short *
 short graf_dragbox(short w, short h, short x, short y, short bx, short by, short bw, short bh,
 		   short *nx, short *ny);
 void evnt_set_m1(short leave, short x, short y, short w, short h);
+short evnt_dclick(short rate, short setit);
+short graf_watchbox(OBJECT *tree, short obj, short instate, short outstate);
 short menu_bar(OBJECT *tree, short show);
 short menu_tnormal(OBJECT *tree, short title, short normal);
 short menu_register(short apid, const char *name);
@@ -223,6 +225,7 @@ const char *app_dir(void);
 short wind_find(short x, short y);
 OBJECT *rsrc_tree(short index);
 short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short w, short h);
+short objc_change(OBJECT *tree, short obj, short x, short y, short w, short h, short state, short redraw);
 short form_dial(short flag, short x, short y, short w, short h);
 #define FMD_START  0
 #define FMD_FINISH 3

@@ -270,10 +270,29 @@ short wind_update(short mode)
 	return 1;
 }
 
+#ifdef DLG_CLICK
+/* click.c stood in for (common/tests/click tests it): what press_double
+   says, what press_track gives back, and what dlg_touch asked */
+#include "click.h"
+static int fake_dbl, fake_track, tracks;
+static GRECT tracked;
+int press_double(short id, short x, short y) { (void)id, (void)x, (void)y; return fake_dbl; }
+int press_track(const GRECT *r, short x, short y, void (*idle)(void), void (*msg)(short *m), short *dx, short *dy)
+{
+	(void)x, (void)y, (void)idle, (void)msg, (void)dx, (void)dy;
+	tracks++;
+	tracked = *r;
+	return fake_track;
+}
+#endif
+static short asked_clicks;
+
 short evnt_multi_(short flags, short clicks, short mask, short state,
 		  unsigned long timer, short *msg, AEVENT *ev)
 {
-	(void)clicks, (void)mask, (void)state, (void)timer;
+	(void)mask, (void)state, (void)timer;
+	if (!(flags & MU_TIMER))
+		asked_clicks = clicks;
 	memset(ev, 0, sizeof(*ev));
 	if (!(flags & MU_TIMER))
 		evnt_updates = updates;
@@ -894,12 +913,59 @@ int main(void)
 		check(r == OK && bells == 1, "a click outside: the bell, and the dialog stays");
 	}
 
+#ifndef DLG_CLICK
 	setup();
 	{
 		static const STEP s[] = { DCLICK(ROW), END };
 		r = run(0, CANCEL, s);
 		check(r == (short)(ROW | 0x8000), "a double click on a TOUCHEXIT row: its number with the high bit");
+		check(asked_clicks == 2, "the AES asked for two clicks");
 	}
+#else
+	/* -DDLG_CLICK (the guidelines, 5.8): one click asked for, the double
+	   click timed by click.c and counted when let go over the row */
+	setup();
+	{
+		static const STEP s[] = { CLICK(ROW), END }, s2[] = { KEY(KEY_RETURN), END };
+		short x, y;
+		fake_dbl = 0, fake_track = PRESS_IN, tracks = 0;
+		r = run(0, CANCEL, s);
+		check(asked_clicks == 1, "DLG_CLICK: the AES asked for one click, so a press comes at once");
+		check(r == ROW && tracks == 0, "a first press on a TOUCHEXIT row: its number at once, on the press");
+		setup();
+		r = run(0, CANCEL, s2);
+		objc_offset(tree, ROW, &x, &y);
+		check(r == OK && tracks == 1 && tracked.x == x && tracked.y == y && tracked.w == tree[ROW].ob_width &&
+		      tracked.h == tree[ROW].ob_height,
+		      "... its release waited for over the row before the next press is asked for");
+	}
+	setup();
+	{
+		static const STEP s[] = { CLICK(ROW), END }, s2[] = { KEY(KEY_RETURN), END };
+		fake_dbl = 1, fake_track = PRESS_IN, tracks = 0;
+		r = run(0, CANCEL, s);
+		check(r == (short)(ROW | 0x8000) && tracks == 1,
+		      "a double click's second, let go over the row: its number with the high bit");
+		setup();
+		run(0, CANCEL, s2);
+		check(tracks == 1, "... its release already waited for: nothing more to wait for");
+	}
+	setup();
+	{
+		static const STEP s[] = { CLICK(ROW), END };
+		fake_dbl = 1, fake_track = PRESS_OUT;
+		r = run(0, CANCEL, s);
+		check(r == ROW, "a double click's second let go elsewhere: the row alone, no double click");
+	}
+	setup();
+	{
+		static const STEP s[] = { CLICK(OK), END };
+		fake_dbl = 1, fake_track = PRESS_IN, tracks = 0;
+		r = run(0, CANCEL, s);
+		check(r == OK && tracks == 0, "a button (EXIT, not TOUCHEXIT): as before");
+		fake_dbl = 0;		/* the cases below: single presses */
+	}
+#endif
 
 	setup();
 	{

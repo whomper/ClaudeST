@@ -8,10 +8,14 @@ B      := build
 
 $(B)/test_dialog: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h | $(B)
 	cc $(CFLAGS) -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c
+# and with -DDLG_CLICK: one click asked for, the double click timed (click.c's stood in for)
+$(B)/test_dialog_click: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h | $(B)
+	cc $(CFLAGS) -DDLG_CLICK -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c
 $(B):
 	mkdir -p $@
-test: $(B)/test_dialog
+test: $(B)/test_dialog $(B)/test_dialog_click
 	./$(B)/test_dialog
+	./$(B)/test_dialog_click
 clean:
 	rm -rf $(B)
 .PHONY: test clean

@@ -276,6 +276,112 @@ static int slices(int argc, char **argv)
 	return bad != 0;
 }
 
+/* a row at a time (pic_jpeg_rows): each JPEG pic_decode makes, read in
+   pieces of 1 to 997 bytes, comes out as the same rows, each once and in
+   order; at its size, a third, 61 x 37 and twice its size */
+typedef struct {
+	const unsigned char *d;
+	long n, at, k;
+} FEED;
+
+static long feed(void *u, unsigned char *buf, long n)
+{
+	FEED *f = u;
+	long m = 1 + (f->k++ * 7919) % 997;
+	if (m > n)
+		m = n;
+	if (m > f->n - f->at)
+		m = f->n - f->at;
+	memcpy(buf, f->d + f->at, (size_t) m);
+	f->at += m;
+	return m;
+}
+
+typedef struct {
+	const PIC *p;
+	long next, bad;
+} TAKE;
+
+static void take(void *u, long y, const unsigned short *px, const unsigned char *alpha)
+{
+	TAKE *t = u;
+	const PIC *p = t->p;
+	long x;
+	if (y != t->next++) {
+		t->bad++;
+		return;
+	}
+	if (p == NULL)
+		return;
+	if (memcmp(px, p->px + y * p->w, (size_t) p->w * 2) != 0)
+		t->bad++;
+	else
+		for (x = 0; x < p->w; x++)
+			if ((p->alpha != NULL ? p->alpha[y * p->w + x] : 255) != alpha[x]) {
+				t->bad++;
+				break;
+			}
+}
+
+static int rows(int argc, char **argv)
+{
+	long tried = 0, whole = 0, bad = 0;
+	int a, k;
+	for (a = 0; a < argc; a++) {
+		long n, sw, sh;
+		unsigned char *d = load(argv[a], &n);
+		if (d == NULL || pic_kind(d, n) != PIC_JPEG || !pic_size(d, n, &sw, &sh)) {
+			free(d);
+			continue;
+		}
+		for (k = 0; k < 4; k++) {
+			int why = 0, r, w = (int) sw, h = (int) sh;
+			FEED f = { d, n, 0, (long) a * 31 + k };
+			TAKE t;
+			PIC *p = NULL;
+			if (k == 1)
+				w = (int) (sw / 3 > 0 ? sw / 3 : 1), h = (int) (sh / 3 > 0 ? sh / 3 : 1);
+			else if (k == 2)
+				w = 61, h = 37;
+			else if (k == 3)
+				w = (int) sw * 2, h = (int) sh * 2;
+			if ((long) w * h > (4L << 20))
+				continue;
+			p = pic_decode(d, n, w, h, 4L << 20, &why);
+			if (p == NULL)
+				continue;
+			memset(&t, 0, sizeof t);
+			t.p = p;
+			r = pic_jpeg_rows(feed, &f, w, h, take, &t, &why);
+			tried++;
+			if (r < 0) {
+				whole++;
+#ifndef PIC_LIBJPEG			/* (libjpeg's builds take every JPEG whole) */
+				if (p != NULL && p->how != PIC_JPEG_AVG) {
+					printf("FAIL %s %dx%d: not made a row at a time\n", argv[a], w, h);
+					bad++;
+				}
+#endif
+			} else if (r == 0 || t.bad || t.next != h) {
+				printf("FAIL %s %dx%d: %s, %ld rows of %d, %ld wrong\n", argv[a], w, h,
+				       r ? "made" : pic_why_text(why), t.next, h, t.bad);
+				bad++;
+			}
+			pic_free(p);
+		}
+		free(d);
+	}
+	printf("a row at a time: %ld tried, %ld whole (progressive, CMYK...), %ld failed\n", tried, whole, bad);
+#ifdef PIC_CHECK_HEADERS
+	/* the DSP's headers read both ways (libjpeg's, pic.c's own) */
+	printf("headers both ways: %ld the same, %ld libjpeg's only (extended), %ld differ\n", pic_hdr_same,
+	       pic_hdr_lj_only, pic_hdr_differ);
+	if (pic_hdr_differ)
+		bad++;
+#endif
+	return bad != 0;
+}
+
 #ifdef WITH_DSP_SIM
 static int dsame(int argc, char **argv)
 {
@@ -333,6 +439,8 @@ static int run(int argc, char **argv)
 		return robust(argc - 2, argv + 2);
 	if (argc >= 2 && strcmp(argv[1], "-s") == 0)
 		return slices(argc - 2, argv + 2);
+	if (argc >= 2 && strcmp(argv[1], "-R") == 0)
+		return rows(argc - 2, argv + 2);
 #ifdef WITH_DSP_SIM
 	if (argc >= 2 && strcmp(argv[1], "-X") == 0)
 		return dsame(argc - 2, argv + 2);
