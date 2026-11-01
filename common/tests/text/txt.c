@@ -531,6 +531,75 @@ static void timing(void)
 			}
 		snprintf(line, sizeof(line), "TXT time: a window's rows cleared: scr_fill %lu ms", (unsigned long)(tos_ms() - t) / 4);
 		say(line);
+		/* the same by the VDI as scr_fill's VDI way does it: the fill's
+		   settings asked for and put back each time */
+		t = tos_ms();
+		for (k = 0; k < 4; k++)
+			for (l = 1; l < sh_ / ch - 2; l++) {
+				short b[4] = { 16, (short)(l * ch), 16 + 592 - 1, (short)(l * ch + ch - 1) }, was[5];
+				vqf_attributes(vh, was);
+				vswr_mode(vh, 1);
+				vsf_interior(vh, 1);
+				vsf_color(vh, 0);
+				vr_recfl(vh, b);
+				vsf_interior(vh, was[0]);
+				vsf_color(vh, was[1]);
+				vswr_mode(vh, was[3]);
+			}
+		snprintf(line, sizeof(line), "TXT time: a window's rows cleared: vr_recfl, settings kept %lu ms", (unsigned long)(tos_ms() - t) / 4);
+		say(line);
+		/* small boxes (a pane bar's pieces, a tick, a field's ends):
+		   320 of 16 x 16 and 320 of 64 x 8 */
+		{
+			static const short sz[2][2] = { { 16, 16 }, { 64, 8 } };
+			short z;
+			for (z = 0; z < 2; z++) {
+				t = tos_ms();
+				for (k = 0; k < 320; k++) {
+					short x = (short)(16 + (k % 8) * 72), y = (short)(2 * ch + (k / 8) % 10 * 20);
+					short b[4] = { x, y, (short)(x + sz[z][0] - 1), (short)(y + sz[z][1] - 1) };
+					vswr_mode(vh, 1);
+					vsf_interior(vh, 1);
+					vsf_color(vh, 0);
+					vr_recfl(vh, b);
+				}
+				snprintf(line, sizeof(line), "TXT time: 320 boxes of %dx%d cleared: vr_recfl %lu ms", sz[z][0], sz[z][1],
+					 (unsigned long)(tos_ms() - t));
+				say(line);
+				t = tos_ms();
+				for (k = 0; k < 320; k++) {
+					short x = (short)(16 + (k % 8) * 72), y = (short)(2 * ch + (k / 8) % 10 * 20);
+					short b[4] = { x, y, (short)(x + sz[z][0] - 1), (short)(y + sz[z][1] - 1) };
+					scr_fill(vh, b, 0);
+				}
+				snprintf(line, sizeof(line), "TXT time: 320 boxes of %dx%d cleared: scr_fill %lu ms", sz[z][0], sz[z][1],
+					 (unsigned long)(tos_ms() - t));
+				say(line);
+			}
+			snprintf(line, sizeof(line), "TXT time: (text_plain_state %d here)", text_plain_state());
+			say(line);
+			t = tos_ms();
+			for (k = 0; k < 320; k++) {
+				short b[4] = { 16, (short)(2 * ch), 31, (short)(2 * ch + 15) };
+				scr_xor(vh, b);
+			}
+			snprintf(line, sizeof(line), "TXT time: 320 boxes of 16x16 on one word: scr_xor %lu ms", (unsigned long)(tos_ms() - t));
+			say(line);
+			/* where a small box's time goes: the Logbase call alone, and
+			   the boxes on one word (x 16) */
+			t = tos_ms();
+			for (k = 0; k < 320; k++)
+				(void)trap14_w(3);
+			snprintf(line, sizeof(line), "TXT time: 320 Logbase calls %lu ms", (unsigned long)(tos_ms() - t));
+			say(line);
+			t = tos_ms();
+			for (k = 0; k < 320; k++) {
+				short b[4] = { 16, (short)(2 * ch), 31, (short)(2 * ch + 15) };
+				scr_fill(vh, b, 0);
+			}
+			snprintf(line, sizeof(line), "TXT time: 320 boxes of 16x16 on one word: scr_fill %lu ms", (unsigned long)(tos_ms() - t));
+			say(line);
+		}
 		text_noclip(vh);
 	}
 	text_noclip(vh);

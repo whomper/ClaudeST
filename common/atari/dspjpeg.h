@@ -10,5 +10,9 @@
 
 int dspjpeg_present(void);		/* this machine has a DSP56001 */
 extern const PIC_DSP dspjpeg_port;
+/* JPEGs only (the dither stays the CPU's): a program that doesn't dither
+   on the DSP (a TJpgDec build's: pic_dither's DSP way is libjpeg's builds')
+   links no dither.a56 (2.4 KB) with --gc-sections */
+extern const PIC_DSP dspjpeg_port_jpeg;
 
 #endif
