@@ -44,3 +44,16 @@ $(T)/%.o: $(A)/%.S | $(T)
 $(T):
 	mkdir -p $@
 .PHONY: prg
+
+# PBCMP.PRG, pb_draw's fast way (pb_vdi) against objc_draw, byte for byte
+# and timed: make cmp, then python3 run_cmp.py WORK MACHINE
+cmp: $(T)/PBCMP.PRG
+$(T)/PBCMP.PRG: $(T)/pbcmp.elf ../../tools/elf2tos.py
+	python3 ../../tools/elf2tos.py $< $@
+$(T)/pbcmp.elf: $(T)/crt0.o $(T)/pbcmp.o $(T)/panebar.o $(T)/dialog.o $(T)/text.o $(T)/gem.o $(T)/libc.o $(T)/tos.o $(T)/nf.o
+	$(CROSS)gcc $(TLDFLAGS) -o $@ $^ -lgcc
+$(T)/pbcmp.o: pbcmp.c $(U)/panebar.h $(U)/text.h | $(T)
+	$(CROSS)gcc $(TCFLAGS) -c -o $@ $<
+$(T)/text.o: $(U)/text.c $(U)/text.h | $(T)
+	$(CROSS)gcc $(TCFLAGS) -c -o $@ $<
+.PHONY: cmp

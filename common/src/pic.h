@@ -124,5 +124,15 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b);
    0 (they aren't drawn) and carry no error. pic_poll is called every 16
    rows: 1 done, 0 when it stopped it (out then partly made) */
 int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
+/* the same a row at a time, for a picture that isn't whole in memory: rows
+   of w pixels (5-6-5, alpha or NULL) given top to bottom, each one's pens
+   to out (w bytes); the same pens as pic_dither's for the same rows (not
+   the DSP's way). NULL when its state (some 150 bytes) can't be had;
+   without room for two rows' errors, each pixel's nearest pen, as
+   pic_dither then does */
+typedef struct pic_dither_rows PIC_DITHER;
+PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal);
+void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned char *alpha, unsigned char *out);
+void pic_dither_close(PIC_DITHER *dt);
 
 #endif

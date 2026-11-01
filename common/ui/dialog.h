@@ -147,6 +147,21 @@ int dlg_3d_ok(void);
    the flags anyway). The tests set 0 to see the flat look on a 3D AES */
 extern int dlg_3d_on;
 
+/* Built with -DDLG_CPU only (a program for the ST; not an accessory, nor a
+   program for the 68030 alone: 5 KB more for nothing there). Then
+   dlg_open and dlg_draw over TOS's own screen, in an app with text.c:
+   the root's fill, flat G_BOXTEXTs and plain G_STRINGs by the CPU where
+   text.c draws into the screen and the look is flat, the rest by
+   objc_draw, the screen the same as objc_draw's (tests/dialog: make cmp).
+   1, the default; the tests set 0 for objc_draw alone. dlg_fast_count:
+   the draws done so (each one, and each object the CPU drew) */
+extern int dlg_fast_on;
+/* dlg_draw: the fast way from this share of the dialog on, in 1/8ths
+   (4: half of it; smaller parts are objc_draw's, which is as fast there).
+   The tests set 0 */
+extern int dlg_fast_part;
+long dlg_fast_count(void);
+
 /* the pen of the first npens (16 at most: the UI's) whose colour is nearest
    r, g, b (VDI's 0-1000), read with vq_color; text: one dark enough to read
    on white, where there is one. A UI colour in 16 colours or fewer is never

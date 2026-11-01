@@ -83,9 +83,13 @@ static int handshake(CONN *c, const char *host, char *err, int errlen)
 	if (!tls_ready(c->name, err, errlen))
 		return 0;
 	t0 = pf_ms();
-	/* RSA certificates first, as the DSP checks them fast; unless it
-	   does the elliptic curves as well (tls_ec_fast) */
-	t = tls_start(c->h, host, (listed(ecdsa_hosts, host) || tls_ec_fast() ? 0 : TLS_RSA_ONLY) |
+	/* RSA certificates first, as the DSP checks them fast, even where it
+	   does the elliptic curves too: a stock Falcon's DSP took 5.5 s for
+	   GitHub's ECDSA P-256 signature and the handshake 10.8 s, past the
+	   10 to 11 s GitHub waits, so every connection failed (Erez's
+	   EUPDATE.LOG, 1 Nov 2026; the RSA-2048 signature is some 0.1 to 0.5 s
+	   there). ECDSA only for a host that refused RSA (ecdsa_hosts) */
+	t = tls_start(c->h, host, (listed(ecdsa_hosts, host) ? 0 : TLS_RSA_ONLY) |
 		      (listed(aes_hosts, host) ? 0 : TLS_CHACHA_ONLY), &retry, err, errlen);
 	c->tls_ms = pf_ms() - t0;
 	if (!t) {

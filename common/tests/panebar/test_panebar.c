@@ -27,6 +27,17 @@ static void check(int ok, const char *what)
 
 /* ---------------- the stand-in AES ---------------- */
 
+/* the VDI pb_draw's fast way would use: never here (no pb_vdi, and no
+   text.c, so no text_plain_state) */
+void vs_clip(short h, short on, const short *pxy) { (void)h; (void)on; (void)pxy; }
+void vswr_mode(short h, short mode) { (void)h; (void)mode; }
+void vsf_interior(short h, short style) { (void)h; (void)style; }
+void vsf_style(short h, short idx) { (void)h; (void)idx; }
+void vsf_color(short h, short color) { (void)h; (void)color; }
+void vsf_perimeter(short h, short on) { (void)h; (void)on; }
+void vr_recfl(short h, const short *pxy) { (void)h; (void)pxy; }
+void vqf_attributes(short h, short *a) { short i; (void)h; for (i = 0; i < 5; i++) a[i] = 1; }
+
 short graf_handle(short *wchar, short *hchar, short *wbox, short *hbox)
 {
 	*wchar = 8;
@@ -339,7 +350,8 @@ int main(void)
 		      "... the track between them, the slider at its left");
 		h.top = 10;
 		m = pb_moved(&h, 0);
-		check(m.x == 53 && m.w == 58 && m.y == 360 && m.h == 21, "... pb_moved along x");
+		check(m.x == 55 && m.w == 54 && m.y == 360 && m.h == 21,
+		      "... pb_moved along x, flat: the slider's frame, a pixel each side");
 		h.top = 0;
 		press(s, 4);
 		bar = h;	/* scroll and goto_top move bar */
