@@ -35,6 +35,8 @@
 #include "panebar.h"
 #include "plat.h"
 #include "text.h"
+#include "offdraw.h"
+#include "click.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -899,6 +901,11 @@ static short row_visible(short y1, short y2)
 	return y2 >= clip[1] && y1 <= clip[3];
 }
 
+/* a solid box: common's scr_fill (the guidelines' Speed) where the CPU
+   wins (scr_cpu_wins: TOS's own screen and a 68000), pens 0 and 1, cut to
+   text_clip's clip as the VDI's is; other pens, a 68030 (whose TOS fills
+   as fast) and NVDI, vr_recfl as before. A solid fill is the same in
+   replace and transparent mode, the two used here */
 static void fill(short x1, short y1, short x2, short y2, short color)
 {
 	short p[4];
@@ -906,14 +913,29 @@ static void fill(short x1, short y1, short x2, short y2, short color)
 	p[1] = y1;
 	p[2] = x2;
 	p[3] = y2;
+	if ((color == 0 || color == 1) && scr_cpu_wins()) {
+		scr_fill(vh, p, color);
+		return;
+	}
 	vsf_interior(vh, 1);
 	vsf_color(vh, color);
 	vr_recfl(vh, p);
 }
 
+/* a line one pixel wide: across or down where the CPU wins, a box of it
+   (scr_fill, the same pixels as v_pline's solid line); else, and
+   slanted, v_pline as before. Never in XOR mode (drag_divider's own) */
 static void line(short x1, short y1, short x2, short y2, short color)
 {
 	short p[4];
+	if ((x1 == x2 || y1 == y2) && (color == 0 || color == 1) && scr_cpu_wins()) {
+		p[0] = x1 < x2 ? x1 : x2;
+		p[1] = y1 < y2 ? y1 : y2;
+		p[2] = x1 < x2 ? x2 : x1;
+		p[3] = y1 < y2 ? y2 : y1;
+		scr_fill(vh, p, color);
+		return;
+	}
 	p[0] = x1;
 	p[1] = y1;
 	p[2] = x2;
@@ -1485,18 +1507,33 @@ static void draw_sidebar(void)
 			short cur = cur_id[0] && !strcmp(it->id, cur_id);
 			short target = list_top + i == menu_target;
 			short sel = menu_target >= 0 ? target : cur;
-			if (sel)
-				fill(wx + 4, y - 1, lr, y + row_h - 3, 1);
-			else if (cur) {
-				/* the open chat, while another item is targeted */
-				short x1 = wx + 4, x2 = lr, y1 = y - 1, y2 = y + row_h - 3;
-				line(x1, y1, x2, y1, 1);
-				line(x2, y1, x2, y2, 1);
-				line(x2, y2, x1, y2, 1);
-				line(x1, y2, x1, y1, 1);
+			short box[4];
+			box[0] = wx + 4;
+			box[1] = y - 1;
+			box[2] = lr;
+			box[3] = y + row_h - 3;
+			if (text_plain_state() > 0 && !bidi_has_rtl(it->label, n)) {
+				/* on TOS's own screen: the label in black on the white
+				   just filled, then a selected row turned over (common
+				   scr_xor), the same pixels as a black box and white
+				   words, which TOS's VDI draws the slow way (5.8: a
+				   press shown at once) */
+				text_white(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, 1);
+				if (sel)
+					scr_xor(vh, box);
+			} else {
+				if (sel)
+					fill(box[0], box[1], box[2], box[3], 1);
+				text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
+					  lr - 1 - (it->pinned ? cw + 4 : 0));
 			}
-			text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
-				  lr - 1 - (it->pinned ? cw + 4 : 0));
+			if (!sel && cur) {
+				/* the open chat, while another item is targeted */
+				line(box[0], box[1], box[2], box[1], 1);
+				line(box[2], box[1], box[2], box[3], 1);
+				line(box[2], box[3], box[0], box[3], 1);
+				line(box[0], box[3], box[0], box[1], 1);
+			}
 			/* a dot in the left margin, as claude.ai's: working (grey,
 			   pulsing), waiting for you (yellow, a little bigger), or
 			   updated since last read (blue) */
@@ -1636,9 +1673,111 @@ static void draw_title(void)
 	line(px, wy + title_h, px + pw - 1, wy + title_h, 1);
 }
 
+/* row r of the chat (line li) at y: from column col on when it only grew,
+   else the whole row, its ground first */
+static void draw_row(short r, short li, short y, short col)
+{
+	short x;
+	LINE *l;
+
+	if (col) {
+		/* the line grew or lost its end: only from col on */
+		l = &lines[li];
+		x = tx + (l->role == 'U' ? 3 * cw : 0) + col * cw;
+		fill(x, y, px + pw - 1, y + ch - 1, 0);
+		text_white(x, y, tb + l->off + col, l->len - col,
+		     (l->kind & L_TYPE) == L_GREY ? 2 : 0, (l->kind & L_TYPE) == L_CODE ? code_colour() : 1);
+		return;
+	}
+	fill(px, y, px + pw - 1, y + ch - 1, 0);
+	if (li >= nlines)
+		return;
+	l = &lines[li];
+	x = tx;
+	if ((l->kind & L_TYPE) == L_HEADER) {
+		const char *name = "Claude";
+		short n = 6;
+		switch (l->role) {
+		case 'U': name = "You"; n = 3; break;
+		case 'K': name = "Artifact"; n = 8; break;
+		case 'E': name = "Error"; n = 5; break;
+		case 'I': name = "Info"; n = 4; break;
+		}
+		if (l->role == 'A') {
+			spark(x + cw / 2, y + ch / 2, ch / 2 - 1);
+			x += 2 * cw;
+		}
+		text(x, y, name, n, 1, 1);
+		return;
+	}
+	if (l->role == 'U') {
+		line(x + cw / 2, y, x + cw / 2, y + ch - 1, accent());
+		line(x + cw / 2 + 1, y, x + cw / 2 + 1, y + ch - 1, accent());
+		x += 3 * cw;
+	}
+	{
+		short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : (l->kind & L_TYPE) == L_GREY ? 2 : 0;
+		short rtl = (l->kind & L_RTL) != 0;
+		short colour = (l->kind & L_TYPE) == L_CODE ? code_colour() : 1;
+		const char *t = tb + l->off;
+		short n = l->len, i, k, inl = (l->kind & L_INL) != 0;
+		static char plain[BIDI_MAX];
+		if (inl || memchr(t, MK_INL, n)) {
+			if (rtl || bidi_has_rtl(t, n)) {	/* Hebrew: no marks */
+				for (i = k = 0; i < n && k < BIDI_MAX; i++)
+					if (t[i] != MK_INL)
+						plain[k++] = t[i];
+				t = plain;
+				n = k;
+			} else {			/* runs, inline code in red */
+				/* the plain runs first, which text_white may write
+				   whole cells of, then the code over them: its
+				   underline reaches into the next cell */
+				const char *t0 = t;
+				short n0 = n, x0 = x, inl0 = inl, pass;
+				for (pass = 0; pass < 2; pass++) {
+					t = t0;
+					n = n0;
+					x = x0;
+					inl = inl0;
+					for (i = 0; i <= n; i++) {
+						if (i < n && t[i] != MK_INL)
+							continue;
+						if (i > 0 && inl == pass)
+							text_white(x, y, t, i, inl ? inl_fx() : fx, inl ? inl_colour() : colour);
+						x += i * cw;
+						if (i < n) {
+							inl = !inl;
+							t += i + 1;
+							n -= i + 1;
+							i = -1;
+						}
+					}
+				}
+				if (l->role == 'K')
+					line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
+				return;
+			}
+		}
+		if (rtl || bidi_has_rtl(t, n)) {
+			static char vis[BIDI_MAX];
+			if (n > BIDI_MAX)
+				n = BIDI_MAX;
+			bidi_visual(t, n, rtl, vis);
+			if (rtl)	/* right-aligned, like dir="rtl" */
+				x = tx + cols * cw - n * cw;
+			text_white(x, y, vis, n, fx, colour);
+		} else {
+			text_white(x, y, t, n, fx, colour);
+		}
+	}
+	if (l->role == 'K')	/* after the text, which may write its cells whole */
+		line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
+}
+
 static void draw_text(short from_row)
 {
-	short r, y, x;
+	short r, y;
 
 	if (from_row < 0)
 		from_row = 0;
@@ -1646,8 +1785,7 @@ static void draw_text(short from_row)
 		fill(px, wy + title_h + 1, px + pw - 1, ty - 1, 0);
 	/* clear and draw row by row so streaming text doesn't flicker */
 	for (r = from_row; r < rows; r++) {
-		short li = top_line + r, whole, col = 0;
-		LINE *l;
+		short li = top_line + r, whole, col = 0, again = 0;
 		y = ty + r * ch;
 		if (!row_visible(y, y + ch))
 			continue;
@@ -1661,6 +1799,9 @@ static void draw_text(short from_row)
 			if (li < nlines && shown[r].off == lines[li].off && shown[r].kind == lines[li].kind &&
 			    shown[r].role == lines[li].role && grows_plainly(li))
 				col = shown[r].len < lines[li].len ? shown[r].len : lines[li].len;
+			/* the same line drawn again whole where it was (its words
+			   wrapped anew): what would flicker */
+			again = !col && li < nlines && shown[r].off == lines[li].off;
 		}
 		if (r < SHOWN_MAX) {
 			shown[r].off = !whole ? -1 : li < nlines ? lines[li].off : -2;
@@ -1670,99 +1811,27 @@ static void draw_text(short from_row)
 				shown[r].role = lines[li].role;
 			}
 		}
-		if (col) {
-			/* the line grew or lost its end: only from col on */
-			l = &lines[li];
-			x = tx + (l->role == 'U' ? 3 * cw : 0) + col * cw;
-			fill(x, y, px + pw - 1, y + ch - 1, 0);
-			text_white(x, y, tb + l->off + col, l->len - col,
-			     (l->kind & L_TYPE) == L_GREY ? 2 : 0, (l->kind & L_TYPE) == L_CODE ? code_colour() : 1);
-			continue;
-		}
-		fill(px, y, px + pw - 1, y + ch - 1, 0);
-		if (li >= nlines)
-			continue;
-		l = &lines[li];
-		x = tx;
-		if ((l->kind & L_TYPE) == L_HEADER) {
-			const char *name = "Claude";
-			short n = 6;
-			switch (l->role) {
-			case 'U': name = "You"; n = 3; break;
-			case 'K': name = "Artifact"; n = 8; break;
-			case 'E': name = "Error"; n = 5; break;
-			case 'I': name = "Info"; n = 4; break;
-			}
-			if (l->role == 'A') {
-				spark(x + cw / 2, y + ch / 2, ch / 2 - 1);
-				x += 2 * cw;
-			}
-			text(x, y, name, n, 1, 1);
-			continue;
-		}
-		if (l->role == 'U') {
-			line(x + cw / 2, y, x + cw / 2, y + ch - 1, accent());
-			line(x + cw / 2 + 1, y, x + cw / 2 + 1, y + ch - 1, accent());
-			x += 3 * cw;
-		}
 		{
-			short fx = (l->kind & L_TYPE) == L_BOLD ? 1 : (l->kind & L_TYPE) == L_GREY ? 2 : 0;
-			short rtl = (l->kind & L_RTL) != 0;
-			short colour = (l->kind & L_TYPE) == L_CODE ? code_colour() : 1;
-			const char *t = tb + l->off;
-			short n = l->len, i, k, inl = (l->kind & L_INL) != 0;
-			static char plain[BIDI_MAX];
-			if (inl || memchr(t, MK_INL, n)) {
-				if (rtl || bidi_has_rtl(t, n)) {	/* Hebrew: no marks */
-					for (i = k = 0; i < n && k < BIDI_MAX; i++)
-						if (t[i] != MK_INL)
-							plain[k++] = t[i];
-					t = plain;
-					n = k;
-				} else {			/* runs, inline code in red */
-					/* the plain runs first, which text_white may write
-					   whole cells of, then the code over them: its
-					   underline reaches into the next cell */
-					const char *t0 = t;
-					short n0 = n, x0 = x, inl0 = inl, pass;
-					for (pass = 0; pass < 2; pass++) {
-						t = t0;
-						n = n0;
-						x = x0;
-						inl = inl0;
-						for (i = 0; i <= n; i++) {
-							if (i < n && t[i] != MK_INL)
-								continue;
-							if (i > 0 && inl == pass)
-								text_white(x, y, t, i, inl ? inl_fx() : fx, inl ? inl_colour() : colour);
-							x += i * cw;
-							if (i < n) {
-								inl = !inl;
-								t += i + 1;
-								n -= i + 1;
-								i = -1;
-							}
-						}
-					}
-					if (l->role == 'K')
-						line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
-					continue;
-				}
+			/* a line drawn again in place while the reply comes: off
+			   the screen and shown at once, no flicker (common offdraw;
+			   on TOS's own screen only, else on it as before). Not a
+			   row that only grew (drawn from its end, over white) or
+			   that shows another line now (a scroll, the end) */
+			short off = again && off_begin(vh, px, y, pw, ch);
+			if (off) {
+				short piece[4];
+				piece[0] = px;
+				piece[1] = y;
+				piece[2] = px + pw - 1;
+				piece[3] = y + ch - 1;
+				text_clip(vh, piece);
 			}
-			if (rtl || bidi_has_rtl(t, n)) {
-				static char vis[BIDI_MAX];
-				if (n > BIDI_MAX)
-					n = BIDI_MAX;
-				bidi_visual(t, n, rtl, vis);
-				if (rtl)	/* right-aligned, like dir="rtl" */
-					x = tx + cols * cw - n * cw;
-				text_white(x, y, vis, n, fx, colour);
-			} else {
-				text_white(x, y, t, n, fx, colour);
+			draw_row(r, li, y, col);
+			if (off) {
+				off_end();
+				text_clip(vh, clip);
 			}
 		}
-		if (l->role == 'K')	/* after the text, which may write its cells whole */
-			line(tx + cw / 2, y, tx + cw / 2, y + ch - 1, 1);
 	}
 	y = ty + rows * ch;
 	if (row_visible(y, wy + wh - input_h - 1))
@@ -2019,23 +2088,46 @@ static short rc_intersect(const short *a, short *b)
 }
 
 /* redraw the parts in mask that intersect area, honouring the rect list */
+static short tip_covers(short x, short y, short w, short h);
+static void hide_tip(void);
+
+/* the areas (x, y, w, h each) of the window drawn again, in one turn of
+   the AES's (wind_update, the pointer, the font, the window's rectangles
+   once): two list rows of a press cost an 8 MHz ST some 23 ms less than
+   one redraw each */
+static void redraw_areas(short mask, short (*areas)[4], short na);
+
 static void redraw(short mask, short ax, short ay, short aw, short ah)
 {
-	short r[4], area[4], scr[4];
+	short a[1][4];
+	a[0][0] = ax;
+	a[0][1] = ay;
+	a[0][2] = aw;
+	a[0][3] = ah;
+	redraw_areas(mask, a, 1);
+}
+
+static void redraw_areas(short mask, short (*areas)[4], short na)
+{
+	short r[4], area[4], scr[4], k, n = 0;
 	short text_from = mask & D_TEXT ? text_dirty_row : 0;
 	short keep_id = cur_font_id, keep_pt = cur_font_pt, keep_cw = cw, keep_ch = ch;
 
 	if (win < 0 || win_icon)
 		return;
-	area[0] = ax;
-	area[1] = ay;
-	area[2] = aw;
-	area[3] = ah;
 	scr[0] = 0;
 	scr[1] = 0;
 	scr[2] = scr_w;
 	scr[3] = scr_h;
-	if (!rc_intersect(scr, area))
+	for (k = 0; k < na; k++) {
+		if (tip_covers(areas[k][0], areas[k][1], areas[k][2], areas[k][3]))
+			hide_tip();	/* put back first: what is drawn now is newer */
+		if (rc_intersect(scr, areas[k]))
+			n++;
+		else
+			areas[k][2] = areas[k][3] = 0;
+	}
+	if (!n)
 		return;
 
 	wind_update(BEG_UPDATE);
@@ -2049,16 +2141,34 @@ static void redraw(short mask, short ax, short ay, short aw, short ah)
 	vst_alignment(vh, 0, 5);
 	wind_get(win, WF_FIRSTXYWH, &r[0], &r[1], &r[2], &r[3]);
 	while (r[2] && r[3]) {
-		if (rc_intersect(area, r)) {
-			clip[0] = r[0];
-			clip[1] = r[1];
-			clip[2] = r[0] + r[2] - 1;
-			clip[3] = r[1] + r[3] - 1;
+		for (k = 0; k < na; k++) {
+			if (!areas[k][2])
+				continue;
+			area[0] = r[0];
+			area[1] = r[1];
+			area[2] = r[2];
+			area[3] = r[3];
+			if (!rc_intersect(areas[k], area))
+				continue;
+			clip[0] = area[0];
+			clip[1] = area[1];
+			clip[2] = area[0] + area[2] - 1;
+			clip[3] = area[1] + area[3] - 1;
 			text_clip(vh, clip);
 			if (mask & (D_SIDEBAR | D_LIST))
 				draw_sidebar();
-			else if (mask & D_STATUS)
+			else if (mask & D_STATUS) {
+				/* the status drawn again in place (its ring, the
+				   connection's words): off the screen and shown at
+				   once (common offdraw), else on it as before */
+				short off = clip[3] - clip[1] < OFF_ROWS &&
+					    off_begin(vh, clip[0], clip[1], clip[2] - clip[0] + 1, clip[3] - clip[1] + 1);
 				draw_status(0);
+				if (off) {
+					off_end();
+					text_clip(vh, clip);
+				}
+			}
 			if (mask & D_TITLE)
 				draw_title();
 			if (mask & D_TEXT)
@@ -4160,8 +4270,10 @@ static void redraw_dot(short i)
 
 static void redraw_item_row(short i)
 {
+	/* up to the list's bar, not over it: a row's redraw drew the bar
+	   (objc_draw) again each time */
 	if (i >= list_top && i < list_top + list_rows && i < nitems)
-		redraw(D_SIDEBAR, wx, item_row_y(i), sb_w, row_h + 1);
+		redraw(D_SIDEBAR, wx, item_row_y(i), lbar.r.x - wx, row_h + 1);
 }
 
 /* the list's rows moved n rows on the screen, as blit_scroll moves the
@@ -4232,13 +4344,25 @@ static short current_item(void)
  * only the rows that change so it shows up instantly */
 static void set_menu_target(short i)
 {
-	short old = menu_target, cur = current_item();
+	short old = menu_target, cur = current_item(), rows3[3], a[3][4], n = 0, k, j;
 	flush_dirty();
 	menu_target = i;
-	redraw_item_row(old);
-	redraw_item_row(i);
-	if (cur != old && cur != i)
-		redraw_item_row(cur);
+	/* the rows that change, drawn in one redraw (5.8: a press shown at once) */
+	rows3[0] = old;
+	rows3[1] = i;
+	rows3[2] = cur != old && cur != i ? cur : -1;
+	for (k = 0; k < 3; k++) {
+		j = rows3[k];
+		if (j < list_top || j >= list_top + list_rows || j >= nitems || (k == 1 && j == old))
+			continue;
+		a[n][0] = wx;
+		a[n][1] = item_row_y(j);
+		a[n][2] = lbar.r.x - wx;
+		a[n][3] = row_h + 1;
+		n++;
+	}
+	if (n)
+		redraw_areas(D_SIDEBAR, a, n);
 }
 
 /* right-click menu for a sidebar item, like the one on claude.ai */
@@ -4581,12 +4705,51 @@ static const char *tip_text(short mx, short my, short *ty)
 	return 0;
 }
 
+/* the screen under the tip, kept as it showed and put back as it was:
+   one copy, where drawing the window under it again took an 8 MHz ST
+   some 300 ms, and the AES's redraw after form_dial as much again (a list
+   row pressed with a tip up, 5.8's 50 ms) */
+static void *tip_mem;
+static MFDB tip_under;
+
+static void tip_copy(short back)
+{
+	short p[8];
+	MFDB scr;
+	memset(&scr, 0, sizeof(scr));
+	p[0] = back ? 0 : tip_x;
+	p[1] = back ? 0 : tip_y;
+	p[2] = p[0] + tip_w + 2;
+	p[3] = p[1] + tip_h + 2;
+	p[4] = back ? tip_x : 0;
+	p[5] = back ? tip_y : 0;
+	p[6] = p[4] + tip_w + 2;
+	p[7] = p[5] + tip_h + 2;
+	vro_cpyfm(vh, 3, p, back ? &tip_under : &scr, back ? &scr : &tip_under);
+}
+
+/* is any of x, y, w, h under the tip? */
+static short tip_covers(short x, short y, short w, short h)
+{
+	return tip_on && x < tip_x + tip_w + 3 && x + w > tip_x && y < tip_y + tip_h + 3 && y + h > tip_y;
+}
+
 static void hide_tip(void)
 {
 	short saved;
 	if (!tip_on)
 		return;
 	tip_on = 0;
+	if (tip_mem) {
+		wind_update(BEG_UPDATE);
+		graf_mouse(M_OFF, 0);
+		tip_copy(1);
+		graf_mouse(M_ON, 0);
+		wind_update(END_UPDATE);
+		free(tip_mem);
+		tip_mem = 0;
+		return;
+	}
 	saved = text_dirty_row;
 	text_dirty_row = 0;
 	redraw(D_ALL, tip_x, tip_y, tip_w + 3, tip_h + 3);
@@ -4623,6 +4786,22 @@ static void show_tip(short mx, const char *t, short ty)
 	clipr[2] = scr_w - 1;
 	clipr[3] = scr_h - 1;
 	text_clip(vh, clipr);
+	{
+		/* what the tip covers, to put back (hide_tip); without the
+		   memory, the window drawn again as before */
+		short w16 = (tip_w + 3 + 15) & ~15;
+		tip_y = top;
+		tip_under.fd_w = w16;
+		tip_under.fd_h = tip_h + 3;
+		tip_under.fd_wdwidth = w16 / 16;
+		tip_under.fd_stand = 0;
+		tip_under.fd_nplanes = planes;
+		tip_under.fd_r1 = tip_under.fd_r2 = tip_under.fd_r3 = 0;
+		tip_mem = malloc((long)w16 / 8 * planes * (tip_h + 3));
+		tip_under.fd_addr = tip_mem;
+		if (tip_mem)
+			tip_copy(0);
+	}
 	vswr_mode(vh, 1);
 	fill(tip_x + 2, top + 2, tip_x + tip_w + 1, top + tip_h + 1, 1);	/* shadow */
 	fill(tip_x, top, tip_x + tip_w - 1, top + tip_h - 1, 0);
@@ -4682,16 +4861,17 @@ static void set_divider_watch(void)
 	evnt_set_m1(over_divider, divider_x() - 2, wy, 5, wh);
 }
 
+/* the divider's two columns turned over (common scr_xor: by the CPU on
+   TOS's own screen, else the VDI's XOR fill, the same pixels as the two
+   XOR lines before), cut to the window by text_clip */
 static void xor_divider(short x)
 {
 	short p[4];
 	p[0] = x;
 	p[1] = wy;
-	p[2] = x;
+	p[2] = x + 1;
 	p[3] = wy + wh - 1;
-	v_pline(vh, 2, p);
-	p[0] = p[2] = x + 1;
-	v_pline(vh, 2, p);
+	scr_xor(vh, p);
 }
 
 static void on_resize(void);
@@ -4758,6 +4938,42 @@ static int list_bar_goto(long t)
 	return list_bar_scroll(t - list_top);
 }
 
+static void handle_msg(short *msg);
+
+/* a list's press (the guidelines' 5.8, Erez, 1 Nov 2026): the row is
+   shown selected on the press, and what it does waits for the release.
+   common's press_track waits for it, the link served and messages handled
+   meanwhile; 1 if it came up over x1..x2, y1..y2 (moved while held is a
+   drag, which ClaudeST's rows don't take: nothing) */
+static short press_old = -1;	/* the list row chosen before a press, still drawn so */
+
+/* press_track's turns: the row chosen before the press drawn unchosen in
+   the first (5.8, guidelines 1bad614: an 8 MHz ST draws the pressed row in
+   the press's own turn, some 48 ms, and the old one in the next), then the
+   link served */
+static void press_idle(void)
+{
+	if (press_old >= 0) {
+		short o = press_old;
+		press_old = -1;
+		redraw_item_row(o);
+	}
+	poll_link();
+}
+
+static short released_in(short mx, short my, short x1, short y1, short x2, short y2)
+{
+	GRECT r;
+	short dx, dy, in;
+	r.x = x1;
+	r.y = y1;
+	r.w = x2 - x1 + 1;
+	r.h = y2 - y1 + 1;
+	in = press_track(&r, mx, my, press_idle, handle_msg, &dx, &dy) == PRESS_IN;
+	press_idle();		/* let go at once: the old row before the action */
+	return in;
+}
+
 static void handle_click(short mx, short my)
 {
 	short i;
@@ -4785,6 +5001,9 @@ static void handle_click(short mx, short my)
 			if (my >= y && my < y + row_h) {
 				nav_pressed = i;
 				dirty |= D_SIDEBAR;
+				flush_dirty();		/* shown pressed at once */
+				if (!released_in(mx, my, wx, y, wx + sb_w - 1, y + row_h - 1))
+					return;		/* let go elsewhere: nothing */
 				switch (i) {
 				case 0: do_new_chat(); break;
 				case 1: do_search(); break;
@@ -4798,8 +5017,19 @@ static void handle_click(short mx, short my)
 		}
 		if (my >= list_y + row_h && my < status_y - 2) {
 			i = list_top + (my - list_y - row_h) / row_h;
-			if (i < nitems && (my - list_y - row_h) / row_h < list_rows)
-				open_item(i);
+			if (i < nitems && (my - list_y - row_h) / row_h < list_rows && !items[i].heading) {
+				short y = list_y + row_h + (i - list_top) * row_h;	/* as the press found it */
+				short cur = current_item();
+				/* selected at once, on the press: this row in this turn,
+				   the one chosen before it in the next (press_idle) */
+				flush_dirty();
+				menu_target = i;
+				redraw_item_row(i);
+				press_old = cur != i ? cur : -1;
+				if (released_in(mx, my, wx, y, lbar.r.x - 1, y + row_h - 1))
+					open_item(i);	/* on the release over it */
+				set_menu_target(-1);
+			}
 		}
 		return;
 	}
@@ -5626,6 +5856,7 @@ int main(void)
 	desk_w = dw;
 	desk_h = dh;
 	vq_extnd(vh, 1, work_out);
+	pb_vdi(vh);		/* the list's bar: its slider's move by the VDI (common's fast way) */
 	planes = work_out[4];
 	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
 	x8_box(&dx, dy, &dw, dh);

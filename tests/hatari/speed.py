@@ -52,6 +52,14 @@ def same(a, b, what):
     return ok
 
 
+def differ(a, b, what):
+    """pictures a and b not alike: something was drawn"""
+    diff = subprocess.run(["compare", "-metric", "AE", a, b, "null:"], capture_output=True, text=True).stderr.split()
+    ok = bool(diff) and diff[0] not in ("0", "?")
+    print(("ok    " if ok else "FAIL  ") + "%s (%s pixels differ)" % (what, diff[0] if diff else "?"), flush=True)
+    return ok
+
+
 def same_area(a, b, box, what):
     """the part x, y, w, h of pictures a and b alike to the pixel"""
     x, y, w, h = box
@@ -135,6 +143,38 @@ def main():
               lambda: [r.click(bx + bw // 2, by + 6) for _ in range(5)])
         fails += not same_area(shot(r, 17), shot(r, 19), (0, by, bx, bh),
                                "five rows down and up again by the bar: the list as it was")
+        # a list row the 5.8 way (Erez, 1 Nov 2026): shown selected on the
+        # press, at once; let go elsewhere, nothing more; its chat opened
+        # only on a release over it
+        def at(x, y):
+            g = dict(l.split("=") for l in r.xdo("getwindowgeometry", "--shell", r.win()).split())
+            r.xdo("mousemove", str(int(g["X"]) + x), str(int(g["Y"]) + y))
+            time.sleep(0.4)
+        row_x, row_y = bx - 40, by + 52       # the demo's second chat, not a date heading
+        # its tip (the title cut short) shown, then put away: what was under it as it was
+        at(bx + 200, row_y)
+        r.still()
+        bare = shutil.copy(r.shot("tip-before"), os.path.join(work, "tip-before.png"))
+        at(row_x, row_y)
+        r.still()
+        tipped = r.shot("tip-shown")
+        r.act("a tip put away (the pointer moved off)", speed.KEY, lambda: at(bx + 200, row_y))
+        fails += not differ(bare, tipped, "a list row's tip shown")
+        fails += not same(bare, r.shot("tip-gone"), "the tip put away: what was under it as it was")
+        at(row_x, row_y)
+        r.still()
+        before = shutil.copy(r.shot("press-before"), os.path.join(work, "press-before.png"))
+        r.act("a list row pressed (shown selected, held)", speed.KEY, lambda: r.xdo("mousedown", "1"))
+        held = shutil.copy(r.shot("press-held"), os.path.join(work, "press-held.png"))
+        at(bx + 200, row_y)
+        r.xdo("mouseup", "1")
+        r.still()
+        at(row_x, row_y)                        # the pointer where it was: it is in the shot
+        r.still()
+        fails += not differ(before, held, "a list row pressed: shown selected while the button is held")
+        fails += not same(before, r.shot("press-let-go"), "a list row pressed and let go elsewhere: nothing more")
+        r.act("a list row clicked (its chat opened on the release)", speed.WINDOW, lambda: r.click(row_x, row_y))
+        fails += not differ(before, r.shot("press-clicked"), "a list row clicked: its chat opened")
         lost = "the serial ring was full" in r.console()
         print(("FAIL  " if lost else "ok    ") + "no byte from the bridge lost (the ring never full)", flush=True)
         fails += lost
