@@ -1208,6 +1208,8 @@ static int decode_dsp(LJ *j, PIC *p, SCALER *sc, int k, int *why, jvirt_barray_p
 	}
 	j->dsp_on = 1;
 	pic_dsp_failed = 0;
+	if (pic_poll != NULL)
+		pic_poll();	/* (its program loaded, 30 to 45 ms of a stock Falcon: a turn; a stop is seen at the rows) */
 
 	/* the setup: the variables (jpeg.a56's V_M to V_TB) */
 	memset(w, 0, sizeof w);
@@ -2254,108 +2256,131 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b)
 	return nearest_far(pal, r, g, b);
 }
 
+/* ---------------------------------------------------------------- the dither, a row at a time */
+
+/* Floyd-Steinberg needs only this row's errors and the next's: the dither
+   goes a row at a time (pic_dither_row), so a picture needn't be whole
+   in memory to be dithered (EPDF's scans on a 1 MB ST, 31 Oct 2026);
+   pic_dither is the same done over a whole picture, the same pens */
+struct pic_dither_rows {
+	PIC_PAL *pal;
+	long w, y;			/* the row's width; rows done (serpentine: odd ones run back) */
+	short *rows, *cur, *nxt;	/* this row's errors and the next's; NULL: each pixel's nearest pen */
+	int two;			/* two pens: on the brightness alone */
+	short lr[32], lg[64], lb[32], y0, y1, mid;
+	int light;
+};
+
 /* two pens (a monochrome screen): Floyd-Steinberg on the brightness alone,
    from tables, in 16-bit arithmetic. The three colours' dither took 250 us
    a pixel on an 8 MHz ST (5.7 s for a 192 x 128 photo); brightness is all
    two pens can show */
-static int dither_two(const PIC *p, PIC_PAL *pal, unsigned char *out)
+static void dither_init(PIC_DITHER *dt, long w, PIC_PAL *pal)
 {
-	long w = p->w, y;
-	short lr[32], lg[64], lb[32], y0, y1, mid, i;
-	short *rows = calloc((size_t) (w + 2) * 2, sizeof *rows), *cur, *nxt;
-	int light;
-	/* each pen's brightness (0.299, 0.587, 0.114 in 256ths), and each
-	   5-6-5 component's share of a pixel's */
-	y0 = (short) ((77 * pal->rgb[0][0] + 150 * pal->rgb[0][1] + 29 * pal->rgb[0][2]) >> 8);
-	y1 = (short) ((77 * pal->rgb[1][0] + 150 * pal->rgb[1][1] + 29 * pal->rgb[1][2]) >> 8);
-	light = y0 >= y1 ? 0 : 1;
-	if (light) {
-		short t = y0;
-		y0 = y1;
-		y1 = t;
-	}
-	mid = (short) ((y0 + y1) >> 1);		/* y0 the light pen's, y1 the dark one's */
-	for (i = 0; i < 32; i++) {
-		int c = (i << 3) | (i >> 2);
-		lr[i] = (short) ((77 * c) >> 8);
-		lb[i] = (short) ((29 * c) >> 8);
-	}
-	for (i = 0; i < 64; i++)
-		lg[i] = (short) ((150 * ((i << 2) | (i >> 4))) >> 8);
-	if (rows == NULL) {
-		long k;
-		for (k = 0; k < (long) p->h * w; k++) {
-			unsigned v = p->px[k];
-			out[k] = (unsigned char) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] >= mid ? light : !light);
+	memset(dt, 0, sizeof(*dt));
+	dt->pal = pal;
+	dt->w = w;
+	dt->two = pal->n == 2;
+	if (dt->two) {
+		short i;
+		/* each pen's brightness (0.299, 0.587, 0.114 in 256ths), and each
+		   5-6-5 component's share of a pixel's */
+		dt->y0 = (short) ((77 * pal->rgb[0][0] + 150 * pal->rgb[0][1] + 29 * pal->rgb[0][2]) >> 8);
+		dt->y1 = (short) ((77 * pal->rgb[1][0] + 150 * pal->rgb[1][1] + 29 * pal->rgb[1][2]) >> 8);
+		dt->light = dt->y0 >= dt->y1 ? 0 : 1;
+		if (dt->light) {
+			short t = dt->y0;
+			dt->y0 = dt->y1;
+			dt->y1 = t;
 		}
-		return 1;
-	}
-	cur = rows + 1;
-	nxt = rows + w + 3;
-	for (y = 0; y < p->h; y++) {
-		const unsigned short *px = p->px + y * w;
-		const unsigned char *al = p->alpha != NULL ? p->alpha + y * w : NULL;
-		unsigned char *o = out + y * w;
-		short e = 0, *c, *d;	/* e: 7/16 of the last pixel's error, in 16ths */
-		long n;
-		if (pic_poll != NULL && y > 0 && (y & 15) == 0 && !pic_poll()) {
-			free(rows);
-			return 0;
+		dt->mid = (short) ((dt->y0 + dt->y1) >> 1);	/* y0 the light pen's, y1 the dark one's */
+		for (i = 0; i < 32; i++) {
+			int c = (i << 3) | (i >> 2);
+			dt->lr[i] = (short) ((77 * c) >> 8);
+			dt->lb[i] = (short) ((29 * c) >> 8);
 		}
-		/* a pixel at s (its alpha a, or none), its pen to o; c its row's
-		   errors, d the next row's, STEP the way along (serpentine): a
-		   loop each way, so that the pointers step by addressing (a
-		   68000's (a0)+ and -(a0)); GCC makes the weights shifts and adds */
-#define TWO(STEP) do { \
-			unsigned v = *s; \
-			short want, q; \
-			if (a != NULL && *a < 128) { \
-				*o = 0; \
-				e = 0; \
-				break; \
-			} \
-			want = (short) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] + ((e + *c) >> 4)); \
-			if (want >= mid) { \
-				*o = (unsigned char) light; \
-				q = want - y0; \
-			} else { \
-				*o = (unsigned char) !light; \
-				q = want - y1; \
-			} \
-			e = (short) (q * 7); \
-			d[-(STEP)] += (short) (q * 3); \
-			d[0] += (short) (q * 5); \
-			d[STEP] = q; \
-		} while (0)
-		if (!(y & 1)) {
-			const unsigned short *s = px;
-			const unsigned char *a = al;
-			c = cur;
-			d = nxt;
-			for (n = w; n > 0; n--, s++, o++, c++, d++, a = a != NULL ? a + 1 : NULL)
-				TWO(1);
-		} else {
-			const unsigned short *s = px + w - 1;
-			const unsigned char *a = al != NULL ? al + w - 1 : NULL;
-			o += w - 1;
-			c = cur + w - 1;
-			d = nxt + w - 1;
-			for (n = w; n > 0; n--, s--, o--, c--, d--, a = a != NULL ? a - 1 : NULL)
-				TWO(-1);
+		for (i = 0; i < 64; i++)
+			dt->lg[i] = (short) ((150 * ((i << 2) | (i >> 4))) >> 8);
+		dt->rows = calloc((size_t) (w + 2) * 2, sizeof *dt->rows);
+		if (dt->rows != NULL) {
+			dt->cur = dt->rows + 1;
+			dt->nxt = dt->rows + w + 3;
 		}
-#undef TWO
-		{
-			short *t = cur;
-			cur = nxt;
-			nxt = t;
-			memset(nxt - 1, 0, (size_t) (w + 2) * sizeof *nxt);
+	} else {
+		dt->rows = calloc((size_t) (w + 2) * 6, sizeof *dt->rows);
+		if (dt->rows != NULL) {
+			dt->cur = dt->rows;
+			dt->nxt = dt->rows + (w + 2) * 3;
 		}
 	}
-	free(rows);
-	return 1;
 }
 
-static int dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
+static void row_two(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *out)
+{
+	long w = dt->w, n;
+	const short *lr = dt->lr, *lg = dt->lg, *lb = dt->lb;
+	short y0 = dt->y0, y1 = dt->y1, mid = dt->mid;
+	int light = dt->light;
+	unsigned char *o = out;
+	short e = 0, *c, *d;	/* e: 7/16 of the last pixel's error, in 16ths */
+	if (dt->rows == NULL) {
+		for (n = 0; n < w; n++) {
+			unsigned v = px[n];
+			out[n] = (unsigned char) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] >= mid ? light : !light);
+		}
+		return;
+	}
+	/* a pixel at s (its alpha a, or none), its pen to o; c its row's
+	   errors, d the next row's, STEP the way along (serpentine): a
+	   loop each way, so that the pointers step by addressing (a
+	   68000's (a0)+ and -(a0)); GCC makes the weights shifts and adds */
+#define TWO(STEP) do { \
+		unsigned v = *s; \
+		short want, q; \
+		if (a != NULL && *a < 128) { \
+			*o = 0; \
+			e = 0; \
+			break; \
+		} \
+		want = (short) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] + ((e + *c) >> 4)); \
+		if (want >= mid) { \
+			*o = (unsigned char) light; \
+			q = want - y0; \
+		} else { \
+			*o = (unsigned char) !light; \
+			q = want - y1; \
+		} \
+		e = (short) (q * 7); \
+		d[-(STEP)] += (short) (q * 3); \
+		d[0] += (short) (q * 5); \
+		d[STEP] = q; \
+	} while (0)
+	if (!(dt->y & 1)) {
+		const unsigned short *s = px;
+		const unsigned char *a = al;
+		c = dt->cur;
+		d = dt->nxt;
+		for (n = w; n > 0; n--, s++, o++, c++, d++, a = a != NULL ? a + 1 : NULL)
+			TWO(1);
+	} else {
+		const unsigned short *s = px + w - 1;
+		const unsigned char *a = al != NULL ? al + w - 1 : NULL;
+		o += w - 1;
+		c = dt->cur + w - 1;
+		d = dt->nxt + w - 1;
+		for (n = w; n > 0; n--, s--, o--, c--, d--, a = a != NULL ? a - 1 : NULL)
+			TWO(-1);
+	}
+#undef TWO
+	{
+		short *t = dt->cur;
+		dt->cur = dt->nxt;
+		dt->nxt = t;
+		memset(dt->nxt - 1, 0, (size_t) (w + 2) * sizeof *dt->nxt);
+	}
+}
+
+static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *o)
 {
 	/* Floyd-Steinberg: each pixel's error (what it wanted less its pen)
 	   carried 7/16 on, and 3/16, 5/16 and 1/16 to the row below,
@@ -2363,73 +2388,107 @@ static int dither_many(const PIC *p, PIC_PAL *pal, unsigned char *out)
 	   blue on 16 colours wants more blue than there is): its pen is the
 	   nearest to that, so the error is paid back by pens that lie that
 	   way instead of being lost to a clamp (the colour came out grey) */
-	long w = p->w, y;
-	short *rows = calloc((size_t) (w + 2) * 6, sizeof *rows), *cur, *nxt;
-	if (rows == NULL) {
-		long i;
-		for (i = 0; i < (long) p->h * w; i++) {
-			unsigned v = p->px[i];
-			out[i] = (unsigned char) nearest_far(pal, (v >> 8) & 0xF8, (v >> 3) & 0xFC, (v << 3) & 0xF8);
+	PIC_PAL *pal = dt->pal;
+	long w = dt->w, n;
+	int dir = (dt->y & 1) ? -1 : 1, step = 3 * dir;
+	long x = dir > 0 ? 0 : w - 1;
+	short *c, *d;
+	int er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 16ths */
+	if (dt->rows == NULL) {
+		for (n = 0; n < w; n++) {
+			unsigned v = px[n];
+			o[n] = (unsigned char) nearest_far(pal, (v >> 8) & 0xF8, (v >> 3) & 0xFC, (v << 3) & 0xF8);
 		}
-		return 1;
+		return;
 	}
-	cur = rows;
-	nxt = rows + (w + 2) * 3;
+	c = dt->cur + (x + 1) * 3;
+	d = dt->nxt + (x + 1) * 3;
+	for (n = 0; n < w; n++, x += dir, c += step, d += step) {
+		unsigned v = px[x];
+		int r, g, b, k, qr, qg, qb;
+		if (al != NULL && al[x] < 128) {
+			o[x] = 0;
+			er = eg = eb = 0;
+			continue;
+		}
+		r = (int) ((v >> 8) & 0xF8) + ((er + c[0]) >> 4);
+		g = (int) ((v >> 3) & 0xFC) + ((eg + c[1]) >> 4);
+		b = (int) ((v << 3) & 0xF8) + ((eb + c[2]) >> 4);
+		r = r < -128 ? -128 : r > 383 ? 383 : r;
+		g = g < -128 ? -128 : g > 383 ? 383 : g;
+		b = b < -128 ? -128 : b > 383 ? 383 : b;
+		k = pal->near != NULL ? pal->near[NEAR_AT(r, g, b)] : 0;
+		k = k ? k - 1 : nearest_far(pal, r, g, b);
+		o[x] = (unsigned char) k;
+		qr = r - pal->rgb[k][0];
+		qg = g - pal->rgb[k][1];
+		qb = b - pal->rgb[k][2];
+		er = qr * 7;
+		eg = qg * 7;
+		eb = qb * 7;
+		d[-step] += (short) (qr * 3);
+		d[-step + 1] += (short) (qg * 3);
+		d[-step + 2] += (short) (qb * 3);
+		d[0] += (short) (qr * 5);
+		d[1] += (short) (qg * 5);
+		d[2] += (short) (qb * 5);
+		d[step] = (short) qr;
+		d[step + 1] = (short) qg;
+		d[step + 2] = (short) qb;
+	}
+	{
+		short *t = dt->cur;
+		dt->cur = dt->nxt;
+		dt->nxt = t;
+		memset(dt->nxt, 0, (size_t) (w + 2) * 6);
+	}
+}
+
+PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal)
+{
+	PIC_DITHER *dt = malloc(sizeof(*dt));
+	if (dt != NULL)
+		dither_init(dt, w, pal);
+	return dt;
+}
+
+void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned char *alpha, unsigned char *out)
+{
+	if (dt->two)
+		row_two(dt, px, alpha, out);
+	else
+		row_many(dt, px, alpha, out);
+	dt->y++;
+}
+
+void pic_dither_close(PIC_DITHER *dt)
+{
+	if (dt != NULL) {
+		free(dt->rows);
+		free(dt);
+	}
+}
+
+/* a whole picture, a row at a time (the 68000's and the 68030's: the DSP's
+   is checked against it); pic_poll every 4 rows (the DSP's check's 12
+   rows of 40, each pen looked for the first time, were a stock Falcon's
+   95 ms: EWeb's speed rig, 31 Oct 2026) */
+static int dither_whole(const PIC *p, PIC_PAL *pal, unsigned char *out)
+{
+	PIC_DITHER dt;
+	long y;
+	dither_init(&dt, p->w, pal);
 	for (y = 0; y < p->h; y++) {
-		const unsigned short *px = p->px + y * w;
-		const unsigned char *al = p->alpha != NULL ? p->alpha + y * w : NULL;
-		unsigned char *o = out + y * w;
-		int dir = (y & 1) ? -1 : 1, step = 3 * dir;
-		long x = dir > 0 ? 0 : w - 1, n;
-		short *c = cur + (x + 1) * 3, *d = nxt + (x + 1) * 3;
-		int er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 16ths */
-		if (pic_poll != NULL && y > 0 && (y & 15) == 0 && !pic_poll()) {
-			free(rows);
+		if (pic_poll != NULL && y > 0 && (y & 3) == 0 && !pic_poll()) {
+			free(dt.rows);
 			return 0;
 		}
-		for (n = 0; n < w; n++, x += dir, c += step, d += step) {
-			unsigned v = px[x];
-			int r, g, b, k, qr, qg, qb;
-			if (al != NULL && al[x] < 128) {
-				o[x] = 0;
-				er = eg = eb = 0;
-				continue;
-			}
-			r = (int) ((v >> 8) & 0xF8) + ((er + c[0]) >> 4);
-			g = (int) ((v >> 3) & 0xFC) + ((eg + c[1]) >> 4);
-			b = (int) ((v << 3) & 0xF8) + ((eb + c[2]) >> 4);
-			r = r < -128 ? -128 : r > 383 ? 383 : r;
-			g = g < -128 ? -128 : g > 383 ? 383 : g;
-			b = b < -128 ? -128 : b > 383 ? 383 : b;
-			k = pal->near != NULL ? pal->near[NEAR_AT(r, g, b)] : 0;
-			k = k ? k - 1 : nearest_far(pal, r, g, b);
-			o[x] = (unsigned char) k;
-			qr = r - pal->rgb[k][0];
-			qg = g - pal->rgb[k][1];
-			qb = b - pal->rgb[k][2];
-			er = qr * 7;
-			eg = qg * 7;
-			eb = qb * 7;
-			d[-step] += (short) (qr * 3);
-			d[-step + 1] += (short) (qg * 3);
-			d[-step + 2] += (short) (qb * 3);
-			d[0] += (short) (qr * 5);
-			d[1] += (short) (qg * 5);
-			d[2] += (short) (qb * 5);
-			d[step] = (short) qr;
-			d[step + 1] = (short) qg;
-			d[step + 2] = (short) qb;
-		}
-		{
-			short *t = cur;
-			cur = nxt;
-			nxt = t;
-			memset(nxt, 0, (size_t) (w + 2) * 6);
-		}
+		pic_dither_row(&dt, p->px + y * p->w, p->alpha != NULL ? p->alpha + y * p->w : NULL, out + y * p->w);
 	}
-	free(rows);
+	free(dt.rows);
 	return 1;
 }
+#define dither_many dither_whole
 
 #ifdef PIC_LIBJPEG
 /* ---------------------------------------------------------------- the dither on the DSP */
@@ -2534,6 +2593,8 @@ static int dither_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 	long w = p->w, wo = (w + 2) / 3, y;
 	unsigned long h[4];
 	int got = pic_dsp->begin(PIC_DSP_DITHER);
+	if (got && pic_poll != NULL)
+		pic_poll();	/* (its program loaded: 30 to 45 ms of a stock Falcon) */
 	if (!got)
 		return 0;
 	pic_dsp_failed = 0;
@@ -2548,6 +2609,13 @@ static int dither_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 	   last word's spare bytes go to the next row's start, written over
 	   when it comes; the last row's through last) */
 	for (y = 0; y <= p->h && !pic_dsp_failed; y++) {
+		/* pic_poll's turn every 4 rows (a 192 by 128 photo's dither was
+		   a stock Falcon's 0.2 s in one go, and 16 of the home page's
+		   77-wide globe's rows 50 ms: EWeb's speed rig, 31 Oct 2026); a
+		   stop isn't taken here: the DSP's job ends cleanly and the
+		   caller sees the stop after */
+		if (pic_poll != NULL && y > 0 && (y & 3) == 0)
+			pic_poll();
 		if (y < p->h) {
 			static const unsigned long pad[2] = { 1, 1 };
 			pic_dsp->putpx(p->px + y * w, p->alpha != NULL ? p->alpha + y * w : NULL, w);
@@ -2566,6 +2634,14 @@ static int dither_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		dd_n = 0;
 		return -1;
 	}
+	return 1;
+}
+
+static int (*dd_poll)(void);
+
+static int dd_turn(void)
+{
+	dd_poll();
 	return 1;
 }
 
@@ -2592,10 +2668,12 @@ static int dd_check(PIC_PAL *pal)
 	if (r == 0)
 		return -1;
 	{
-		int (*poll)(void) = pic_poll;	/* 12 rows: no turn, and not stopped */
-		pic_poll = NULL;
+		/* turns, but not stopped (the check's answer is kept) */
+		dd_poll = pic_poll;
+		if (pic_poll != NULL)
+			pic_poll = dd_turn;
 		dither_many(&t, pal, b);
-		pic_poll = poll;
+		pic_poll = dd_poll;
 	}
 	return r > 0 && memcmp(a, b, sizeof a) == 0;
 }
@@ -2629,11 +2707,9 @@ static int dither_on_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 
 int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out)
 {
-	if (pal->n == 2)
-		return dither_two(p, pal, out);
 #ifdef PIC_LIBJPEG
-	if (dither_on_dsp(p, pal, out))
+	if (pal->n != 2 && dither_on_dsp(p, pal, out))
 		return 1;
 #endif
-	return dither_many(p, pal, out);
+	return dither_whole(p, pal, out);
 }

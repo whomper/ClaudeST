@@ -971,6 +971,15 @@ void vst_height(short h, short height, short *cw_, short *ch_)
 	*ch_ = ptsout[3];
 }
 
+/* the fill's interior, colour, style, writing mode and perimeter */
+void vqf_attributes(short h, short *a)
+{
+	short i;
+	vdi(37, 0, 0, h);
+	for (i = 0; i < 5; i++)
+		a[i] = vintout[i];
+}
+
 void vqt_attributes(short h, short *a)
 {
 	short i;

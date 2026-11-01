@@ -299,6 +299,7 @@ short vqt_width(short h, short c);	/* cell width of character c */
    counts from 0 in TOS 1.04 (replace 0, transparent 1) and from 1 in
    EmuTOS 1.4, as the books have it (ClaudeST, 26 Oct 2026): to read it,
    set a known mode once and see what comes back */
+void vqf_attributes(short h, short *a);
 void vqt_attributes(short h, short *a);
 short vqt_extent_n(short h, const char *s, short n);	/* width n characters draw, effects in force */
 /* n characters drawn to len pixels wide, the gaps between characters

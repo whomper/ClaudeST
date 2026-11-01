@@ -17,6 +17,20 @@
 #include "dialog.h"
 #include "field.h"
 
+/* the CPU's drawing into TOS's screen (text.c), in an app that has it;
+   weak, as field.c's: without it a dialog is all objc_draw's */
+int text_plain_state(void) __attribute__((weak));
+int scr_cpu_wins(void) __attribute__((weak));
+void scr_clip(const short *r) __attribute__((weak));
+void scr_fill(short h, const short *p, short pen) __attribute__((weak));
+int scr_text(short x, short y, const char *s, long n, short pen, short height, int ground) __attribute__((weak));
+unsigned char *scr_at(long *bpl, short *planes, short *w, short *h) __attribute__((weak));
+int scr_spans(short y1, short y2, const short *spans, short n) __attribute__((weak));
+int scr_bits(short x, short y, const unsigned char *bits, short wb, short rows, short pen) __attribute__((weak));
+int scr_grey_off(const short *p) __attribute__((weak));
+void scr_xor(short h, const short *p) __attribute__((weak));
+extern int dlg_fast_on;
+
 /* the fields that hold more than they show (field.c), in an app that
    has field.c; weak, so an app without it needn't build it */
 LFIELD *lf_of(OBJECT *tree, short obj) __attribute__((weak));
@@ -90,42 +104,85 @@ int dlg_window_on = -1;
 /* the screen under the box, kept in memory while it shows (form_alert's
    way); vro_cpyfm through a workstation of our own */
 typedef struct {
-	short vh, pxy[8];
+	short vh, pxy[8];		/* vh 0: the CPU's copy */
 	MFDB scr, mem;
+	unsigned char *at;		/* the CPU's: the box's first row on the screen */
+	long bpl;
+	short rows, bytes;
 } SAVED;
+
+/* the box's rows from the screen to s->mem.fd_addr (back 0), or back */
+static void rows_copy(SAVED *s, int back)
+{
+	unsigned char *scr = s->at, *mem = s->mem.fd_addr;
+	short r;
+	graf_mouse(M_OFF, 0);
+	for (r = s->rows; r > 0; r--, scr += s->bpl, mem += s->bytes)
+		if (back)
+			memcpy(scr, mem, s->bytes);
+		else
+			memcpy(mem, scr, s->bytes);
+	graf_mouse(M_ON, 0);
+}
+
+/* the box (x, y, w, h) and its outline and shadow, within the screen of
+   sw by sh, on whole 16-pixel groups across */
+static void save_box(short *x, short *y, short *w, short *h, short sw, short sh)
+{
+	*x -= 4;
+	*y -= 4;
+	*w += 8;
+	*h += 8;
+	if (*x < 0) {
+		*w += *x;
+		*x = 0;
+	}
+	if (*y < 0) {
+		*h += *y;
+		*y = 0;
+	}
+	/* on whole words across: TOS 1.04 copies a block that starts or ends
+	   inside a word bit by bit (the guidelines' Speed) */
+	*w += *x & 15;
+	*x &= ~15;
+	*w = (*w + 15) & ~15;
+	if (*x + *w > sw)
+		*w = sw - *x;
+	if (*y + *h > sh)
+		*h = sh - *y;
+}
 
 static int screen_save(SAVED *s, short x, short y, short w, short h)
 {
-	short cw, ch, bw, bh, wo[57], ex[57], i, planes, words;
-	short phys = graf_handle(&cw, &ch, &bw, &bh);
-	long size;
+	short cw, ch, bw, bh, wo[57], ex[57], i, planes, words, sw, sh;
+	short phys;
+	long size, bpl;
+	unsigned char *base = dlg_fast_on && scr_cpu_wins && scr_cpu_wins() ? scr_at(&bpl, &planes, &sw, &sh) : 0;
+	if (base) {
+		/* TOS's own screen: its rows by the CPU, no workstation (an 8
+		   MHz ST: the VDI's way some 70 ms of EFTP's Settings, opened and
+		   closed) */
+		save_box(&x, &y, &w, &h, sw, sh);
+		if (w <= 0 || h <= 0)
+			return 0;
+		s->bytes = (short)((w >> 4) * 2 * planes);
+		s->rows = h;
+		s->bpl = bpl;
+		s->at = base + (long)y * bpl + (x >> 4) * 2 * planes;
+		if (!(s->mem.fd_addr = malloc((long)s->bytes * h)))
+			return 0;
+		s->vh = 0;
+		rows_copy(s, 0);
+		return 1;
+	}
+	phys = graf_handle(&cw, &ch, &bw, &bh);
 	s->vh = v_opnvwk_(phys, wo);
 	if (s->vh <= 0)
 		return 0;
 	vq_extnd(s->vh, 1, ex);
 	planes = ex[4];
 	/* the outline and shadow too, within the screen */
-	x -= 4;
-	y -= 4;
-	w += 8;
-	h += 8;
-	if (x < 0) {
-		w += x;
-		x = 0;
-	}
-	if (y < 0) {
-		h += y;
-		y = 0;
-	}
-	/* on whole words across: TOS 1.04 copies a block that starts or ends
-	   inside a word bit by bit (the guidelines' Speed) */
-	w += x & 15;
-	x &= ~15;
-	w = (w + 15) & ~15;
-	if (x + w > wo[0] + 1)
-		w = wo[0] + 1 - x;
-	if (y + h > wo[1] + 1)
-		h = wo[1] + 1 - y;
+	save_box(&x, &y, &w, &h, (short)(wo[0] + 1), (short)(wo[1] + 1));
 	words = (w + 15) >> 4;
 	size = (long)words * 2 * h * planes;
 	if (w <= 0 || h <= 0 || planes <= 0 || !(s->mem.fd_addr = malloc(size))) {
@@ -160,6 +217,11 @@ static int screen_save(SAVED *s, short x, short y, short w, short h)
 
 static void screen_back(SAVED *s)
 {
+	if (!s->vh) {
+		rows_copy(s, 1);
+		free(s->mem.fd_addr);
+		return;
+	}
 	graf_mouse(M_OFF, 0);
 	vro_cpyfm(s->vh, 3, s->pxy, &s->mem, &s->scr);
 	graf_mouse(M_ON, 0);
@@ -409,6 +471,523 @@ static void band_show(OBJECT *tree, short i)
 	dw[i].band = 0;
 }
 
+#ifdef DLG_CPU
+/* ---------------- a dialog drawn partly by the CPU ----------------
+ * On TOS's own screen, where text.c's drawing goes into it and beats the
+ * AES (scr_cpu_wins(): TOS's VDI, the system font, interleaved planes, a
+ * 68000) and the look is flat (no 3D flag), the CPU puts on the screen,
+ * at the places and in the pens TOS 1.04's AES does: the root (its fill,
+ * frame, outline or shadow), and of the rest flat G_STRINGs, G_BOXTEXTs,
+ * G_BOXes with or without a frame, G_BUTTONs and G_IMAGEs (the ticks);
+ * objc_draw draws what is left. An 8 MHz ST's AES took 267 ms for EFTP's
+ * Settings, 71 of them the root, 64 the five tabs (their words 2 pixels
+ * off a byte), 23 its two buttons (EFTP, 31 Oct 2026). An object goes to
+ * the CPU only where nothing the AES draws after it overlaps it, so the
+ * screen comes out as objc_draw's (tests/dialog: make cmp, run_cmp.py).
+ * Each box is a list of rectangles in the AES's order (its inside, its
+ * frame, its outline, its shadow), painted a band of rows at a time, each
+ * row once (scr_spans). */
+
+int dlg_fast_on = 1;			/* the tests: 0, objc_draw alone */
+/* dlg_draw's part of a dialog drawn the fast way only from this share of
+   it on, in 1/8ths: a tab of Settings took 51 ms by objc_draw and 60 the
+   fast way (the walk and the mouse), the whole 267 and 231. The tests
+   set 0 */
+int dlg_fast_part = 4;
+static long fast_count;
+#ifdef DLG_FAST_TIMES
+unsigned long dlg_fast_t[4];		/* DLGCMP's: the walk, the root, objc_draw, the CPU's objects */
+unsigned long dlg_fast_kt[8];		/* and the CPU's objects by kind (K_), time and */
+long dlg_fast_kn[8];			/* how many */
+#define FT(k) (dlg_fast_t[k] += tos_ms() - ft0, ft0 = tos_ms())
+#else
+#define FT(k)
+#endif
+
+#define FAST_SHOWN 64			/* more objects shown: objc_draw alone */
+#define FAST_MASK3D 0x0600		/* FL3DMASK */
+
+enum { K_AES, K_STRING, K_BOXTEXT, K_NOTHING, K_BOX, K_BUTTON, K_IMAGE };
+
+typedef struct {
+	short i, x, y;			/* the object, where it is */
+	short x1, y1, x2, y2;		/* what it can draw on */
+	unsigned char kind;		/* K_ */
+	unsigned char bare;		/* only the root's inside under it */
+} SHOWN;
+
+static short aes_ch(void)
+{
+	static short c;
+	if (!c) {
+		short w, h, bw, bh;
+		graf_handle(&w, &h, &bw, &bh);
+		c = w == 8 ? h : -1;
+	}
+	return c;
+}
+
+/* the pen a flat box's inside is filled in (solid or hollow, pen 0 or
+   1), or -1 */
+static short box_pen(long c)
+{
+	short pat = (short)((c >> 4) & 7);
+	if ((pat != 0 && pat != 7) || (c & 0x0f) > 1)
+		return -1;
+	return pat == 7 ? (short)(c & 0x0f) : 0;	/* hollow: the VDI's pen 0 */
+}
+
+/* a box's frame thickness, outline and shadow as the CPU takes them: a
+   frame in pen 0 or 1, OUTLINED with a frame inside or none, SHADOWED with
+   a frame inside, not both; SELECTED (the box turned over) with no frame
+   inside. 1 if so */
+static int box_ok(short th, short bpen, unsigned short state)
+{
+	if (bpen > 1 && th)
+		return 0;
+	if ((state & OUTLINED) && (state & SHADOWED))
+		return 0;
+	if ((state & OUTLINED) && th < 0)
+		return 0;
+	if ((state & SHADOWED) && th <= 0)
+		return 0;
+	if ((state & SELECTED) && th > 0)
+		return 0;
+	return 1;
+}
+
+/* rows y1..y2 of spans sp (n of them), and where sh, the shadow's right
+   side beside the box (x2 + 1 to x2 + 2 sh, from the box's top + sh on) */
+static short band_top;			/* the box's top, for the shadow */
+static void band(short y1, short y2, short *sp, short n, short sh, short x2, short pen)
+{
+	short i;
+	if (y1 > y2 || n <= 0)
+		return;
+	if (sh) {
+		short s0 = (short)(band_top + sh);
+		if (y1 < s0) {			/* above the shadow: as it is */
+			band(y1, (short)(s0 - 1), sp, n, 0, 0, 0);
+			y1 = s0;
+			if (y1 > y2)
+				return;
+		}
+		sp[3 * n] = (short)(x2 + 1), sp[3 * n + 1] = (short)(x2 + 2 * sh), sp[3 * n + 2] = pen;
+		n++;
+	}
+	if (scr_spans(y1, y2, sp, n))
+		return;
+	for (i = 0; i < n; i++) {	/* more pieces than a band keeps: each its own fill */
+		short p[4];
+		p[0] = sp[3 * i];
+		p[1] = y1;
+		p[2] = sp[3 * i + 1];
+		p[3] = y2;
+		scr_fill(0, p, sp[3 * i + 2]);
+	}
+}
+
+/* a box (x, y, w, h) as TOS 1.04's AES draws it: its inside in fpen (-1:
+   none), a frame of th pixels (inside it above 0, outside below) in bpen,
+   the outline (black 3 pixels out, white between), the shadow (2 th wide,
+   th down and across, in bpen). All but the shadow are rings round it, so
+   the bands of rows come straight from them: above it a band for each
+   ring, the middle with every ring's sides, below the same; each band's
+   spans (scr_spans) written row by row once. A list of rectangles swept
+   into bands took an 8 MHz ST some 30 ms for the root of EFTP's Settings */
+static void box_paint(short x, short y, short w, short h, short th, short bpen, short fpen, unsigned short state)
+{
+	/* the rings' outer edges, as offsets out from the box (pixel x - o
+	   across, y - o down), each ring to the next one's; their pens */
+	short e[5], pen[4], k = 0, i, j, x2 = (short)(x + w - 1), y2 = (short)(y + h - 1), sp[3 * 12], m;
+	short sh = (state & SHADOWED) ? th : 0;
+	band_top = y;
+	if (state & OUTLINED) {
+		e[k] = 3, pen[k++] = 1;
+		e[k] = 2, pen[k++] = 0;
+	}
+	if (th < 0)
+		e[k] = (short)-th, pen[k++] = bpen;
+	else if (th > 0)
+		e[k] = 0, pen[k++] = bpen;
+	e[k] = (short)(th > 0 ? -th : 0);	/* the inside's edge */
+	/* above: ring i whole across, the outer rings' sides beside it */
+	for (i = 0; i < k; i++) {
+		for (m = 0, j = 0; j < i; j++) {
+			sp[3 * m] = (short)(x - e[j]), sp[3 * m + 1] = (short)(x - e[j + 1] - 1), sp[3 * m + 2] = pen[j], m++;
+		}
+		sp[3 * m] = (short)(x - e[i]), sp[3 * m + 1] = (short)(x2 + e[i]), sp[3 * m + 2] = pen[i], m++;
+		for (j = (short)(i - 1); j >= 0; j--) {
+			sp[3 * m] = (short)(x2 + e[j + 1] + 1), sp[3 * m + 1] = (short)(x2 + e[j]), sp[3 * m + 2] = pen[j], m++;
+		}
+		band(y - e[i], y - e[i + 1] - 1, sp, m, 0, 0, 0);
+		band(y2 + e[i + 1] + 1, y2 + e[i], sp, m, sh, x2, bpen);
+	}
+	/* the middle: every ring's sides and the inside */
+	for (m = 0, j = 0; j < k; j++) {
+		sp[3 * m] = (short)(x - e[j]), sp[3 * m + 1] = (short)(x - e[j + 1] - 1), sp[3 * m + 2] = pen[j], m++;
+	}
+	if (fpen >= 0) {
+		sp[3 * m] = (short)(x - e[k]), sp[3 * m + 1] = (short)(x2 + e[k]), sp[3 * m + 2] = fpen, m++;
+	}
+	for (j = (short)(k - 1); j >= 0; j--) {
+		sp[3 * m] = (short)(x2 + e[j + 1] + 1), sp[3 * m + 1] = (short)(x2 + e[j]), sp[3 * m + 2] = pen[j], m++;
+	}
+	band(y - e[k], y2 + e[k], sp, m, sh, x2, bpen);
+	if (sh) {
+		/* the shadow's foot */
+		sp[0] = (short)(x + sh), sp[1] = (short)(x2 + 2 * sh), sp[2] = bpen;
+		band(y2 + 1, y2 + 2 * sh, sp, 1, 0, 0, 0);
+	}
+}
+
+/* what the CPU can draw of object i (not the root): K_STRING, K_BOXTEXT,
+   K_BOX, K_BUTTON, K_IMAGE, or K_AES */
+static int fast_kind(OBJECT *tree, short i, short ch)
+{
+	OBJECT *o = &tree[i];
+	short t = o->ob_type & 0xff;
+	unsigned short st = o->ob_state;
+	if ((o->ob_flags & FAST_MASK3D) || o->ob_head >= 0 || (st & (CROSSED | CHECKED)))
+		return K_AES;
+	if (t == G_BOX) {
+		short th = (signed char)(o->ob_spec >> 16), bpen = (short)((o->ob_spec >> 12) & 0x0f);
+		if ((st & DISABLED) || box_pen(o->ob_spec) < 0 || !box_ok(th, bpen, st))
+			return K_AES;
+		return K_BOX;
+	}
+	if (t == G_IMAGE) {
+		const BITBLK *b = (const BITBLK *)o->ob_spec;
+		if ((st & ~SELECTED) || !b || !b->bi_pdata || b->bi_x || b->bi_y || b->bi_color > 1 || b->bi_wb <= 0 ||
+		    b->bi_hl <= 0)
+			return K_AES;
+		return K_IMAGE;
+	}
+	if (o->ob_height < ch)
+		return K_AES;
+	if (t == G_STRING)		/* a line high, as checked */
+		return !st && o->ob_spec && o->ob_height == ch ? K_STRING : K_AES;
+	if (t == G_BUTTON) {
+		/* flat: a frame outside, 1 and 1 more for EXIT and DEFAULT, the
+		   word centred; selected turned over, disabled greyed */
+		if ((st & ~(SELECTED | DISABLED)) || (st == (SELECTED | DISABLED)) || !o->ob_spec || o->ob_height != ch ||
+		    (long)strlen((const char *)o->ob_spec) * 8 > o->ob_width)
+			return K_AES;
+		return K_BUTTON;
+	}
+	if (t == G_BOXTEXT) {
+		const TEDINFO *e = (const TEDINFO *)o->ob_spec;
+		short c = e->te_color;
+		/* a frame inside it: TOS 1.04's AES draws no word at all (DLGCMP),
+		   so that stays the AES's */
+		if ((st & ~SELECTED) || e->te_font != 3 || e->te_thickness > 0 || box_pen(c) < 0 || ((c >> 8) & 0x0f) > 1 ||
+		    !box_ok(e->te_thickness, (short)((c >> 12) & 0x0f), st) || e->te_just < 0 || e->te_just > 2 ||
+		    !e->te_ptext || (long)strlen(e->te_ptext) * 8 > o->ob_width)
+			return K_AES;
+		return K_BOXTEXT;
+	}
+	return K_AES;
+}
+
+/* the root by the CPU: a flat G_BOX, solid or hollow in pen 0 or 1, its
+   frame, its outline or shadow; 1 if so */
+static int root_ok(OBJECT *tree)
+{
+	long c = tree[0].ob_spec;
+	if ((tree[0].ob_type & 0xff) != G_BOX || (tree[0].ob_flags & FAST_MASK3D) ||
+	    (tree[0].ob_state & ~(OUTLINED | SHADOWED)) || box_pen(c) < 0)
+		return 0;
+	return box_ok((signed char)(c >> 16), (short)((c >> 12) & 0x0f), tree[0].ob_state);
+}
+
+/* the screen an object can draw on: its box, a G_STRING's text however
+   long, 3 pixels round anything with an outline, a frame outside it or a
+   button's, 8 round a shadow */
+static void reach(OBJECT *tree, short i, short x, short y, SHOWN *s)
+{
+	short t = tree[i].ob_type & 0xff, w = tree[i].ob_width, h = tree[i].ob_height, out = 0;
+	if (t == G_STRING || t == G_BUTTON || t == G_TITLE) {
+		long n = tree[i].ob_spec ? (long)strlen((const char *)tree[i].ob_spec) * 8 : 0;
+		if (n > w)
+			w = (short)n;
+	}
+	s->x = x;
+	s->y = y;
+	if (t == G_BUTTON || (tree[i].ob_state & (OUTLINED | SHADOWED)))
+		out = 3;
+	else if (t == G_STRING || t == G_IMAGE)
+		out = 0;
+	else if (t == G_BOX || t == G_IBOX || t == G_BOXCHAR) {
+		if ((signed char)(tree[i].ob_spec >> 16) < 0)
+			out = 3;
+	} else if (t == G_BOXTEXT || t == G_FBOXTEXT || t == G_TEXT || t == G_FTEXT) {
+		if (((const TEDINFO *)tree[i].ob_spec)->te_thickness < 0)
+			out = 3;
+	} else
+		out = 3;		/* pictures and the rest: anything */
+	if (tree[i].ob_state & SHADOWED)
+		out = 8;
+	if (t == G_IMAGE && tree[i].ob_spec) {
+		const BITBLK *b = (const BITBLK *)tree[i].ob_spec;	/* the picture however big */
+		if (b->bi_wb * 8 > w)
+			w = (short)(b->bi_wb * 8);
+		if (b->bi_hl > h)
+			h = b->bi_hl;
+	}
+	s->x1 = x - out;
+	s->y1 = y - out;
+	s->x2 = x + w - 1 + out;
+	s->y2 = y + h - 1 + out;
+}
+
+static int meets(const SHOWN *a, const SHOWN *b)
+{
+	return a->x1 <= b->x2 && b->x1 <= a->x2 && a->y1 <= b->y2 && b->y1 <= a->y2;
+}
+
+/* text centred, right or left in the box (x, w), as TOS 1.04's AES puts
+   a TEDINFO's (GEM's gr_just: half the room rounded up, across and down);
+   just 3: a button's, centred with half the room rounded down (DLGCMP) */
+static void word_at(short x, short y, short w, short h, short just, const char *t, short pen, short ch, int ground)
+{
+	short l = (short)(strlen(t) * 8), tx = x;
+	if (just == 1)
+		tx = (short)(x + w - l);
+	else if (just == 2)
+		tx = (short)(x + (w - l + 1) / 2);
+	else if (just == 3)
+		tx = (short)(x + (w - l) / 2);
+	scr_text(tx, (short)(y + (h - ch + 1) / 2), t, (long)strlen(t), pen, ch, ground);
+}
+
+/* one object of the CPU's, after objc_draw; ground: the pen already
+   under its box (the root's inside alone), or -1. A fill in that pen is
+   left out: Settings' white tabs, buttons and choices on its white root
+   cost an 8 MHz ST some 3 ms each */
+static void cpu_object(OBJECT *o, short kind, short x, short y, short ch, short ground)
+{
+	short p[4];
+	p[0] = x;
+	p[1] = y;
+	p[2] = x + o->ob_width - 1;
+	p[3] = y + o->ob_height - 1;
+	switch (kind) {
+	case K_STRING:
+		word_at(x, y, o->ob_width, o->ob_height, 0, (const char *)o->ob_spec, 1, ch, 0);
+		return;
+	case K_BOX:
+		{
+			short f = box_pen(o->ob_spec);
+			box_paint(x, y, o->ob_width, o->ob_height, (signed char)(o->ob_spec >> 16),
+				  (short)((o->ob_spec >> 12) & 0x0f), f == ground ? -1 : f, o->ob_state & (OUTLINED | SHADOWED));
+		}
+		break;
+	case K_BOXTEXT: {
+		const TEDINFO *e = (const TEDINFO *)o->ob_spec;
+		short c = e->te_color;
+		box_paint(x, y, o->ob_width, o->ob_height, e->te_thickness, (short)((c >> 12) & 0x0f),
+			  box_pen(c) == ground ? -1 : box_pen(c), 0);
+		/* MD_REPLACE over the box's own pen 0 is MD_TRANS: the cells'
+		   ground is that pen already */
+		word_at(x, y, o->ob_width, o->ob_height, e->te_just, e->te_ptext, (short)((c >> 8) & 0x0f), ch,
+			(c & 0x80) && box_pen(c) != 0);
+		break;
+	}
+	case K_BUTTON: {
+		short th = (short)(-1 - ((o->ob_flags & EXIT) != 0) - ((o->ob_flags & DEFAULT) != 0));
+		box_paint(x, y, o->ob_width, o->ob_height, th, 1, ground == 0 ? -1 : 0, 0);
+		word_at(x, y, o->ob_width, o->ob_height, 3, (const char *)o->ob_spec, 1, ch, 0);
+		if (o->ob_state & DISABLED)
+			scr_grey_off(p);
+		break;
+	}
+	case K_IMAGE: {
+		const BITBLK *b = (const BITBLK *)o->ob_spec;
+		scr_bits(x, y, (const unsigned char *)b->bi_pdata, b->bi_wb, b->bi_hl, b->bi_color);
+		break;
+	}
+	}
+	if (o->ob_state & SELECTED)
+		scr_xor(0, p);
+}
+
+/* objc_draw(tree, 0, 8, ...) of the area (cx, cy, cw, ch), part by the CPU */
+static void fast_draw(OBJECT *tree, short cx, short cy, short cw, short cch, int hidden)
+{
+	static SHOWN sh[FAST_SHOWN];
+	short n = 0, i, k, stack[12], sx[12], sy[12], depth = 0, ch = aes_ch(), cpu = 0;
+	short clip[4];
+	unsigned short root_type = tree[0].ob_type, root_state = tree[0].ob_state;
+	long root_spec = tree[0].ob_spec;
+#ifdef DLG_FAST_TIMES
+	unsigned long ft0 = tos_ms();
+#endif
+
+	stack[0] = -1;
+
+	if (!dlg_fast_on || !scr_cpu_wins || !scr_cpu_wins() || ch < 0 || dlg_windowed() || !root_ok(tree)) {
+		objc_draw(tree, 0, 8, cx, cy, cw, cch);
+		return;
+	}
+	/* the objects shown, in the order the AES draws them (the root, then
+	   each one's children after it) */
+	i = 0;
+	sx[0] = tree[0].ob_x;
+	sy[0] = tree[0].ob_y;
+	for (;;) {
+		short x = sx[depth], y = sy[depth];
+		if (i == 0 || !(tree[i].ob_flags & HIDETREE)) {
+			if (i > 0) {
+				x += tree[i].ob_x;
+				y += tree[i].ob_y;
+			}
+			if (n == FAST_SHOWN) {
+				objc_draw(tree, 0, 8, cx, cy, cw, cch);
+				return;
+			}
+			sh[n].i = i;
+			reach(tree, i, x, y, &sh[n]);
+			sh[n].kind = i ? (unsigned char)fast_kind(tree, i, ch) : K_AES;
+			if (!sh[n].kind && (tree[i].ob_type & 0xff) == G_IBOX && !tree[i].ob_state &&
+			    (signed char)(tree[i].ob_spec >> 16) == 0)
+				sh[n].kind = K_NOTHING;
+			n++;
+			if (tree[i].ob_head >= 0) {
+				if (depth == 11) {	/* deeper than any dialog: the AES's */
+					objc_draw(tree, 0, 8, cx, cy, cw, cch);
+					return;
+				}
+				stack[++depth] = i;
+				sx[depth] = x;
+				sy[depth] = y;
+				i = tree[i].ob_head;
+				continue;
+			}
+		}
+		/* on to the next brother; after the last child, the parent's */
+		for (;;) {
+			short nx;
+			if (i == 0)
+				goto walked;
+			nx = tree[i].ob_next;
+			if (nx < 0)
+				goto walked;
+			if (nx == stack[depth]) {
+				i = stack[depth--];
+				continue;
+			}
+			i = nx;
+			break;
+		}
+	}
+walked:
+	/* nothing the AES draws later over it */
+	for (k = 1; k < n; k++) {
+		short j;
+		if (sh[k].kind == K_AES || sh[k].kind == K_NOTHING)
+			continue;
+		for (j = k + 1; j < n; j++)
+			if (sh[j].kind == K_AES && meets(&sh[k], &sh[j]))
+				break;
+		if (j < n)
+			sh[k].kind = K_AES;
+		else {
+			tree[sh[k].i].ob_flags |= HIDETREE;
+			cpu++;
+		}
+	}
+	{
+		/* the CPU's objects with only the root's inside under them: no
+		   object drawn before meets them, and they lie inside the root's
+		   frame */
+		short t = (signed char)(root_spec >> 16), rx1, ry1, rx2, ry2;
+		if (t < 0)
+			t = 0;
+		rx1 = (short)(tree[0].ob_x + t);
+		ry1 = (short)(tree[0].ob_y + t);
+		rx2 = (short)(tree[0].ob_x + tree[0].ob_width - 1 - t);
+		ry2 = (short)(tree[0].ob_y + tree[0].ob_height - 1 - t);
+		for (k = 1; k < n; k++) {
+			short j;
+			sh[k].bare = 0;
+			if (sh[k].kind == K_AES || sh[k].kind == K_NOTHING || sh[k].x1 < rx1 || sh[k].y1 < ry1 ||
+			    sh[k].x2 > rx2 || sh[k].y2 > ry2)
+				continue;
+			for (j = 1; j < k; j++)
+				if (sh[j].kind != K_NOTHING && meets(&sh[j], &sh[k]))
+					break;
+			sh[k].bare = j == k;
+		}
+	}
+	FT(0);
+	clip[0] = cx;
+	clip[1] = cy;
+	clip[2] = cx + cw - 1;
+	clip[3] = cy + cch - 1;
+	scr_clip(clip);
+	if (!hidden)
+		graf_mouse(M_OFF, 0);
+	{
+		/* the root whole, then objc_draw of it as a box with nothing */
+		box_paint(tree[0].ob_x, tree[0].ob_y, tree[0].ob_width, tree[0].ob_height, (signed char)(root_spec >> 16),
+			  (short)((root_spec >> 12) & 0x0f), box_pen(root_spec), root_state);
+	}
+	FT(1);
+	tree[0].ob_type = (unsigned short)((root_type & 0xff00) | G_IBOX);
+	tree[0].ob_spec = root_spec & 0xFF00FFFFL;	/* no frame */
+	tree[0].ob_state = 0;
+	objc_draw(tree, 0, 8, cx, cy, cw, cch);
+	tree[0].ob_type = root_type;
+	tree[0].ob_spec = root_spec;
+	tree[0].ob_state = root_state;
+	FT(2);
+	for (k = 1; k < n; k++) {
+		if (sh[k].kind == K_AES || sh[k].kind == K_NOTHING)
+			continue;
+		tree[sh[k].i].ob_flags &= ~HIDETREE;
+#ifdef DLG_FAST_TIMES
+		{
+			unsigned long t0 = tos_ms();
+			cpu_object(&tree[sh[k].i], sh[k].kind, sh[k].x, sh[k].y, ch, sh[k].bare ? box_pen(root_spec) : -1);
+			dlg_fast_kt[sh[k].kind] += tos_ms() - t0;
+			dlg_fast_kn[sh[k].kind]++;
+		}
+#else
+		cpu_object(&tree[sh[k].i], sh[k].kind, sh[k].x, sh[k].y, ch, sh[k].bare ? box_pen(root_spec) : -1);
+#endif
+	}
+	FT(3);
+	if (!hidden)
+		graf_mouse(M_ON, 0);
+	scr_clip(0);
+	fast_count += cpu + 1;
+}
+
+long dlg_fast_count(void)
+{
+	return fast_count;
+}
+#else
+
+/* without -DDLG_CPU (accessories, programs for the 68030 only): every
+   dialog objc_draw's, none of the CPU's drawing linked in (EMAILCHK.ACC
+   grew 5.7 KB with it, 1 Nov 2026: the accessories' first-boot memory) */
+int dlg_fast_on = 0;
+int dlg_fast_part = 4;
+
+static void fast_draw(OBJECT *tree, short cx, short cy, short cw, short cch, int hidden)
+{
+	(void)hidden;
+	objc_draw(tree, 0, 8, cx, cy, cw, cch);
+}
+
+long dlg_fast_count(void)
+{
+	return 0;
+}
+
+#endif /* DLG_CPU */
+
 static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		      short *x, short *y, short *w, short *h)
 {
@@ -480,7 +1059,7 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 	form_dial(FMD_START, *x, *y, *w, *h);
 	graf_mouse(M_OFF, 0);
 	if (tree)
-		objc_draw(tree, 0, 8, *x, *y, *w, *h);
+		fast_draw(tree, *x, *y, *w, *h, 1);	/* the mouse hidden here */
 	else if (draw)
 		draw(*x, *y, *w, *h);
 	graf_mouse(M_ON, 0);
@@ -571,6 +1150,8 @@ void dlg_draw(OBJECT *tree, short obj)
 	h += 6;
 	if (i >= 0 && dw[i].h > 0)
 		win_paint(i, x, y, w, h);
+	else if ((long)w * h * 8 >= (long)tree[0].ob_width * tree[0].ob_height * dlg_fast_part)
+		fast_draw(tree, x, y, w, h, 0);
 	else
 		objc_draw(tree, 0, 8, x, y, w, h);
 }

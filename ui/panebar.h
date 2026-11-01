@@ -54,6 +54,23 @@ short pb_height(void);
    redraw */
 void pb_draw(const PANEBAR *b, const GRECT *clip);
 
+/* the app's VDI workstation, for pb_draw's fast way (0, as at the start:
+   none, every bar by objc_draw). In the flat look on TOS's own screen
+   (text_plain_state() 1: text.c linked and drawing straight into it), a
+   box wholly inside the track (the slider's move, pb_moved) is filled
+   with the VDI as the AES fills the track and slider objects, from their
+   ob_spec: some 30 ms less a line scrolled on an 8 MHz ST. The first
+   such box is drawn both ways and the screen's bytes compared; if they
+   differ, the AES draws for the rest of the run. pb_vdi_state() says
+   which: 0 not checked yet, 1 on, -1 off; pb_vdi_count() how many boxes
+   it drew (the tests') */
+void pb_vdi(short h);
+int pb_vdi_state(void);
+long pb_vdi_count(void);
+/* the track's pattern: 1 read off the screen and drawn by the CPU, 0 not
+   yet, -1 the VDI's (the tests') */
+int pb_vdi_pattern(void);
+
 /* the square where a bar down meets one across, in the bars' ground */
 void pb_corner(const GRECT *r, const GRECT *clip);
 
