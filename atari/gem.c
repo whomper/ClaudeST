@@ -486,6 +486,29 @@ short menu_ienable(OBJECT *tree, short item, short enable)
 	return aes(32, 2, 1, 1, 0);
 }
 
+/* a button the program draws itself, held: shown in instate while the
+   mouse is over it, outstate when not, until the button comes up; 1 let
+   go over it (the guidelines' 5.8: done on release, as GEM's own buttons
+   in a dialog) */
+short graf_watchbox(OBJECT *tree, short obj, short instate, short outstate)
+{
+	aintin[0] = 0;
+	aintin[1] = obj;
+	aintin[2] = instate;
+	aintin[3] = outstate;
+	addrin[0] = tree;
+	return aes(75, 4, 1, 1, 0);
+}
+
+/* the double click's speed, 0 (slow) to 4 (fast), the desktop's own;
+   setit 1 sets it to rate */
+short evnt_dclick(short rate, short setit)
+{
+	aintin[0] = rate;
+	aintin[1] = setit;
+	return aes(26, 2, 1, 0, 0);
+}
+
 short evnt_timer_(unsigned long ms)
 {
 	aintin[0] = (short)(ms & 0xffff);
@@ -645,6 +668,22 @@ short objc_draw(OBJECT *tree, short start, short depth, short x, short y, short 
 	aintin[5] = h;
 	addrin[0] = tree;
 	return aes(42, 6, 1, 1, 0);
+}
+
+/* an object's state set and drawn: where only SELECTED changes on a
+   flat object, the AES inverts it in place rather than drawing it */
+short objc_change(OBJECT *tree, short obj, short x, short y, short w, short h, short state, short redraw)
+{
+	aintin[0] = obj;
+	aintin[1] = 0;
+	aintin[2] = x;
+	aintin[3] = y;
+	aintin[4] = w;
+	aintin[5] = h;
+	aintin[6] = state;
+	aintin[7] = redraw;
+	addrin[0] = tree;
+	return aes(47, 8, 1, 1, 0);
 }
 
 short form_alert(short def, const char *str)

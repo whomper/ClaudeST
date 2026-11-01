@@ -1156,10 +1156,88 @@ void dlg_draw(OBJECT *tree, short obj)
 		objc_draw(tree, 0, 8, x, y, w, h);
 }
 
+#ifdef DLG_CLICK
+#include "click.h"
+
+/* a message that comes while a row is held, as dlg_evnt would take it:
+   the dialog window's own redraw drawn, the app's other windows' given to
+   dlg_redraw_hook (in a window only: on TOS the dialog is over them),
+   the rest kept for when the dialog is gone */
+static void held_msg(short *msg)
+{
+	short k, i = ndw - 1;
+	for (k = 0; k <= i && dw[k].h != msg[3]; k++)
+		;
+	if (msg[0] == WM_REDRAW && k <= i && dw[k].h > 0) {
+		wind_update(END_UPDATE);
+		win_paint(k, msg[4], msg[5], msg[6], msg[7]);
+		wind_update(BEG_UPDATE);
+	} else if (msg[0] == WM_REDRAW && dlg_redraw_hook && dlg_in_window()) {
+		wind_update(END_UPDATE);
+		dlg_redraw_hook(msg);
+		wind_update(BEG_UPDATE);
+	} else if (msg[0] == WM_REDRAW) {
+		keep_redraw(msg);
+	} else if (!(k <= i && dw[k].h > 0)) {
+		keep_msg(msg);
+	}
+}
+
+/* a row's first press, handed back at once: its release still to come */
+static struct {
+	int on;
+	GRECT r;
+	short x, y;
+} held;
+
+int dlg_touch_up(void)
+{
+	short m[8];
+	AEVENT e;
+	int r;
+	if (!held.on)
+		return -1;
+	held.on = 0;
+	r = press_track(&held.r, held.x, held.y, 0, held_msg, 0, 0);
+	if (r == PRESS_DRAG)
+		evnt_multi_(MU_BUTTON, 1, 1, 0, 0, m, &e);	/* moved off: just its release */
+	return r;
+}
+
+void dlg_touch(OBJECT *tree, short *next, short x, short y)
+{
+	short o = (short)(*next & 0x7fff);
+	GRECT r;
+	if (o <= 0 || !(tree[o].ob_flags & TOUCHEXIT))
+		return;
+	*next = o;
+	objc_offset(tree, o, &r.x, &r.y);
+	r.w = tree[o].ob_width;
+	r.h = tree[o].ob_height;
+	if (!press_double(o, x, y)) {
+		held.on = 1;		/* the caller acts on the press; touch_up waits */
+		held.r = r;
+		held.x = x;
+		held.y = y;
+	} else {
+		int t = press_track(&r, x, y, 0, held_msg, 0, 0);
+		short m[8];
+		AEVENT e;
+		if (t == PRESS_IN)
+			*next = (short)(o | 0x8000);
+		else if (t == PRESS_DRAG)	/* no drag in a dialog: its release, not a press elsewhere */
+			evnt_multi_(MU_BUTTON, 1, 1, 0, 0, m, &e);
+	}
+}
+#endif
+
 short dlg_evnt(short flags, short clicks, short mask, short state,
 	       unsigned long timer, short *msg, AEVENT *e)
 {
 	short i, k, top, d1;
+#ifdef DLG_CLICK
+	dlg_touch_up();
+#endif
 	if (!dlg_in_window())
 		return evnt_multi_(flags, clicks, mask, state, timer, msg, e);
 	i = ndw - 1;
@@ -1246,7 +1324,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				objc_edit(tree, edit, 0, &idx, ED_INIT);
 		}
 		lf = lf_of && edit > 0 ? lf_of(tree, edit) : 0;
-		dlg_evnt(MU_KEYBD | MU_BUTTON, 2, 1, 1, 0, m, &e);
+		dlg_evnt(MU_KEYBD | MU_BUTTON, DLG_CLICKS, 1, 1, 0, m, &e);
 		if (e.which & MU_KEYBD) {
 			if (dlg_esc(e.kreturn) && !dlg_undo(e.kreturn))
 				e.kreturn = 0x011b;	/* ^[ too: the key objc_edit empties a field on */
@@ -1274,6 +1352,10 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				next = 0;
 			} else {
 				cont = form_button(tree, next, e.breturn, &next);
+#ifdef DLG_CLICK
+				if (!cont)
+					dlg_touch(tree, &next, e.mx, e.my);
+#endif
 			}
 		}
 		if ((!cont || (next > 0 && next != edit)) && edit > 0)

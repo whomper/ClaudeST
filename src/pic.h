@@ -47,6 +47,21 @@ const char *pic_why_text(int why);
    PNG); it is checked before anything is decoded. */
 PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *why);
 void pic_free(PIC *p);
+/* a JPEG read a piece at a time and made a row at a time at w x h, never
+   whole in memory (TJpgDec's builds: a 1 MB ST's): fill(fu, buf, n) gives
+   the file's next bytes (0 at the end), row(ru, y, px, alpha) each row
+   shown, y from 0 to h - 1 (px w pixels 5-6-5, alpha w bytes), the same
+   pixels as pic_decode's: a program can show them as they come, the
+   picture from the top down. 1 done; 0 not (why); -1 not a JPEG made
+   this way (progressive, CMYK, ...; libjpeg's builds): pic_decode */
+int pic_jpeg_rows(long (*fill)(void *u, unsigned char *buf, long n), void *fu, int w, int h,
+		  void (*row)(void *u, long y, const unsigned short *px, const unsigned char *alpha), void *ru, int *why);
+#ifdef PIC_CHECK_HEADERS
+/* the tests' (libjpeg's builds): JPEGs whose headers libjpeg and pic.c's
+   own reader for the DSP (a TJpgDec build's) read the same, those only
+   libjpeg gives the DSP (extended sequential), those that differ */
+extern long pic_hdr_same, pic_hdr_lj_only, pic_hdr_differ;
+#endif
 /* called now and then while decoding; 0 stops it (PIC_STOPPED). NULL:
    never */
 extern int (*pic_poll)(void);

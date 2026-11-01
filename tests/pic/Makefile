@@ -67,8 +67,13 @@ $(B)/hatari.a: | $(B)
 	rm -f $@ && ar rcs $@ $(B)/hat/*.o
 $(B)/test_pic_dsp: $(SRC_LJ) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/libjpeg.a $(B)/libwebp.a \
 		$(B)/hatari.a | $(B)
-	cc $(CFLAGS) $(SAN) $(INC) $(LJ_INC) -DWITH_DSP_SIM -I$(HAT) -I$(HAT)/stub -o $@ $(SRC_LJ) dsp_sim.c \
+	cc $(CFLAGS) $(SAN) $(INC) $(LJ_INC) -DWITH_DSP_SIM -DPIC_CHECK_HEADERS -I$(HAT) -I$(HAT)/stub -o $@ $(SRC_LJ) dsp_sim.c \
 		$(B)/libjpeg.a $(B)/libwebp.a $(B)/hatari.a
+# a 68000 program's way on a Falcon (TJpgDec with PIC_TJPGD_DSP): the baseline
+# JPEGs jpeg.a56 takes from pic.c's own header reader, the rest TJpgDec's
+$(B)/test_pic_tjdsp: $(SRC) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/tjpgd.o $(B)/hatari.a | $(B)
+	cc $(CFLAGS) $(SAN) $(INC) -DPIC_TJPGD_DSP -DWITH_DSP_SIM -I$(HAT) -I$(HAT)/stub -o $@ $(SRC) dsp_sim.c \
+		$(B)/tjpgd.o $(B)/hatari.a
 $(B):
 	mkdir -p $@
 # aerapens (../../tools/pens), the Pi gateway's pens, against the Atari's
@@ -90,8 +95,9 @@ fuzzpens: $(B)/fuzz/aerapens
 # the seeds again on any build (each must run clean): make pensseeds
 pensseeds: $(B)/fuzz/aerapens
 	$(B)/fuzz/aerapens -runs=0 fuzz/pens
-testdsp: $(B)/test_pic_dsp
+testdsp: $(B)/test_pic_dsp $(B)/test_pic_tjdsp
 	python3 run.py $(B)/test_pic_dsp
+	python3 run.py $(B)/test_pic_tjdsp
 test: $(B)/test_pic $(B)/test_pic_lj
 	python3 run.py $(B)/test_pic
 	python3 run.py $(B)/test_pic_lj

@@ -162,6 +162,27 @@ extern int dlg_fast_on;
 extern int dlg_fast_part;
 long dlg_fast_count(void);
 
+/* Built with -DDLG_CLICK (the app links click.c; the guidelines, 5.8):
+   dlg_do asks the AES for one click, so a press comes at once (asking for
+   two held every press back for the double-click time). DLG_CLICKS is
+   what a dialog loop asks dlg_evnt for. A loop of the app's own calls
+   dlg_touch after form_button ended the dialog on a press at x, y:
+   on a TOUCHEXIT object (a list's row) *next is the object, handed back
+   on the press, or the object | 0x8000 when the press was the second of
+   a double click and was let go over it, as form_button gave for two
+   clicks. The next dlg_evnt first waits for a row's press to be let go
+   (the AES would give a button still down as another press).
+   dlg_touch_up waits for it now, for a loop that acts on the release
+   (5.8: the row drawn on the press, the rest on the release): PRESS_IN,
+   PRESS_OUT or PRESS_DRAG (click.h), or -1 when no row is held */
+#ifdef DLG_CLICK
+#define DLG_CLICKS 1
+void dlg_touch(OBJECT *tree, short *next, short x, short y);
+int dlg_touch_up(void);
+#else
+#define DLG_CLICKS 2
+#endif
+
 /* the pen of the first npens (16 at most: the UI's) whose colour is nearest
    r, g, b (VDI's 0-1000), read with vq_color; text: one dark enough to read
    on white, where there is one. A UI colour in 16 colours or fewer is never
