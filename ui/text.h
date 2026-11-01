@@ -72,7 +72,9 @@ void scr_xor(short h, const short *p);
    time of a row's fill on an 8 MHz ST some 2.4 ms by the VDI (EFTP, 31
    Oct 2026); other pens, and elsewhere, the VDI. Either way the VDI's
    writing mode and fill are left as they were. The caller hides the
-   mouse */
+   mouse. Call it where scr_cpu_wins() (a 68000): on a 68030 TOS 4's
+   fill is as fast or faster, and an app's own vr_recfl with its fill
+   set once beats this one's VDI way (tests/text) */
 void scr_fill(short h, const short *p, short pen);
 
 /* the box p filled with a 16 by 16 pattern in pens 1 (its set pixels) and

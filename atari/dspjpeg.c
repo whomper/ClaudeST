@@ -253,19 +253,30 @@ static unsigned long get24(unsigned char *d, int cols, int rows, long pitch)
 	return io_head;
 }
 
-static int begin(int prog)
+/* a program for the DSP: the 512 words the bootstrap loads and starts,
+   the rest it loads (LOADP), and the name it answers a PING with */
+typedef struct {
+	const unsigned long *boot, *rest;
+	unsigned long at, n, name;
+} DSPPROG;
+
+static const DSPPROG prog_jpeg = { dsp_jpeg_prog, dsp_jpeg_prog_ext, DSP_JPEG_PROG_EXT_AT, DSP_JPEG_PROG_EXT_N,
+				   0x4A5047UL };	/* "JPG" */
+static const DSPPROG prog_dither = { dsp_dither_prog, dsp_dither_prog_ext, DSP_DITHER_PROG_EXT_AT,
+				     DSP_DITHER_PROG_EXT_N, 0x445448UL };	/* "DTH" */
+
+static int begin_prog(int prog, const DSPPROG *pg)
 {
-	static const unsigned long ext[2][3] = {
-		{ 6, DSP_JPEG_PROG_EXT_AT, DSP_JPEG_PROG_EXT_N },
-		{ 6, DSP_DITHER_PROG_EXT_AT, DSP_DITHER_PROG_EXT_N }
-	};
+	unsigned long ext[3];
+	if (pg == 0)
+		return 0;			/* not linked: the CPU's way */
 	lock = (int) trap14_w(104);		/* Dsp_Lock */
 	if (lock == -1)
 		return 0;			/* another program has it */
 	pic_dsp_failed = 0;
 	if (alive == prog + 1) {
 		alive = 0;
-		io_name = prog == PIC_DSP_JPEG ? 0x4A5047UL : 0x445448UL;	/* "JPG", "DTH" */
+		io_name = pg->name;
 		Supexec(sup_ping);
 		if (io_alive) {
 			alive = prog + 1;
@@ -276,16 +287,23 @@ static int begin(int prog)
 	/* reset (bit 4 of the sound chip's port A, through the XBIOS: see
 	   dsprsa.c); then the bootstrap loads 512 words and starts them */
 	Supexec(sup_reset);
-	if (prog == PIC_DSP_JPEG) {
-		put(dsp_jpeg_prog, 512);
-		put(ext[0], 3);			/* LOADP: the rest */
-		put(dsp_jpeg_prog_ext, DSP_JPEG_PROG_EXT_N);
-	} else {
-		put(dsp_dither_prog, 512);
-		put(ext[1], 3);
-		put(dsp_dither_prog_ext, DSP_DITHER_PROG_EXT_N);
-	}
+	put(pg->boot, 512);
+	ext[0] = 6;				/* LOADP: the rest */
+	ext[1] = pg->at;
+	ext[2] = pg->n;
+	put(ext, 3);
+	put(pg->rest, (long) pg->n);
 	return 1;
+}
+
+static int begin(int prog)
+{
+	return begin_prog(prog, prog == PIC_DSP_JPEG ? &prog_jpeg : &prog_dither);
+}
+
+static int begin_jpeg(int prog)
+{
+	return begin_prog(prog, prog == PIC_DSP_JPEG ? &prog_jpeg : 0);
 }
 
 static void end(int clean)
@@ -297,3 +315,4 @@ static void end(int clean)
 }
 
 const PIC_DSP dspjpeg_port = { begin, end, put, put16, putpx, get16, get24 };
+const PIC_DSP dspjpeg_port_jpeg = { begin_jpeg, end, put, put16, putpx, get16, get24 };

@@ -671,12 +671,56 @@ static void box_op(const short *p, int op, const unsigned short *pat)
 	}
 	m0 = lmask == 0xFFFF ? g0 : g0 + 1;
 	m1 = g0 == g1 ? (lmask == 0xFFFF ? g0 : g0 - 1) : rmask == 0xFFFF ? g1 : g1 - 1;
-	row = (unsigned char *)trap14_w(3) + (long)y1 * sf_bpl;	/* Logbase */
+	row = logbase() + (long)y1 * sf_bpl;	/* Logbase */
 	{
 		long l = (long)g0 * step, m = (long)m0 * step, rr = (long)g1 * step, bpl = sf_bpl;
 		short mid = (short)((m1 - m0 + 1) * step), left = m0 > g0, right = g1 != g0 && m1 < g1;
 
 		short y = y1;
+		if (op <= 2) {
+			/* inverted (0), cleared (1) or set (2) with every choice made
+			   once for the box, not once a row: a call and the op's tests
+			   each row made a 16 x 16 box slower than TOS's own fill (EMail
+			   1.72; tests/text, 320 boxes: ST 510 ms against vr_recfl's
+			   425, Falcon-4 220 against 130). An edge word is (w & a) ^ x */
+			unsigned short la = op == 0 ? 0xFFFFu : (unsigned short)~lmask, lx = op == 1 ? 0 : lmask;
+			unsigned short ra = op == 0 ? 0xFFFFu : (unsigned short)~rmask, rx = op == 1 ? 0 : rmask;
+			unsigned long v = op == 2 ? 0xFFFFFFFFUL : 0;
+			short nl = (short)(mid >> 2), tail = (short)(mid & 2), planes = sf_planes, n;
+
+			if (mid <= 0)
+				nl = tail = 0;
+			for (r = (short)(y2 - y1 + 1); r > 0; r--, row += bpl) {
+				unsigned short *w;
+				unsigned long *q = (unsigned long *)(row + m);
+
+				if (left)
+					for (w = (unsigned short *)(row + l), k = planes; k > 0; k--, w++)
+						*w = (unsigned short)((*w & la) ^ lx);
+				if (nl >= 8) {
+					/* a wide box: the rows' unrolled loops (the plain loop
+					   here made a window's rows 58 -> 66 ms on ST:mono) */
+					if (op == 0)
+						xor_row((unsigned char *)q, mid);
+					else
+						set_row((unsigned char *)q, mid, v);
+				} else if (op == 0) {
+					for (n = nl; n > 0; n--, q++)
+						*q = ~*q;
+					if (tail)
+						*(unsigned short *)q = (unsigned short)~*(unsigned short *)q;
+				} else {
+					for (n = nl; n > 0; n--)
+						*q++ = v;
+					if (tail)
+						*(unsigned short *)q = (unsigned short)v;
+				}
+				if (right)
+					for (w = (unsigned short *)(row + rr), k = planes; k > 0; k--, w++)
+						*w = (unsigned short)((*w & ra) ^ rx);
+			}
+			return;
+		}
 		for (r = (short)(y2 - y1 + 1); r > 0; r--, row += bpl, y++) {
 			/* op 3: the pattern's row, its set pixels in every plane
 			   (pen 1), the others in none (pen 0) */
