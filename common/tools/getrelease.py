@@ -39,18 +39,32 @@ def latest(app, name):
     .../releases/latest/download/NAME with a redirect to
     .../releases/download/vX.Y/NAME (the release pages themselves may be
     refused by a proxy that lets downloads through)"""
-    url = "https://github.com/%s/%s/releases/latest/download/%s" % (OWNER, app, name)
-    try:
-        urllib.request.build_opener(_NoRedirect).open(urllib.request.Request(url, method="HEAD"))
-    except urllib.error.HTTPError as e:
-        loc = e.headers.get("Location", "")
-        if e.code in (301, 302, 303, 307, 308) and "/releases/download/" in loc:
-            return loc.split("/releases/download/", 1)[1].split("/", 1)[0]
-        if e.code == 404:
-            sys.exit("%s: no release with %s (%s)" % (app, name, e))
-    except urllib.error.URLError:
-        pass
-    return highest_tag(app)
+    for n in spellings(name):
+        url = "https://github.com/%s/%s/releases/latest/download/%s" % (OWNER, app, n)
+        try:
+            urllib.request.build_opener(_NoRedirect).open(urllib.request.Request(url, method="HEAD"))
+        except urllib.error.HTTPError as e:
+            loc = e.headers.get("Location", "")
+            if e.code in (301, 302, 303, 307, 308) and "/releases/download/" in loc:
+                return loc.split("/releases/download/", 1)[1].split("/", 1)[0]
+            if e.code == 404:
+                continue
+        except urllib.error.URLError:
+            pass
+        return highest_tag(app)
+    sys.exit("%s: no release with %s" % (app, name))
+
+
+def spellings(name):
+    """name as given, then in lowercase, then in capitals: the releases'
+    files are named in lowercase from the guidelines' 6.6 (2 Nov 2026),
+    the older ones in capitals, and GitHub's download addresses mind the
+    case"""
+    out = []
+    for n in (name, name.lower(), name.upper()):
+        if n not in out:
+            out.append(n)
+    return out
 
 
 def highest_tag(app):
@@ -73,15 +87,21 @@ def fetch(spec, d, names, source=False):
     tag = tag or (highest_tag(app) if source else latest(app, names[0]))
     os.makedirs(d, exist_ok=True)
     for n in names:
-        if source:
-            url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (OWNER, app, tag, n)
-        else:
-            url = "https://github.com/%s/%s/releases/download/%s/%s" % (OWNER, app, tag, n)
-        try:
-            with urllib.request.urlopen(url) as r:
-                data = r.read()
-        except urllib.error.HTTPError as e:
-            sys.exit("%s %s: no %s (%s)" % (app, tag, n, e))
+        data, err = None, None
+        # a source file by its exact path; a release's file whatever its case
+        for m in [n] if source else spellings(n):
+            if source:
+                url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (OWNER, app, tag, m)
+            else:
+                url = "https://github.com/%s/%s/releases/download/%s/%s" % (OWNER, app, tag, m)
+            try:
+                with urllib.request.urlopen(url) as r:
+                    data = r.read()
+                break
+            except urllib.error.HTTPError as e:
+                err = e
+        if data is None:
+            sys.exit("%s %s: no %s (%s)" % (app, tag, n, err))
         with open(os.path.join(d, os.path.basename(n)), "wb") as f:
             f.write(data)
     with open(os.path.join(d, app.upper() + ".VERSION"), "w") as f:
