@@ -108,6 +108,23 @@ EMUTOS = ("https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-51
 BOOTC = bytes.fromhex("487A000E" "3F3C0026" "4E4E" "5C8F" "4267" "4E41" "31FC00020446" "4E75")
 
 
+def ci_path(folder, name):
+    """folder/name, found whatever the case of each part (Hatari's
+    emulated drive keeps the case a program writes, and the family's
+    programs write lowercase names: the guidelines, 6.6); the path as
+    given when nothing matches"""
+    path = folder
+    for part in name.replace("\\", "/").split("/"):
+        cand = os.path.join(path, part)
+        if not os.path.exists(cand) and os.path.isdir(path):
+            for f in os.listdir(path):
+                if f.lower() == part.lower():
+                    cand = os.path.join(path, f)
+                    break
+        path = cand
+    return path
+
+
 def clock():
     """C:\\AUTO\\CLOCK.PRG's code for an ST, which has no clock: it sets the
     date and time to this computer's local time, as one does on a real ST

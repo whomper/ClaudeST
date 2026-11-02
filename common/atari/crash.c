@@ -477,7 +477,7 @@ void crash_install(const char *workdir, const char *name, const char *version)
 	n = snprintf(path, sizeof(path), "%s", workdir);
 	if (n > 0 && path[n - 1] != '\\' && n < (int)sizeof(path) - 1)
 		path[n++] = '\\', path[n] = 0;
-	strncat(path, "CRASH.LOG", sizeof(path) - strlen(path) - 1);
+	strncat(path, "crash.log", sizeof(path) - strlen(path) - 1);
 	crash_cpu = (short)get_cookie(0x5F435055L);	/* _CPU: 0 on a plain ST */
 	text_lo = (u32)bp[2];
 	text_hi = text_lo + (u32)bp[3];

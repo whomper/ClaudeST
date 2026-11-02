@@ -90,7 +90,8 @@ def run(machine, kind, reset=False):
             h.terminate()
             h.wait()
     text = open(log, errors="replace").read()
-    rep = os.path.join(d, "CRASH.LOG")
+    rep = next((os.path.join(d, f) for f in os.listdir(d) if f.upper() == "CRASH.LOG"),
+               os.path.join(d, "crash.log"))
     return d, text, open(rep, "rb").read().decode("latin-1") if os.path.exists(rep) else ""
 
 

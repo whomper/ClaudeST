@@ -230,7 +230,7 @@ int main(void)
 	late = procs[1];
 	procs[1] = procs[2];
 	nprocs = 2;
-	acc_file = "C:\\ECAL.ACC";
+	acc_file = "C:\\ecal.acc";
 	hz200 = 10 * 200;
 	appear_after = 7;
 	timers = 0;
@@ -242,11 +242,11 @@ int main(void)
 	timers = 0;
 	reset();
 	check(twin_handover("") == 0 && timers == 30, "  one that doesn't come: 3 s, then the program runs");
-	acc_file = "C:\\OTHER.ACC";
+	acc_file = "C:\\other.acc";
 	timers = 0;
 	reset();
 	check(twin_handover("") == 0 && timers == 0, "  no ECAL.ACC or ECALST.ACC in the root: no wait");
-	acc_file = "C:\\ECALST.ACC";
+	acc_file = "C:\\ecalst.acc";
 	hz200 = 61 * 200;
 	timers = 0;
 	reset();

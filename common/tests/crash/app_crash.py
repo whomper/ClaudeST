@@ -66,7 +66,8 @@ class Run:
                 shutil.copytree(f, os.path.join(hd, os.path.basename(f)))
             else:
                 shutil.copy(f, hd)
-        self.logfile = os.path.join(hd, a.log, "CRASH.LOG")
+        self.logdir = os.path.join(hd, a.log)
+        self.logfile = os.path.join(self.logdir, "crash.log")
         self.fifo = os.path.join(self.d, "cmd.fifo")
         args = ["hatari", "--machine", a.machine, "--tos", os.path.abspath(a.tos), "--harddrive", hd,
                 "--auto", "C:\\" + prg, "--fast-boot", "yes", "--natfeats", "yes", "--sound", "off",
@@ -97,7 +98,11 @@ class Run:
         return self.h.poll() is None
 
     def log(self):
-        return open(self.logfile, "rb").read().decode("latin-1") if os.path.exists(self.logfile) else ""
+        # crash.log, or CRASH.LOG from a build before the guidelines' 6.6
+        for f in (os.listdir(self.logdir) if os.path.isdir(self.logdir) else []):
+            if f.upper() == "CRASH.LOG":
+                return open(os.path.join(self.logdir, f), "rb").read().decode("latin-1")
+        return ""
 
     def end(self):
         if self.alive():

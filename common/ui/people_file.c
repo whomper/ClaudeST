@@ -142,7 +142,7 @@ void people_file(const char *folder, void (*message)(short *m))
 	strcpy(path, folder);
 	if (path[l - 1] != PF_SEP)
 		path[l++] = PF_SEP;
-	strcpy(path + l, "CONTACTS.TXT");
+	strcpy(path + l, "contacts.txt");
 	on_message = message;
 	people_scan_hook = scan;
 	people_pick_hook = file_dialog;

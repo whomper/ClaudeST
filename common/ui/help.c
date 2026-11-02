@@ -61,7 +61,7 @@ static int start_prg(const char *prg, const char *args);
 static int start_viewer(const char *args)
 {
 	char prg[200];
-	char inf[16] = "C:\\EHYPVIEW.INF", buf[256], line[200];
+	char inf[16] = "C:\\ehypview.inf", buf[256], line[200];
 	long fh, n, i;
 	short k = 0, found = 0;
 	inf[0] = (char)('A' + boot_drive());
@@ -95,7 +95,7 @@ static int start_viewer(const char *args)
 	add(prg, sizeof(prg), line + 7);
 	if (prg[strlen(prg) - 1] != '\\')
 		add(prg, sizeof(prg), "\\");
-	add(prg, sizeof(prg), "EHYPVIEW.PRG");
+	add(prg, sizeof(prg), "ehypview.prg");
 	return start_prg(prg, args);
 }
 

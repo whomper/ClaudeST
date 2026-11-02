@@ -104,7 +104,7 @@ int main(void)
 	int n, o;
 	if (!mkdtemp(dir))
 		return 1;
-	snprintf(path, sizeof(path), "%s/CONTACTS.TXT", dir);
+	snprintf(path, sizeof(path), "%s/contacts.txt", dir);
 	write_file(path, 0);
 	people_init(16, 0, names_came, 0);
 

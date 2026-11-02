@@ -162,7 +162,7 @@ static int acc_coming(void)
 {
 	const char *p = names;
 	char m[9], path[16];
-	short i;
+	short i, n;
 	if (tos_hz200() > 60UL * 200)
 		return 0;
 	while (*p) {
@@ -173,7 +173,10 @@ static int acc_coming(void)
 		path[1] = ':';
 		path[2] = '\\';
 		memcpy(path + 3, m, i);
-		memcpy(path + 3 + i, ".ACC", 5);
+		memcpy(path + 3 + i, ".acc", 5);
+		for (n = 3; n < 3 + i; n++)	/* a file's name in lowercase (6.1) */
+			if (path[n] >= 'A' && path[n] <= 'Z')
+				path[n] = (char)(path[n] + 32);
 		if (Fattrib(path, 0, 0) >= 0)
 			return 1;
 	}
