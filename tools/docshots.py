@@ -47,7 +47,7 @@ def boot(work, machine, showcase):
     hd = os.path.join(work, "hd")
     os.makedirs(hd)
     shutil.copy(os.path.join(ROOT, "binary", "CLAUDEST.PRG"), hd)
-    with open(os.path.join(hd, "CLAUDEST.INF"), "w", newline="") as f:
+    with open(os.path.join(hd, "claudest.inf"), "w", newline="") as f:
         # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
         f.write("[OPTIONS]\r\nLINK=serial\r\n" + ("SERIALPORT=6\r\n" if machine.startswith("Falcon") else ""))
     out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")

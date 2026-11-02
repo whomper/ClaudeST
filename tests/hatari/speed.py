@@ -94,7 +94,7 @@ def main():
     r.put(named)
     falcon = a.machine.startswith("Falcon")
     # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
-    r.write("CLAUDEST.INF", "[OPTIONS]\nLINK=serial\n" + ("SERIALPORT=6\n" if falcon else ""))
+    r.write("claudest.inf", "[OPTIONS]\nLINK=serial\n" + ("SERIALPORT=6\n" if falcon else ""))
     for p in (out, inp):        # before Hatari, which won't start without them
         os.mkfifo(p)
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "tests", "hatari", "speed_bridge.py"),

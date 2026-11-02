@@ -18,8 +18,8 @@ trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; if [ $fail = 0 ]; then rm -
 
 mkdir -p "$W/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
-printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/CLAUDEST.INF"
-case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/CLAUDEST.INF" ;; esac
+printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/claudest.inf"
+case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/claudest.inf" ;; esac
 mkfifo "$W/out" "$W/in"
 python3 "$HERE/long_field_bridge.py" --backend demo --pipe "$W/out" "$W/in" > "$W/bridge.log" 2>&1 &
 LINES=$(python3 "$ROOT/common/tools/machines.py" args "$MACHINE" "$W/drive")

@@ -25,8 +25,8 @@ trap 'kill $(jobs -p) 2>/dev/null; if [ $fail = 0 ]; then rm -rf "$W"; else echo
 
 mkdir -p "$W/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
-printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/CLAUDEST.INF"
-case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/CLAUDEST.INF" ;; esac
+printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/claudest.inf"
+case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/claudest.inf" ;; esac
 head -c 40960 /dev/urandom > "$W/drive/BIG.TXT"
 mkfifo "$W/out" "$W/in"
 python3 "$HERE/disk_bridge.py" --backend demo --pipe "$W/out" "$W/in" > "$W/bridge.log" 2>&1 &

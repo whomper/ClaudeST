@@ -73,12 +73,12 @@ cp "$ROOT/binary/CLAUDEST.PRG" "$WORK/drive/"
 rm -f "$WORK/drive/AUTO/FAKESTNG.PRG"
 case "$LINK" in
   serial)
-    printf "[OPTIONS]\r\nLINK=serial\r\n${EXTRA_INF:-}" > "$WORK/drive/CLAUDEST.INF" ;;
+    printf "[OPTIONS]\r\nLINK=serial\r\n${EXTRA_INF:-}" > "$WORK/drive/claudest.inf" ;;
   network)
     make -s -C "$ROOT/common/tools/fakesting"
     cp "$ROOT/common/tools/fakesting/FAKESTNG.PRG" "$WORK/drive/AUTO/"
     printf "[OPTIONS]\r\nLINK=network\r\nHOST=127.0.0.1\r\nPORT=2323\r\n${EXTRA_INF:-}" \
-      > "$WORK/drive/CLAUDEST.INF" ;;
+      > "$WORK/drive/claudest.inf" ;;
   *)
     echo "LINK must be serial or network" >&2; exit 1 ;;
 esac

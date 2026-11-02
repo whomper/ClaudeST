@@ -82,7 +82,9 @@ from then on `sudo aera-gateway` works in any folder.
 ### 3. Set up the Atari
 
 The [latest release](https://github.com/whomper/ClaudeST/releases/latest) has these files, each on its
-own and all together in `CLAUDEST-x.y.zip` (the icon files in its `icons/` folder):
+own and all together in `claudest-x.y.zip` (the icon files in its `icons/` folder). From 1.74 every
+file is named in lowercase (`claudest.prg`): TOS's drives take a name whatever its case, a MiNT ext2
+drive doesn't, and there ClaudeST looks for its files in lowercase:
 
 | File | What it is |
 |---|---|
@@ -237,7 +239,7 @@ sudo apt install gcc-m68k-linux-gnu python3 zip   # Debian/Ubuntu; no MiNTLib ne
 make                         # binary/CLAUDEST.PRG
 make test                    # the bridge's tests and the right-to-left layout's, on this computer
 make help HCP=/path/to/hcp   # binary/CLAUDEST.HYP and .REF (common/tools/build-hcp.sh DIR builds hcp)
-make dist                    # dist/CLAUDEST-x.y.zip and each file, as on the Releases page
+make dist                    # dist/claudest-x.y.zip and each file, in lowercase, as on the Releases page
 ```
 
 `binary/` and `dist/` are what make builds; they are never committed, and a build changes no tracked

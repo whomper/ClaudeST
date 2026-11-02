@@ -41,13 +41,17 @@ icons:
 # dist/CLAUDEST-x.y.zip (the icons in icons/), for the release workflow.
 DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
 ICONS   := icons/CLAUDEST.RSC icons/CLSTNV.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
+# the release: every file, the zip and its folder named in lowercase (the
+# guidelines' 6.6: on MiNT's ext2 CLAUDEST.PRG and claudest.prg are two
+# files); the build's own names stay as they are
+lc = $(shell echo $(notdir $(1)) | tr A-Z a-z)
 dist: all help
 	rm -rf dist
 	mkdir -p dist/zip/icons
-	cp $(DIST) $(ICONS) dist/
-	cp $(DIST) dist/zip/
-	cp $(ICONS) dist/zip/icons/
-	cd dist/zip && zip -q -9 -r ../CLAUDEST-$(VERSION_STR).zip .
+	$(foreach f,$(DIST) $(ICONS),cp $(f) dist/$(call lc,$(f)) &&) true
+	$(foreach f,$(DIST),cp $(f) dist/zip/$(call lc,$(f)) &&) true
+	$(foreach f,$(ICONS),cp $(f) dist/zip/icons/$(call lc,$(f)) &&) true
+	cd dist/zip && zip -q -9 -r ../claudest-$(VERSION_STR).zip .
 	rm -rf dist/zip
 
 clean:

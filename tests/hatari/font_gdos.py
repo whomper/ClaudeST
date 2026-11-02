@@ -43,6 +43,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rig import Rig, K, add_machine  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "common", "tools"))
+from machines import ci_path  # noqa: E402  (the program writes lowercase names: 6.6)
 F2, F10 = 0x3c, 0x44
 
 
@@ -107,7 +109,7 @@ def main():
         prg = os.path.join(rel, "CLAUDEST.PRG")
     print("ClaudeST from", a.release or prg)
     shutil.copy(prg, os.path.join(hd, "CLAUDEST.PRG"))
-    inf = os.path.join(hd, "CLAUDEST.INF")
+    inf = os.path.join(hd, "claudest.inf")
     with open(inf, "w", newline="") as f:
         # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
         f.write("[OPTIONS]\r\nLINK=serial\r\n" +
@@ -235,7 +237,7 @@ def main():
         # the first is one Down from it
         picked = None
         try:
-            with open(os.path.join(hd, "CLAUDEST.FNT"), errors="replace") as f:
+            with open(ci_path(hd, "claudest.fnt"), errors="replace") as f:
                 fams = [l.rstrip("\r\n") for l in f if l.startswith("1 ")]
             picked = 1 if fams else None
         except OSError:
@@ -279,7 +281,7 @@ def main():
             check("the window asked the bridge for nothing after OK", not asked, "; ".join(asked))
             check("the screen stayed as drawn (no dialog left)", changed(after, later) < 0.02,
                   "%.1f%% changed since" % (100 * changed(after, later)))
-            font = inf_font(inf)
+            font = inf_font(ci_path(hd, "claudest.inf"))
             check("CLAUDEST.INF keeps the font", bool(font) and font[0] != 1, "FONT=%s" % (font,))
     finally:
         r.stop()

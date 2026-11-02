@@ -2916,18 +2916,18 @@ static long inf_open(void)
 {
 	char path[160];
 	long fd;
-	inf_path(path, sizeof(path), "CLAUDEST.INF");
+	inf_path(path, sizeof(path), "claudest.inf");
 	fd = Fopen(path, 0);
 	if (fd < 0) {			/* a save cut short after the old file went */
-		inf_path(path, sizeof(path), "CLAUDEST.IN$");
+		inf_path(path, sizeof(path), "claudest.in$");
 		fd = Fopen(path, 0);
 	}
 	if (fd < 0) {			/* settings from before the renames: */
-		inf_path(path, sizeof(path), "ECLAUDE.INF");
+		inf_path(path, sizeof(path), "eclaude.inf");
 		fd = Fopen(path, 0);
 	}
 	if (fd < 0) {			/* EClaude's, then Claude ST's */
-		inf_path(path, sizeof(path), "CLAUDE.INF");
+		inf_path(path, sizeof(path), "claude.inf");
 		fd = Fopen(path, 0);
 	}
 	return fd;
@@ -3060,7 +3060,7 @@ static void save_config(void)
 	}
 	*p = 0;
 
-	safe_save("CLAUDEST.INF", "CLAUDEST.IN$", text, p - text);
+	safe_save("claudest.inf", "claudest.in$", text, p - text);
 }
 
 static void use_link(short l)
@@ -4190,7 +4190,7 @@ static void font_menu(void)
 {
 	static fontsel fs;
 	static char fnt[160];
-	inf_path(fnt, sizeof(fnt), "CLAUDEST.FNT");
+	inf_path(fnt, sizeof(fnt), "claudest.fnt");
 	memset(&fs, 0, sizeof(fs));
 	fs.app = "ClaudeST";
 	fs.fnt = fnt;
@@ -4210,7 +4210,7 @@ static void font_menu(void)
 
 static void help(void)
 {
-	if (help_key(home_dir, "CLAUDEST.HYP", 0, "Keys"))
+	if (help_key(home_dir, "claudest.hyp", 0, "Keys"))
 		keys_dialog();
 }
 
