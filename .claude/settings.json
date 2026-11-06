@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "Skill",
+      "Workflow",
+      "mcp__github",
+      "mcp__GitHub",
+      "mcp__claude-code-remote",
+      "mcp__claude-artifacts",
+      "mcp__Claude_Docs",
+      "mcp__code-remote"
+    ]
+  }
+}
