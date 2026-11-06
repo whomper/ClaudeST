@@ -181,6 +181,7 @@ short wind_x8(short kind, short x, short y, short w, short h);	/* border x: work
 short form_alert(short def, const char *str);
 short rsrc_load(const char *name);
 short aes_version(void);
+extern short aes_double;	/* the last press evnt_multi_ gave came as the second of a double click the AES counted (a multitasking AES) */
 short aes_count(void);		/* global[1]: 1 on TOS, -1 on a multitasking AES */
 short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);	/* 0: not known, or no appl_getinfo (AES < 4.0 without ?AGI or MagiC) */
 short fsel_exinput(char *path, char *name, short *button, const char *title);
@@ -270,6 +271,7 @@ typedef struct {
 void vro_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst);
 void vrt_cpyfm(short h, short mode, const short *pxy, MFDB *src, MFDB *dst, const short *colors);
 void vq_extnd(short h, short owflag, short *work_out);
+void vq_mouse(short h, short *b, short *x, short *y);
 short vq_scrninfo(short h, short *work_out);	/* NVDI: 272 words; 0 without */
 short vq_gdos(void);			/* 1 if a GDOS (NVDI, SpeedoGDOS...) is loaded */
 short vst_load_fonts(short h, short select);

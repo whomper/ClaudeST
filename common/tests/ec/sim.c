@@ -79,7 +79,7 @@ static int run(void (*fn)(void *), void *ctx)
 	return 1;
 }
 
-static const ECDSP_PORT port = { run, put, get };
+static const ECDSP_PORT port = { run, put, get, dsp_ec_prog_ext, DSP_EC_PROG_EXT_AT, DSP_EC_PROG_EXT_N };
 
 const ECDSP_PORT *sim_port(void)
 {

@@ -12,7 +12,9 @@
  *   bg_opened();                      the user opened the window or asked for
  *                                     something: from now on work may run
  *   each turn of the event loop:
- *     bg_tick();                      after evnt_multi returns
+ *     bg_tick();                      after evnt_multi returns (or
+ *                                     bg_tick_at(mx, my, mbutton, kstate)
+ *                                     with what it gave back: no AES call)
  *     if (pending && bg_may_work()) {
  *         bg_begin();
  *         do one_step(); while (pending && bg_more());
@@ -53,6 +55,7 @@ long bg_parse(const char *s);
 void bg_init(long start);
 void bg_opened(void);
 void bg_tick(void);
+void bg_tick_at(short x, short y, short b, short ks);	/* the event's mouse and shift keys */
 int bg_may_work(void);
 void bg_begin(void);
 int bg_more(void);		/* 1 while the slice has time left */

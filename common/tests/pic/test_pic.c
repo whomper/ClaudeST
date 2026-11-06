@@ -192,7 +192,7 @@ static int count_poll(void)
 static int slices(int argc, char **argv)
 {
 	static PIC_PAL pal;
-	long tried = 0, bad = 0, stopped = 0;
+	long tried = 0, bad = 0, stopped = 0, every_row = 0, every_16 = 0;
 	int a, k;
 #ifdef WITH_DSP_SIM
 	pic_dsp_dither = 0;	/* the 68030's (the DSP's takes no turns: -X compares it) */
@@ -226,6 +226,26 @@ static int slices(int argc, char **argv)
 				bad++;
 			}
 			pic_free(q);
+			if (k) {
+				/* the scaler's turns every row (pic_scale_poll_rows 1): the same
+				   picture, and never fewer turns than every 16 */
+				long p16 = polls;
+				pic_scale_poll_rows = 1;
+				polls = 0;
+				q = pic_decode(d, n, w, h, 4L << 20, &why);
+				pic_scale_poll_rows = 16;
+				if (q == NULL || memcmp(p->px, q->px, np * 2) != 0) {
+					printf("FAIL %s %dx%d: not the same with a turn every row\n", argv[a], w, h);
+					bad++;
+				}
+				if (polls < p16) {
+					printf("FAIL %s %dx%d: %ld turns every row, %ld every 16\n", argv[a], w, h, polls, p16);
+					bad++;
+				}
+				every_row += polls;
+				every_16 += p16;
+				pic_free(q);
+			}
 			pic_pal_init(&pal, 256, (const unsigned char (*)[3]) pal256);
 			x = malloc(np);
 			y = malloc(np);
@@ -272,7 +292,11 @@ static int slices(int argc, char **argv)
 #ifdef WITH_DSP_SIM
 	pic_dsp_dither = 1;
 #endif
-	printf("in slices: %ld pictures, %ld stopped, %ld failed\n", tried, stopped, bad);
+	if (every_row <= every_16) {
+		printf("FAIL the scaler took no more turns with pic_scale_poll_rows 1 (%ld) than 16 (%ld)\n", every_row, every_16);
+		bad++;
+	}
+	printf("in slices: %ld pictures, %ld stopped, %ld failed (scaler turns: %ld every row, %ld every 16)\n", tried, stopped, bad, every_row, every_16);
 	return bad != 0;
 }
 
@@ -433,8 +457,54 @@ static int dsame(int argc, char **argv)
 }
 #endif
 
+/* Sharp (pic_dither_sharp): each pixel its nearest pen, on 2 and 16 pens,
+   and a dither's row (the default) not that on a gradient */
+static int sharp(void)
+{
+	static PIC_PAL pal[2];
+	unsigned short px[256];
+	unsigned char a[256], b[256];
+	int k, x, bad = 0, differs = 0;
+	pic_pal_init(&pal[0], 2, bw);
+	pic_pal_init(&pal[1], 16, vga16);
+	for (x = 0; x < 256; x++)
+		px[x] = (unsigned short) (((x >> 3) << 11) | ((x >> 2) << 5) | ((255 - x) >> 3));
+	for (k = 0; k < 2; k++) {
+		PIC_DITHER *d = pic_dither_open(256, &pal[k]), *s = pic_dither_open(256, &pal[k]);
+		int y;
+		if (d == NULL || s == NULL)
+			return 1;
+		pic_dither_sharp(s);
+		for (y = 0; y < 4; y++) {
+			pic_dither_row(d, px, NULL, a);
+			pic_dither_row(s, px, NULL, b);
+			for (x = 0; x < 256; x++) {
+				unsigned v = px[x];
+				int r = ((v >> 8) & 0xF8) | (v >> 13), g = ((v >> 3) & 0xFC) | ((v >> 9) & 3), bl = ((v << 3) & 0xF8) | ((v >> 2) & 7);
+				if (b[x] != pic_pal_nearest(&pal[k], r, g, bl)) {
+					if (!bad)
+						printf("FAIL sharp, %d pens: pixel %d pen %d, its nearest %d\n", pal[k].n, x, b[x],
+						       pic_pal_nearest(&pal[k], r, g, bl));
+					bad++;
+				}
+				differs += a[x] != b[x];
+			}
+		}
+		pic_dither_close(d);
+		pic_dither_close(s);
+	}
+	if (!differs) {
+		printf("FAIL sharp: the same pens as the dither's on a gradient\n");
+		bad++;
+	}
+	printf("sharp: %s (%d pens differ from the dither's)\n", bad ? "FAIL" : "ok", differs);
+	return bad != 0;
+}
+
 static int run(int argc, char **argv)
 {
+	if (argc >= 2 && strcmp(argv[1], "-S") == 0)
+		return sharp();
 	if (argc >= 2 && strcmp(argv[1], "-r") == 0)
 		return robust(argc - 2, argv + 2);
 	if (argc >= 2 && strcmp(argv[1], "-s") == 0)

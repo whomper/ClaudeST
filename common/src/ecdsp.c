@@ -299,12 +299,58 @@ static int isz(int r)
 	return port->get() == 1;
 }
 
+/* a command word, and a register's place in the DSP's Y memory (RUN's
+   pairs are given by it) */
+static unsigned long cw(int o, int d, int a, int b)
+{
+	return ((unsigned long)o << 21) | ((unsigned long)d << 14) | ((unsigned long)a << 7) | (unsigned long)b;
+}
+#define REG_AT(r) (0x1000UL + 32UL * (unsigned long)(r))
+
+static int ext_loaded;		/* RUN's code sent in this job (LOADP) */
+
+/* a Montgomery ladder on the DSP (ec.a56's RUN): for each of the nb bits
+   in kb (24 a word, from bit 23 of the first), the pairs (x2, x3) and
+   (z2, z3) swapped where the bit differs from the one before, then the
+   n commands of st; at the end the pairs swapped back by the last bit.
+   One command for what was some 18 a bit: each word of them cost a
+   stock Falcon's 68030 the host port's handshake and more (an X25519
+   took 2.1 s there, 227 ms of it the DSP's: EUpdate, 1 Nov 2026) */
+static void run_steps(const unsigned long *st, int n, int x2, int x3, int z2, int z3,
+		      const unsigned long *kb, int nb)
+{
+	int i, nw = (nb + 23) / 24;
+	if (!ext_loaded) {
+		op(0, 1, 0, 0);			/* LOADP: RUN's code */
+		port->put(port->ext_at);
+		port->put(port->ext_n);
+		for (i = 0; i < (int)port->ext_n; i++)
+			port->put(port->ext[i]);
+		ext_loaded = 1;
+	}
+	op(0, 0, 0, 0);
+	port->put((unsigned long)n);
+	for (i = 0; i < n; i++)
+		port->put(st[i]);
+	port->put(REG_AT(x2));
+	port->put(REG_AT(x3));
+	port->put(REG_AT(z2));
+	port->put(REG_AT(z3));
+	port->put((unsigned long)nw);
+	for (i = 0; i < nw; i++)
+		port->put(kb[i]);
+	port->put((unsigned long)nb);
+	if (port->get() != 0)			/* its end */
+		ecdsp_failed = 1;
+}
+
 /* the DSP's numbers modulo f's; every register 0, then the constants */
 static void setup(const FIELD *f)
 {
 	unsigned long d[MAXN];
 	int i;
 	fd = f;
+	ext_loaded = 0;			/* CFG comes after a reset: the DSP's P memory is new */
 	port->put((unsigned long)CFG << 21);
 	port->put((unsigned long)f->n);
 	port->put(f->mp);
@@ -331,26 +377,24 @@ static void setup(const FIELD *f)
 static void inv(int o, int z)
 {
 	unsigned char e[MAXB];
-	int k, i, started = 0;
+	unsigned long kb[(8 * MAXB + 23) / 24], st[2];
+	int i, top, nb = 0;
 	memcpy(e, fd->m, fd->bytes);
 	e[fd->bytes - 1] -= 2;		/* no borrow: every prime and order here ends in 0x09 or more */
+	/* z^e by a ladder on the DSP (the exponent is public, but one command
+	   for its bits beats some 5 a nibble: run_steps): R0 = 1, R1 = z;
+	   a bit 0 makes R1 = R0 R1, R0 = R0^2, a bit 1 the same with the
+	   two swapped */
+	for (top = 8 * fd->bytes - 1; top > 0 && !((e[fd->bytes - 1 - (top >> 3)] >> (top & 7)) & 1); top--)
+		;
+	memset(kb, 0, sizeof(kb));
+	for (i = top; i >= 0; i--, nb++)
+		kb[nb / 24] |= (unsigned long)((e[fd->bytes - 1 - (i >> 3)] >> (i & 7)) & 1) << (23 - nb % 24);
+	fcopy(o, MONE);
 	fcopy(W(1), z);
-	for (k = 2; k < 16; k++)
-		fmul(W(k), W(k - 1), W(1));
-	for (i = 0; i < 2 * fd->bytes; i++) {
-		int nib = (e[i >> 1] >> ((i & 1) ? 0 : 4)) & 15;
-		if (started) {
-			fmul(o, o, o);
-			fmul(o, o, o);
-			fmul(o, o, o);
-			fmul(o, o, o);
-			if (nib)
-				fmul(o, o, W(nib));
-		} else if (nib) {
-			fcopy(o, W(nib));
-			started = 1;
-		}
-	}
+	st[0] = cw(MUL, W(1), o, W(1));
+	st[1] = cw(MUL, o, o, o);
+	run_steps(st, 2, o, W(1), W(2), W(3), kb, nb);
 }
 
 /* ---------------- P-256, P-384, P-521 ---------------- */
@@ -506,11 +550,10 @@ static void pstore(unsigned char *G)
 static void x25519(unsigned char *G, const unsigned char *x, size_t xlen)
 {
 	unsigned char k[32], u[32];
-	unsigned long d[MAXN];
+	unsigned long d[MAXN], st[18], kb[11];
 	int x1 = ACC, x2 = ACC + 1, z2 = ACC + 2, x3 = SCR, z3 = SCR + 1;
 	int A = T(0), AA = T(1), B = T(2), BB = T(3), E = T(4), C = T(5), D = T(6), DA = T(7),
-	    CBr = T(8), i, j;
-	unsigned swap = 0;
+	    CBr = T(8), i, n = 0;
 	memcpy(k, x, xlen);
 	memset(k + xlen, 0, sizeof(k) - xlen);
 	k[0] &= 0xF8;
@@ -525,44 +568,36 @@ static void x25519(unsigned char *G, const unsigned char *x, size_t xlen)
 	fcopy(x2, MONE);
 	fcopy(x3, x1);
 	fcopy(z3, MONE);			/* z2 = 0, as every register starts */
+	/* the ladder's step (RFC 7748, BearSSL's sequence), done by the DSP
+	   for each of the key's bits (run_steps): it swaps the pairs by a
+	   mask, where the 68030 swapped register numbers */
+	st[n++] = cw(ADD, A, x2, z2);
+	st[n++] = cw(MUL, AA, A, A);
+	st[n++] = cw(SUB, B, x2, z2);
+	st[n++] = cw(MUL, BB, B, B);
+	st[n++] = cw(SUB, E, AA, BB);
+	st[n++] = cw(ADD, C, x3, z3);
+	st[n++] = cw(SUB, D, x3, z3);
+	st[n++] = cw(MUL, DA, D, A);
+	st[n++] = cw(MUL, CBr, C, B);
+	st[n++] = cw(ADD, x3, DA, CBr);
+	st[n++] = cw(MUL, x3, x3, x3);
+	st[n++] = cw(SUB, z3, DA, CBr);
+	st[n++] = cw(MUL, z3, z3, z3);
+	st[n++] = cw(MUL, z3, z3, x1);
+	st[n++] = cw(MUL, x2, AA, BB);
+	st[n++] = cw(MUL, z2, CB, E);
+	st[n++] = cw(ADD, z2, z2, AA);
+	st[n++] = cw(MUL, z2, E, z2);
+	/* bits 254 .. 0, 24 to a word from its bit 23: no branch on them */
+	memset(kb, 0, sizeof(kb));
 	for (i = 254; i >= 0; i--) {
-		unsigned kt = (k[i >> 3] >> (i & 7)) & 1, m;
-		swap ^= kt;
-		m = 0U - swap;
-		j = (x2 ^ x3) & m;
-		x2 ^= j;
-		x3 ^= j;
-		j = (z2 ^ z3) & m;
-		z2 ^= j;
-		z3 ^= j;
-		swap = kt;
-		fadd(A, x2, z2);
-		fmul(AA, A, A);
-		fsub(B, x2, z2);
-		fmul(BB, B, B);
-		fsub(E, AA, BB);
-		fadd(C, x3, z3);
-		fsub(D, x3, z3);
-		fmul(DA, D, A);
-		fmul(CBr, C, B);
-		fadd(x3, DA, CBr);
-		fmul(x3, x3, x3);
-		fsub(z3, DA, CBr);
-		fmul(z3, z3, z3);
-		fmul(z3, z3, x1);
-		fmul(x2, AA, BB);
-		fmul(z2, CB, E);
-		fadd(z2, z2, AA);
-		fmul(z2, E, z2);
+		int at = 254 - i;
+		kb[at / 24] |= (unsigned long)((k[i >> 3] >> (i & 7)) & 1) << (23 - at % 24);
 	}
-	if (swap) {				/* the last swap: k[0] & 7 is 0, so it's public */
-		j = x2;
-		x2 = x3;
-		x3 = j;
-		j = z2;
-		z2 = z3;
-		z3 = j;
-	}
+	run_steps(st, n, x2, x3, z2, z3, kb, 255);
+	memset(kb, 0, sizeof(kb));
+	memset(k, 0, sizeof(k));
 	inv(T(9), z2);
 	fmul(x2, x2, T(9));
 	out_be(u, 32, x2);

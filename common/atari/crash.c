@@ -39,9 +39,9 @@ void (*crash_cleanup)(const char *what);
 void (*crash_report)(const char *text, long n);
 extern short _is_acc;			/* crt0.S */
 
-/* the vectors caught: 2 to 8, and 11 (line F) where TOS's own handler
-   is on it (sup_install): with an FPU's, an emulator's or a 68040/68060
-   package's, the program's FPU instructions are theirs */
+/* the vectors caught: 2 to 8, and 11 (line F) but on TOS 1.0x
+   (sup_install); a line F outside the program's code goes on to the
+   handler before ours (crash_e11) */
 static void (*const entry[12])(void) = {
 	0, 0, crash_e2, crash_e3, crash_e4, crash_e5, crash_e6, crash_e7, crash_e8, 0, 0, crash_e11
 };
@@ -213,41 +213,72 @@ static int tos_default(int i, int j)
 	       ((b >> 24) == (u32)j && a == ((b & 0xFFFFFFUL) | (u32)i << 24));
 }
 
-/* TOS 1.0x's own line F: at every start its AES copies its dispatcher
-   into RAM (the copy rewrites itself) and puts it on vector 11. It runs
-   line F from ROM only, so a line F in the program's code is a crash; and
-   a stray one there must not reach the dispatcher, which jumps through a
-   table or pops the supervisor stack. Known by its first words (TOS 1.04:
-   move.w (sp)+,d2; movea.l (sp)+,a0; move.w (a0)+,d1; btst #0,d1); an
-   emulator over it isn't */
-static int tos1_aes_line_f(void)
+/* TOS 1.0x: its ROM calls its own routines through line F (its AES
+   copies a dispatcher into RAM at every start and puts it on vector 11),
+   from the AES and the VDI and from interrupts. Known by the version
+   alone, whoever is on vector 11: an FPU emulator over the dispatcher
+   passes those calls on to it, and the hook would cost an ST the same
+   4 to 7% of its time */
+static int tos1x(void)
 {
-	static const unsigned short first[4] = { 0x341F, 0x205F, 0x3218, 0x0801 };
 	const unsigned char *h = (const unsigned char *)*low(0x4F2L);	/* _sysbase */
-	const unsigned short *p = (const unsigned short *)(*low(0x2CL) & 0xFFFFFFL);
-	int i;
-	if (h == 0 || *(const unsigned short *)(h + 2) >= 0x0200 || ((long)p & 1))
-		return 0;
-	for (i = 0; i < 4; i++)
-		if (p[i] != first[i])
-			return 0;
-	return 1;
+	return h != 0 && *(const unsigned short *)(h + 2) < 0x0200;
+}
+
+/* the vectors left to another handler, or chained after one, for the
+   app's log (crash_vectors): "" when every one is ours over TOS's own */
+static char vec_note[96];
+static int hk_safe(u32 a);
+
+/* vector 11's handler before ours, by its XBRA name if it has one
+   (supervisor mode) */
+static void vec_note_line_f(void)
+{
+	u32 a = (u32)*low(0x2CL);
+	if (crash_cpu < 20)
+		a &= 0xFFFFFFUL;
+	if (hk_safe(a) && ((const long *)a)[-3] == 0x58425241L) {	/* 'XBRA' */
+		u32 id = (u32)((const long *)a)[-2];
+		char n[5];
+		int i;
+		for (i = 0; i < 4; i++) {
+			char c = (char)(id >> (24 - 8 * i));
+			n[i] = c > ' ' && c < 127 ? c : '?';
+		}
+		n[4] = 0;
+		snprintf(vec_note, sizeof(vec_note), "line F chained after XBRA '%s' ($%06lX)", n,
+			 (unsigned long)a);
+	} else {
+		snprintf(vec_note, sizeof(vec_note), "line F chained after $%06lX (no XBRA)", (unsigned long)a);
+	}
+}
+
+const char *crash_vectors(void)
+{
+	return vec_note;
 }
 
 static void sup_install(void)
 {
 	volatile long *rec = low(0x380L);
 	long in = *low(0x4A2L), block;
-	/* line F only while vector 11 has TOS's own handler on it: the one
-	   that bombs, or TOS 1.0x's AES dispatcher. A software FPU emulator or
-	   a 68040's or 68060's FPU package (CT60) keeps it, as the program's
-	   FPU instructions are theirs to run. Looked at before vectors 3 and 7
-	   are ours. Not on TOS 1.0x either (the guidelines' Speed): its ROM
-	   calls its own routines through line F, from the AES and the VDI, so
-	   the hook was on 4 to 7% of all an ST's time (EFTP's profiles, 26 Oct
-	   2026); a line F in the program, which no AERA program has, then
-	   bombs as before */
-	int i, line_f = (tos_default(11, 7) || tos_default(11, 3)) && !tos1_aes_line_f();
+	/* line F (vector 11), but not on TOS 1.0x (the guidelines' Speed):
+	   its ROM calls its own routines through line F, from the AES and
+	   the VDI, so the hook was on 4 to 7% of all an ST's time (EFTP's
+	   profiles, 26 Oct 2026); a line F in the program then bombs as
+	   before. Elsewhere it is taken whoever holds it: TOS's own handler,
+	   or an FPU emulator's, a 68040's or 68060's FPU package (CT60), a
+	   driver's. crash_e11 takes a line F only in the program's code,
+	   which has no FPU instruction (no AERA program has one in its
+	   TEXT; EWeb's are in EWEBJS.OVL); any other goes on to the handler
+	   before ours at once. The one it was is named for the app's log
+	   (crash_vectors): 0.57's 11 bombs on Erez's Falcon left no
+	   CRASH.LOG, vector 11 not being TOS's there */
+	int i, tos1 = tos1x(), own11 = tos_default(11, 7) || tos_default(11, 3);
+	if (tos1)
+		snprintf(vec_note, sizeof(vec_note), "line F left to TOS 1.0x (its ROM calls through it)");
+	else if (!own11)
+		vec_note_line_f();
 	if (rec[0] == 0x12345678L) {		/* proc_lives: TOS saw bombs */
 		for (i = 0; i < 27; i++)
 			prev[i] = rec[i];
@@ -259,7 +290,7 @@ static void sup_install(void)
 	block = in - savptr_nested;
 	savptr_user = block > 0 && block <= 128 ? in + block : 0;
 	for (i = 2; i <= 11; i++) {
-		if (i == 11 && !line_f)
+		if (i == 11 && tos1)
 			continue;
 		if (CAUGHT(i)) {
 			crash_old[i] = *low(i * 4L);

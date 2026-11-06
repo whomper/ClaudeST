@@ -64,9 +64,18 @@ static void rest(unsigned long now)
 
 void bg_tick(void)
 {
-	unsigned long now = tos_ms();
 	short x, y, b, ks;
 	graf_mkstate(&x, &y, &b, &ks);
+	bg_tick_at(x, y, b, ks);
+}
+
+/* the same with the mouse and shift keys the event call gave back (its
+   mx, my, mbutton, kstate, filled for every event): no graf_mkstate, an
+   AES call of 4.9 ms on TOS 1.04 in every turn of an ST (EPDF's gemprof,
+   1 Nov 2026) */
+void bg_tick_at(short x, short y, short b, short ks)
+{
+	unsigned long now = tos_ms();
 	if (last_x >= 0 && (x != last_x || y != last_y || b || ks != last_ks))
 		rest(now);
 	last_x = x;

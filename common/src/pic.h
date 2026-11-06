@@ -65,6 +65,12 @@ extern long pic_hdr_same, pic_hdr_lj_only, pic_hdr_differ;
 /* called now and then while decoding; 0 stops it (PIC_STOPPED). NULL:
    never */
 extern int (*pic_poll)(void);
+/* the scaler (a decode to a size, row by row) calls pic_poll every this many
+   source rows: 16, unless the program sets it. One row of an 800-pixel PNG
+   takes about 9.5 ms on a 16 MHz 68030, so a program whose poll is cheap
+   and that wants a turn under 50 ms sets 1 (EWeb: the pictures' page 180
+   ms -> 75, the decode 1.8 % slower); one whose poll is dear keeps 16 */
+extern int pic_scale_poll_rows;
 
 /* ---- a baseline JPEG decoded on the Falcon's DSP (PIC_LIBJPEG builds;
    dsp/jpeg.a56) ---- */
@@ -137,7 +143,7 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b);
    the cube's edges finds the pen that lies that way); out has w * h
    bytes. The pixels the alpha leaves less than half solid are given pen
    0 (they aren't drawn) and carry no error. pic_poll is called every 16
-   rows: 1 done, 0 when it stopped it (out then partly made) */
+   rows (pic_dither's own; the scaler's is pic_scale_poll_rows): 1 done, 0 when it stopped it (out then partly made) */
 int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
 /* the same a row at a time, for a picture that isn't whole in memory: rows
    of w pixels (5-6-5, alpha or NULL) given top to bottom, each one's pens
@@ -149,5 +155,11 @@ typedef struct pic_dither_rows PIC_DITHER;
 PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal);
 void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned char *alpha, unsigned char *out);
 void pic_dither_close(PIC_DITHER *dt);
+/* Sharp (Erez, 5 Nov 2026, EPDF's first): from here each pixel its
+   nearest pen, no dither, as without room for the errors. For a picture
+   of few colours (a screenshot, a diagram) on 16 colours or fewer, whose
+   letters a dither makes dots; photos keep the dither (the caller
+   decides: EPDF, a palette of up to 128 colours). Off unless asked */
+void pic_dither_sharp(PIC_DITHER *dt);
 
 #endif

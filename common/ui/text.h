@@ -57,6 +57,11 @@ void text_plain(short h, short x, short y, const char *s, long n);
    vro_cpyfm as before. The caller hides the mouse and holds
    wind_update, as for the VDI */
 void scr_rows(short h, const short *p);
+/* rows of n bytes (even) moved, or set to v, every row in one loop (the
+   counts in registers): the About box's buffer and screen; no rows,
+   nothing */
+void scr_copy_rows(unsigned char *d, long dline, const unsigned char *s, long sline, short rows, short n);
+void scr_set_rows(unsigned char *d, long line, short rows, short n, unsigned long v);
 
 /* the box p (x1, y1, x2, y2) inverted, as vr_recfl in MD_XOR with a solid
    fill in pen 1 (every plane of each pixel turned over): a selection
@@ -113,7 +118,10 @@ int scr_text(short x, short y, const char *s, long n, short pen, short height, i
 int scr_spans(short y1, short y2, const short *spans, short n);
 
 /* a bitmap (rows of wb bytes, its set bits in pen, MD_TRANS) at any x, as
-   vrt_cpyfm in MD_TRANS puts a G_IMAGE's; cut to the clip. 0 elsewhere */
+   vrt_cpyfm in MD_TRANS puts a G_IMAGE's; cut to the clip. 0 elsewhere.
+   Measure before using it for many small bitmaps: a list's 32 x 32 row
+   icons were slower this way than by vrt_cpyfm on an 8 MHz ST (EFTP,
+   1 Nov 2026: a page scrolled 175 ms by the VDI, 210 by scr_bits) */
 int scr_bits(short x, short y, const unsigned char *bits, short wb, short rows, short pen);
 
 /* the box p's pixels cleared where x + y is even, as TOS 1.04's AES greys

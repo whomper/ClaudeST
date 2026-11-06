@@ -114,9 +114,14 @@ static void sup_take(void)
 	io_fail = 0;
 }
 
+unsigned short dsprsa_turns;
+unsigned long dsprsa_turn_ms;
+
 static void sup_run(void)
 {
 	unsigned long t0, turn;
+	dsprsa_turns = 0;
+	dsprsa_turn_ms = 0;
 	Supexec(sup_send);
 	if (io_fail)
 		return;
@@ -130,8 +135,11 @@ static void sup_run(void)
 			return;
 		}
 		if (pf_idle && pf_ms() - turn >= 40) {
+			unsigned long t1 = pf_ms();
 			pf_idle();
 			turn = pf_ms();
+			dsprsa_turns++;
+			dsprsa_turn_ms += turn - t1;
 		}
 	}
 	Supexec(sup_take);

@@ -25,8 +25,8 @@
 #include "dialog.h"
 
 extern unsigned long dlg_fast_t[4];
-extern unsigned long dlg_fast_kt[8];
-extern long dlg_fast_kn[8];
+extern unsigned long dlg_fast_kt[9];
+extern long dlg_fast_kn[9];
 
 short vdi_h, cw, ch, scr_w, scr_h, planes;
 
@@ -38,7 +38,7 @@ static MFDB scr, mem;
 static unsigned char *buf_a, *buf_b;
 static long bytes;
 static int differ, checks;
-static char line[160];
+static char line[240];
 
 static void say(const char *s)
 {
@@ -154,6 +154,94 @@ static void tree_settings(void)
 		add(G_STRING, HIDETREE, 0, (long)words[k % 5], (short)(sx * cw), (short)((4 + k % 8) * ch), 28 * 8, ch);
 	add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", (short)((sx + 18) * cw), (short)(14 * ch), (short)(10 * cw), ch);
 	add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"OK", (short)((sx + 30) * cw), (short)(14 * ch), (short)(10 * cw), ch);
+	end();
+}
+
+/* the objects added after box made its children (EFTP's d_nest) */
+static void nest(short box)
+{
+	short i;
+	if (last == box)
+		return;
+	tree[box].ob_head = box + 1;
+	tree[box].ob_tail = last;
+	tree[last].ob_next = box;
+	for (i = box + 1; i <= last; i++) {
+		tree[i].ob_x -= tree[box].ob_x;
+		tree[i].ob_y -= tree[box].ob_y;
+	}
+	tree[box].ob_next = 0;
+	tree[0].ob_tail = box;
+	last = box;
+}
+
+/* a field: text in a template of n '_' (EFTP's fields) */
+static char ftext[10][32], ftmpl[10][32];
+static long field(int k, const char *text, short n, short just)
+{
+	TEDINFO *t = &ted[nted++];
+	memset(t, 0, sizeof(*t));
+	memset(ftmpl[k], '_', (size_t)n);
+	ftmpl[k][n] = 0;
+	strcpy(ftext[k], text);
+	t->te_ptext = ftext[k];
+	t->te_ptmplt = ftmpl[k];
+	t->te_pvalid = "X";
+	t->te_font = 3;
+	t->te_just = just;
+	t->te_color = 0x1180;
+	t->te_thickness = -1;
+	t->te_txtlen = (short)(n + 1);
+	t->te_tmplen = (short)(n + 1);
+	return (long)t;
+}
+
+/* EFTP's Site Manager (ui/dialogs.c, SLW 18, SROWS 11): a list in a box,
+   its first row selected, the arrows, fields, a template with words in
+   it, an empty one ("@"), a password, buttons */
+static void tree_sites(void)
+{
+	static const char *rows[] = { "Test server", "Atari archive", "", "", "", "", "", "", "", "", "" };
+	short k, list, x = 26;
+	begin(0x00021100L, OUTLINED, (short)(65 * cw), (short)(20 * ch));
+	add(G_BOXTEXT, 0, 0, tedi(" Sites", 0, 0x1071, 0), 0, 0, (short)(65 * cw), ch);
+	list = add(G_BOX, 0, 0, 0x00FF1100L, (short)(2 * cw), (short)(2 * ch), (short)(18 * cw), (short)(11 * ch));
+	for (k = 0; k < 11; k++)
+		add(G_STRING, TOUCHEXIT, k == 0 ? SELECTED : 0, (long)rows[k], (short)(2 * cw), (short)((2 + k) * ch),
+		    (short)(18 * cw), ch);
+	nest(list);
+	add(G_BOXCHAR, TOUCHEXIT, 0, 0x01FF1100L, (short)(20 * cw), (short)(2 * ch), (short)(2 * cw), ch);
+	add(G_BOXCHAR, TOUCHEXIT, DISABLED, 0x02FF1100L, (short)(20 * cw), (short)(12 * ch), (short)(2 * cw), ch);
+	str((short)(x * cw), (short)(2 * ch), "Name:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(0, "Test server", 24, 0), (short)((x + 10) * cw), (short)(2 * ch), (short)(24 * cw), ch);
+	str((short)(x * cw), (short)(4 * ch), "Server:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(1, "127.0.0.1", 28, 0), (short)((x + 10) * cw), (short)(4 * ch), (short)(28 * cw), ch);
+	str((short)(x * cw), (short)(5 * ch), "Port:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(2, "2121", 5, 0), (short)((x + 10) * cw), (short)(5 * ch), (short)(5 * cw), ch);
+	str((short)(x * cw), (short)(8 * ch), "User:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(3, "@", 28, 0), (short)((x + 10) * cw), (short)(8 * ch), (short)(28 * cw), ch);
+	str((short)(x * cw), (short)(9 * ch), "Password:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(4, "******", 22, 0), (short)((x + 10) * cw), (short)(9 * ch), (short)(22 * cw), ch);
+	str((short)(x * cw), (short)(11 * ch), "Server folder:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(5, "/pub", 23, 0), (short)((x + 15) * cw), (short)(11 * ch), (short)(23 * cw), ch);
+	str((short)(x * cw), (short)(12 * ch), "Atari folder:");
+	add(G_FBOXTEXT, EDITABLE, 0, field(6, "", 18, 0), (short)((x + 15) * cw), (short)(12 * ch), (short)(18 * cw), ch);
+	add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"...", (short)((x + 34) * cw), (short)(12 * ch), (short)(4 * cw), ch);
+	{
+		/* words in the template, centred and right */
+		TEDINFO *t = (TEDINFO *)field(7, "1234", 4, 2);
+		strcpy(ftmpl[7], "Port __:__ end");
+		t->te_tmplen = (short)(strlen(ftmpl[7]) + 1);
+		add(G_FBOXTEXT, EDITABLE, 0, (long)t, (short)(x * cw), (short)(14 * ch), (short)(20 * cw), ch);
+		t = (TEDINFO *)field(8, "ab", 6, 1);
+		add(G_FBOXTEXT, EDITABLE, 0, (long)t, (short)((x + 22) * cw), (short)(14 * ch), (short)(14 * cw), ch);
+		t = (TEDINFO *)field(9, "xy", 6, 2);
+		add(G_FBOXTEXT, EDITABLE, 0, (long)t, (short)((x + 22) * cw), (short)(16 * ch), (short)(14 * cw), ch);
+	}
+	add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"New", (short)(2 * cw), (short)(15 * ch), (short)(5 * cw), ch);
+	add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", (short)(29 * cw), (short)(18 * ch), (short)(10 * cw), ch);
+	add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Save", (short)(41 * cw), (short)(18 * ch), (short)(10 * cw), ch);
+	add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"Connect", (short)(53 * cw), (short)(18 * ch), (short)(10 * cw), ch);
 	end();
 }
 
@@ -375,6 +463,35 @@ static void all(const char *what)
 	}
 }
 
+static void timed_sites(void)
+{
+	short k;
+	unsigned long t0, t1, t2;
+	tree_sites();
+	tree[0].ob_x = 56;
+	tree[0].ob_y = (short)(scr_h > 300 ? 40 : 20);
+	dlg_fast_on = 0;
+	t0 = tos_ms();
+	for (k = 0; k < 4; k++)
+		dlg_draw(tree, 0);
+	t1 = tos_ms();
+	dlg_fast_on = 1;
+	memset(dlg_fast_t, 0, sizeof(dlg_fast_t));
+	memset(dlg_fast_kt, 0, sizeof(dlg_fast_kt));
+	memset(dlg_fast_kn, 0, sizeof(dlg_fast_kn));
+	for (k = 0; k < 4; k++)
+		dlg_draw(tree, 0);
+	t2 = tos_ms();
+	snprintf(line, sizeof(line), "DLC time: the Site Manager whole: objc_draw %lu ms, fast %lu ms (the walk %lu, the root's fill %lu, objc_draw %lu, the CPU's objects %lu)",
+		 (t1 - t0) / 4, (t2 - t1) / 4, dlg_fast_t[0] / 4, dlg_fast_t[1] / 4, dlg_fast_t[2] / 4, dlg_fast_t[3] / 4);
+	say(line);
+	snprintf(line, sizeof(line), "DLC time: its CPU objects in 4 draws, ms/count: strings %lu/%ld, boxtexts %lu/%ld, boxes %lu/%ld, buttons %lu/%ld, images %lu/%ld, fields %lu/%ld, boxchars %lu/%ld",
+		 dlg_fast_kt[1], dlg_fast_kn[1], dlg_fast_kt[2], dlg_fast_kn[2], dlg_fast_kt[4], dlg_fast_kn[4],
+		 dlg_fast_kt[5], dlg_fast_kn[5], dlg_fast_kt[6], dlg_fast_kn[6], dlg_fast_kt[7], dlg_fast_kn[7],
+		 dlg_fast_kt[8], dlg_fast_kn[8]);
+	say(line);
+}
+
 static void timed(void)
 {
 	short k, x, y;
@@ -396,9 +513,9 @@ static void timed(void)
 	for (k = 0; k < 4; k++)
 		dlg_draw(tree, 0);
 	t2 = tos_ms();
-	snprintf(line, sizeof(line), "DLC time: the CPU's objects in 4 draws, ms/count: strings %lu/%ld, boxtexts %lu/%ld, boxes %lu/%ld, buttons %lu/%ld, images %lu/%ld",
+	snprintf(line, sizeof(line), "DLC time: the CPU's objects in 4 draws, ms/count: strings %lu/%ld, boxtexts %lu/%ld, boxes %lu/%ld, buttons %lu/%ld, images %lu/%ld, fields %lu/%ld",
 		 dlg_fast_kt[1], dlg_fast_kn[1], dlg_fast_kt[2], dlg_fast_kn[2], dlg_fast_kt[4], dlg_fast_kn[4],
-		 dlg_fast_kt[5], dlg_fast_kn[5], dlg_fast_kt[6], dlg_fast_kn[6]);
+		 dlg_fast_kt[5], dlg_fast_kn[5], dlg_fast_kt[6], dlg_fast_kn[6], dlg_fast_kt[7], dlg_fast_kn[7]);
 	say(line);
 	(void)x;
 	(void)y;
@@ -416,6 +533,30 @@ static void timed(void)
 	t2 = tos_ms();
 	snprintf(line, sizeof(line), "DLC time: a tab (the fast way for every part): objc_draw %lu ms, fast %lu ms", (t1 - t0) / 4, (t2 - t1) / 4);
 	say(line);
+	{
+		/* where the fast way starts to win: a tab, a page (the G_IBOX
+		   that holds one), the whole; the fast way's parts for each */
+		static const short part[] = { 4, 8, 0 };
+		static const char *const name[] = { "a tab", "a page", "the whole" };
+		short q;
+		for (q = 0; q < 3; q++) {
+			long area = (long)(tree[part[q]].ob_width + 6) * (tree[part[q]].ob_height + 6);
+			dlg_fast_on = 0;
+			t0 = tos_ms();
+			for (k = 0; k < 4; k++)
+				dlg_draw(tree, part[q]);
+			t1 = tos_ms();
+			dlg_fast_on = 1;
+			memset(dlg_fast_t, 0, sizeof(dlg_fast_t));
+			for (k = 0; k < 4; k++)
+				dlg_draw(tree, part[q]);
+			t2 = tos_ms();
+			snprintf(line, sizeof(line), "DLC time: %s, %ld/8 of the dialog: objc_draw %lu ms, fast %lu ms (the walk %lu, the root's fill %lu, objc_draw %lu, the CPU's objects %lu)",
+				 name[q], area * 8 / ((long)tree[0].ob_width * tree[0].ob_height), (t1 - t0) / 4, (t2 - t1) / 4,
+				 dlg_fast_t[0] / 4, dlg_fast_t[1] / 4, dlg_fast_t[2] / 4, dlg_fast_t[3] / 4);
+			say(line);
+		}
+	}
 	{
 		/* the CPU's pieces alone: 28 letters off a byte and on one, a
 		   tab's box */
@@ -665,6 +806,8 @@ int main(void)
 	dlg_fast_part = 0;		/* every part the fast way, to check it */
 	tree_settings();
 	all("Settings");
+	tree_sites();
+	all("Site Manager");
 	tree_cases();
 	all("cases");
 	tree_frames();
@@ -678,6 +821,7 @@ int main(void)
 	say(line);
 	under();
 	timed();
+	timed_sites();
 	wind_update(0);
 	graf_mouse(257, 0);
 	/* a 68020 and later: the AES's way by design (scr_cpu_wins), checked

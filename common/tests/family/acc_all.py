@@ -3,15 +3,16 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """All the AERA accessories at once (Erez, 19 Oct 2026): ECal, EContact,
 EHypView and EMail's EMail check (EMAILCHK.ACC), their latest releases
-(getrelease.py), loaded together on a 4 MB machine, as on Erez's own:
+(getrelease.py), loaded together on a Falcon with TT RAM, as on Erez's own.
+Not on a 4 MB machine, ST or Falcon-4 (Erez, 4 Nov 2026: the accessories are not run there; the
+4 MB machines stay targets for the programs, each on its own): the script says so and stops.
 
     common/tests/family/acc_all.py WORK [MACHINE] [--nvdi [--font]] [--display :N] [--use FILE]...
                                    [--accs ECal,EContact] [--prg EMail] [--again]
 
-MACHINE is ST (4 MB, TOS 1.04: ECALST.ACC and ECONTST.ACC, the ST
-editions, while a release has them; ECAL.ACC and ECONTACT.ACC when it
-doesn't, or when --use gives them, as from TLS.OVL on) or Falcon-4 (4 MB, no TT RAM, TOS 4.04: ECAL.ACC and
-ECONTACT.ACC), ST by default; EHYPVIEW.ACC runs on both. --nvdi boots
+MACHINE is Falcon (the DFB1: 14 MB + TT RAM, TOS 4.04, ECAL.ACC and ECONTACT.ACC),
+Falcon by default, or another machine with more than 4 MB (TT); ST-1 (1 MB, TOS 1.04) takes
+ECALST.ACC and ECONTST.ACC, the ST editions, while a release has them. --nvdi boots
 with Erez's NVDI (machines.py, m.nvdi()); --font gives EHypView one of
 his Bitstream fonts (FONT=Courier 10 Pitch, 10 pt), loaded at its boot. --use FILE puts a
 candidate's accessory (ECAL.ACC, say) or --prg's program (EMAIL.PRG) in place of the release's
@@ -71,7 +72,10 @@ rest = [a for a in args if not a.startswith("--")]
 if not rest:
     sys.exit(__doc__)
 work = os.path.abspath(rest[0])
-machine = rest[1] if len(rest) > 1 else "ST"
+machine = rest[1] if len(rest) > 1 else "Falcon"
+if machine.split(":")[0] in ("ST", "Falcon-4"):
+    sys.exit("acc_all: the accessories are not run on a 4 MB machine (%s): Erez, 4 Nov 2026. "
+             "Run it on Falcon (TT RAM)." % machine)
 st = machine.startswith("ST")
 
 fails = 0
@@ -101,7 +105,7 @@ if nvdi and not m.nvdi():
     sys.exit("acc_all: no NVDI here (machines.py, AERA_NVDI)")
 def get(app, names):
     """the release's files that --use doesn't give; True if it has them"""
-    need = [n for n in names if n not in use]
+    need = [n for n in names if n.upper() not in use]
     if not need:
         return True
     return subprocess.run([sys.executable, os.path.join(TOOLS, "getrelease.py"), app, rel] + need,
@@ -157,18 +161,18 @@ if prg:
     parts = prg.split(":")
     prg, pf, more = (parts[0], parts[1], parts[2:]) if len(parts) > 1 else (prg, prg.upper() + ".PRG", [])
     if not get(prg, [pf] + more):
-        sys.exit("acc_all: %s's release has no %s" % (prg, " ".join(n for n in [pf] + more if n not in use)))
+        sys.exit("acc_all: %s's release has no %s" % (prg, " ".join(n for n in [pf] + more if n.upper() not in use)))
     if not again:
         os.makedirs(os.path.join(hd, prg.upper()), exist_ok=True)
-        shutil.copy(use.get(pf, os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
+        shutil.copy(use.get(pf.upper(), os.path.join(rel, pf)), os.path.join(hd, prg.upper(), pf))
         for f in more:
-            shutil.copy(use.get(f, os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
+            shutil.copy(use.get(f.upper(), os.path.join(rel, f)), os.path.join(hd, prg.upper(), f))
     auto = ["--auto", "C:\\%s\\%s" % (prg.upper(), pf)]
 versions = ", ".join("%s %s" % (a, use[f] if f in use else
                                  open(os.path.join(rel, repo.get(a, a).upper() + ".VERSION")).read().strip())
                      for a, f in want.items())
 if prg:
-    versions += ", %s %s in front" % (prg, use[pf] if pf in use else
+    versions += ", %s %s in front" % (prg, use[pf.upper()] if pf.upper() in use else
                                       open(os.path.join(rel, prg.upper() + ".VERSION")).read().strip())
 print("on %s%s; %s%s" % (m.describe(), " with NVDI" if nvdi else "", versions,
                          "; booted again (the accessories at what they measured)" if again else ""), flush=True)
@@ -282,16 +286,21 @@ try:
     click(30, 8)                                     # the Desk menu (the first title's middle:
     time.sleep(1)                                    # EWeb's "EWeb" starts past x 18)
     menu = shot("1-desk-menu")
+    # the menu's box with one accessory under About and its line is small:
+    # a single-accessory run (ST-1's EMail check alone) changed 3,238 pixels;
+    # four over a window white beneath the menu (EPDF 0.5.3, no info line)
+    # 3,790. The title alone turned black is some 1,300 (below)
+    menu_px = 2000
     for _ in range(5):
         # a first boot under NVDI on a 4 MB Falcon can take more than a
         # second to draw it (EUpdate 1.19's run, 27 Oct 2026); the title
         # alone turned black is some 1,300 pixels ("ClaudeST", 1.68), the
         # menu's box many more
-        if differs(desk, menu) > 4000:
+        if differs(desk, menu) > menu_px:
             break
         time.sleep(1)
         menu = shot("1-desk-menu")
-    check(differs(desk, menu) > 4000, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
+    check(differs(desk, menu) > menu_px, "the Desk menu opens (see 1-desk-menu.png: %d accessories)" % len(want))
     alert_rows = set()
     if alerts & set(want):
         # which rows open an alert: the TOS orders the Desk menu as it
@@ -312,7 +321,7 @@ try:
     click(300, 300)                                  # closed again
     time.sleep(1)
     for rnd in (1, 2):
-        if rnd == 2 and len(want) == 1:
+        if rnd == 2 and len(want) == 1 and not alert_rows:
             # its window is still on top: closed (^Q, which closes an
             # accessory's window in every release, before and after ^U
             # took over from ^W), so that opening it again draws it

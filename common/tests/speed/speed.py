@@ -52,6 +52,7 @@ KEY = 50        # a key, click, tick or row
 LINE = 50       # a line scrolled
 PAGE = 150      # a page scrolled
 DIALOG = 150    # a dialog, pop-up or alert opened
+ABOUT_ST = 200  # the About box on an 8 MHz ST in low or medium (Erez, 2 Nov 2026); else DIALOG
 WINDOW = 300    # the main window drawn whole; what a move or resize uncovers
 ACC = 500       # the accessory opened
 START = 2000    # the program started
@@ -73,6 +74,8 @@ class Rig:
         if nvdi and not self.m.nvdi():
             sys.exit("speed: no NVDI here (machines.py, AERA_NVDI)")
         self.st = st
+        # the About box's time: DIALOG, but ABOUT_ST on an ST in colour
+        self.about = ABOUT_ST if st and self.m.screen in ("low", "med") else DIALOG
         self.display = display
         self.results = []
         self.hatari = self.x = None

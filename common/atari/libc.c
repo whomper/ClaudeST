@@ -1052,10 +1052,17 @@ long atol(const char *s) { return strtol(s, 0, 10); }
 int abs(int v) { return v < 0 ? -v : v; }
 long labs(long v) { return v < 0 ? -v : v; }
 
-/* heap sort: no recursion, no extra memory, and n log n even for the
-   list of thousands of contacts sorted again after every change (the
-   shell sort it replaces went quadratic there). Pointers (the usual
-   case) are swapped as longs */
+/* ---- qsort (tests/qsort checks it against the host's) ---- */
+/* A merge sort of pointers to the elements, then each element moved once
+   to its place: half the comparisons of a heap sort, stable (as glibc's
+   is: equal elements keep their order), and no multiply for an element's
+   place (a 68000 multiplies 32-bit numbers in software: EPDF's page of
+   4,500 chunks, 28 bytes each, took 11 s on an ST through the heap sort).
+   Runs of 8 are put in order first by insertion. Without memory for the
+   pointers, the heap sort it replaces (no recursion, no extra memory, n
+   log n even for the list of thousands of contacts sorted again after
+   every change), its places now as byte offsets: still no multiply. */
+
 /* two elements swapped: by longs or shorts where both are on even
    addresses and the size allows, else a byte at a time (ECal's reminder
    index of 43 elements took 60 ms on an ST, byte by byte) */
@@ -1088,66 +1095,112 @@ static void swap_el(char *x, char *y, size_t size)
 	}
 }
 
-static void sift(char *b, size_t root, size_t n, size_t size, int (*cmp)(const void *, const void *))
+/* the heap's places as byte offsets: a place's first child is at 2 r +
+   size, so no place is ever multiplied out */
+static void sift(char *b, size_t r, size_t end, size_t size, int (*cmp)(const void *, const void *))
 {
 	for (;;) {
-		size_t child = 2 * root + 1;
-		if (child >= n)
+		size_t c = 2 * r + size;
+		if (c >= end)
 			return;
-		if (child + 1 < n && cmp(b + child * size, b + (child + 1) * size) < 0)
-			child++;
-		if (cmp(b + root * size, b + child * size) >= 0)
+		if (c + size < end && cmp(b + c, b + c + size) < 0)
+			c += size;
+		if (cmp(b + r, b + c) >= 0)
 			return;
-		swap_el(b + root * size, b + child * size, size);
-		root = child;
+		swap_el(b + r, b + c, size);
+		r = c;
 	}
 }
 
-/* the same for arrays of pointers, indexed without a multiply (a 68000
-   multiplies 32-bit numbers in software) */
-static void sift_ptr(void **a, size_t root, size_t n, int (*cmp)(const void *, const void *))
+static void heap_sort(char *b, size_t n, size_t size, int (*cmp)(const void *, const void *))
 {
-	for (;;) {
-		size_t child = 2 * root + 1;
-		void *t;
-		if (child >= n)
-			return;
-		if (child + 1 < n && cmp(&a[child], &a[child + 1]) < 0)
-			child++;
-		if (cmp(&a[root], &a[child]) >= 0)
-			return;
-		t = a[root];
-		a[root] = a[child];
-		a[child] = t;
-		root = child;
+	size_t end = n * size, r;
+	for (r = (n / 2) * size; r > 0;) {
+		r -= size;
+		sift(b, r, end, size, cmp);
+	}
+	for (end -= size; end > 0; end -= size) {
+		swap_el(b, b + end, size);
+		sift(b, 0, end, size, cmp);
 	}
 }
+
+#define QS_RUN 8
 
 void qsort(void *base_, size_t n, size_t size, int (*cmp)(const void *, const void *))
 {
-	char *b = base_;
-	size_t i;
-	if (n < 2)
+	char *b = base_, **m, **a, **o, **t, *e, *tmp;
+	size_t i, w;
+	if (n < 2 || !size)
 		return;
-	if (size == sizeof(void *) && !((unsigned long)b & 1)) {
-		void **a = base_, *t;
-		for (i = n / 2; i-- > 0;)
-			sift_ptr(a, i, n, cmp);
-		for (i = n - 1; i > 0; i--) {
-			t = a[0];
-			a[0] = a[i];
-			a[i] = t;
-			sift_ptr(a, 0, i, cmp);
+	m = malloc(2 * n * sizeof(char *) + size);
+	if (!m) {
+		heap_sort(b, n, size, cmp);
+		return;
+	}
+	a = m;
+	o = m + n;
+	tmp = (char *)(m + 2 * n);
+	for (i = 0, e = b; i < n; i++, e += size)
+		a[i] = e;
+	/* runs of QS_RUN in order, by insertion (stable) */
+	for (i = 0; i < n; i += QS_RUN) {
+		char **r = a + i, **re = a + (n - i < QS_RUN ? n : i + QS_RUN), **p, **q, *v;
+		for (p = r + 1; p < re; p++) {
+			v = *p;
+			for (q = p; q > r && cmp(q[-1], v) > 0; q--)
+				*q = q[-1];
+			*q = v;
 		}
-		return;
 	}
-	for (i = n / 2; i-- > 0;)
-		sift(b, i, n, size, cmp);
-	for (i = n - 1; i > 0; i--) {
-		swap_el(b, b + i * size, size);
-		sift(b, 0, i, size, cmp);
+	/* the runs merged, in passes */
+	for (w = QS_RUN; w < n; w <<= 1) {
+		for (i = 0; i < n; i += 2 * w) {
+			size_t mid = i + w < n ? i + w : n, hi = i + 2 * w < n ? i + 2 * w : n;
+			char **p = a + i, **pe = a + mid, **q = a + mid, **qe = a + hi, **k = o + i;
+			while (p < pe && q < qe)
+				*k++ = cmp(*q, *p) < 0 ? *q++ : *p++;
+			while (p < pe)
+				*k++ = *p++;
+			while (q < qe)
+				*k++ = *q++;
+		}
+		t = a;
+		a = o;
+		o = t;
 	}
+	if (size == sizeof(char *) && !((unsigned long)b & 1)) {
+		/* pointers (the usual case): the values copied out in order and back */
+		char **v = (char **)b;
+		for (i = 0; i < n; i++)
+			o[i] = *(char **)a[i];
+		for (i = 0; i < n; i++)
+			v[i] = o[i];
+	} else {
+		/* a[k]: the element that goes to place k; each moved there once,
+		   a cycle at a time (its place found from its pointer) */
+		for (i = 0, e = b; i < n; i++, e += size) {
+			char *jp = e, *src;
+			size_t j = i;
+			if (a[i] == e)
+				continue;
+			memcpy(tmp, e, size);
+			for (;;) {
+				src = a[j];
+				a[j] = jp;
+				if (src == e) {
+					memcpy(jp, tmp, size);
+					break;
+				}
+				memcpy(jp, src, size);
+				j = (size_t)(src - b) / size;
+				jp = src;
+			}
+		}
+	}
+	free(m);
 }
+/* ---- end of qsort ---- */
 
 void exit(int code)
 {

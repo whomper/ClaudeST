@@ -28,7 +28,8 @@ static int mrun(void (*fn)(void *), void *ctx)
 	fn(ctx);
 	return 1;
 }
-static const ECDSP_PORT model_port = { mrun, model_put, model_get };
+static const unsigned long model_ext[4];	/* the model reads LOADP's words and does nothing with them */
+static const ECDSP_PORT model_port = { mrun, model_put, model_get, model_ext, 0x7000, 4 };
 
 #ifdef WITH_SIM
 const ECDSP_PORT *sim_port(void);

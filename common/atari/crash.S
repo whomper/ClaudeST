@@ -12,9 +12,9 @@
 
 	.text
 	.globl	crash_e2, crash_e3, crash_e4, crash_e5, crash_e6, crash_e7, crash_e8, crash_e11
-| line F: TOS 1.0x's ROM calls its own routines with it, often, and from
-| interrupts too; outside the program it goes on at once (crash_take
-| never takes it there), touching nothing
+| line F: in the program's code a crash (it has no FPU instruction);
+| anywhere else on at once to the handler before ours (TOS's, an FPU
+| emulator's, a 68040/68060 package's), touching nothing
 crash_e11:
 	move.l	%d0,-(%sp)
 	move.l	6(%sp),%d0		| the PC (2(sp) of the frame)
