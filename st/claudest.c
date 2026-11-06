@@ -37,6 +37,7 @@
 #include "text.h"
 #include "offdraw.h"
 #include "click.h"
+#include "hebkey.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -213,17 +214,8 @@ static short inlen;
 static short in_cur, in_start;		/* cursor and scroll position in input */
 static short search_mode;
 static short drop_list;		/* a late list that would refill the search pane */
-static short hebrew_kbd;		/* typing in Hebrew (SI-1452 layout) */
-
-/* Israeli SI-1452 layout by key position (scancode 0x10-0x35), giving
- * Atari character codes; 0 = key not remapped */
-static const u8 hebrew_keys[0x36 - 0x10] = {
-	/* 10 q..p */ '/', '\'', 0xD4, 0xD5, 0xC2, 0xCA, 0xC7, 0xD8, 0xDA, 0xD2,
-	/* 1a [ ] ret ctrl */ 0, 0, 0, 0,
-	/* 1e a..' */ 0xD6, 0xC5, 0xC4, 0xCC, 0xD1, 0xCB, 0xC9, 0xCD, 0xD9, 0xDB, ',',
-	/* 29 ` lshift \ */ 0, 0, 0,
-	/* 2c z../ */ 0xC8, 0xD0, 0xC3, 0xC6, 0xCF, 0xCE, 0xD3, 0xD7, 0xDC, '.'
-};
+/* typing in Hebrew (SI-1452): common's hebkey.c, the family's one
+   keyboard (hebrew_kbd, key_char, set_hebrew_kbd; guideline 1.2) */
 
 /* "move to project" picker, filled by the bridge (Q/J/W) */
 #define PICKMAX 20
@@ -1887,7 +1879,6 @@ static short blit_scroll(short n)
 
 /* ---- a one-line text editor, shared by the reply line and dialogs ---- */
 
-static u8 key_char(short kstate, short kr);
 
 static short is_space(char c)
 {
@@ -1955,7 +1946,9 @@ static short edit_key(char *buf, short *len, short *cur, short max, short kstate
 		}
 		return 1;
 	}
-	c = key_char(kstate, kr);
+	c = key_char(kstate, kr);	/* common's: the Hebrew layout's letter, or the key's own */
+	if (c < 32 || c == 127)
+		c = 0;
 	if (c) {
 		if (*len < max) {
 			memmove(buf + *cur + 1, buf + *cur, *len - *cur);
@@ -2017,7 +2010,6 @@ static void edit_draw(const char *buf, short len, short cur, short *start,
 
 static void draw_input(void)
 {
-	short badge = hebrew_kbd;
 	short y = wy + wh - input_h;
 	short x1 = px + cw / 2, x2 = px + pw - cw / 2 - 1;
 	short y1 = y + 2, y2 = wy + wh - 3;
@@ -2065,12 +2057,9 @@ static void draw_input(void)
 		edit_draw(input, inlen, in_cur, &in_start, tx0 + pl * cw, tyy,
 			  avail + 1);
 	}
-	if (badge) {
-		/* "HE": the keyboard types Hebrew */
-		short bx = x2 - 3 * cw - cw / 2;
-		fill(bx - 2, y1 + 2, bx + 2 * cw + 1, y2 - 2, 1);
-		text(bx, tyy, "HE", 2, 1, 0);
-	}
+	/* the keyboard types Hebrew: the family's badge at the field's right
+	   end (common's hebrew_badge_right, guideline 5.3; nothing while off) */
+	hebrew_badge_right(vh, x1 + 1, y1 + 1, x2 - x1 - 1, y2 - y1 - 1, 1);
 }
 
 static short rc_intersect(const short *a, short *b)
@@ -3602,13 +3591,10 @@ static void dlg_field(const char *buf, short len, short cur, short *start)
 
 	fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
 	edit_draw(buf, len, cur, start, fld_x + cw / 2, ty_, fld_cols - 1);
-	if (hebrew_kbd) {
-		short bx = fld_x + fld_w + cw / 2;
-		fill(bx - 2, fld_y + 1, bx + 2 * cw + 1, fld_y + ch + 4, 1);
-		text(bx, ty_, "HE", 2, 1, 0);
-	} else {
-		own_clear(fld_x + fld_w + cw / 2 - 2, fld_y + 1, fld_x + fld_w + 3 * cw, fld_y + ch + 4);
-	}
+	/* beside the field: the family's badge while the keyboard types
+	   Hebrew (common's hebrew_badge_right), the box's ground either way */
+	own_clear(fld_x + fld_w + cw / 2 - 2, fld_y + 1, fld_x + fld_w + 3 * cw, fld_y + ch + 4);
+	hebrew_badge_right(vh, fld_x + fld_w + cw / 2 - 2, fld_y + 1, 2 * cw + 2 + cw / 2, ch + 4, 1);
 }
 
 /* ClaudeST's own dialogs (the text box, Keys, Settings), drawn with the
@@ -5039,23 +5025,34 @@ static void handle_click(short mx, short my)
 	}
 }
 
-/* the character a key types, honouring the Hebrew layout; 0 = none */
-static u8 key_char(short kstate, short kr)
+/* the Hebrew keyboard switched (common's set_hebrew_kbd calls it): the
+   menu's tick, the INF, and the typing field's badge */
+static void hebrew_changed(void)
 {
-	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff;
-	/* key_ctrl: a Control key typed while busy comes with kstate 0 */
-	if (hebrew_kbd && !(kstate & (K_LSHIFT | K_RSHIFT | 0x08)) && !key_ctrl(kstate, kr) &&
-	    scan >= 0x10 && scan < 0x36 && hebrew_keys[scan - 0x10])
-		ascii = hebrew_keys[scan - 0x10];
-	return ascii >= 32 && ascii != 127 ? ascii : 0;
+	menu_check_baud();
+	save_config();
+	dirty |= D_INPUT;
 }
 
 static void toggle_hebrew(void)
 {
-	hebrew_kbd = !hebrew_kbd;
-	menu_check_baud();
-	save_config();
-	dirty |= D_INPUT;
+	set_hebrew_kbd(!hebrew_kbd);
+}
+
+/* ST RAM for common's bitmaps (gemui.h: the Hebrew badge), taken once */
+void *st_ram(long n)
+{
+	static void *p;
+	if (n > 1024)
+		return 0;
+	if (!p) {
+		p = (void *)Mxalloc(1024, 0);
+		if ((long)p == -32 || (long)p <= 0)
+			p = (void *)Malloc(1024);
+		if ((long)p <= 0)
+			p = 0;
+	}
+	return p;
 }
 
 static void move_cursor(short d)
@@ -5790,6 +5787,7 @@ int main(void)
 	   accessories' (a 4 MB Falcon under NVDI, a 1 MB ST). What a dialog's
 	   screen or a copy took goes back once it is let go (heap_trim, below) */
 	heap_grain = 16384;
+	hebrew_kbd_hook = hebrew_changed;	/* F10 and the menu: tick, INF, badge */
 	apid = appl_init();
 	if (apid < 0)
 		return 1;
