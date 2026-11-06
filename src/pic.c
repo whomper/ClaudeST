@@ -17,6 +17,12 @@
  * The scaler's columns come from a table made once a picture, and its
  * sums are 32-bit additions: the only divisions are one a component of
  * each pixel shown.
+ *
+ * PIC_NO_PNG and PIC_NO_GIF leave a decoder out, for a program whose
+ * pictures are never of that kind (EPDF: a PDF's are JPEG or its own
+ * streams); such a file is then PIC_UNSUPPORTED. Each is some 8 KB of a
+ * program's resident size (png.c; nsgif's gif.c and lzw.c), which NVDI's
+ * menus under four accessories on a 4 MB Falcon want (2 Nov 2026).
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -44,6 +50,7 @@
 #endif
 
 int (*pic_poll)(void);
+int pic_scale_poll_rows = 16;
 
 /* ---------------------------------------------------------------- kinds */
 
@@ -138,14 +145,18 @@ int pic_size(const unsigned char *d, long n, long *w, long *h)
 	switch (pic_kind(d, n)) {
 	case PIC_JPEG:
 		return jpeg_size(d, n, w, h);
+#ifndef PIC_NO_PNG
 	case PIC_PNG:
 		return png_size(d, n, w, h) && *w > 0 && *h > 0;
+#endif
+#ifndef PIC_NO_GIF
 	case PIC_GIF:
 		if (n < 10)
 			return 0;
 		*w = d[6] | ((long) d[7] << 8);
 		*h = d[8] | ((long) d[9] << 8);
 		return *w > 0 && *h > 0;
+#endif
 #ifdef PIC_LIBWEBP
 	case PIC_WEBP: {
 		int ww, hh;
@@ -425,7 +436,7 @@ static int sc_row_rgb(SCALER *s, const unsigned char *rgb)
 {
 	long x, w = s->pic->w;
 	unsigned long *q;
-	if (pic_poll != NULL && ++s->polls >= 16) {
+	if (pic_poll != NULL && ++s->polls >= pic_scale_poll_rows) {
 		s->polls = 0;
 		if (!pic_poll())
 			return 0;
@@ -526,7 +537,7 @@ rgba:
 		s->s16 = 0;
 	}
 	s->solid = 0;		/* the sums weigh alpha from now on */
-	if (pic_poll != NULL && ++s->polls >= 16) {
+	if (pic_poll != NULL && ++s->polls >= pic_scale_poll_rows) {
 		s->polls = 0;
 		if (!pic_poll())
 			return 0;
@@ -855,14 +866,22 @@ static void dsp_load(int cmd, unsigned addr, const unsigned long *w, long n)
    byte the bits may start with begins with (0: longer than 8 bits) at
    base; maxcode[l] and valoff[l] for the longer ones, and the symbols, at
    base + $800 (as libjpeg's jpeg_make_d_derived_tbl) */
-static void dsp_huff(const unsigned char *bits, const unsigned char *val, unsigned base)
+/* the words decode_dsp builds and sends (tables, the scan's lots): taken
+   for a picture, not resident (6.9 KB of bss before; EPDF under NVDI on a
+   full Falcon, 1 Nov 2026) */
+typedef struct {
+	unsigned long a[256], b[256], c[64], d[256];
+	unsigned short w[256];
+} DSPTMP;
+
+static void dsp_huff(const unsigned char *bits, const unsigned char *val, unsigned base, DSPTMP *m)
 {
-	static unsigned long len[256], sym[256], mv[64], hv[256];
+	unsigned long *len = m->a, *sym = m->b, *mv = m->c, *hv = m->d;
 	long code = 0;
 	int l, i, p = 0;
-	memset(len, 0, sizeof len);
-	memset(sym, 0, sizeof sym);
-	memset(hv, 0, sizeof hv);
+	memset(len, 0, sizeof m->a);
+	memset(sym, 0, sizeof m->b);
+	memset(hv, 0, sizeof m->d);
 	for (i = 0; i < 64; i++)
 		mv[i] = 0xFFFFFFUL;	/* maxcode -1: none */
 	for (l = 1; l <= 16; l++) {
@@ -892,9 +911,9 @@ static void dsp_huff(const unsigned char *bits, const unsigned char *val, unsign
 /* the tables every picture has the same (the natural order, AC symbols
    split, the shifts and masks, the rows and columns used up to each
    coefficient) */
-static void dsp_fixed(void)
+static void dsp_fixed(DSPTMP *m)
 {
-	static unsigned long t[256], u[256];
+	unsigned long *t = m->a, *u = m->b;
 	int i, r, c;
 	for (i = 0; i < 64; i++)
 		t[i] = (unsigned long) dsp_zz[i];
@@ -948,6 +967,7 @@ typedef struct {
 	int b, nb, hy, vy;		/* the block in it, of nb (hy x vy of luma) */
 	int bi, bn;			/* the words of the block being sent */
 	unsigned short bw[65];
+	unsigned short *w;		/* a lot of 256 words (DSPTMP's) */
 } DSPSRC;
 
 /* streamed: what is left of buf moved to its start and buf filled again */
@@ -1046,7 +1066,7 @@ static int dsp_byte(DSPSRC *s)
 /* 256 words the DSP asked for; restart: from after the next RST marker */
 static void dsp_feed(DSPSRC *s, int restart)
 {
-	static unsigned short w[256];
+	unsigned short *w = s->w;
 	int i;
 #ifdef PIC_LIBJPEG
 	if (s->coef != NULL) {
@@ -1251,6 +1271,17 @@ typedef struct {
 
 /* 1 decoded, 0 not (why), -1 the DSP stopped answering, -2 it couldn't
    be had */
+/* a turn between the set-up's steps (the Huffman tables, the fast AC tables,
+   the quantisers: 70 ms together on a stock Falcon, before the first MCU's
+   poll; EPlay, 3 Nov 2026); the DSP waits for the host meanwhile */
+#define SETUP_TURN() \
+	do { \
+		if (pic_poll != NULL && !pic_poll()) { \
+			*why = PIC_STOPPED; \
+			goto out; \
+		} \
+	} while (0)
+
 static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 {
 	int grey = dj->grey, direct = dj->direct, k = dj->k;
@@ -1264,6 +1295,7 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 	PIC bp;
 	DSPSRC src;
 	DSPSHR shr;
+	DSPTMP *tmp;
 	int shrink = !direct && pic_dsp_shrink && dsp_shrink_plan(&shr, ow, oh, mw, mh, mcols, mrows, p->w, p->h);
 	int rows_mode = dj->row != NULL && (direct || shrink);
 #ifdef PIC_LIBJPEG
@@ -1319,15 +1351,20 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 		src.fill = dj->fill;
 		src.fu = dj->fu;
 	}
-	if (!pic_dsp->begin(PIC_DSP_JPEG)) {
+	if ((tmp = malloc(sizeof *tmp)) == NULL || !pic_dsp->begin(PIC_DSP_JPEG)) {
+		int had = tmp != NULL;
+		free(tmp);
 		free(band);
 		free(bpx);
 		free(bal);
 		free(src.buf);
 		if (shrink)
 			dsp_shrink_free(&shr);
-		return -2;
+		if (!had)
+			*why = PIC_MEMORY;
+		return had ? -2 : 0;
 	}
+	src.w = tmp->w;
 	if (dj->on != NULL)
 		*dj->on = 1;
 	pic_dsp_failed = 0;
@@ -1397,10 +1434,12 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 		}
 		dsp_load(D_LOADX, D_TRM, w, (long) k * k * 3);
 	}
-	dsp_fixed();
+	dsp_fixed(tmp);
+	SETUP_TURN();
 	for (ci = 0; ci < (grey ? 1 : 3) && !coefs; ci++) {
-		dsp_huff(dj->dcb[ci], dj->dcv[ci], D_HLA + 0x200 * ci);
-		dsp_huff(dj->acb[ci], dj->acv[ci], D_HLA + 0x100 + 0x200 * ci);
+		dsp_huff(dj->dcb[ci], dj->dcv[ci], D_HLA + 0x200 * ci, tmp);
+		dsp_huff(dj->acb[ci], dj->acv[ci], D_HLA + 0x100 + 0x200 * ci, tmp);
+		SETUP_TURN();
 	}
 	/* the transform, the quantisers (Q * 2048), the format's constants */
 	dsp_matrix(w, k);
@@ -1413,8 +1452,9 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 		}
 	}
 	dsp_load(D_LOADY, D_QT, w, grey ? 64 : 3 * 64);
+	SETUP_TURN();
 	if (shrink) {
-		static unsigned long kt[256];
+		unsigned long *kt = tmp->a;
 		/* each box's divisor: 65536 / n rounded (the scaler's), x 64; a
 		   box's columns - 1 x 16 + its rows - 1 */
 		for (i = 0; i < 256; i++) {
@@ -1452,12 +1492,21 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 		int rows = (int) (oh - my * mh < mh ? oh - my * mh : mh);
 		/* rows mode: the rows this MCU row makes, from y0 */
 		long y0 = rows_mode ? (shrink ? shr.ya[my] : my * mh) : 0;
-		for (mx = 0; mx < mcols && !pic_dsp_failed; mx++)
+		for (mx = 0; mx < mcols && !pic_dsp_failed; mx++) {
 			if (shrink)
 				dsp_read(rows_mode ? &bp : p, ow, NULL, &src, shr.xa[mx], shr.ya[my] - y0, shr.ce[mx], shr.re[my]);
 			else
 				dsp_read(rows_mode ? &bp : p, ow, band, &src, mx * mw, my * mh - y0,
 					 (int) (ow - mx * mw < mw ? ow - mx * mw : mw), rows);
+			/* a turn every 8 MCUs inside a wide row too (a 500-wide cover at
+			   2/8 left 75 ms between turns on a stock Falcon: EPlay, 3 Nov
+			   2026); the DSP waits for the next scan words meanwhile, as it
+			   does between rows */
+			if (pic_poll != NULL && (mx & 7) == 7 && mx + 1 < mcols && !pic_dsp_failed && !pic_poll()) {
+				*why = PIC_STOPPED;
+				goto out;
+			}
+		}
 		if (rows_mode && !pic_dsp_failed) {
 			int r, n = shrink ? shr.re[my] : rows;
 			for (r = 0; r < n; r++)
@@ -1479,6 +1528,7 @@ out:
 	pic_dsp->end(ok && !pic_dsp_failed);
 	if (dj->on != NULL)
 		*dj->on = 0;
+	free(tmp);
 	free(band);
 	free(bpx);
 	free(bal);
@@ -2610,6 +2660,7 @@ done:
 #endif
 
 /* ---------------------------------------------------------------- PNG */
+#ifndef PIC_NO_PNG
 
 static int png_row(void *ud, long y, const unsigned char *rgba)
 {
@@ -2648,7 +2699,10 @@ static int decode_png(const unsigned char *d, long n, PIC *p, SCALER *sc, long m
 	return 0;
 }
 
+#endif /* PIC_NO_PNG */
+
 /* ---------------------------------------------------------------- GIF */
+#ifndef PIC_NO_GIF
 
 typedef struct {
 	long w, h;
@@ -2731,6 +2785,7 @@ static int decode_gif(const unsigned char *d, long n, PIC *p, SCALER *sc, long m
 	nsgif_destroy(g);
 	return 1;
 }
+#endif /* PIC_NO_GIF */
 
 /* ---------------------------------------------------------------- WebP */
 
@@ -2897,7 +2952,13 @@ PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *
 	if (why == NULL)
 		why = &dummy;
 	*why = PIC_OK;
-	if (kind != PIC_JPEG && kind != PIC_PNG && kind != PIC_GIF
+	if (kind != PIC_JPEG
+#ifndef PIC_NO_PNG
+	    && kind != PIC_PNG
+#endif
+#ifndef PIC_NO_GIF
+	    && kind != PIC_GIF
+#endif
 #ifdef PIC_LIBWEBP
 	    && kind != PIC_WEBP
 #endif
@@ -2946,11 +3007,17 @@ PIC *pic_decode(const unsigned char *d, long n, int w, int h, long max_px, int *
 		}
 		switch (kind) {
 		case PIC_JPEG: ok = decode_jpeg(d, n, p, &sc, why); break;
+#ifndef PIC_NO_PNG
 		case PIC_PNG: ok = decode_png(d, n, p, &sc, max_px, why); break;
+#endif
 #ifdef PIC_LIBWEBP
 		case PIC_WEBP: ok = decode_webp(d, n, p, &sc, why); break;
 #endif
+#ifndef PIC_NO_GIF
 		default: ok = decode_gif(d, n, p, &sc, max_px, why); break;
+#else
+		default: *why = PIC_UNSUPPORTED; break;
+#endif
 		}
 	}
 	if (ok && sc.down_y && sc.y < sc.sh && sc.dy >= 0) {
@@ -3264,6 +3331,14 @@ void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned cha
 	else
 		row_many(dt, px, alpha, out);
 	dt->y++;
+}
+
+void pic_dither_sharp(PIC_DITHER *dt)
+{
+	if (dt != NULL) {
+		free(dt->rows);
+		dt->rows = dt->cur = dt->nxt = NULL;	/* (row_two and row_many's nearest pens) */
+	}
 }
 
 void pic_dither_close(PIC_DITHER *dt)

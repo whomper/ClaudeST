@@ -438,38 +438,141 @@ void text_plain(short h, short x, short y, const char *s, long n)
 	}
 }
 
-/* a row's middle from s to d: blocks of 40 bytes by movem, then longs
-   (0 to 9, by a jump into a run of moves) and a last word when tail.
-   The counts are worked out once a scroll, not a row: a short's / 40 is
-   a library call on the 68000 */
-static inline __attribute__((always_inline)) void move_row(unsigned char *d, const unsigned char *s, short blocks, short longs, short tail)
+/*
+ * A box's whole words, every row of it in one loop: n bytes a row (even,
+ * from 2), rows rows, line bytes from a row's start to the next's
+ * (negative: up the screen). The counts sit in registers and the row's
+ * longs run unrolled, so a row costs its bytes and some 60 cycles: the
+ * loops per row in C were some 400 cycles a row of overhead, half of a
+ * window's scroll, inverting or clearing on an ST (EPDF's gemprof.py,
+ * 1 Nov 2026: scr_rows 30 ms of a line scrolled, box_op 35 of Select all).
+ */
+static void rows_xor(unsigned char *d, short rows, long line, short n)
 {
-	__asm__ volatile("move.w %2,%%d0\n\t"
+	short longs = (short)(n >> 2), blk = (short)(longs >> 3), remj = (short)(-2 * (longs & 7)), tail = (short)(n & 2);
+	long skip = line - n;
+
+	__asm__ volatile("subq.w #1,%1\n"
+			 "0:\tmove.w %2,%%d0\n\t"
 			 "bra.s 2f\n"
-			 "1:\tmovem.l (%0)+,%%d1-%%d7/%%a2-%%a4\n\t"
-			 "movem.l %%d1-%%d7/%%a2-%%a4,(%1)\n\t"
-			 "lea 40(%1),%1\n"
+			 "1:\tnot.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n"
 			 "2:\tdbra %%d0,1b\n\t"
 			 "move.w %3,%%d0\n\t"
-			 "add.w %%d0,%%d0\n\t"
-			 "neg.w %%d0\n\t"
+			 "jmp 3f(%%pc,%%d0.w)\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n\t"
+			 "not.l (%0)+\n"
+			 "3:\ttst.w %4\n\t"
+			 "beq.s 4f\n\t"
+			 "not.w (%0)+\n"
+			 "4:\tadda.l %5,%0\n\t"
+			 "dbra %1,0b"
+			 : "+a"(d), "+d"(rows)
+			 : "d"(blk), "d"(remj), "d"(tail), "d"(skip)
+			 : "d0", "memory", "cc");
+}
+
+static void rows_set(unsigned char *d, short rows, long line, short n, unsigned long v)
+{
+	short longs = (short)(n >> 2), blk = (short)(longs >> 3), remj = (short)(-2 * (longs & 7)), tail = (short)(n & 2);
+	long skip = line - n;
+
+	__asm__ volatile("subq.w #1,%1\n"
+			 "0:\tmove.w %2,%%d0\n\t"
+			 "bra.s 2f\n"
+			 "1:\tmove.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n"
+			 "2:\tdbra %%d0,1b\n\t"
+			 "move.w %3,%%d0\n\t"
+			 "jmp 3f(%%pc,%%d0.w)\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n\t"
+			 "move.l %6,(%0)+\n"
+			 "3:\ttst.w %4\n\t"
+			 "beq.s 4f\n\t"
+			 "move.w %6,(%0)+\n"
+			 "4:\tadda.l %5,%0\n\t"
+			 "dbra %1,0b"
+			 : "+a"(d), "+d"(rows)
+			 : "d"(blk), "d"(remj), "d"(tail), "d"(skip), "d"(v)
+			 : "d0", "memory", "cc");
+}
+
+/* the same moved from s: 28-byte blocks by movem (seven registers, so
+   the counts keep theirs), then longs */
+static void rows_copy_mid2(unsigned char *d, long dline, const unsigned char *s, long sline, short rows, short n)
+{
+	short longs = (short)(n >> 2), blk = 0, rem, remj, tail = (short)(n & 2);
+	long skip = sline - n, dskip = dline - n;
+
+	for (rem = longs; rem >= 7; rem -= 7)
+		blk++;			/* once a call: a short's / 7 is a library call on the 68000 */
+	remj = (short)(-2 * rem);
+	__asm__ volatile("subq.w #1,%2\n"
+			 "0:\tmove.w %3,%%d0\n\t"
+			 "bra.s 2f\n"
+			 "1:\tmovem.l (%0)+,%%d2-%%d7/%%a2\n\t"
+			 "movem.l %%d2-%%d7/%%a2,(%1)\n\t"
+			 "lea 28(%1),%1\n"
+			 "2:\tdbra %%d0,1b\n\t"
+			 "move.w %4,%%d0\n\t"
 			 "jmp 3f(%%pc,%%d0.w)\n\t"
 			 "move.l (%0)+,(%1)+\n\t"
 			 "move.l (%0)+,(%1)+\n\t"
 			 "move.l (%0)+,(%1)+\n\t"
 			 "move.l (%0)+,(%1)+\n\t"
 			 "move.l (%0)+,(%1)+\n\t"
-			 "move.l (%0)+,(%1)+\n\t"
-			 "move.l (%0)+,(%1)+\n\t"
-			 "move.l (%0)+,(%1)+\n\t"
 			 "move.l (%0)+,(%1)+\n"
-			 "3:\ttst.w %4\n\t"
+			 "3:\ttst.w %5\n\t"
 			 "beq.s 4f\n\t"
 			 "move.w (%0)+,(%1)+\n"
-			 "4:"
-			 : "+a"(s), "+a"(d)
-			 : "m"(blocks), "m"(longs), "m"(tail)
-			 : "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "a2", "a3", "a4", "memory", "cc");
+			 "4:\tadda.l %6,%0\n\t"
+			 "adda.l %7,%1\n\t"
+			 "dbra %2,0b"
+			 : "+a"(s), "+a"(d), "+d"(rows)
+			 : "m"(blk), "m"(remj), "m"(tail), "m"(skip), "m"(dskip)
+			 : "d0", "d2", "d3", "d4", "d5", "d6", "d7", "a2", "memory", "cc");
+}
+
+static void rows_copy_mid(unsigned char *d, const unsigned char *s, short rows, long line, short n)
+{
+	rows_copy_mid2(d, line, s, line, rows, n);
+}
+
+/* the same for others (aboutbox.c's buffer and screen): n bytes (even)
+   of rows rows, d's and s's rows dline and sline bytes apart; no rows,
+   nothing (the loops count with dbra) */
+void scr_copy_rows(unsigned char *d, long dline, const unsigned char *s, long sline, short rows, short n)
+{
+	if (rows > 0 && n >= 2)
+		rows_copy_mid2(d, dline, s, sline, rows, (short)(n & ~1));
+}
+
+void scr_set_rows(unsigned char *d, long line, short rows, short n, unsigned long v)
+{
+	if (rows > 0 && n >= 2)
+		rows_set(d, rows, line, (short)(n & ~1), v);
 }
 
 /* the planes' words of one 16-pixel group, the pixels in mask; np
@@ -543,19 +646,8 @@ void scr_rows(short h, const short *p)
 		short mid = (short)((m1 - m0 + 1) * step), left = m0 > g0 || (g0 == g1 && lmask != 0xFFFF),
 		      right = g1 != g0 && m1 < g1;
 		unsigned char *s, *d;
-		short blocks = 0, longs = 0, tail = 0, np = sf_planes;
+		short np = sf_planes;
 
-		if (mid > 0) {
-			/* once a scroll: 40-byte blocks, longs, a word */
-			short rest = mid;
-
-			while (rest >= 40) {
-				rest -= 40;
-				blocks++;
-			}
-			longs = (short)(rest >> 2);
-			tail = (short)(rest & 2);
-		}
 		if (ty <= y1) {
 			s = base + (long)y1 * bpl;
 			d = base + (long)ty * bpl;
@@ -564,14 +656,19 @@ void scr_rows(short h, const short *p)
 			d = base + (long)p[7] * bpl;
 			line = -bpl;
 		}
-		for (r = rows; r > 0; r--, s += line, d += line) {
-			if (left)
-				move_group((unsigned short *)(d + l), (const unsigned short *)(s + l), lmask, np);
-			if (mid > 0)
-				move_row(d + m, s + m, blocks, longs, tail);
-			if (right)
-				move_group((unsigned short *)(d + rr), (const unsigned short *)(s + rr), rmask, np);
+		/* by columns, each in the rows' order: the left words, the
+		   middle (every row in one loop), the right words */
+		if (left) {
+			unsigned char *ss = s, *dd = d;
+
+			for (r = rows; r > 0; r--, ss += line, dd += line)
+				move_group((unsigned short *)(dd + l), (const unsigned short *)(ss + l), lmask, np);
 		}
+		if (mid > 0)
+			rows_copy_mid(d + m, s + m, rows, line, mid);
+		if (right)
+			for (r = rows; r > 0; r--, s += line, d += line)
+				move_group((unsigned short *)(d + rr), (const unsigned short *)(s + rr), rmask, np);
 	}
 }
 
@@ -685,40 +782,31 @@ static void box_op(const short *p, int op, const unsigned short *pat)
 			   425, Falcon-4 220 against 130). An edge word is (w & a) ^ x */
 			unsigned short la = op == 0 ? 0xFFFFu : (unsigned short)~lmask, lx = op == 1 ? 0 : lmask;
 			unsigned short ra = op == 0 ? 0xFFFFu : (unsigned short)~rmask, rx = op == 1 ? 0 : rmask;
-			unsigned long v = op == 2 ? 0xFFFFFFFFUL : 0;
-			short nl = (short)(mid >> 2), tail = (short)(mid & 2), planes = sf_planes, n;
+			short planes = sf_planes;
+			unsigned char *rw;
 
-			if (mid <= 0)
-				nl = tail = 0;
-			for (r = (short)(y2 - y1 + 1); r > 0; r--, row += bpl) {
-				unsigned short *w;
-				unsigned long *q = (unsigned long *)(row + m);
+			/* by columns: the left words, the middle (every row in one
+			   loop), the right words */
+			if (left)
+				for (rw = row, r = (short)(y2 - y1 + 1); r > 0; r--, rw += bpl) {
+					unsigned short *w = (unsigned short *)(rw + l);
 
-				if (left)
-					for (w = (unsigned short *)(row + l), k = planes; k > 0; k--, w++)
+					for (k = planes; k > 0; k--, w++)
 						*w = (unsigned short)((*w & la) ^ lx);
-				if (nl >= 8) {
-					/* a wide box: the rows' unrolled loops (the plain loop
-					   here made a window's rows 58 -> 66 ms on ST:mono) */
-					if (op == 0)
-						xor_row((unsigned char *)q, mid);
-					else
-						set_row((unsigned char *)q, mid, v);
-				} else if (op == 0) {
-					for (n = nl; n > 0; n--, q++)
-						*q = ~*q;
-					if (tail)
-						*(unsigned short *)q = (unsigned short)~*(unsigned short *)q;
-				} else {
-					for (n = nl; n > 0; n--)
-						*q++ = v;
-					if (tail)
-						*(unsigned short *)q = (unsigned short)v;
 				}
-				if (right)
-					for (w = (unsigned short *)(row + rr), k = planes; k > 0; k--, w++)
-						*w = (unsigned short)((*w & ra) ^ rx);
+			if (mid > 0) {
+				if (op == 0)
+					rows_xor(row + m, (short)(y2 - y1 + 1), bpl, mid);
+				else
+					rows_set(row + m, (short)(y2 - y1 + 1), bpl, mid, op == 2 ? 0xFFFFFFFFUL : 0);
 			}
+			if (right)
+				for (rw = row, r = (short)(y2 - y1 + 1); r > 0; r--, rw += bpl) {
+					unsigned short *w = (unsigned short *)(rw + rr);
+
+					for (k = planes; k > 0; k--, w++)
+						*w = (unsigned short)((*w & ra) ^ rx);
+				}
 			return;
 		}
 		for (r = (short)(y2 - y1 + 1); r > 0; r--, row += bpl, y++) {
@@ -1034,6 +1122,46 @@ int scr_bits(short x, short y, const unsigned char *b, short wb, short rows, sho
 	if (cy2 > sf_h - 1)
 		cy2 = (short)(sf_h - 1);
 	base = logbase();	/* Logbase */
+	if (!shift && x >= cx1 && x + wb * 8 - 1 <= cx2) {
+		/* on a byte and its width all inside the clip: each byte straight
+		   into its planes, no masks, no byte to the right (a list's 32 x
+		   32 row icons: byte by byte with the clip's masks this was slower
+		   than TOS's vrt_cpyfm; EFTP, 1 Nov 2026) */
+		short b0 = (short)(x >> 3), r0 = 0, r1 = rows;
+		const unsigned char *src;
+		unsigned char *row;
+
+		/* the rows the clip leaves, the pointers stepped by adding (a
+		   long multiply is a library call on a 68000) */
+		if (y < cy1)
+			r0 = (short)(cy1 - y);
+		if (y + rows - 1 > cy2)
+			r1 = (short)(cy2 - y + 1);
+		if (r0 >= r1)
+			return 1;
+		src = b + (long)r0 * wb;
+		row = base + (long)(y + r0) * bpl;
+		for (r = r0; r < r1; r++, src += wb, row += bpl) {
+			/* byte k's place: the next byte of a word, or the first of
+			   the next word of the plane, step bytes on */
+			short off = (short)((b0 >> 1) * step + (b0 & 1));
+			for (k = 0; k < wb; k++) {
+				unsigned char v = src[k], *d = row + off;
+				short p;
+
+				off += ((b0 + k) & 1) ? (short)(step - 1) : 1;
+				if (!v)
+					continue;
+				if (pen)
+					for (p = 0; p < step; p += 2)
+						d[p] |= v;
+				else
+					for (p = 0; p < step; p += 2)
+						d[p] &= (unsigned char)~v;
+			}
+		}
+		return 1;
+	}
 	for (r = 0; r < rows; r++) {
 		short yy = (short)(y + r);
 

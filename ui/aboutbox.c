@@ -13,6 +13,7 @@
 #include "dialog.h"
 #include "crash.h"
 #include "tos.h"
+#include "text.h"
 
 #define ICON_W 32
 #define ICON_H 32
@@ -20,14 +21,96 @@
 
 static short dx, dy, dw, dh;
 
+/* while the box is drawn in its buffer (draw_off) on a machine whose pen 1
+   sets every plane and pen 0 clears them (the probes'): the buffer's row
+   0 as the screen's, and the clip; the frame's lines are put in by the
+   CPU, a word a plane at a time (TOS 1.04's v_pline took an ST 1.3 ms a
+   line, 18 of them, 23 ms of the box's 200) */
+static unsigned char *cpu_base;		/* 0: the VDI draws */
+static long cpu_bpl;
+static short cpu_planes, cpu_clip[4];
+
+/* x1..x2 by y1..y2 (inclusive) set (pen 1) or cleared, in the buffer: one
+   multiply for the first row, then a line on (a multiply a row made it
+   slower than the VDI) */
+static void cpu_rect(short x1, short y1, short x2, short y2, short pen)
+{
+	short t, g, n, p, y, np = cpu_planes;
+	unsigned short lm, rm;
+	unsigned short *row;
+	long step = cpu_bpl >> 1;
+
+	if (x1 > x2)
+		t = x1, x1 = x2, x2 = t;
+	if (y1 > y2)
+		t = y1, y1 = y2, y2 = t;
+	if (x1 < cpu_clip[0])
+		x1 = cpu_clip[0];
+	if (y1 < cpu_clip[1])
+		y1 = cpu_clip[1];
+	if (x2 > cpu_clip[2])
+		x2 = cpu_clip[2];
+	if (y2 > cpu_clip[3])
+		y2 = cpu_clip[3];
+	if (x1 > x2 || y1 > y2)
+		return;
+	n = (short)((x2 >> 4) - (x1 >> 4));		/* the groups after the first */
+	lm = (unsigned short)(0xFFFFu >> (x1 & 15));
+	rm = (unsigned short)(0xFFFFu << (15 - (x2 & 15)));
+	if (!n)
+		lm &= rm;
+	row = (unsigned short *)(cpu_base + (long)y1 * cpu_bpl) + (x1 >> 4) * np;
+	if (!n) {
+		/* a vertical line (or a strip in one group): down each plane's
+		   words, one or (pen 0) and a step a row */
+		short rows = (short)(y2 - y1);
+
+		for (p = 0; p < np; p++) {
+			unsigned short *w = row + p;
+			short r = rows;
+
+			if (pen)
+				do {
+					*w |= lm;
+					w += step;
+				} while (--r >= 0);
+			else
+				do {
+					*w &= (unsigned short)~lm;
+					w += step;
+				} while (--r >= 0);
+		}
+		return;
+	}
+	for (y = y1; y <= y2; y++, row += step) {
+		unsigned short *w = row;
+
+		for (p = 0; p < np; p++, w++)
+			*w = pen ? (unsigned short)(*w | lm) : (unsigned short)(*w & ~lm);
+		for (g = 1; g < n; g++)
+			for (p = 0; p < np; p++, w++)
+				*w = pen ? 0xFFFF : 0;
+		if (n)
+			for (p = 0; p < np; p++, w++)
+				*w = pen ? (unsigned short)(*w | rm) : (unsigned short)(*w & ~rm);
+	}
+}
+
 static void line(short x1, short y1, short x2, short y2)
 {
-	line_col(x1, y1, x2, y2, 1);
+	if (cpu_base && (x1 == x2 || y1 == y2))
+		cpu_rect(x1, y1, x2, y2, 1);
+	else
+		line_col(x1, y1, x2, y2, 1);
 }
 
 static void rect_fill(short x1, short y1, short x2, short y2, short color)
 {
 	GRECT r;
+	if (cpu_base && (color == 0 || color == 1)) {
+		cpu_rect(x1, y1, x2, y2, color);	/* in the buffer: the shadow's strips (vr_recfl's 15 ms) */
+		return;
+	}
 	r.x = x1;
 	r.y = y1;
 	r.w = x2 - x1 + 1;
@@ -52,8 +135,89 @@ static void clip_screen(void)
 
 static int off_white;		/* draw_off made the box's ground white already */
 
+/* rows y1..y2 of group g: m ORed into every plane's word (a vertical
+   line, or several in one group, down in one pass) */
+static void cpu_vmask(short y1, short y2, short g, unsigned short m)
+{
+	long step = cpu_bpl >> 1;
+	short p;
+
+	if (y1 < cpu_clip[1])
+		y1 = cpu_clip[1];
+	if (y2 > cpu_clip[3])
+		y2 = cpu_clip[3];
+	if (y1 > y2 || !m)
+		return;
+	for (p = 0; p < cpu_planes; p++) {
+		unsigned short *w = (unsigned short *)(cpu_base + (long)y1 * cpu_bpl) + g * cpu_planes + p;
+		short r = (short)(y2 - y1);
+
+		do {
+			*w |= m;
+			w += step;
+		} while (--r >= 0);
+	}
+}
+
+/* pixels x1..x2 of group g as its mask (0 where none are in it) */
+static unsigned short gmask(short g, short x1, short x2)
+{
+	short a = g << 4, b = a + 15;
+
+	if (x1 > b || x2 < a)
+		return 0;
+	if (x1 < a)
+		x1 = a;
+	if (x2 > b)
+		x2 = b;
+	return (unsigned short)((0xFFFFu >> (x1 - a)) & (0xFFFFu << (b - x2)));
+}
+
+/* the frame's sides and the right shadow strip in the buffer, a pass down
+   the rows for each side where most of their rows are (the rest a few
+   rows by cpu_rect): five passes were 13.5 ms of an ST's About box */
+static void cpu_sides(short x, short y, short w, short h)
+{
+	short gl = x >> 4, g, r0 = (short)(x + w - 3), r2 = (short)(x + w + 2);
+
+	/* left: the outer side (rows y..y+h-1) and the inner (y+2..y+h-3) */
+	if (((x + 2) >> 4) == gl) {
+		unsigned short mo = gmask(gl, x, x), mi = gmask(gl, (short)(x + 2), (short)(x + 2));
+		cpu_vmask(y, (short)(y + 1), gl, mo);
+		cpu_vmask((short)(y + 2), (short)(y + h - 3), gl, (unsigned short)(mo | mi));
+		cpu_vmask((short)(y + h - 2), (short)(y + h - 1), gl, mo);
+	} else {
+		cpu_rect(x, y, x, (short)(y + h - 1), 1);
+		cpu_rect((short)(x + 2), (short)(y + 2), (short)(x + 2), (short)(y + h - 3), 1);
+	}
+	/* right: inner x+w-3 (y+2..y+h-3), outer x+w-1 (y..y+h-1), the
+	   shadow's strip x+w..x+w+2 (y+3..y+h+2): their common rows in one
+	   pass a group, the others by cpu_rect */
+	for (g = r0 >> 4; g <= (r2 >> 4); g++) {
+		unsigned short m = (unsigned short)(gmask(g, r0, r0) | gmask(g, (short)(x + w - 1), (short)(x + w - 1)) |
+						    gmask(g, (short)(x + w), r2));
+		cpu_vmask((short)(y + 3), (short)(y + h - 3), g, m);
+	}
+	cpu_rect((short)(x + w - 1), y, (short)(x + w - 1), (short)(y + 2), 1);		/* outer, its top rows */
+	cpu_rect(r0, (short)(y + 2), r0, (short)(y + 2), 1);					/* inner, its first */
+	cpu_rect((short)(x + w - 1), (short)(y + h - 2), (short)(x + w - 1), (short)(y + h - 1), 1);	/* outer, its foot */
+	cpu_rect((short)(x + w), (short)(y + h - 2), r2, (short)(y + h + 2), 1);		/* the strip's foot */
+}
+
 static void box(short x, short y, short w, short h)
 {
+	if (cpu_base) {
+		/* the same pixels, the sides in fewer passes (cpu_sides) */
+		rect_fill(x + 3, y + h, x + w - 1, y + h + 2, 1);	/* the shadow's foot */
+		if (!off_white)
+			rect_fill(x, y, x + w - 1, y + h - 1, 0);
+		cpu_sides(x, y, w, h);
+		line(x, y, x + w - 1, y);
+		line(x + w - 1, y + h - 1, x, y + h - 1);
+		line(x + 2, y + 2, x + w - 3, y + 2);
+		line(x + w - 3, y + h - 3, x + 2, y + h - 3);
+		return;
+	}
 	/* the shadow: its two strips, not a box-sized fill painted over (on
 	   a stock Falcon 15 ms of the About box's 155) */
 	rect_fill(x + w, y + 3, x + w + 2, y + h + 2, 1);
@@ -269,11 +433,59 @@ static short on_byte(short x)
 	return (x + 4) & ~7;
 }
 
+/* bold in the buffer: the text's box (x, y, w by ch) ORed onto itself a
+   pixel to the right, a word at a time, the bit that leaves a word into
+   the next one's top (vro_cpyfm's S_OR_D took TOS 1.04 2.2 ms a text) */
+static void cpu_bold(short x, short y, short w)
+{
+	short x2 = (short)(x + w - 1), y2 = (short)(y + ch - 1), g, g0, g1, p, r;
+	long step = cpu_bpl >> 1;
+	unsigned short *row;
+
+	if (x < cpu_clip[0] || x2 + 1 > cpu_clip[2] || y < cpu_clip[1] || y2 > cpu_clip[3] || w <= 0)
+		return;
+	g0 = x >> 4;
+	g1 = x2 >> 4;
+	row = (unsigned short *)(cpu_base + (long)y * cpu_bpl) + g0 * cpu_planes;
+	for (r = y; r <= y2; r++, row += step)
+		for (p = 0; p < cpu_planes; p++) {
+			unsigned short *wp = row + p, carry = 0;
+
+			for (g = g0; g <= g1; g++, wp += cpu_planes) {
+				unsigned short m = 0xFFFF, v;
+
+				if (g == g0)
+					m &= (unsigned short)(0xFFFFu >> (x & 15));
+				if (g == g1)
+					m &= (unsigned short)(0xFFFFu << (15 - (x2 & 15)));
+				v = *wp & m;
+				*wp |= (unsigned short)((v >> 1) | (carry << 15));
+				carry = v & 1;
+			}
+			if (carry)
+				*wp |= 0x8000;		/* the box's last pixel into the next word */
+		}
+}
+
 /* bold as TOS draws it, but plain text and its box ORed onto itself a
    pixel to the right (common/ui/text.c's text_fx: the same pixels, on an
    ST a third of vst_effects' time); NVDI's own bold elsewhere */
 static void text_b(short x, short y, const char *s, short n, short flags)
 {
+	if (cpu_base && !(x & 7) && text_plain_state() >= 0 && !get_cookie(0x4E564449L)) {
+		/* in the buffer, on the box's white: text.c's own glyph copy (the
+		   same pixels as the VDI's transparent text there; TOS 1.04's
+		   v_gtext took the box 31 ms), the bold by the CPU too. After
+		   font_sys_push its state is 0: the first text goes through the
+		   VDI as text_at's would, and checks the copy's pixels by it */
+		vswr_mode(vdi_h, MD_TRANS);
+		vst_color(vdi_h, 1);
+		vst_effects(vdi_h, 0);
+		text_plain(vdi_h, x, y, s, n);
+		if (flags & TX_BOLD)
+			cpu_bold(x, y, (short)(n * cw));
+		return;
+	}
 	if ((flags & TX_BOLD) && !get_cookie(0x4E564449L)) {	/* 'NVDI' */
 		MFDB scr;
 		short p[8];
@@ -316,11 +528,13 @@ static void button(short x, short y, short w, short h, const char *label)
 	text_b(on_byte(x + (w - n * cw) / 2), y + (h - ch) / 2, label, n, TX_BOLD);
 }
 
+/* until no button is down: the VDI's view of the mouse (vq_mouse), not
+   graf_mkstate's, an AES call of 4.9 ms on TOS 1.04 as the box opens */
 static void wait_up(void)
 {
-	short mx, my, mb, ks;
+	short mx, my, mb;
 	do {
-		graf_mkstate(&mx, &my, &mb, &ks);
+		vq_mouse(vdi_h, &mb, &mx, &my);
 		if (mb & 3)
 			evnt_timer_(10);
 	} while (mb & 3);
@@ -457,6 +671,7 @@ static long xb_setscreen(void *log)
 
 static int off_ok;		/* 1 the logical screen moves the VDI's drawing, -1 it doesn't */
 static int white_ok;		/* 1 pen 0 is every plane clear: the box's ground made by the CPU */
+static int black_ok;		/* 1 pen 1 is every plane set: the frame's lines by the CPU */
 
 /* the screen's bytes a line, as the VDI has them (Line-A's v_lin_wr) */
 static long screen_bpl(void)
@@ -466,21 +681,13 @@ static long screen_bpl(void)
 	return la[1];		/* v_lin_wr */
 }
 
-/* n bytes (even, the rows even too) of each row: memcpy's 16-byte
-   longs, then the rest a word at a time (memcpy's last bytes went one at
-   a time: some 16 ms of an ST's About box) */
+/* n bytes (even, the rows even too) of each row: text.c's every-row
+   loop (the counts in registers); a row at a time in C was some 400
+   cycles a row of overhead, half of rows_copy's 46 ms of an ST's About
+   box (EPDF's gemprof.py, 1 Nov 2026) */
 static void rows_copy(unsigned char *d, long ds, const unsigned char *s, long ss, short rows, long n)
 {
-	long nl = n & ~15L;
-	short k, rest = (short)((n & 15) >> 1);
-	for (; rows > 0; rows--, d += ds, s += ss) {
-		unsigned short *dw = (unsigned short *)(d + nl);
-		const unsigned short *sw = (const unsigned short *)(s + nl);
-		if (nl)
-			memcpy(d, s, nl);
-		for (k = 0; k < rest; k++)
-			dw[k] = sw[k];
-	}
+	scr_copy_rows(d, ds, s, ss, rows, (short)n);
 }
 
 /* the box's rows: the screen under it kept (to put back) and the box
@@ -604,6 +811,16 @@ static int draw_off(void (*draw)(int framed))
 		for (q = 0; q < planes && q < 16; q++)
 			if (w[q] & bit)
 				white_ok = -1;
+		/* and pen 1 every plane set (the frame's lines by the CPU) */
+		xb_setscreen(base);
+		clip_on(&px);
+		fill(&px, 1);
+		clip_off();
+		xb_setscreen(scr);
+		black_ok = 1;
+		for (q = 0; q < planes && q < 16; q++)
+			if (!(w[q] & bit))
+				black_ok = -1;
 	}
 	{
 		/* where the box leaves the screen showing: the shadow's rows
@@ -624,15 +841,42 @@ static int draw_off(void (*draw)(int framed))
 			short in = (short)(dx + dw - gx);		/* the box's pixels in it */
 			rkeep[i] = in >= 16 ? 0 : in <= 0 ? 0xFFFF : (unsigned short)(0xFFFFu >> in);
 		}
-		for (r = 0; r < ob.rows; r++, d += ds, u += us) {
-			if (white && r < dh) {
-				for (i = 0; i < lw; i++)
-					d[i] = u[i] & lkeep;
-				memset(d + lw, 0, (size_t)(rw - lw) * 2);
-				for (i = rw; i < rw + 2 * g; i++)
-					d[i] = u[i] & rkeep[(i - rw) >= g];
-				continue;
+		r = 0;
+		if (white) {
+			/* the box's rows: their edge words a row at a time, then
+			   the middle of every row at once (text.c's scr_set_rows:
+			   a row at a time in C was some 400 cycles a row more) */
+			short nw = dh < ob.rows ? dh : ob.rows, k;
+			unsigned short *dl = d, *dr = d + rw, rk0 = rkeep[0], rk1 = rkeep[1];
+			const unsigned short *ul = u, *ur = u + rw;
+
+			/* pointers stepped a row, no index worked out in the loop: in
+			   one plane (ST high) three words a row, the loop's own work
+			   most of the 21 ms it took an ST (the hub's gemprof, TOS 1.04) */
+			if (g == 1) {
+				if (lw)
+					for (k = nw; k > 0; k--, dl += ds, ul += us)
+						*dl = (unsigned short)(*ul & lkeep);
+				for (k = nw; k > 0; k--, dr += ds, ur += us) {
+					dr[0] = (unsigned short)(ur[0] & rk0);
+					dr[1] = (unsigned short)(ur[1] & rk1);
+				}
+			} else {
+				for (k = nw; k > 0; k--, dl += ds, ul += us, dr += ds, ur += us) {
+					for (i = 0; i < lw; i++)
+						dl[i] = (unsigned short)(ul[i] & lkeep);
+					for (i = 0; i < g; i++) {
+						dr[i] = (unsigned short)(ur[i] & rk0);
+						dr[g + i] = (unsigned short)(ur[g + i] & rk1);
+					}
+				}
 			}
+			r = nw;
+			scr_set_rows((unsigned char *)(d + lw), ds * 2, nw, (short)((rw - lw) * 2), 0);
+			d += (long)nw * ds;
+			u += (long)nw * us;
+		}
+		for (; r < ob.rows; r++, d += ds, u += us) {
 			if (r < 3 || r >= ob.rows - 3) {
 				memcpy(d, u, ob.n);
 				continue;
@@ -651,7 +895,17 @@ static int draw_off(void (*draw)(int framed))
 	c.h = ob.rows;
 	xb_setscreen(base);
 	clip_on(&c);				/* nothing past the buffer's rows */
+	if (white_ok > 0 && black_ok > 0 && planes <= 8) {
+		cpu_base = base;
+		cpu_bpl = ob.bpl;
+		cpu_planes = planes;
+		cpu_clip[0] = c.x;
+		cpu_clip[1] = c.y;
+		cpu_clip[2] = c.x + c.w - 1;
+		cpu_clip[3] = c.y + c.h - 1;
+	}
 	draw(1);
+	cpu_base = 0;
 	off_white = 0;
 	clip_off();
 	xb_setscreen(scr);

@@ -20,7 +20,8 @@ static int fails;
 
 u32 tos_ms(void) { return now; }
 long get_cookie(long id) { return id == 0x5F435055L ? cpu : 0; }
-short graf_mkstate(short *x, short *y, short *b, short *k) { *x = mx; *y = my; *b = mb; *k = mks; return 1; }
+static int mkstates;			/* graf_mkstate's calls */
+short graf_mkstate(short *x, short *y, short *b, short *k) { mkstates++; *x = mx; *y = my; *b = mb; *k = mks; return 1; }
 short twin_prg(void) { return prg; }
 
 #define CHECK(c, what) do { if (!(c)) { printf("FAIL %s (line %d)\n", what, __LINE__); fails++; } } while (0)
@@ -76,6 +77,25 @@ int main(void)
 	now += 600;
 	bg_tick();
 	CHECK(bg_may_work(), "works 2 s after the mouse");
+
+	/* the same from the event's own mouse (bg_tick_at): no graf_mkstate */
+	{
+		int was = mkstates;
+
+		now += 100;
+		bg_tick_at(mx, my, 0, mks);
+		CHECK(bg_may_work(), "works with the mouse still (bg_tick_at)");
+		now += 100;
+		bg_tick_at((short)(mx + 3), my, 0, mks);
+		CHECK(!bg_may_work(), "rests after the event's mouse moved");
+		now += 2100;
+		bg_tick_at((short)(mx + 3), my, 0, mks);
+		CHECK(bg_may_work(), "works 2 s after it (bg_tick_at)");
+		CHECK(mkstates == was, "bg_tick_at asks no graf_mkstate");
+		bg_tick();		/* back to the stub's mouse for what follows */
+		now += 2100;
+		bg_tick();
+	}
 
 	/* a button held, then Shift */
 	mb = 1;

@@ -52,6 +52,10 @@ int press_double(short id, short x, short y)
 {
 	int second = last.valid && last.id == id && near(last.x, x) && near(last.y, y) &&
 		     tos_ms() - last.up <= press_dclick();
+	if (aes_double) {	/* a multitasking AES counted two presses and gave them as one event (gem.c) */
+		aes_double = 0;
+		second = 1;
+	}
 	cur.id = id;
 	cur.x = x;
 	cur.y = y;
@@ -93,4 +97,23 @@ int press_track(const GRECT *r, short x, short y, void (*idle)(void), void (*msg
 		if (idle)
 			idle();
 	}
+}
+
+int press_update_begin(void)
+{
+	short mx, my, mb, ks;
+
+	if (aes_count() == 1) {
+		graf_mkstate(&mx, &my, &mb, &ks);
+		if (mb & 1)
+			return 0;	/* TOS: BEG_UPDATE would wait for the release */
+	}
+	wind_update(BEG_UPDATE);
+	return 1;
+}
+
+void press_update_end(int took)
+{
+	if (took)
+		wind_update(END_UPDATE);
 }

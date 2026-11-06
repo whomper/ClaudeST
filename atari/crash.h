@@ -31,6 +31,10 @@ extern void (*crash_report)(const char *text, long n);
 /* a crash TOS recorded before this run: its report is in CRASH.LOG; the
    bombs' name when the crash was in the program's code, else 0 */
 const char *crash_previous(void);
+/* the vectors the catcher left to another handler or chained after one,
+   once installed: "" when each is ours over TOS's own, else a line for
+   the app's log ("line F chained after XBRA 'XXXX' ($123456)") */
+const char *crash_vectors(void);
 /* where CRASH.LOG is ("" before crash_install, or when it does nothing) */
 const char *crash_log(void);
 /* test builds (-DCRASH_TEST) only: F1 to F5 (the scancode) crash on

@@ -34,7 +34,7 @@ void (*tls_log)(const char *msg);
 int (*tls_rsa_accel)(unsigned char *x, size_t xlen, const unsigned char *n, size_t nlen,
 		     const unsigned char *e, size_t elen);
 
-char tls_ovl_path[200] = "TLS.OVL";
+char tls_ovl_path[200] = "tls.ovl";
 
 static const TLS_OVL *ov;
 static void *image;

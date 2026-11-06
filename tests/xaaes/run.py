@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""run.py WORK EMUTOS.IMG PRG [--copy FILE ...] [--display :97] [--wait S]
+"""run.py WORK EMUTOS.IMG [PRG] [--copy FILE ...] [--display :97] [--wait S]
           [--steps "..."] [--size MB] [--setenv NAME=VALUE ...] [--cnf LINE ...]
+          [--ext2 DIR] [--start PATH]
 
 An Atari GEM program in Hatari under FreeMiNT 1.17.0 with XaAES, an AES
 that iconifies windows, multitasks and does drag and drop, on a Falcon
@@ -44,6 +45,17 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
 --size MB   the disk (default 32)
 --later S   PRG starts S seconds after XaAES has (build/LATER.PRG, make),
             once the desk accessories are in, as when someone starts it
+--ext2 DIR  a second disk, a case-sensitive drive as a tester's (the
+            guidelines, 6.6): DIR's files, their names exactly as they are,
+            on an ext2 partition (ext2img.py) that EmuTOS serves as D:
+            through XHDI and FreeMiNT mounts with ext2.xfs (from the
+            FreeMiNT archive, copied into the mint folder). Afterwards it is
+            read back into WORK/ext2 and listed, names as they are, in
+            WORK/ext2.ls (Hatari runs 8 s more at the end, for MiNT to write
+            its cache out)
+--start P   what XAAES.CNF starts instead of C:\\PRG, e.g. "d:\\eweb.prg"
+            for a release folder given as --ext2 (PRG may then be left out;
+            given, it is copied to C: all the same)
 
 Prints the screenshots' names at the end; exits 1 when a step failed.
 """
@@ -52,12 +64,28 @@ import argparse, os, shutil, signal, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
+import ext2img  # noqa: E402
 import fatimg  # noqa: E402
 import machines  # noqa: E402
 
 BASE = os.path.join(HERE, "build", "base")
 
 
+def ext2_xfs():
+    """FreeMiNT's ext2.xfs (68020 and up), from the archive fetch.py took"""
+    out = os.path.join(HERE, "build", "ext2.xfs")
+    if not os.path.exists(out):
+        import zipfile
+        zips = [f for f in os.listdir(os.path.join(HERE, "build")) if f.startswith("freemint-") and f.endswith(".zip")]
+        if not zips:
+            sys.exit("no FreeMiNT archive in build: make base")
+        with zipfile.ZipFile(os.path.join(HERE, "build", zips[0])) as z:
+            with open(out, "wb") as f:
+                f.write(z.read("driver/xfs/ext2.xfs"))
+    return out
+
+
+EXT2_SETTLE = 8	# s, longer than MiNT's sync interval (5 s)
 SHELL = "reverting to internal shell"	# MiNT didn't read MINT.CNF: no XaAES
 RETRY = 2
 
@@ -66,7 +94,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("work")
     ap.add_argument("tos")
-    ap.add_argument("prg")
+    ap.add_argument("prg", nargs="?", help="the program for C:\\ (may be left out with --start)")
     ap.add_argument("--copy", nargs="*", default=[])
     ap.add_argument("--display", default=":97")
     ap.add_argument("--wait", type=float)
@@ -75,7 +103,11 @@ def main():
     ap.add_argument("--later", type=int)
     ap.add_argument("--setenv", action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--cnf", action="append", default=[], metavar="LINE")
+    ap.add_argument("--ext2", metavar="DIR")
+    ap.add_argument("--start", metavar="PATH")
     a = ap.parse_args()
+    if not a.prg and not a.start:
+        ap.error("a PRG, or --start")
     if not os.path.isdir(BASE):
         sys.exit("no %s: make base" % BASE)
     a.tos = os.path.abspath(a.tos)
@@ -95,27 +127,35 @@ def run(a):
     hd, shots = os.path.join(work, "hd"), os.path.join(work, "shots")
     shutil.copytree(BASE, hd)
     os.makedirs(shots)
-    name = os.path.basename(a.prg).upper()
-    fatimg.name83(name)
-    shutil.copy(a.prg, os.path.join(hd, name))
+    name = os.path.basename(a.prg).upper() if a.prg else ""
+    if a.prg:
+        fatimg.name83(name)
+        shutil.copy(a.prg, os.path.join(hd, name))
     for f in a.copy:
         dst = os.path.join(hd, os.path.basename(f.rstrip("/")).upper())
         (shutil.copytree if os.path.isdir(f) else shutil.copy)(f, dst)
     mintdir = os.path.join(hd, "mint")
     ver = [d for d in os.listdir(mintdir) if d[0].isdigit()][0]
-    first = name
+    first = "c:\\" + name
+    if a.start:
+        first = a.start
+    img2 = None
+    if a.ext2:
+        shutil.copy(ext2_xfs(), os.path.join(mintdir, ver, "ext2.xfs"))
+        img2 = os.path.join(work, "ext2.img")
+        ext2img.build(os.path.abspath(a.ext2), img2)
     if a.later:
         shutil.copy(os.path.join(HERE, "build", "LATER.PRG"), os.path.join(hd, "LATER.PRG"))
         with open(os.path.join(hd, "LATER.TXT"), "w") as f:
-            f.write("%d C:\\%s\r\n" % (a.later, name))
-        first = "LATER.PRG"
+            f.write("%d %s\r\n" % (a.later, first if a.start else "C:\\" + name))
+        first = "c:\\LATER.PRG"
     with open(os.path.join(mintdir, ver, "xaaes", "xaaes.cnf"), "a") as f:
         for e in a.setenv:
             k, v = e.split("=", 1)
             f.write("setenv %s %s\n" % (k, v))
         for l in a.cnf:
             f.write(l + "\n")
-        f.write("run c:\\%s\n" % first)
+        f.write("run %s\n" % first)
     img = os.path.join(work, "hd.img")
     fatimg.build(hd, img, a.size)
 
@@ -128,7 +168,7 @@ def run(a):
     h = subprocess.Popen(["stdbuf", "-oL", "-eL", "hatari", "-w", "--statusbar", "no", "--borders", "no",
                           "--zoom", "1", "--confirm-quit", "no", "--tos", a.tos,
                           "--machine", "falcon", "--monitor", "vga", "--dsp", "none", "--memsize", "14",
-                          "--ide-master", img, "--fast-boot", "no", "--natfeats", "yes", "--conout", "2",
+                          "--ide-master", img, *(["--ide-slave", img2] if img2 else []), "--fast-boot", "no", "--natfeats", "yes", "--conout", "2",
                           "--sound", "off", "--cmd-fifo", fifo, "--screenshot-dir", shots],
                          env=env, stdout=log, stderr=subprocess.STDOUT, cwd=work)
     stop = {"now": False, "shell": False}
@@ -252,6 +292,10 @@ def run(a):
                     ok = False
                     break
     finally:
+        if img2 and h.poll() is None and not stop["now"]:
+            # MiNT writes its buffer cache out every few seconds: what a
+            # program wrote on the ext2 drive reaches the image first
+            time.sleep(EXT2_SETTLE)
         if h.poll() is None:
             h.terminate()
             try:
@@ -267,6 +311,13 @@ def run(a):
             fatimg.extract(img, out)
         except Exception as e:  # the disk is for looking at, the run is what counts
             print("could not read the disk back: %s" % e)
+        if img2:
+            try:
+                ext2img.extract(img2, os.path.join(work, "ext2"))
+                with open(os.path.join(work, "ext2.ls"), "w") as f:
+                    f.write("".join(n + "\n" for n in ext2img.ls(img2)))
+            except Exception as e:
+                print("could not read the ext2 disk back: %s" % e)
     if stop["shell"]:
         return RETRY
     print(sorted(os.listdir(shots)))

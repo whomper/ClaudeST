@@ -81,6 +81,13 @@ void dlg_close(void);
    front (a click outside it rings the bell). Elsewhere evnt_multi_. */
 short dlg_evnt(short flags, short clicks, short mask, short state,
 	       unsigned long timer, short *msg, AEVENT *e);
+/* the app's work while a dialog waits for the user (a player's queue
+   that must go on being fed while Settings or About is open): when set,
+   a wait with no timer of its own (dlg_do, the About box, any dlg_evnt
+   without MU_TIMER) wakes every 20 ms and calls it, short work (a
+   Speed turn: well under 50 ms). NULL by default; set it while the app's
+   job runs and clear it when the job ends. */
+extern void (*dlg_idle)(void);
 /* what the app draws itself over the open dialog's tree (lists, a
    sample, with the VDI): draw(x, y, w, h) draws that piece of it again,
    called after the tree when the AES asks for a piece of the window (on
@@ -179,9 +186,23 @@ long dlg_fast_count(void);
 #define DLG_CLICKS 1
 void dlg_touch(OBJECT *tree, short *next, short x, short y);
 int dlg_touch_up(void);
+/* the same, idle() called at each turn of the wait (press_track's): the
+   old row drawn in the next turn after the pressed one (5.8, 1bad614).
+   Not called when the button was let go before the first turn: the
+   caller calls it once more after */
+int dlg_touch_up_idle(void (*idle)(void));
 #else
 #define DLG_CLICKS 2
 #endif
+
+/* a window's own object tree (not a dialog: a program's main window of
+   buttons, EConvert's): a press on its EXIT button o taken as a dialog's
+   are, only when let go over it, shown pressed meanwhile (graf_watchbox).
+   1: let go over it (its SELECTED taken off again; the caller redraws o
+   and acts); 0: not one, the button already up (a click a file selector
+   left: fsel.h), or let go elsewhere. A button that acted on the press
+   emptied EConvert's list on a click it never had (5 Nov 2026) */
+int dlg_win_button(OBJECT *tree, short o);
 
 /* the pen of the first npens (16 at most: the UI's) whose colour is nearest
    r, g, b (VDI's 0-1000), read with vq_color; text: one dark enough to read

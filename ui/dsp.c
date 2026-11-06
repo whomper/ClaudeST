@@ -77,8 +77,14 @@ static int accel(unsigned char *x, size_t xlen, const unsigned char *n, size_t n
 		return 0;
 	t0 = pf_ms();
 	ok = dsp_rsa_public(x, xlen, n, nlen, e, elen);
-	snprintf(msg, sizeof(msg), "RSA-%u signature on the %s, %lu ms", (unsigned)(nlen * 8),
-		 ok ? "DSP" : "68030 (DSP busy)", pf_ms() - t0);
+	t0 = pf_ms() - t0;
+	/* the time split: the job's own and its turns for GEM (only a real
+	   Falcon's log can tell them apart: Hatari's DSP isn't the chip) */
+	if (ok)
+		snprintf(msg, sizeof(msg), "RSA-%u signature on the DSP, %lu ms (%lu ms working, %u turns %lu ms)",
+			 (unsigned)(nlen * 8), t0, t0 - dsprsa_turn_ms, dsprsa_turns, dsprsa_turn_ms);
+	else
+		snprintf(msg, sizeof(msg), "RSA-%u signature on the 68030 (DSP busy), %lu ms", (unsigned)(nlen * 8), t0);
 	conn_log("TLS", " -- ", msg, strlen(msg));
 	return ok;
 }

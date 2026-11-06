@@ -79,7 +79,36 @@ static long deflate_raw(const unsigned char *in, long n, unsigned char *out, lon
 	return (long)(cap - z.avail_out);
 }
 
-static long fails, checks;
+static long fails, checks, turns;
+static void turn(void) { turns++; }
+
+/* inflate_piece's pieces gathered into back; its last answer */
+static long by_piece(const unsigned char *comp, long c, long most, unsigned char *back, long cap, long *got)
+{
+	SRC src;
+	INFLATE *z;
+	const unsigned char *p;
+	long r;
+	src.p = comp;
+	src.n = c;
+	src.at = 0;
+	src.most = most;
+	z = inflate_open_piece(get, &src);
+	*got = 0;
+	while ((r = inflate_piece(z, &p, 1 + rnd(40000), turn)) > 0) {
+		if (*got + r > cap) {
+			r = -2;
+			break;
+		}
+		memcpy(back + *got, p, (size_t)r);
+		*got += r;
+	}
+	if (r < 0 && r != -2 && p) {
+		/* damaged: what came before it is the piece *p, r bytes */
+	}
+	inflate_close(z);
+	return r;
+}
 static void check(int ok, const char *what)
 {
 	checks++;
@@ -115,6 +144,11 @@ int main(void)
 						got += r;
 					check(r == 0 && got == n && !memcmp(back, data, n), what);
 					inflate_close(z);
+					/* a piece where it lies: the same bytes, turns as it goes */
+					turns = 0;
+					r = by_piece(comp, c, 1 + rnd(6000), back, sizeof(back), &got);
+					check(r == 0 && got == n && !memcmp(back, data, n), "inflate_piece");
+					check(n < 4096 || turns >= n / 2048, "inflate_piece: a turn every 1 KB or so");
 					/* cut short: an error, never an end */
 					if (c > 10) {
 						SRC cut = { comp, c / 2, 0, 4096 };
@@ -126,8 +160,21 @@ int main(void)
 						/* what came before the cut, as it was */
 						check(got <= n && !memcmp(back, data, got) && (c < 2000 || got > 0), "cut short: the start");
 						inflate_close(z);
+						r = by_piece(comp, c / 2, 4096, back, sizeof(back), &got);
+						check(r < 0 && got <= n && !memcmp(back, data, got), "inflate_piece cut short");
 					}
 				}
+	}
+	/* a dynamic block whose distance code has no symbols, its tables
+	   malloc'd: refused, never a code read from what malloc left (a
+	   shift by -3: EUpdate's fuzz_http, 1 Nov 2026; UBSan) */
+	{
+		static const unsigned char gz[] = { 0x1f, 0x8b, 0x08, 0x00, 0xff, 0x52, 0x00, 0x20, 0x4f, 0x4b, 0x6d, 0x00, 0x00, 0x00, 0x0d, 0x0a, 0x43, 0x6f, 0x6e, 0x74, 0x20, 0x32, 0x30, 0x30, 0x20, 0x4f, 0x4b, 0x0d, 0x1f, 0x0a, 0x43, 0x6f };
+		SBUF o;
+		memset(&o, 0, sizeof(o));
+		inflate_gzip(gz, (long)sizeof(gz), &o, 1L << 20);
+		free(o.s);
+		checks++;
 	}
 	/* damaged: random bytes refused or ended, never a crash (ASan) */
 	{
@@ -146,6 +193,15 @@ int main(void)
 			while ((r = inflate_read(z, back, 4096)) > 0 && (got += r) < 2000000)
 				;
 			inflate_close(z);
+			{
+				const unsigned char *p;
+				src.at = 0;
+				got = 0;
+				z = inflate_open_piece(get, &src);
+				while ((r = inflate_piece(z, &p, 4096, 0)) > 0 && (got += r) < 2000000)
+					;
+				inflate_close(z);
+			}
 		}
 		checks++;
 	}

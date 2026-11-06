@@ -41,8 +41,10 @@ static void pause_ms(unsigned long ms)
 }
 
 static long run_ssp;			/* Super(0)'s, while a job runs */
-static unsigned long turn_at;
+static unsigned long turn_at;		/* _hz_200 at the last turn */
 static int turns_on;			/* the program loaded, the job's commands going */
+unsigned short dspec_turns;
+unsigned long dspec_turn_ms;
 
 /* a turn for GEM: back to user mode on the same stack, pf_idle, and
    supervisor mode again. Super(ssp) from supervisor mode leaves the user
@@ -50,10 +52,19 @@ static int turns_on;			/* the program loaded, the job's commands going */
    frames, which pf_idle's would then overwrite: so USP is set to the
    stack as it is first, and the stack pointer put back after each trap
    whatever TOS did with it. Super(0) then takes the user stack as it is */
-static void turn(void)
+/* Asked at every word sent, so the clock is _hz_200 itself, read here in
+   supervisor mode: pf_ms() is tos_ms(), a Supexec, an XBIOS trap through
+   every driver hooked on it (NVDI's, the network's) for each of the 4,800
+   words of an X25519, which on Erez's stock Falcon took 2.1 s where the
+   DSP's own work is 227 ms (tests/ec's sim). 8 steps are 40 ms (26 where
+   a driver runs the counter at 312 Hz: a few turns more). pf_ms() only at
+   a turn, to time it for the log */
+static int turn(void)
 {
-	if (!turns_on || !pf_idle || pf_ms() - turn_at < 40)
-		return;
+	unsigned long t0;
+	if (!turns_on || !pf_idle || HZ200 - turn_at < 8)
+		return 0;
+	t0 = pf_ms();
 	__asm__ volatile(
 		"move.l %1,%%a3\n\t"
 		"move.l %%sp,%%a4\n\t"
@@ -71,11 +82,16 @@ static void turn(void)
 		: "+m"(run_ssp)
 		: "m"(pf_idle)
 		: "d0", "d1", "d2", "a0", "a1", "a2", "a3", "a4", "memory", "cc");
-	turn_at = pf_ms();
+	turn_at = HZ200;
+	dspec_turns++;
+	dspec_turn_ms += pf_ms() - t0;
+	return 1;
 }
 
-/* in supervisor mode. Each word waits at most a second: a product takes
-   the DSP well under a millisecond */
+/* in supervisor mode. Each word waits at most a second of the DSP's
+   time: a product takes it well under a millisecond, a whole ladder
+   (RUN) a quarter of a second. GEM has its turns meanwhile, the DSP
+   going on with its work, and a turn's time isn't counted */
 static void put(unsigned long w)
 {
 	unsigned long t0;
@@ -85,7 +101,9 @@ static void put(unsigned long w)
 	if (!(HISR & 2)) {
 		t0 = HZ200;
 		while (!(HISR & 2))
-			if (HZ200 - t0 > 200) {
+			if (turn())
+				t0 = HZ200;
+			else if (HZ200 - t0 > 200) {
 				ecdsp_failed = 1;
 				return;
 			}
@@ -103,7 +121,9 @@ static unsigned long get(void)
 	if (!(HISR & 1)) {
 		t0 = HZ200;
 		while (!(HISR & 1))
-			if (HZ200 - t0 > 200) {
+			if (turn())
+				t0 = HZ200;
+			else if (HZ200 - t0 > 200) {
 				ecdsp_failed = 1;
 				return 0;
 			}
@@ -130,7 +150,9 @@ static int run(void (*fn)(void *), void *ctx)
 	   so the job (about 1 KB of stack) runs on this program's stack, not
 	   on whatever system stack Supexec is given */
 	run_ssp = trap1_wl(0x20, 0L);
-	turn_at = pf_ms();
+	turn_at = HZ200;
+	dspec_turns = 0;
+	dspec_turn_ms = 0;
 	for (i = 0; i < 512; i++)		/* the bootstrap loads 512 words and starts them */
 		put(dsp_ec_prog[i]);
 	if (!ecdsp_failed) {
@@ -155,4 +177,4 @@ static int run(void (*fn)(void *), void *ctx)
 	return 1;
 }
 
-const ECDSP_PORT dspec_port = { run, put, get };
+const ECDSP_PORT dspec_port = { run, put, get, dsp_ec_prog_ext, DSP_EC_PROG_EXT_AT, DSP_EC_PROG_EXT_N };

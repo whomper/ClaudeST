@@ -23,6 +23,16 @@
 ;   5 SUB d,a,b   d = a-b      (plus 2p if that is below 0)
 ;   6 OUT a       sends a mod p (N digits)
 ;   7 ISZ a       sends 1 if a mod p is 0, else 0
+;   0 LOADP (d 1) then at, n and n words into P memory: RUN's code, at
+;                 P:$7000, which the bootstrap doesn't load
+;   0 RUN (d 0)   then K, K command words (a step), the Y addresses of two
+;                 pairs of registers (x2, x3, z2, z3), W, W words of bits
+;                 (24 a word, the first at bit 23), B: for each of the B
+;                 bits the pairs swapped if it differs from the bit before
+;                 (by a mask, never a branch on it), then the step's K
+;                 commands; at the end the pairs swapped by the last bit,
+;                 and a word 0 sent: a Montgomery ladder (Curve25519's)
+;                 in one command, not 4,600 (EUpdate, 1 Nov 2026)
 ; d may be a or b.
 
 HSR	equ	$ffe9
@@ -37,6 +47,14 @@ DV	equ	$04		; addresses of d, a and b
 AV	equ	$05
 BV	equ	$06
 N1V	equ	$07		; N + 1
+SWP	equ	$08		; RUN: the bit before
+CW	equ	$09		; RUN: the bits word being read
+CL	equ	$0a		; RUN: its bits left
+BPTR	equ	$0b		; RUN: the next bits word
+MPTR	equ	$0c		; RUN: the step's next command
+MCNT	equ	$0d		; RUN: K
+BCNT	equ	$0e		; RUN: B
+PX2	equ	$10		; RUN: the pairs' addresses, x2 x3 z2 z3
 
 ; internal memory: both operands of every multiplication come from here
 ; or from one external space, so no instruction waits for the bus
@@ -51,6 +69,8 @@ YT2	equ	$80		; y: the same, corrected
 ; external Y memory: the registers, 32 words each, the digits above N
 ; always 0 (a product reads b[N])
 REGS	equ	$1000
+MACB	equ	$2000		; RUN's step
+BITB	equ	$2100		; RUN's bits
 
 	org	p:$0
 	jmp	start
@@ -61,6 +81,11 @@ start
 	movep	#0,x:$fffe		; no wait states
 cmd
 	jsr	rd			; x0 = the command word
+	jsr	exec
+	jmp	cmd
+
+; a command word x0, read from the host or from RUN's step
+exec
 	; addresses: (d << 5), (a << 5), (b << 5) from shifts by the
 	; multiplier (x0 times 2^k: the product's top word is x0 >> (23-k))
 	move	#>$fe0,x1
@@ -107,7 +132,24 @@ cmd
 	move	#>1,x0
 	cmp	x0,b
 	jeq	fcfg
-	jmp	cmd
+	tst	b
+	jeq	fzero
+	rts
+
+; ---- op 0: LOADP (d 1), else RUN (its code from LOADP)
+fzero
+	move	x:DV,a
+	move	#>REGS+32,x0
+	cmp	x0,a
+	jne	frun
+	jsr	rd
+	move	x0,r0
+	jsr	rd
+	do	x0,lp1
+	jsr	rd
+	movem	x0,p:(r0)+
+lp1
+	rts
 
 ; ---- CFG: N, mp, p
 fcfg
@@ -156,7 +198,7 @@ c2
 	move	y:(r4)+,x0
 	move	x0,x:(r0)+
 c3
-	jmp	cmd
+	rts
 
 ; ---- LD d: N digits
 fld
@@ -166,7 +208,7 @@ fld
 	jsr	rd
 	move	x0,y:(r4)+
 ld1
-	jmp	cmd
+	rts
 
 ; ---- MUL d,a,b. For the 2N columns of a*b + m*p: the sum of a[j]*b[i-j]
 ; and m[j]*p[i-j], two products an instruction pair; in the first N
@@ -242,7 +284,7 @@ mu4
 	move	(r7)+
 	move	(r2)-
 mu3
-	jmp	cmd
+	rts
 
 ; ---- ADD d,a,b: YT1 = a + b; YT2 = YT1 - 2p; YT2 unless that borrowed
 fadd
@@ -288,7 +330,7 @@ fput
 	move	y:(r4)+,x0
 	move	x0,y:(r5)+
 pu1
-	jmp	cmd
+	rts
 
 ; b -> XA; then the rowop's arguments: t = a, src = XA, dst = YT1,
 ; carry 0, y1 = 1
@@ -333,7 +375,7 @@ fout
 	jsr	wr
 	nop
 o1
-	jmp	cmd
+	rts
 
 ; ---- ISZ a
 fisz
@@ -349,7 +391,7 @@ z1
 	move	#>0,x1
 z2
 	jsr	wr
-	jmp	cmd
+	rts
 
 ; ---- host port
 rd	jclr	#0,x:HSR,rd
@@ -370,4 +412,103 @@ rowop
 	lsr	b	a1,x1		; digit; carry
 	move	b1,y:(r5)+
 ro
+	rts
+
+; RUN, in external P memory: LOADP brings it
+	org	p:$7000
+; ---- RUN (see the top)
+frun
+	jsr	rd			; K and the step
+	move	x0,x:MCNT
+	move	#MACB,r4
+	do	x0,rn0
+	jsr	rd
+	move	x0,y:(r4)+
+rn0
+	move	#PX2,r0			; the pairs
+	do	#4,rn1
+	jsr	rd
+	move	x0,x:(r0)+
+rn1
+	jsr	rd			; W and the bits
+	move	#BITB,r4
+	do	x0,rn2
+	jsr	rd
+	move	x0,y:(r4)+
+rn2
+	jsr	rd			; B
+	move	x0,x:BCNT
+	clr	a	#BITB,r0
+	move	a,x:SWP
+	move	a,x:CL
+	move	r0,x:BPTR
+	do	x:BCNT,rn3
+	move	x:CL,a			; the next bit (where it is is no secret)
+	tst	a
+	jne	rn4
+	move	x:BPTR,r0
+	move	#>24,x0
+	move	x0,x:CL
+	move	y:(r0)+,x1
+	move	x1,x:CW
+	move	r0,x:BPTR
+rn4
+	move	x:CL,a
+	move	#>1,x0
+	sub	x0,a
+	move	a1,x:CL
+	move	x:CW,a
+	lsl	a
+	move	a1,x:CW
+	clr	b
+	rol	b			; b1 = the bit
+	jsr	cswap
+	move	#MACB,r0
+	move	r0,x:MPTR
+	do	x:MCNT,rn5
+	move	x:MPTR,r0
+	nop
+	move	y:(r0)+,x0
+	move	r0,x:MPTR
+	jsr	exec
+	nop
+rn5
+	nop
+rn3
+	clr	b			; the last swap: by the bit before
+	jsr	cswap
+	clr	b
+	move	b1,x1
+	jsr	wr
+	rts
+
+; the pairs swapped if b1 (a bit) differs from the bit before, by a mask
+cswap
+	move	b1,y0
+	move	x:SWP,x0
+	eor	x0,b
+	move	y0,x:SWP
+	neg	b			; b1 = 0 or all ones
+	move	b1,y1
+	move	x:PX2,r1
+	move	x:PX2+1,r2
+	jsr	cs
+	move	x:PX2+2,r1
+	move	x:PX2+3,r2
+	jsr	cs
+	rts
+cs
+	do	x:NV,cs1
+	move	y:(r1),a
+	move	y:(r2),x0
+	eor	x0,a
+	and	y1,a
+	move	a1,x1			; (a ^ b) & mask
+	move	y:(r1),a
+	eor	x1,a
+	move	a1,y:(r1)+
+	move	x0,a
+	eor	x1,a
+	move	a1,y:(r2)+
+cs1
 	rts

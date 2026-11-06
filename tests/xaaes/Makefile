@@ -7,6 +7,8 @@
 #                         make build/base, the C: drive run.py starts from
 #   make check TOS=IMG    the rig's own check: ICONTEST.PRG iconified and
 #                         restored with XaAES's gadgets (EmuTOS 512k image)
+#   make ext2check TOS=IMG  the ext2 drive (run.py --ext2): EXT2TEST.PRG on a
+#                         case-sensitive drive, as a tester's (guidelines 6.6)
 CROSS   ?= m68k-linux-gnu-
 CC      := $(CROSS)gcc
 GCCINC  := $(shell $(CC) -print-file-name=include 2>/dev/null)
@@ -18,7 +20,7 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 B       := build
 
-all: $(B)/ICONTEST.PRG $(B)/OPNWK.PRG $(B)/LATER.PRG
+all: $(B)/ICONTEST.PRG $(B)/OPNWK.PRG $(B)/LATER.PRG $(B)/EXT2TEST.PRG
 base: $(B)/OPNWK.PRG
 	python3 fetch.py
 $(B)/%.PRG: $(B)/%.elf ../../tools/elf2tos.py
@@ -27,9 +29,13 @@ $(B)/ICONTEST.elf: $(B)/crt0.o $(B)/icontest.o $(B)/gem.o $(B)/tos.o $(B)/libc.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/LATER.elf: $(B)/crt0.o $(B)/later.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
+$(B)/EXT2TEST.elf: $(B)/crt0.o $(B)/ext2test.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
+	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/OPNWK.elf: $(B)/crt0.o $(B)/opnwk.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/opnwk.o: opnwk.c | $(B)
+	$(CC) $(ACFLAGS) -c -o $@ $<
+$(B)/ext2test.o: ext2test.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<
 $(B)/later.o: later.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<
@@ -49,7 +55,10 @@ check: all base
 	  click 447 112; until ICT iconified 20; wait 1; shot; click 58 419; until ICT uniconified 20; \
 	  wait 1; shot; click 131 112; until ICT done 20"
 	@echo "xaaes: ICONTEST.PRG iconified and restored"
+ext2check: all base
+	@test -n "$(TOS)" || { echo "make ext2check TOS=/path/to/etos512us.img"; exit 1; }
+	python3 ext2check.py $(B)/ext2check $(TOS)
 clean:
 	rm -rf $(B)
-.PHONY: all base check clean
+.PHONY: all base check ext2check clean
 .PRECIOUS: $(B)/%.elf

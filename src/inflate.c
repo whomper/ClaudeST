@@ -32,6 +32,7 @@ typedef struct {
 	SBUF *out;
 	long max;			/* what out may grow to */
 	int bad;			/* 1 damaged, 2 too big */
+	struct huff2 *dyn;		/* a dynamic block's codes, taken for the call */
 } ST;
 
 static int need(ST *s, int n)
@@ -77,6 +78,12 @@ static int build(HUFF *h, const unsigned char *len, int n)
 	short offs[16];
 	int i, l, code, left = 1;
 	memset(h->count, 0, sizeof(h->count));
+	/* the table empty first: a code with no symbols (legal for
+	   distances) returns before it is filled, and its tables are
+	   malloc'd now (576929d), so what was there would be read as codes
+	   (EUpdate's fuzz_http: a length past the bits there, nbits -3) */
+	memset(h->fast, 0, sizeof(h->fast));
+	h->first = h->index = 0;
 	for (i = 0; i < n; i++)
 		h->count[len[i]]++;
 	if (h->count[0] == n)
@@ -96,7 +103,6 @@ static int build(HUFF *h, const unsigned char *len, int n)
 	   every slot it prefixes. (A code reversed through rev8: bit by bit,
 	   two shifts by a count each, it took 190,000 cycles a table on an
 	   8 MHz ST, three tables a stream: EWeb's 16 font faces 1.1 s) */
-	memset(h->fast, 0, sizeof(h->fast));
 	code = 0;
 	{
 		int idx = 0;
@@ -324,15 +330,25 @@ out:
 	return r;
 }
 
-static HUFF lit, dst;
-static HUFF flit, fdst;			/* the fixed codes (type 1 blocks) */
+/* the codes, 5.4 KB a pair, taken when they are used, not resident (a
+   program's start on a full machine: EPDF under NVDI, 1 Nov 2026): a
+   dynamic block's for an inflate_raw call, the fixed ones at the first
+   type 1 block, kept */
+struct huff2 {
+	HUFF l, d;
+};
+static struct huff2 *fx;
+#define flit (fx->l)
+#define fdst (fx->d)
 
-static void fixed_tables(void)
+/* 0, or -1 out of memory */
+static int fixed_tables(void)
 {
-	static int ready;
-	if (!ready) {
+	if (fx == NULL) {
 		unsigned char l[320];
 		int i;
+		if ((fx = malloc(sizeof *fx)) == NULL)
+			return -1;
 		for (i = 0; i < 144; i++)
 			l[i] = 8;
 		for (; i < 256; i++)
@@ -345,13 +361,16 @@ static void fixed_tables(void)
 		for (i = 0; i < 30; i++)
 			l[i] = 5;
 		build(&fdst, l, 30);
-		ready = 1;
 	}
+	return 0;
 }
 
 static int fixed(ST *s)
 {
-	fixed_tables();
+	if (fixed_tables()) {
+		s->bad = 2;		/* (no memory: as too big) */
+		return -1;
+	}
 	return codes(s, &flit, &fdst);
 }
 
@@ -360,6 +379,13 @@ static int dynamic(ST *s)
 	static const unsigned char order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
 	unsigned char len[320];
 	int nlen, ndist, ncode, i;
+	HUFF *lit, *dst;
+	if (s->dyn == NULL && (s->dyn = malloc(sizeof *s->dyn)) == NULL) {
+		s->bad = 2;		/* (no memory: as too big) */
+		return -1;
+	}
+	lit = &s->dyn->l;
+	dst = &s->dyn->d;
 	nlen = (int)take(s, 5) + 257;
 	ndist = (int)take(s, 5) + 1;
 	ncode = (int)take(s, 4) + 4;
@@ -368,10 +394,10 @@ static int dynamic(ST *s)
 	memset(len, 0, sizeof(len));
 	for (i = 0; i < ncode; i++)
 		len[order[i]] = (unsigned char)take(s, 3);
-	if (s->bad || build(&lit, len, 19))
+	if (s->bad || build(lit, len, 19))
 		return -1;
 	for (i = 0; i < nlen + ndist;) {
-		int sym = decode(s, &lit), rep = 0, val = 0;
+		int sym = decode(s, lit), rep = 0, val = 0;
 		if (sym < 0)
 			return -1;
 		if (sym < 16) {
@@ -393,9 +419,9 @@ static int dynamic(ST *s)
 		while (rep--)
 			len[i++] = (unsigned char)val;
 	}
-	if (!len[256] || build(&lit, len, nlen) || build(&dst, len + nlen, ndist))
+	if (!len[256] || build(lit, len, nlen) || build(dst, len + nlen, ndist))
 		return -1;
-	return codes(s, &lit, &dst);
+	return codes(s, lit, dst);
 }
 
 static int stored(ST *s)
@@ -425,7 +451,7 @@ static int stored(ST *s)
 int inflate_raw(const unsigned char *in, long n, SBUF *out, long max)
 {
 	ST s;
-	int last;
+	int last, r = 0;
 	memset(&s, 0, sizeof(s));
 	if (n < 0)
 		return 0;
@@ -434,15 +460,18 @@ int inflate_raw(const unsigned char *in, long n, SBUF *out, long max)
 	s.out = out;
 	s.max = max;
 	do {
-		int type, r;
+		int type;
 		last = (int)take(&s, 1);
 		type = (int)take(&s, 2);
-		if (s.bad)
-			return 0;
+		if (s.bad) {
+			r = -1;
+			break;
+		}
 		r = type == 0 ? stored(&s) : type == 1 ? fixed(&s) : type == 2 ? dynamic(&s) : -1;
-		if (r < 0)
-			return s.bad == 2 ? -1 : 0;
-	} while (!last);
+	} while (r >= 0 && !last);
+	free(s.dyn);
+	if (r < 0)
+		return s.bad == 2 ? -1 : 0;
 	return 1;
 }
 
@@ -508,7 +537,10 @@ struct inflate {
 	unsigned wpos;			/* the window's next place */
 	HUFF lit, dst;
 	const HUFF *lc, *dc;
-	unsigned char win[WIN];
+	unsigned char *buf;		/* inflate_piece's window and output, or 0 */
+	long bpos;			/* its next place, from buf + boff */
+	int boff;			/* 0 or 1: where the window starts in buf */
+	unsigned char *win;		/* inflate_read's ring, after the struct; 0 for a piece one */
 };
 
 static int z_byte(INFLATE *z)
@@ -677,7 +709,8 @@ static int z_head(INFLATE *z)
 		return 0;
 	}
 	if (type == 1) {
-		fixed_tables();
+		if (fixed_tables())
+			return -1;
 		z->lc = &flit;
 		z->dc = &fdst;
 	} else if (type != 2 || z_dynamic(z)) {
@@ -708,10 +741,11 @@ static void win_put(INFLATE *z, const unsigned char *p, unsigned k)
 
 INFLATE *inflate_open(int (*get)(void *u, unsigned char *buf, long n), void *u)
 {
-	INFLATE *z = malloc(sizeof(INFLATE));
+	INFLATE *z = malloc(sizeof(INFLATE) + WIN);	/* the ring after it */
 	if (!z)
 		return 0;
-	memset(z, 0, sizeof(*z) - sizeof(z->win));
+	memset(z, 0, sizeof(*z));
+	z->win = (unsigned char *)(z + 1);
 	z->get = get;
 	z->u = u;
 	z->state = Z_HEAD;
@@ -727,6 +761,22 @@ static int long_code(const HUFF *h, unsigned long bits, unsigned *used)
 		return -1;
 	*used = e & 15;
 	return (int) (e >> 4);
+}
+
+/* a match copied where the window wraps under it (rare: kept out of the
+   hot loop, whose code then fits the 68030's 256-byte cache better) */
+static __attribute__((noinline)) unsigned copy_wrap(unsigned char *win, unsigned wpos, unsigned from,
+						     unsigned char *out, long m)
+{
+	long i;
+	for (i = 0; i < m; i++) {
+		unsigned char c = win[from];
+		from = (from + 1) & (WIN - 1);
+		win[wpos] = c;
+		wpos = (wpos + 1) & (WIN - 1);
+		out[i] = c;
+	}
+	return wpos;
 }
 
 long inflate_read(INFLATE *z, unsigned char *out, long n)
@@ -819,7 +869,7 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 					if (nbits < FAST)
 						break;
 					v = fast[bits & ((1 << FAST) - 1)];
-					if (v != 0) {
+					if (__builtin_expect(v != 0, 1)) {
 						l = v & 15;
 						v >>= 4;
 					} else {
@@ -836,7 +886,7 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 						out[k++] = (unsigned char) v;
 						continue;
 					}
-					if (v == 256 || v >= 286)
+					if (__builtin_expect(v == 256 || v >= 286, 0))
 						break;		/* the block's end, or damaged: below */
 					v -= 257;
 					x = lext[v];
@@ -851,7 +901,7 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 						nbits += 8;
 					}
 					v = nbits >= FAST ? dfast[bits & ((1 << FAST) - 1)] : 0;
-					if (v != 0) {
+					if (__builtin_expect(v != 0, 1)) {
 						l = v & 15;
 						v >>= 4;
 					} else {
@@ -874,7 +924,7 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 					{
 						unsigned from = (wpos - (unsigned) dist) & (WIN - 1);
 						long m = n - k < len ? n - k : len, i;
-						if (from + m <= WIN && wpos + m <= WIN) {
+						if (__builtin_expect(from + m <= WIN && wpos + m <= WIN, 1)) {
 							/* neither end wraps (most): byte by byte, as
 							   the copy may overlap itself */
 							const unsigned char *q = win + from;
@@ -882,15 +932,8 @@ long inflate_read(INFLATE *z, unsigned char *out, long n)
 							for (i = 0; i < m; i++)
 								o[i] = p[i] = q[i];
 							wpos = (wpos + (unsigned) m) & (WIN - 1);
-						} else {
-							for (i = 0; i < m; i++) {
-								unsigned char c = win[from];
-								from = (from + 1) & (WIN - 1);
-								win[wpos] = c;
-								wpos = (wpos + 1) & (WIN - 1);
-								out[k + i] = c;
-							}
-						}
+						} else
+							wpos = copy_wrap(win, wpos, from, out + k, m);
 						k += m;
 						if (m < len) {
 							z->copy = len - (int) m;	/* the rest next time */
@@ -952,5 +995,257 @@ bad:
 
 void inflate_close(INFLATE *z)
 {
+	if (z)
+		free(z->buf);
 	free(z);
+}
+
+/* ---------------- a piece where it lies ---------------- */
+
+#define PBUF (2 * WIN + 261)	/* the window (from its first or second byte), a piece,
+				   and a match run on */
+
+#ifdef INFLATE_ASM
+/* the hot loop in 68000 assembly (atari/inflate_fast.S): the program
+   that builds it defines INFLATE_ASM; the tests here use the C */
+typedef struct {
+	unsigned char *op, *step;
+	const unsigned char *in, *iend;
+	unsigned long bits;
+	long nbits;
+	const unsigned short *fast, *dfast;
+	unsigned char *base;
+	long len;
+} IFAST;
+int inflate_fast(IFAST *f);
+#endif
+
+INFLATE *inflate_open_piece(int (*get)(void *u, unsigned char *buf, long n), void *u)
+{
+	INFLATE *z = malloc(sizeof(INFLATE));	/* no ring */
+	if (!z)
+		return 0;
+	memset(z, 0, sizeof(INFLATE));
+	z->buf = malloc(PBUF);
+	if (!z->buf) {
+		free(z);
+		return 0;
+	}
+	z->get = get;
+	z->u = u;
+	z->state = Z_HEAD;
+	return z;
+}
+
+long inflate_piece(INFLATE *z, const unsigned char **pp, long max, void (*turn)(void))
+{
+	unsigned char *b = z->buf + z->boff, *op, *end;
+	if (z->state == Z_BAD) {
+		*pp = b + z->bpos;
+		return -1;
+	}
+	if (max > WIN)
+		max = WIN;
+	if (z->bpos > WIN) {
+		/* the window to the buffer's foot, from its first or second byte
+		   as the bytes lie: moved a long at a time, not a byte (an odd
+		   piece's end made the 68000's memmove copy 32 KB a byte at a
+		   time each piece: 2 s of a map's page on an ST, 3 Nov 2026) */
+		const unsigned char *from = b + z->bpos - WIN;
+		int off = (int)((unsigned long)from & 1) ^ (int)((unsigned long)z->buf & 1);
+		memmove(z->buf + off, from, WIN);
+		z->boff = off;
+		b = z->buf + off;
+		z->bpos = WIN;
+	}
+	op = b + z->bpos;
+	*pp = op;
+	end = op + max;
+	while (op < end && z->state != Z_END && z->state != Z_BAD) {
+		unsigned char *step = end - op > 1024 ? op + 1024 : end;
+		while (op < step) {
+			if (z->state == Z_HEAD) {
+				if (z_head(z))
+					goto bad;
+				if (z->state == Z_END)
+					break;
+			} else if (z->state == Z_STORED) {
+				while (z->stored && op < step && z->nbits >= 8) {
+					*op++ = (unsigned char)z->bits;
+					z->bits >>= 8;
+					z->nbits -= 8;
+					z->stored--;
+				}
+				while (z->stored && op < step) {
+					long k;
+					if (z->ip >= z->il) {
+						long got = z->get(z->u, z->in, sizeof(z->in));
+						if (got <= 0)
+							goto bad;
+						z->il = (int)got;
+						z->ip = 0;
+					}
+					k = z->il - z->ip;
+					if (k > z->stored)
+						k = z->stored;
+					if (k > step - op)
+						k = step - op;
+					memcpy(op, z->in + z->ip, (size_t)k);
+					z->ip += (int)k;
+					z->stored -= k;
+					op += k;
+				}
+				if (!z->stored)
+					z->state = z->last ? Z_END : Z_HEAD;
+			} else if (z->state == Z_CODES) {
+				int len, dist, sym;
+				const unsigned char *q;
+				long e;
+#ifdef INFLATE_ASM
+				{
+					IFAST f;
+					int r;
+					f.op = op;
+					f.step = step;
+					f.in = z->in + z->ip;
+					f.iend = z->in + z->il;
+					f.bits = z->bits;
+					f.nbits = z->nbits;
+					f.fast = z->lc->fast;
+					f.dfast = z->dc->fast;
+					f.base = b;
+					r = inflate_fast(&f);
+					op = f.op;
+					z->ip = (int)(f.in - z->in);
+					z->bits = f.bits;
+					z->nbits = (int)f.nbits;
+					if (r == 2)
+						goto bad;
+					if (r == 1) {
+						z->copy = (int)f.len;
+						goto dist;
+					}
+					if (op >= step)
+						break;
+				}
+#else
+				/* the hot loop: the bits in locals, each byte stored once */
+				const unsigned short *fast = z->lc->fast, *dfast = z->dc->fast;
+				unsigned long bits = z->bits;
+				int nbits = z->nbits;
+				const unsigned char *in = z->in + z->ip, *iend = z->in + z->il;
+				unsigned v, l, x;
+				while (op < step) {
+					while (nbits <= 24 && in < iend) {
+						bits |= (unsigned long)*in++ << nbits;
+						nbits += 8;
+					}
+					if (nbits < FAST)
+						break;
+					v = fast[bits & ((1 << FAST) - 1)];
+					if (__builtin_expect(v == 0, 0))
+						break;			/* a long code: below */
+					l = v & 15;
+					v >>= 4;
+					if (v < 256) {
+						bits >>= l;
+						nbits -= l;
+						*op++ = (unsigned char)v;
+						continue;
+					}
+					if (v == 256 || v >= 286)
+						break;
+					v -= 257;
+					x = lext[v];
+					if (nbits < (int)(l + x))
+						break;
+					bits >>= l;
+					len = lbase[v] + (int)(bits & emask[x]);
+					bits >>= x;
+					nbits -= (int)(l + x);
+					while (nbits <= 24 && in < iend) {
+						bits |= (unsigned long)*in++ << nbits;
+						nbits += 8;
+					}
+					v = nbits >= FAST ? dfast[bits & ((1 << FAST) - 1)] : 0;
+					if (v == 0 || (v >> 4) >= 30 || nbits < (int)((v & 15) + dext[v >> 4])) {
+						/* not enough here for the distance: the length
+						   back, the symbol again below */
+						z->ip = (int)(in - z->in);
+						z->bits = bits;
+						z->nbits = nbits;
+						z->copy = len;
+						goto dist;
+					}
+					l = v & 15;
+					v >>= 4;
+					x = dext[v];
+					bits >>= l;
+					dist = dbase[v] + (int)(bits & emask[x]);
+					bits >>= x;
+					nbits -= (int)(l + x);
+					if (dist > op - b)
+						goto bad_locals;
+					q = op - dist;
+					do
+						*op++ = *q++;
+					while (--len);
+				}
+				z->ip = (int)(in - z->in);
+				z->bits = bits;
+				z->nbits = nbits;
+				if (op >= step)
+					break;
+#endif
+				/* a symbol at a time (the input's end, a long code, the
+				   block's end) */
+				sym = z_decode(z, z->lc);
+				if (sym < 0)
+					goto bad;
+				if (sym < 256) {
+					*op++ = (unsigned char)sym;
+					continue;
+				}
+				if (sym == 256) {
+					z->state = z->last ? Z_END : Z_HEAD;
+					continue;
+				}
+				sym -= 257;
+				if (sym >= 29 || (e = z_take(z, lext[sym])) < 0)
+					goto bad;
+				z->copy = lbase[sym] + (int)e;
+			dist:
+				sym = z_decode(z, z->dc);
+				if (sym < 0 || sym >= 30 || (e = z_take(z, dext[sym])) < 0)
+					goto bad;
+				dist = dbase[sym] + (int)e;
+				if (dist > op - b)
+					goto bad;
+				q = op - dist;
+				len = z->copy;
+				z->copy = 0;
+				do
+					*op++ = *q++;
+				while (--len);
+				continue;
+#ifndef INFLATE_ASM
+			bad_locals:
+				z->ip = (int)(in - z->in);
+				z->bits = bits;
+				z->nbits = nbits;
+				goto bad;
+#endif
+			} else
+				break;
+		}
+		if (turn)
+			turn();
+	}
+	z->bpos = op - b;
+	z->total += (unsigned long)(op - *pp);
+	return op - *pp;
+bad:
+	z->state = Z_BAD;
+	z->bpos = op - b;
+	return op > *pp ? op - *pp : -1;
 }

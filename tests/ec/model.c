@@ -64,16 +64,80 @@ static const uint32_t *canon(const uint32_t *a, uint32_t *t)
 	return addsub(t, a, p, -1) ? a : t;
 }
 
+/* op 0's words, gathered until it is whole: LOADP (d 1) at, n, n words;
+   RUN K, K words, 4 addresses, W, W words, B */
+static unsigned long col[1024];
+static int ncol, collecting, coll_d;
+
 void model_reset(void)
 {
 	want = 0;
 	outn = outpos = 0;
+	collecting = 0;
+}
+
+static void exec(unsigned long w);
+
+static int whole(void)
+{
+	unsigned long k, wn;
+	if (coll_d == 1)
+		return ncol >= 2 && (unsigned long)ncol == 2 + col[1];
+	if (ncol < 1)
+		return 0;
+	k = col[0];
+	if ((unsigned long)ncol < 1 + k + 4 + 1)
+		return 0;
+	wn = col[1 + k + 4];
+	return (unsigned long)ncol == 1 + k + 4 + 1 + wn + 1;
+}
+
+/* the pairs swapped when s */
+static void pairs(int s, const int *r)
+{
+	uint32_t t[32];
+	int i;
+	if (!s)
+		return;
+	for (i = 0; i < 4; i += 2) {
+		memcpy(t, reg[r[i]], sizeof(t));
+		memcpy(reg[r[i]], reg[r[i + 1]], sizeof(t));
+		memcpy(reg[r[i + 1]], t, sizeof(t));
+	}
+}
+
+static void run(void)
+{
+	unsigned long k = col[0], wn = col[1 + k + 4], nb = col[1 + k + 4 + 1 + wn], i, j;
+	const unsigned long *step = col + 1, *bits = col + 1 + k + 5;
+	int r[4], prev = 0;
+	for (i = 0; i < 4; i++)
+		r[i] = (int)((col[1 + k + i] - 0x1000) >> 5);
+	for (i = 0; i < nb; i++) {
+		int bit = (int)(bits[i / 24] >> (23 - i % 24)) & 1;
+		pairs(bit ^ prev, r);
+		prev = bit;
+		for (j = 0; j < k; j++)
+			exec(step[j]);
+	}
+	pairs(prev, r);
+	outq[0] = 0;
+	outn = 1;
+	outpos = 0;
 }
 
 void model_put(unsigned long w)
 {
-	int o, d, a, b, i;
-	uint32_t t[32], u[32];
+	if (collecting) {
+		if (ncol < (int)(sizeof(col) / sizeof(col[0])))
+			col[ncol++] = w;
+		if (whole()) {
+			collecting = 0;
+			if (coll_d != 1)
+				run();
+		}
+		return;
+	}
 	if (want) {
 		if (wreg == -2) {		/* CFG: N, mp, p */
 			if (wpos == 0)
@@ -93,6 +157,20 @@ void model_put(unsigned long w)
 		}
 		return;
 	}
+	if (!((w >> 21) & 7)) {
+		model_ops[0]++;
+		collecting = 1;
+		coll_d = (int)(w >> 14) & 127;
+		ncol = 0;
+		return;
+	}
+	exec(w);
+}
+
+static void exec(unsigned long w)
+{
+	int o, d, a, b, i;
+	uint32_t t[32], u[32];
 	o = (int)(w >> 21) & 7;
 	d = (int)(w >> 14) & 127;
 	a = (int)(w >> 7) & 127;

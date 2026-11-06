@@ -42,11 +42,18 @@ static const unsigned char st_out[32] = {
 
 static void note(const char *what, int on_dsp, unsigned long ms)
 {
-	char msg[80];
+	char msg[100];
 	if (test_ms && ms >= test_ms)
 		ms -= test_ms;
 	test_ms = 0;
-	snprintf(msg, sizeof(msg), "%s on the %s, %lu ms", what, on_dsp ? "DSP" : "68030 (DSP busy)", ms);
+	/* the time split: the job's own (the DSP's, the host port's and the
+	   68030's share) and its turns for GEM, every 40 ms of it: only a
+	   real Falcon's log can tell them apart, Hatari's DSP isn't the chip */
+	if (on_dsp && dspec_turn_ms <= ms)
+		snprintf(msg, sizeof(msg), "%s on the DSP, %lu ms (%lu ms working, %u turns %lu ms)", what, ms,
+			 ms - dspec_turn_ms, dspec_turns, dspec_turn_ms);
+	else
+		snprintf(msg, sizeof(msg), "%s on the %s, %lu ms", what, on_dsp ? "DSP" : "68030 (DSP busy)", ms);
 	conn_log("TLS", " -- ", msg, strlen(msg));
 }
 

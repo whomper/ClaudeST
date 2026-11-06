@@ -90,7 +90,8 @@ def run(machine, kind, reset=False):
             h.terminate()
             h.wait()
     text = open(log, errors="replace").read()
-    rep = os.path.join(d, "CRASH.LOG")
+    rep = next((os.path.join(d, f) for f in os.listdir(d) if f.upper() == "CRASH.LOG"),
+               os.path.join(d, "crash.log"))
     return d, text, open(rep, "rb").read().decode("latin-1") if os.path.exists(rep) else ""
 
 
@@ -113,6 +114,8 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
             check(int(m.group(1), 16) < 0x200 and not rep,
                   tag + " left to vector 11's handler (TOS %s, %s): only on a TOS 1.0x" % m.groups())
             continue
+        if kind == "f":
+            check("CRASHT vectors: \n" in con, tag + " every vector ours over TOS's own (crash_vectors empty)")
         check("CRASHT crashing" in con and "CRASHT no crash" not in con, tag + " it crashed")
         check("CrashTest 1.0: " + NAMES[kind] in rep, tag + " CRASH.LOG names it")
         if kind == "w":     # outside the program: no offset, but the caller
@@ -135,11 +138,22 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
     tag = "%s a resident program's privilege violation:" % machine
     check("CRASHT protect ok" in con, tag + " passed on to its handler")
     check(not rep, tag + " no CRASH.LOG")
-    # a software FPU emulator on vector 11: the program's line F is its
+    # a software FPU emulator on vector 11 (XBRA 'FPEM'): another
+    # program's line F is still its; the program's own, in its code
+    # (which has no FPU instruction), is a crash, caught, and the vector's
+    # holder named for the app's log (Erez's 11 bombs of 1 Nov 2026 left
+    # no CRASH.LOG: vector 11 wasn't TOS's there)
     d, con, rep = run(machine, "e")
-    tag = "%s an FPU emulator's line F:" % machine
-    check("CRASHT emulator ok" in con, tag + " run by the emulator")
-    check(not rep, tag + " no CRASH.LOG")
+    tag = "%s an FPU emulator on vector 11:" % machine
+    check("CRASHT emulator ok" in con, tag + " another program's line F run by it")
+    if re.search(r"CRASHT vectors: line F left to TOS 1\.0x", con):
+        check(not rep, tag + " left to it on a TOS 1.0x, as before")
+    else:
+        check(re.search(r"CRASHT vectors: line F chained after XBRA 'FPEM' \(\$[0-9A-F]{6}\)", con) is not None,
+              tag + " named for the log (crash_vectors)")
+        check("CrashTest 1.0: " + NAMES["f"] in rep and
+              ("(CrashTest+$" in rep.split("\r\n")[2] if rep.count("\r\n") > 2 else False),
+              tag + " the program's own line F caught, in its code")
     # ten crashes caught in supervisor mode in one boot: TOS's savptr
     # ($4A2) and the supervisor stack hold steady
     d, con, rep = run(machine, "r")

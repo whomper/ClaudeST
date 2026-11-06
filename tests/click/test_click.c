@@ -17,6 +17,7 @@ static int checks, failed;
 #define CHECK(c, what) do { checks++; if (c) printf("ok   %s\n", what); \
 	else { failed++; printf("FAIL %s\n", what); } } while (0)
 
+short aes_double;			/* gem.c's: the AES counted two presses */
 static unsigned long now = 10000;
 static short rate = 2;			/* 275 ms */
 static short m1_leave, m1_x, m1_y, m1_w, m1_h;
@@ -63,6 +64,12 @@ static int run(const EV *s, int n, const GRECT *r, short x, short y, short *dx, 
 }
 
 #define RUN(s, r, x, y) run(s, (int)(sizeof(s) / sizeof(s[0])), r, x, y, &dx, &dy)
+
+/* press_update_begin's AES: how many programs run, the button, the lock */
+static short n_aes = 1, button, locks;
+short aes_count(void) { return n_aes; }
+short graf_mkstate(short *mx, short *my, short *mb, short *ks) { *mx = *my = *ks = 0; *mb = button; return 1; }
+short wind_update(short mode) { locks += mode == BEG_UPDATE ? 1 : -1; return 1; }
 
 int main(void)
 {
@@ -151,6 +158,36 @@ int main(void)
 	press_forget();
 	now += 50;
 	CHECK(press_double(3, 50, 105) == 0, "press_forget: the last press gone");
+
+	/* a multitasking AES hands a double click over as one event it counted
+	   as two (gem.c sets aes_double): that press is the second at once */
+	now += 2000;
+	press_forget();
+	aes_double = 1;
+	CHECK(press_double(4, 80, 105) == 1, "the AES counted two: a double click with no press before it");
+	CHECK(aes_double == 0, "and the flag is used up");
+	CHECK(press_double(4, 80, 105) == 0, "the next press alone: a single click");
+
+	{
+		int took;
+
+		button = 1;
+		took = press_update_begin();
+		CHECK(took == 0 && locks == 0, "TOS, the button held: no BEG_UPDATE (it would wait for the release)");
+		press_update_end(took);
+		CHECK(locks == 0, "TOS, the button held: no END_UPDATE either");
+		button = 0;
+		took = press_update_begin();
+		CHECK(took == 1 && locks == 1, "TOS, the button up: BEG_UPDATE");
+		press_update_end(took);
+		CHECK(locks == 0, "and END_UPDATE");
+		n_aes = -1;
+		button = 1;
+		took = press_update_begin();
+		CHECK(took == 1 && locks == 1, "a multitasking AES, the button held: BEG_UPDATE kept");
+		press_update_end(took);
+		CHECK(locks == 0, "and END_UPDATE");
+	}
 
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;

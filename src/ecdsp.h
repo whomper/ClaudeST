@@ -36,6 +36,10 @@ typedef struct {
 	int (*run)(void (*fn)(void *), void *ctx);
 	void (*put)(unsigned long w);		/* a 24-bit word to the DSP */
 	unsigned long (*get)(void);		/* and one from it */
+	/* ec.a56's code in external P memory (RUN's), which the bootstrap
+	   doesn't load: sent with LOADP by a job that runs a ladder */
+	const unsigned long *ext;
+	unsigned long ext_at, ext_n;
 } ECDSP_PORT;
 extern const ECDSP_PORT *ecdsp_port;
 

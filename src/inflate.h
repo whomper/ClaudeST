@@ -28,4 +28,19 @@ INFLATE *inflate_open(int (*get)(void *u, unsigned char *buf, long n), void *u);
 long inflate_read(INFLATE *z, unsigned char *out, long n);
 void inflate_close(INFLATE *z);
 
+/* the same with a buffer of its own that is also the window (about
+   72 KB: 64 KB and the tables), for a caller that takes a piece where it
+   lies: each byte stored once, a match a plain copy from further back,
+   no ring to wrap. inflate_piece() unpacks the next piece, up to max
+   bytes (at most 32 KB) and up to 257 more where a match runs on, and
+   sets *p to it; it stays where it is until the next call. turn (or 0)
+   is called after each 1 KB or so, for GEM. 0 at the end, -1 damaged
+   (*p's piece is then what came before the damage). inflate_read()
+   isn't for such a one; inflate_close() frees it. (EUpdate's unzip: a
+   stock Falcon unpacked programs at some 80 KB/s through
+   inflate_read, an instruction-cache miss most of every symbol: Erez,
+   1 Nov 2026, "saving takes forever") */
+INFLATE *inflate_open_piece(int (*get)(void *u, unsigned char *buf, long n), void *u);
+long inflate_piece(INFLATE *z, const unsigned char **p, long max, void (*turn)(void));
+
 #endif

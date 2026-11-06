@@ -13,5 +13,9 @@ int dsp_rsa_present(void);	/* this machine has a DSP56001 */
    it, 0 if it couldn't (busy, missing, key too big) */
 int dsp_rsa_public(unsigned char *x, size_t xlen, const unsigned char *n, size_t nlen,
 		   const unsigned char *e, size_t elen);
+/* the last job's turns for GEM (pf_idle while the DSP works) and the ms
+   spent in them, for the log */
+extern unsigned short dsprsa_turns;
+extern unsigned long dsprsa_turn_ms;
 
 #endif
