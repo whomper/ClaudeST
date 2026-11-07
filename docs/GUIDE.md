@@ -78,10 +78,11 @@ Replies still come in while it is iconified.
 - **Status area** (bottom left): a dot for the connection, green when
   online and red when not (filled or hollow in black and white), with
   *Connecting…*, *Online* or *Offline: …* beside it. With claude.ai, a
-  ring next to it fills clockwise as you use up the current session
-  (claude.ai's 5-hour limit): blue, turning red from 90%, on a grey track
+  ring next to it fills clockwise as you use up your plan's nearest limit:
+  the current session (claude.ai's 5-hour limit) where your plan has one,
+  otherwise the week's. Blue, turning red from 90%, on a grey track
   in 16 colours; black on a dotted grey track with fewer colours. Below, *Session
-  30%* and, when the sidebar is wide enough, the time until it resets.
+  30%* or *Week 30%* and, when the sidebar is wide enough, the time until it resets.
   The bridge checks after each reply, at most every two minutes while
   you use ClaudeST, and every five minutes while the window is left
   alone. Click the area for the full Account page.
@@ -251,8 +252,9 @@ Press `F8`, click the status line, or choose **Options ▸ Account…**.
 
 ![The Account page](account.png)
 
-- **Plan:** Free, Pro, Max (5x or 20x usage), Team or Enterprise.
-- **Usage:** a meter for each limit, as on claude.ai's Usage page: the
+- **Plan:** your plan as claude.ai names it, such as Pro, Max (20x usage),
+  Ultra, Team or Enterprise.
+- **Usage:** a meter for each limit your plan has, as on claude.ai's Usage page: the
   current 5-hour session, this week's usage, and any included cloud
   session credit, each with when it resets or expires, in the Pi's time
   zone.

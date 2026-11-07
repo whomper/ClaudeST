@@ -119,10 +119,28 @@ class Protocol(unittest.TestCase):
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)
         be.org = "o1"
         be._get = lambda path, **kw: {"five_hour": {"utilization": 25.0, "resets_at": "2026-10-11T15:00:00Z"}}
-        self.assertEqual(be.session_usage(), (25.0, "2026-10-11T15:00:00Z"))
+        self.assertEqual(be.session_usage(), (25.0, "2026-10-11T15:00:00Z", "Session"))
         for empty in ({}, {"five_hour": None}, {"five_hour": {"utilization": None}}):
             be._get = lambda path, e=empty, **kw: e
-            self.assertEqual(be.session_usage(), (0.0, None))    # nothing used yet: 0%
+            self.assertEqual(be.session_usage(), (0.0, None, "Usage"))    # nothing used yet: 0%
+        # a plan with weekly limits only (Ultra): the ring shows the week
+        week = {"five_hour": None, "seven_day": {"utilization": 31.0, "resets_at": "2026-10-14T09:00:00Z"},
+                "seven_day_opus": {"utilization": 12.0, "resets_at": "2026-10-14T09:00:00Z"}}
+        be._get = lambda path, **kw: week
+        self.assertEqual(be.session_usage(), (31.0, "2026-10-14T09:00:00Z", "Week"))
+        # only a per-model weekly limit reported: the busiest of them
+        be._get = lambda path, **kw: {"seven_day_opus": {"utilization": 7, "resets_at": None},
+                                      "seven_day_sonnet": {"utilization": 40, "resets_at": None}}
+        self.assertEqual(be.session_usage(), (40.0, None, "Week"))
+
+    def test_ring_label_over_the_protocol(self):
+        self.s.be.session_usage = lambda: (31.0, None, "Week")
+        self.s.send_usage(force=True)
+        self.assertIn([b"u", b"31", b"", b"Week"], self.link.lines())
+        self.link.sent = b""
+        self.s.be.session_usage = lambda: (5.0, None, "Session")
+        self.s.send_usage(force=True)
+        self.assertIn([b"u", b"5", b""], self.link.lines())    # the session: as before
 
     def test_unread_rule(self):
         from backends import ClaudeAiBackend
@@ -1426,6 +1444,16 @@ class AccountPage(unittest.TestCase):
         self.assertEqual(plan_name(["chat"]), "Free")
         self.assertEqual(plan_name(["chat", "claude_max"], "default_claude_max_5x"), "Max (5x usage)")
         self.assertEqual(plan_name(["chat", "raven"]), "Team")
+        self.assertEqual(plan_name(["chat", "claude_max"], "default_claude_max_20x"), "Max (20x usage)")
+        self.assertEqual(plan_name(["chat"], "default_claude_ai"), "Free")
+        # Ultra, however claude.ai says it: the tier, a capability, or both
+        # beside an older plan's word kept from before the move
+        self.assertEqual(plan_name(["chat", "claude_ultra"]), "Ultra")
+        self.assertEqual(plan_name(["chat"], "default_claude_ultra"), "Ultra")
+        self.assertEqual(plan_name(["chat", "claude_max", "claude_ultra"], "default_claude_max_20x"), "Ultra")
+        self.assertEqual(plan_name(["chat", "claude_max"], "default_claude_ultra"), "Ultra")
+        # a plan newer than ClaudeST knows: its own name, not an older plan's
+        self.assertEqual(plan_name(["chat", "claude_max"], "default_claude_zenith"), "Zenith")
 
     def test_account_over_the_protocol(self):
         link = FakeLink()

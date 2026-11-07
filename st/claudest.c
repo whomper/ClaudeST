@@ -206,6 +206,7 @@ static short win_icon;			/* shown as ClaudeST's icon (WM_ICONIFY) */
 static short norm_x, norm_y, norm_w, norm_h;	/* where it was before */
 static short usage_pct = -1;		/* session usage from the bridge's u line; -1: none */
 static char usage_rst[12];		/* and the time until it resets, "2h 10m" */
+static char usage_lbl[10] = "Session";	/* which limit it is: "Session", "Week" */
 
 /* input line */
 #define INMAX 1000
@@ -1412,8 +1413,9 @@ static void draw_status(short full)
 	if (usage_pct >= 0 && room > 0) {
 		char *p = t;
 		short k;
-		strcpy(p, "Session ");
-		p += 8;
+		strcpy(p, usage_lbl);
+		p += strlen(p);
+		*p++ = ' ';
 		if (usage_pct >= 100)
 			*p++ = '1';
 		if (usage_pct >= 10)
@@ -2331,7 +2333,7 @@ static void handle_line(char *s)
 		}
 		list_loading = 0;
 		break;
-	case 'u':			/* u [<percent> <reset>] : session usage; bare: none */
+	case 'u':			/* u [<percent> <reset> [<label>]] : usage; bare: none */
 		{
 			short v = -1;
 			const char *q = n > 1 ? f[1] : "";
@@ -2341,9 +2343,12 @@ static void handle_line(char *s)
 				if (v > 100)
 					v = 100;
 			}
-			if (v != usage_pct || strcmp(usage_rst, n > 2 ? f[2] : "")) {
+			q = n > 3 && *f[3] ? f[3] : "Session";
+			if (v != usage_pct || strcmp(usage_rst, n > 2 ? f[2] : "") ||
+			    strcmp(usage_lbl, q)) {
 				usage_pct = v;
 				strlcpy_(usage_rst, n > 2 ? f[2] : "", sizeof(usage_rst));
+				strlcpy_(usage_lbl, q, sizeof(usage_lbl));
 				dirty |= D_STATUS;
 			}
 		}

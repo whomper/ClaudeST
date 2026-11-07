@@ -232,6 +232,26 @@ USAGE_NAMES = [
 USAGE_EXPIRES = {"iguana_necktie"}     # a credit that expires rather than resets
 
 
+def ring_usage(usage, limits):
+    """(percent, resets_at, label) for the Atari's ring from claude.ai's
+    usage answer: the first of LIMITS (key, label) the plan has in effect.
+    Plans differ in which limits they have (some have no 5-hour one), so
+    the ring follows what claude.ai reports. Failing those, the busiest
+    other weekly limit; and with nothing reported at all (nothing used yet)
+    0% with no reset."""
+    def got(k):
+        u = usage.get(k)
+        return isinstance(u, dict) and u.get("utilization") is not None
+    for k, label in limits:
+        if got(k):
+            return float(usage[k]["utilization"]), usage[k].get("resets_at"), label
+    weekly = [k for k in usage if k.startswith("seven_day") and got(k)]
+    if weekly:
+        k = max(weekly, key=lambda k: float(usage[k]["utilization"]))
+        return float(usage[k]["utilization"]), usage[k].get("resets_at"), "Week"
+    return 0.0, None, "Usage"
+
+
 def _expired(iso):
     from datetime import datetime, timezone
     try:
@@ -243,22 +263,39 @@ def _expired(iso):
     return t < datetime.now(timezone.utc)
 
 
+# the personal plans, highest first; a plan word claude.ai uses that isn't
+# here (a plan newer than this list) counts above them all
+PLAN_RANK = ["ultra", "max", "pro"]
+NOT_PLANS = {"ai", "code", "chat"}     # "default_claude_ai" is the free tier
+
+
 def plan_name(capabilities, tier="", billing=""):
-    caps = set(capabilities or [])
+    """The plan's name from what claude.ai says of the organisation. The
+    plan words come from the rate-limit tier ("default_claude_max_20x") and
+    the capabilities ("claude_max"); an account moved to a new plan can keep
+    an older plan's word beside the new one, so the highest plan wins, and a
+    word this list doesn't know is shown as it is, not mistaken for an older
+    plan."""
+    caps = [str(c).lower() for c in capabilities or []]
     tier = (tier or "").lower()
-    if "max_20x" in tier:
-        return "Max (20x usage)"
-    if "max_5x" in tier:
-        return "Max (5x usage)"
-    if "claude_max" in caps or "max" in tier:
-        return "Max"
-    if "raven" in caps or "team" in tier or "team" in (billing or "").lower():
-        return "Team" if "enterprise" not in tier + (billing or "").lower() else "Enterprise"
+    billing = (billing or "").lower()
+    if "raven" in caps or "team" in tier or "team" in billing:
+        return "Team" if "enterprise" not in tier + billing else "Enterprise"
     if "enterprise" in tier:
         return "Enterprise"
-    if "claude_pro" in caps or "pro" in tier:
-        return "Pro"
-    return "Free"
+    found = {}              # plan word -> its usage multiplier ("20x"), if any
+    for m in re.finditer(r"claude_([a-z]+)(?:_(\d+x))?", tier):
+        if m.group(1) not in NOT_PLANS:
+            found.setdefault(m.group(1), m.group(2))
+    for c in caps:
+        m = re.fullmatch(r"claude_([a-z]+)", c)
+        if m and m.group(1) in PLAN_RANK:
+            found.setdefault(m.group(1), None)
+    if not found:
+        return "Free"
+    word = min(found, key=lambda w: PLAN_RANK.index(w) if w in PLAN_RANK else -1)
+    name = word.capitalize()
+    return name + (" (%s usage)" % found[word] if found[word] else "")
 
 
 def _event_payload(ev):
@@ -601,9 +638,10 @@ class Backend:
         raise NotImplementedError("Archiving sessions isn't supported by the %s backend" % self.name)
 
     def session_usage(self, timeout=60):
-        """(percent used, resets_at ISO) of the current session limit, or
-        None where the backend has no such limit. TIMEOUT: seconds to wait
-        for the server."""
+        """(percent used, resets_at ISO[, label]) of the limit the Atari's
+        ring shows, or None where the backend has no limit. The label names
+        the limit ("Session", "Week"); without one it is the session limit.
+        TIMEOUT: seconds to wait for the server."""
         return None
 
     def mark_read(self, chat_id):
@@ -1174,13 +1212,13 @@ class ClaudeAiBackend(Backend):
             except Exception as e:
                 log.info("could not set the chat's model: %s", e)
 
+    # the limits the ring can show, in the order it prefers them: the
+    # session (5-hour) limit where the plan has one, else the weekly one
+    RING_LIMITS = [("five_hour", "Session"), ("seven_day", "Week")]
+
     def session_usage(self, timeout=60):
-        # claude.ai always has a session (5-hour) limit; with nothing used
-        # yet it may leave the entry out or empty: that is 0%, not "none"
-        u = (self._get("/organizations/%s/usage" % self.org, timeout=timeout) or {}).get("five_hour")
-        if not isinstance(u, dict) or u.get("utilization") is None:
-            return 0.0, None
-        return float(u["utilization"]), u.get("resets_at")
+        usage = self._get("/organizations/%s/usage" % self.org, timeout=timeout) or {}
+        return ring_usage(usage, self.RING_LIMITS)
 
     def account_report(self):
         acct = self._get("/account")
@@ -1188,6 +1226,8 @@ class ClaudeAiBackend(Backend):
         for m in acct.get("memberships") or []:
             if (m.get("organization") or {}).get("uuid") == self.org:
                 org = m["organization"]
+        log.info("plan: tier %s, billing %s, capabilities %s", org.get("rate_limit_tier"),
+                 org.get("billing_type"), ",".join(map(str, org.get("capabilities") or [])))
         out = ["## Plan",
                plan_name(org.get("capabilities"), org.get("rate_limit_tier"), org.get("billing_type"))]
         out += ["", "## Usage"]

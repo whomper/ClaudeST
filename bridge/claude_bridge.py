@@ -424,15 +424,17 @@ class Session:
 
     def usage_out(self, got):
         if got != self._usage_last:
-            log.info("session usage: %s", "none" if got is None else "%.0f%%, resets %s" % (
-                got[0], got[1] or "-"))
+            log.info("session usage: %s", "none" if got is None else "%s %.0f%%, resets %s" % (
+                got[2] if len(got) > 2 else "Session", got[0], got[1] or "-"))
             self._usage_last = got
         if got is None:
             self.out("u")
         else:
-            pct, resets = got
+            pct, resets = got[:2]
+            # the label last: an older ClaudeST reads only the first two
             self.out("u", str(int(round(max(0.0, min(100.0, pct))))),
-                     backends.short_span(resets) if resets else "")
+                     backends.short_span(resets) if resets else "",
+                     *(got[2:3] if len(got) > 2 and got[2] != "Session" else ()))
 
     def notice(self, s):
         """N: a passing notice ("Loading...", "Model: Opus 5.5"). The Atari

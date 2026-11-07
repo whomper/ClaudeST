@@ -185,11 +185,12 @@
   - @{B}The dot:@{b} green when online, red when not (filled or hollow
     in black and white), with Connecting..., Online or Offline beside
     it.
-  - @{B}The ring@{b} fills clockwise as you use up the current session,
-    claude.ai's 5-hour limit: blue, turning red from 90%, on a grey
-    track in 16 colours; black on a dotted grey track with fewer
-    colours. Below it, "Session 30%" and, when the sidebar is wide
-    enough, the time until the session resets.
+  - @{B}The ring@{b} fills clockwise as you use up your plan's nearest
+    limit: the current session (claude.ai's 5-hour limit) where your
+    plan has one, otherwise the week's. Blue, turning red from 90%, on
+    a grey track in 16 colours; black on a dotted grey track with
+    fewer colours. Below it, "Session 30%" or "Week 30%" and, when the
+    sidebar is wide enough, the time until it resets.
 
   The bridge checks the usage after each reply, at most every two
   minutes while you use ClaudeST, and every five minutes while the
@@ -322,10 +323,12 @@
 
   Press F8, click the status area, or choose Options > Account...
 
-  - @{B}Plan:@{b} Free, Pro, Max (5x or 20x usage), Team or Enterprise.
-  - @{B}Usage:@{b} a meter for each limit, as on claude.ai's Usage page:
-    the current 5-hour session, this week's usage, and any included
-    cloud session credit, each with when it resets or expires.
+  - @{B}Plan:@{b} your plan as claude.ai names it, such as Pro, Max
+    (20x usage), Ultra, Team or Enterprise.
+  - @{B}Usage:@{b} a meter for each limit your plan has, as on
+    claude.ai's Usage page: the current 5-hour session, this week's
+    usage, and any included cloud session credit, each with when it
+    resets or expires.
   - @{B}Account:@{b} your name, email, organisation and the date you
     joined.
 
