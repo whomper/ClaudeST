@@ -93,6 +93,7 @@ ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari
   - something EWeb, EPDF or EPlay need from it.
 
   Such a release takes only that fix (one change from AERA-Atari, not a sync), and its notes say why.
+  Before it goes out, send the hub the candidate commit and wait for its go from the family check (TOS 1.04 and 4.04, NVDI); releasing first and checking after is not for ClaudeST. 2.0 went out without it (hub, 7 Nov 2026).
 - Work on `main` that isn't released stays unreleased.
 - Nothing runs in the background; the session waits for Erez or the hub.
 - Only Erez's explicit word ends this mode, for instance that every app is to take the latest shared code and release. The hub passes it on quoting him.
