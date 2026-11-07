@@ -18,7 +18,7 @@ Falcon, through a Raspberry Pi bridge.
 - **Right-click menus** to pin, rename, move to a project, archive and delete.
 - **Usage at a glance:** a ring that fills as you use up the current session, and an Account page
   with your plan and usage.
-- **Hebrew:** right-to-left text and a Hebrew keyboard layout.
+- **Hebrew:** right-to-left text and a Hebrew keyboard layout, switched on and off with F10.
 - **Fonts:** a font selector (**Options ▸ Font…**), as in EMail and ECal: the system font in two
   sizes, or any fixed-width GDOS font with NVDI.
 - **Any screen** from 640×200, monochrome or colour.

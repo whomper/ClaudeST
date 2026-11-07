@@ -321,9 +321,9 @@ line.
 
 ![A Hebrew chat](hebrew.png)
 
-**Typing Hebrew:** press `F10`, or choose **Options ▸ Hebrew keys**. The
-letter keys then type Hebrew in the Israeli SI-1452 layout, and an
-**HE** badge shows in the reply box. Shift still types English capitals.
+**Typing Hebrew:** press `F10` (and `F10` again for English). The
+letter keys then type Hebrew in the Israeli SI-1452 layout, and a
+Hebrew badge shows in the reply box. Shift still types English capitals.
 Keys are mapped by position, so any national Atari keyboard works.
 
 The Atari font has only the plain letters, so the bridge drops vowel
@@ -438,7 +438,7 @@ on) is still read, and written in the new form the next time.
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
 | `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, or the baud items in Options |
 | `SERIALPORT=0` | edit by hand, on a TT or Falcon only to use another serial port than the one TOS has chosen (0, the default): 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2) |
-| `HEBREW=1` | `F10` / Options ▸ Hebrew keys |
+| `HEBREW=1` | `F10` |
 | `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |

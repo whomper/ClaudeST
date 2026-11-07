@@ -332,7 +332,7 @@ static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_HEB, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH,
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH,
 	C_CLOSE
 };
 
@@ -376,7 +376,6 @@ static const MBAR_ITEM m_opts[] = {
 	{ "Network (STinG)", 0, C_NET },
 	{ "Serial port", 0, C_SER },
 	{ "-", 0, 0 },
-	{ "Hebrew keys", "F10", C_HEB },
 	{ "Account...", "F8", C_ACCT },
 	{ "Font...", 0, C_FONT },
 	{ 0, 0, 0 }
@@ -406,7 +405,6 @@ static void menu_check_baud(void)
 	check(C_B192, baud == BAUD_19200);
 	check(C_NET, link == LINK_TCP);
 	check(C_SER, link == LINK_SERIAL);
-	check(C_HEB, hebrew_kbd);
 }
 
 /* ------------------------------------------------------------------ */
@@ -5605,7 +5603,6 @@ static void handle_msg(short *msg)
 				alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
 			break;
 		case C_SER: use_link(LINK_SERIAL); break;
-		case C_HEB: toggle_hebrew(); break;
 		case C_ACCT: do_account(); break;
 		case C_FONT: font_menu(); break;
 		case C_HELP: help(); break;
@@ -5792,7 +5789,7 @@ int main(void)
 	   accessories' (a 4 MB Falcon under NVDI, a 1 MB ST). What a dialog's
 	   screen or a copy took goes back once it is let go (heap_trim, below) */
 	heap_grain = 16384;
-	hebrew_kbd_hook = hebrew_changed;	/* F10 and the menu: tick, INF, badge */
+	hebrew_kbd_hook = hebrew_changed;	/* F10 (no menu entry, Erez 7 Nov 2026): INF, badge */
 	apid = appl_init();
 	if (apid < 0)
 		return 1;
