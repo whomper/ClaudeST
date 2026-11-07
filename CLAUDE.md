@@ -97,6 +97,8 @@ ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari
 - Nothing runs in the background; the session waits for Erez or the hub.
 - Only Erez's explicit word ends this mode, for instance that every app is to take the latest shared code and release. The hub passes it on quoting him.
 
+**The next release is 2.0** (Erez, 7 Nov 2026): make it with `tools/bump.py major`, not plain `bump.py`. This doesn't end maintenance mode or call for a release; whenever the next release comes under the rules above, it is 2.0.
+
 ## Talking with Erez
 
 - No progress or in-between messages: write only when he has a decision to make, with short context
