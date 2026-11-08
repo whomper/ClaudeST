@@ -400,8 +400,8 @@
 
   @{B}Typing Hebrew:@{b} press F10 (and F10 again for English). The
   letter keys then type Hebrew in the Israeli SI-1452 layout, and a
-  Hebrew badge shows in the reply box. Keys are mapped by position, so any
-  national Atari keyboard works.
+  Hebrew badge shows in the reply box. Keys are mapped by position, so
+  any national Atari keyboard works. ClaudeST always starts in English.
 
   The Atari font has only the plain letters, so the bridge drops vowel
   points (niqqud). If Hebrew shows as other symbols with your font, see
@@ -500,7 +500,6 @@
     SERIALPORT=0            the port TOS chose (the default); on a TT or
                             Falcon, another port: 6 MFP, 7 SCC B (the
                             Falcon's Modem port), 8 TT-MFP, 9 SCC A
-    HEBREW=1                F10
     FONT=1,8                Options > Font: the font's id (1 = system
                             font) and size
     HEBFONT=0               Settings, Hebrew in fonts: where the font

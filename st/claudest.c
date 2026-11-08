@@ -2759,8 +2759,6 @@ static void parse_config_line(const char *l)
 		baud = BAUD_9600;
 	else if (!memcmp(l, "baud 19200", 10))
 		baud = BAUD_19200;
-	else if (!memcmp(l, "keyboard hebrew", 15))
-		hebrew_kbd = 1;
 	else if (!memcmp(l, "font ", 5)) {
 		/* font <id> <points> <hebrew: 0 Atari, 1 ISO, 2 DOS> */
 		short v[3] = { 1, 0, 0 }, k = 0;
@@ -2858,9 +2856,7 @@ static short inf_setting(const char *l)
 	} else if (inf_key(l, "SERIALPORT", &v)) {
 		u16 n = inf_num(&v);
 		aux_port = n >= 6 && n <= 9 ? n : 0;
-	} else if (inf_key(l, "HEBREW", &v))
-		hebrew_kbd = *v == '1';
-	else if (inf_key(l, "FONT", &v)) {
+	} else if (inf_key(l, "FONT", &v)) {
 		u16 id = inf_num(&v);
 		font_id = id ? id : 1;
 		font_pt = inf_num(&v);
@@ -2891,6 +2887,11 @@ static void inf_line(const char *l)
 		return;			/* notes and sections are written afresh */
 	if (inf_setting(l))
 		return;
+	{
+		const char *v;
+		if (inf_key(l, "HEBREW", &v))
+			return;		/* retired (F10 only, guideline 5.3): not kept */
+	}
 	if (strchr(l, '=')) {		/* someone else's setting: keep it */
 		n = strlen(l);
 		if (inf_keep_len + n + 2 < INF_KEEP) {
@@ -3031,7 +3032,6 @@ static void save_config(void)
 			baud == BAUD_4800 ? 4800 : baud == BAUD_9600 ? 9600 : 19200);
 	p = inf_put_num(p, "serial: 0 = the Modem port TOS picks; 6-9 = that serial device (Bconmap)",
 			"SERIALPORT", aux_port);
-	p = inf_put_num(p, "1 = start with the Hebrew keyboard (F10 switches)", "HEBREW", hebrew_kbd);
 	{
 		char *q = put_num(v, font_id);
 		*q++ = ',';
@@ -5029,11 +5029,11 @@ static void handle_click(short mx, short my)
 }
 
 /* the Hebrew keyboard switched (common's set_hebrew_kbd calls it): the
-   menu's tick, the INF, and the typing field's badge */
+   typing field's badge. It always starts off and isn't kept in the INF:
+   F10 only (guideline 5.3, Erez 8 Nov 2026); an old HEBREW= line is
+   ignored and goes at the next save. */
 static void hebrew_changed(void)
 {
-	menu_check_baud();
-	save_config();
 	dirty |= D_INPUT;
 }
 
@@ -5789,7 +5789,7 @@ int main(void)
 	   accessories' (a 4 MB Falcon under NVDI, a 1 MB ST). What a dialog's
 	   screen or a copy took goes back once it is let go (heap_trim, below) */
 	heap_grain = 16384;
-	hebrew_kbd_hook = hebrew_changed;	/* F10 (no menu entry, Erez 7 Nov 2026): INF, badge */
+	hebrew_kbd_hook = hebrew_changed;	/* F10 only (guideline 5.3): the badge */
 	apid = appl_init();
 	if (apid < 0)
 		return 1;
