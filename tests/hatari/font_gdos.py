@@ -6,7 +6,7 @@ window should redraw in it with no dialog left, CLAUDEST.INF should keep
 it, and after a restart a screenful of text (a Hebrew chat) should draw
 whole in it.
 
-    tests/hatari/font_gdos.py WORK [--machine Falcon:16] [--release v1.49]
+    tests/hatari/font_gdos.py WORK [--machine Falcon:16] [--prg CLAUDEST.PRG]
                               [--boot SECONDS]
 
 With the demo bridge on the serial port, it opens the demo's Hebrew chat,
@@ -29,8 +29,9 @@ system font and no CLAUDEST.FNT is written: "no GDOS fonts, skipped",
 and it passes after the checks in 1. For NVDI, run it
 with AERA_WITH_NVDI=1 (common/tools/machines.py installs Erez's NVDI on
 the Falcons); the boot then takes about 90 s, 120 s on Falcon-4.
---release tests that ClaudeST release (common/tools/getrelease.py) in
-place of binary/CLAUDEST.PRG.
+--prg tests that ClaudeST file (a release's, downloaded by hand) in place
+of binary/CLAUDEST.PRG. The rig fetches nothing and loads nothing AERA
+but ClaudeST (guidelines 1.2, Erez 8 Nov 2026).
 """
 import argparse
 import os
@@ -90,7 +91,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("work")
     add_machine(ap, "Falcon:16")
-    ap.add_argument("--release", help="a ClaudeST release to test (e.g. v1.49), fetched from GitHub")
+    ap.add_argument("--prg", help="a CLAUDEST.PRG to test in place of binary/CLAUDEST.PRG")
     ap.add_argument("--boot", type=int, help="seconds for the machine to boot and ClaudeST to come "
                     "online (default 90 under NVDI, 120 on a Falcon-4 under NVDI, else 45)")
     a = ap.parse_args()
@@ -101,13 +102,8 @@ def main():
     nvdi = bool(os.environ.get("AERA_WITH_NVDI"))
     boot = a.boot or ((120 if a.machine.startswith("Falcon-4") else 90) if nvdi else 45)
 
-    prg = os.path.join(ROOT, "binary", "CLAUDEST.PRG")
-    if a.release:
-        rel = os.path.join(work, "release")
-        subprocess.run([sys.executable, os.path.join(ROOT, "common", "tools", "getrelease.py"),
-                        "ClaudeST@" + a.release, rel, "CLAUDEST.PRG"], check=True)
-        prg = os.path.join(rel, "CLAUDEST.PRG")
-    print("ClaudeST from", a.release or prg)
+    prg = os.path.abspath(a.prg) if a.prg else os.path.join(ROOT, "binary", "CLAUDEST.PRG")
+    print("ClaudeST from", prg)
     shutil.copy(prg, os.path.join(hd, "CLAUDEST.PRG"))
     inf = os.path.join(hd, "claudest.inf")
     with open(inf, "w", newline="") as f:
@@ -172,12 +168,13 @@ def main():
         def font_dialog(name):
             """Options > Font...: Options is the fifth title (the first,
             " ClaudeST " since 1.68, starts two cells in; Chat before
-            Options since 1.67), Font... its twelfth item. The first
+            Options since 1.67), Font... its eleventh item (twelfth until
+            Hebrew keys left the menu, 2.1). The first
             time, every GDOS font is measured before the selector shows:
             minutes at 16 MHz with Erez's 137 families"""
             r.move(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar // 2)
             time.sleep(1)
-            r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 11 * ch + ch // 2)
+            r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 10 * ch + ch // 2)
             end = time.time() + 900
             while time.time() < end:
                 time.sleep(3)

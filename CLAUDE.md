@@ -63,10 +63,11 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 
   How it is made is the team's, without asking: code, structure, shared code, tests, measurements,
   fixes, docs and releases inside an approved phase.
-- **Testing with another AERA program uses its latest release**, what Erez runs, never a build of its
-  `main`: `common/tools/getrelease.py APP DIR FILE...` fetches it. Only for a change both programs are
-  still making, test against the other's `main` at a named commit, say so, and test again against its
-  release when it is out.
+- **ClaudeST's tests run ClaudeST alone** (Erez, 8 Nov 2026; guidelines 1.2, AERA-Atari 76417f7):
+  make test, the bridge's tests and the Hatari rigs load, start and fetch no other AERA program or
+  accessory (no `getrelease.py`). What ClaudeST does with another (the Help key and EHypView, the
+  family) is tested against a stand-in this repo owns, or by the hub's family checks (acc_all.py,
+  joint scenarios). FAKESTNG.PRG (common's test stand-in for STinG) and NVDI are not AERA programs.
 - **Every new source file starts with the SPDX line and copyright** (see any `.c` file); a generator
   writes them into the files it makes.
 - **The name** reads "AERA | Erez Yaary" wherever it is given: copyright lines
