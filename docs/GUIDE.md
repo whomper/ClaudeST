@@ -25,8 +25,42 @@ chats from the bridge's demo backend (`tools/docshots.py` takes them).
 
 ## Installing
 
-The [README](../README.md#getting-started) says what you need and how
-to get the session key. On the Gateway, in your home folder:
+ClaudeST has two parts: the bridge, on the Gateway (a Raspberry Pi or
+any Linux computer on your network), and the program on the Atari. Set
+up the Gateway first.
+
+Give the Gateway a fixed IP address, for example with a DHCP
+reservation in your router, so that ClaudeST always finds it. Give the
+Atari one too, unless you let the bridge accept any address on your
+network (`--atari any`, below). The examples use **192.168.1.10** for
+the Gateway and **192.168.1.20** for the Atari; use your own.
+
+**Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or
+newer, EmuTOS or MiNT; a 640×200 or larger screen, monochrome or
+colour; about 370 KB of free RAM (ClaudeST makes do with 260 KB, keeping
+less of a long chat); STinG with a working network, or a null-modem
+serial cable; a Raspberry Pi, or any Linux computer, on the same
+network; a claude.ai account, or an Anthropic API key.
+
+### 1. Get your claude.ai session key
+
+1. Log in to claude.ai in a desktop browser.
+2. Open the developer tools (F12). Go to **Application** (Chrome) or
+   **Storage** (Firefox), then **Cookies**, then `https://claude.ai`.
+3. Copy the value of the `sessionKey` cookie. It starts with `sk-ant-sid`.
+
+The key gives full access to your account. It is stored only on the
+Gateway, readable only by root and the bridge.
+
+### 2. Install the bridge on the Gateway
+
+The Gateway side of all the AERA apps is installed by
+[AERA-Gateway](https://github.com/whomper/AERA-Gateway). The bridge
+comes with it, from AERA-Gateway's
+[latest release](https://github.com/whomper/AERA-Gateway/releases/latest),
+never unreleased code (its README's
+[Getting started](https://github.com/whomper/AERA-Gateway#getting-started)
+has the details). In your home folder on the Gateway:
 
 ```sh
 sudo apt install -y git      # Raspberry Pi OS Lite only: it comes without git
@@ -37,28 +71,146 @@ sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
 ```
 
 Put the Atari's address in place of `192.168.1.20`. The installer asks
-for the session key and runs the bridge as a service that starts at
-every boot.
+for the session key. It then runs the bridge as a service called
+`claude-st`, which starts at every boot and accepts connections only
+from the Atari's address. Use `--atari IP1,IP2` for several Ataris, or
+`--atari any` to accept any address on your network. If the `ufw`
+firewall is on, the installer opens port 2323 for them.
 
-Or the short way, every AERA gateway on the Gateway in one line, ClaudeST's
-bridge among them (it also sets up the gateways of ECal and EContact,
-EFTP and EWeb, which do nothing until those apps use them):
+Or the short way, every AERA gateway on the Gateway in one line,
+ClaudeST's bridge among them (over the network, for the Atari's
+address):
 
 ```sh
 sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && ~/AERA-Gateway/update-pi.sh --allow 192.168.1.20
 ```
 
-`update-pi.sh` makes `aera-gateway` a command, so from then on
-`sudo aera-gateway` works in any folder.
+It also installs the gateways of ECal and EContact, EFTP and EWeb,
+which do nothing until those apps use them; for the bridge alone, use
+the steps above. `update-pi.sh` makes `aera-gateway` a command, so from
+then on `sudo aera-gateway` works in any folder.
 
-- **To update** the Gateway and the bridge, which AERA-Gateway releases:
-  `cd ~/AERA-Gateway && ./update-pi.sh`. It keeps every setting.
-- **To check** what runs, and which release:
-  `gateway/aera-gateway status` in the same folder.
+### 3. Set up the Atari
 
-On the Atari, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF`
-into one folder and run `CLAUDEST.PRG`. Choose **Options ▸ Settings…**,
-pick **Network** and type the Gateway's address, port 2323.
+The [latest release](https://github.com/whomper/ClaudeST/releases/latest)
+has these files, each on its own and all together in
+`claudest-x.y.zip` (the icon files in its `icons/` folder). From 1.74
+every file is named in lowercase (`claudest.prg`): TOS's drives take a
+name whatever its case, a MiNT ext2 drive doesn't, and there ClaudeST
+looks for its files in lowercase.
+
+| File | What it is |
+|---|---|
+| `CLAUDEST.PRG` | the program |
+| `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
+| `CLAUDEST.RSC` | the desktop icon: black-and-white, and in 16 and 256 colours. Take it under TOS, EmuTOS, or NVDI with COLORVDI |
+| `CLSTNV.RSC` | the same for NVDI with its own palette, whose 256 colours differ from TOS's |
+| `CLAUDEST.ICN`, `CLAUDSMK.ICN` | the black-and-white icon and its mask, for icon editors |
+
+1. Load **STinG** and check that the network works, for example by
+   pinging the Gateway.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one
+   folder, any folder on any drive.
+3. Run `CLAUDEST.PRG`, choose **Options ▸ Settings…** (`Ctrl+,`), pick
+   **Network** and type the Gateway's address (port 2323). Or type
+   `/connect 192.168.1.10` in the reply line. The status line at the
+   bottom left shows *Connecting…*, then *Online*, with a green dot.
+
+ClaudeST keeps what you set in `CLAUDEST.INF`, which it writes next to
+the program. If the Gateway restarts or the network drops, ClaudeST
+reconnects by itself. [Icons](#icons) says how to put the icon on the
+desktop.
+
+**Under TOS, put Atari's `FOLDR100.PRG` first in `AUTO`**, renamed for
+more room (`FOLDR400.PRG`). TOS keeps an entry in a small internal pool
+for every folder a program or accessory has looked into, and halts with
+"OUT OF INTERNAL MEMORY" when it runs out; FOLDRxxx makes the pool
+bigger.
+
+**With STinG, set the Delay in `STING.CPX` to suit the machine:** 10 on
+a Falcon or TT, 25 to 50 on an ST, as STinG's manual says. STinG looks
+at the network card that often, so it sets the speed of every STinG
+program: on a Falcon with a NetUSBee, Delay 10 took EFTP's downloads
+from 40 to 75 KB/s.
+
+### Updating
+
+- **The Atari:** from a new release, copy `CLAUDEST.PRG`,
+  `CLAUDEST.HYP` and `CLAUDEST.REF` over the old ones. Your settings,
+  in `CLAUDEST.INF`, stay as they are.
+- **The Gateway:** the bridge is AERA-Gateway's; to take its latest
+  release, run `cd ~/AERA-Gateway && ./update-pi.sh`. It keeps every
+  setting and is safe to run at any time.
+
+ClaudeST was first called Claude ST, then EClaude for a few days. To
+upgrade, replace `CLAUDE.PRG` or `ECLAUDE.PRG` with `CLAUDEST.PRG`: your
+settings in `CLAUDE.INF` or `ECLAUDE.INF` are read the first time, then
+saved as `CLAUDEST.INF`. The Gateway keeps the bridge's service name,
+`claude-st`. A Gateway set up with ClaudeST's own `pi/install.sh`
+(ClaudeST 2.1 and earlier) is taken over as it is: clone AERA-Gateway
+and run `./update-pi.sh`.
+
+### Using a serial cable instead
+
+Connect the Atari's Modem port to a USB-to-RS-232 adapter on the
+Gateway with a null-modem cable. Don't wire the Atari straight to the
+Raspberry Pi's GPIO pins: the Atari's ±12 V signals damage the
+Raspberry Pi. Then, on the Gateway:
+
+```sh
+sudo gateway/aera-gateway install claude --serial auto
+```
+
+On the Atari, choose **Options ▸ Settings…** and pick **Serial** (a new
+ClaudeST, with nothing set yet, starts on the serial port). Both sides
+use 19200 baud by default. [Serial cables and ports](#serial-cables-and-ports)
+says which port to use on each Atari.
+
+### Using the Anthropic API instead of claude.ai
+
+Run the installer again with `--backend api` (or add it in step 2):
+
+```sh
+sudo gateway/aera-gateway install claude --backend api
+```
+
+The installer asks for an API key. Chats are then stored on the
+Gateway, in `/var/lib/claude-st/chats/`, instead of in your claude.ai
+account. `--backend demo` gives sample chats without any account, to
+test the setup.
+
+### Looking after the Gateway
+
+Run these in the `AERA-Gateway` folder:
+
+| Task | Command |
+|---|---|
+| Update to the latest releases | `./update-pi.sh` |
+| Paste a new session key, when claude.ai logs you out | `sudo aera-gateway set-key` |
+| Change the Atari's address | `sudo gateway/aera-gateway install claude --atari 192.168.1.21` |
+| See what runs, and which release of the bridge | `gateway/aera-gateway status` |
+| Watch the bridge's log | `journalctl -u claude-st -f` |
+| Remove it | `sudo gateway/aera-gateway remove claude` |
+
+`update-pi.sh` brings AERA-Gateway, and the bridge with it, to its
+latest release, keeping every setting. The same installer sets up
+EMail's, ECal's and EFTP's gateways on the same Gateway. The settings
+are in `/etc/claude-st/claude-st.env`. If claude.ai can't be reached or
+the session key has expired, the error appears on the Atari.
+
+### Good to know
+
+ClaudeST is an unofficial client, not affiliated with Anthropic or
+Atari. claude.ai has no public API for personal accounts, so the bridge
+uses the same private interface as the claude.ai website. If claude.ai
+changes it, parts can stop working until the bridge is updated.
+[Troubleshooting](#troubleshooting) has commands that check each part
+from the Gateway. With claude.ai, your chats stay on claude.ai: the
+bridge fetches them each time and doesn't store them ([what is stored
+where](#what-is-stored-where)).
+
+ClaudeST was written with Claude, in Claude Code on claude.ai: a
+claude.ai client for the Atari, built by talking to claude.ai.
 
 ## The window
 
@@ -624,6 +776,35 @@ Hatari only connects the ST-style MFP serial port to the bridge, so on
 the Falcon the script puts `SERIALPORT=6` in `CLAUDEST.INF`; a real
 Falcon uses its Modem port, the one TOS chooses, so it needs no
 `SERIALPORT` line.
+
+### The Hatari rigs
+
+`make test` runs the bridge's tests (`gateway/claude-st/bridge/test_bridge.py`,
+ClaudeST's; AERA-Gateway's CI runs them too: the Atari character set,
+Markdown, and the protocol against the demo backend and stubbed
+claude.ai answers, with no account or network) and the right-to-left
+layout's (`st/bidi_test.c`). The CI workflow runs them, and builds the
+program, on every push to `main` and every pull request. These rigs run
+ClaudeST alone in Hatari:
+
+- `tests/hatari/disk_budget.sh` checks ClaudeST's disk work against the
+  AERA rule (the guidelines, 6.5), from Hatari's GEMDOS trace. It fails
+  if a conversation or an idle window touches the disk at all, or if
+  saving a 50 KB artifact or attaching a 40 KB file takes more than one
+  open and a few big reads or writes (`MACHINE=ST-1` or `TT` for the
+  other machines).
+- `tests/hatari/font_gdos.py WORK` chooses the first fixed-width GDOS
+  font in Options ▸ Font and checks that the window redraws in it with
+  no dialog left, that `CLAUDEST.INF` keeps it, and that a Hebrew chat
+  draws the same after a restart. It needs GDOS fonts (NVDI:
+  `AERA_WITH_NVDI=1` on the Falcons, see `common/tools/machines.py`) and
+  skips without them; `--prg FILE` tests another `CLAUDEST.PRG`.
+- `tests/hatari/long_field.sh` types a 62-character name into Rename,
+  whose box shows 43, going to the start and the end of it with
+  `Shift+←` and `Shift+→`, and checks that the bridge gets all of it
+  (the guidelines, 5.4; `MACHINE=` as above).
+- `tests/hatari/speed.py WORK --machine ST:mono` measures each action's
+  longest wait between events against the family's times.
 
 ### Recording a demo video
 
