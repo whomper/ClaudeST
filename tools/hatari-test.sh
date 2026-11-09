@@ -84,13 +84,13 @@ case "$LINK" in
 esac
 
 if [ "$LINK" = network ]; then
-  python3 "$ROOT/bridge/claude_bridge.py" --backend "$BACKEND" --tcp 127.0.0.1:2323 &
+  python3 "$ROOT/gateway/claude-st/bridge/claude_bridge.py" --backend "$BACKEND" --tcp 127.0.0.1:2323 &
   BRIDGE=$!
   python3 "$ROOT/common/tools/fakesting/serial_bridge.py" "$WORK/st_out" "$WORK/st_in" &
   TUNNEL=$!
   trap 'kill $BRIDGE $TUNNEL 2>/dev/null' EXIT
 else
-  python3 "$ROOT/bridge/claude_bridge.py" --backend "$BACKEND" \
+  python3 "$ROOT/gateway/claude-st/bridge/claude_bridge.py" --backend "$BACKEND" \
     --pipe "$WORK/st_out" "$WORK/st_in" &
   BRIDGE=$!
   trap 'kill $BRIDGE 2>/dev/null' EXIT

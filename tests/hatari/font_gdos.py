@@ -115,7 +115,7 @@ def main():
     for p in (out, inp):        # before Hatari, which won't start without them
         if not os.path.exists(p):
             os.mkfifo(p)
-    bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "bridge", "claude_bridge.py"),
+    bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "gateway", "claude-st", "bridge", "claude_bridge.py"),
                                "--backend", "demo", "-v", "--pipe", out, inp],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     serial = ["--rs232-out", out, "--rs232-in", inp]

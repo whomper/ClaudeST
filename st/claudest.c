@@ -2604,7 +2604,7 @@ static void tcp_connect(void)
 		return;
 	}
 	if (!tcp_ip) {
-		set_status("Type /connect <gateway IP>");
+		set_status("Type /connect <Gateway IP>");
 		return;
 	}
 	strcpy(msg, "Connecting to ");
@@ -3019,13 +3019,13 @@ static void save_config(void)
 		  "; Most of these are set in Options > Settings; see the guide.\r\n"
 		  "; 1 means on, 0 means off.\r\n\r\n[OPTIONS]\r\n\r\n");
 	p += strlen(p);
-	p = inf_put(p, "how ClaudeST reaches its gateway: network (STinG) or serial", "LINK",
+	p = inf_put(p, "how ClaudeST reaches the Gateway: network (STinG) or serial", "LINK",
 		    link == LINK_TCP ? "network" : "serial");
 	v[0] = 0;
 	if (tcp_ip)
 		ip_to_str(tcp_ip, v);
-	p = inf_put(p, "network: the gateway's IP address (the Pi running the ClaudeST bridge)", "HOST", v);
-	p = inf_put_num(p, "network: the gateway's port, 2323 unless you changed it on the Pi", "PORT", tcp_port);
+	p = inf_put(p, "network: the Gateway's IP address (where the ClaudeST bridge runs)", "HOST", v);
+	p = inf_put_num(p, "network: the Gateway's port, 2323 unless you changed it there", "PORT", tcp_port);
 	p = inf_put_num(p, "serial: the speed, 4800, 9600 or 19200 (the bridge's --baud)", "BAUD",
 			baud == BAUD_4800 ? 4800 : baud == BAUD_9600 ? 9600 : 19200);
 	p = inf_put_num(p, "serial: 0 = the Modem port TOS picks; 6-9 = that serial device (Bconmap)",
@@ -3182,7 +3182,7 @@ static void attach_file(const char *path)
 		if (*p == '\\' || *p == ':')
 			name = p + 1;
 	if (!online) {
-		alert(1, "[1][ClaudeST isn't connected|to its gateway, so it can't|attach a file now.][ OK ]");
+		alert(1, "[1][ClaudeST isn't connected|to the Gateway, so it can't|attach a file now.][ OK ]");
 		return;
 	}
 	if (busy) {
@@ -3266,7 +3266,7 @@ static void attach_file(const char *path)
 	if (sent != len) {
 		tx_cmd("UNATTACH", 0, 0);
 		natt = 0;
-		alert(1, "[1][%s couldn't be sent|to the gateway.][ OK ]", name);
+		alert(1, "[1][%s couldn't be sent|to the Gateway.][ OK ]", name);
 		dirty |= D_INPUT;
 		return;
 	}
@@ -3316,7 +3316,7 @@ static void submit(void)
 			tcp_port = port;
 			use_link(LINK_TCP);
 		} else {
-			alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(your gateway's address)][ OK ]");
+			alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(the Gateway's address)][ OK ]");
 			return;
 		}
 	} else if (!search_mode && !strcmp(input, "/serial")) {
@@ -3899,8 +3899,8 @@ static const char *const keys_k[][2] = {
 	{ "Shift+Del", "clear the reply line" },
 	{ "^O", "attach a file; Bksp removes it" },
 	{ "^C ^X ^V", "copy, cut, paste" },
-	{ "^R", "reconnect to the gateway" },
-	{ "^,", "settings: the gateway, serial" },
+	{ "^R", "reconnect to the Gateway" },
+	{ "^,", "settings: the Gateway, serial" },
 	{ "Help", "the user guide" },
 	{ "^U  ^Q", "close the window: quit" },
 };
@@ -4569,7 +4569,7 @@ static void model_menu(void)
 	const char *lp[NMODEL + NEFFORT + 1];
 	short i, n = 0, r;
 	if (!nmodel) {
-		alert(1, "[1][The gateway hasn't sent|the list of models yet.][ OK ]");
+		alert(1, "[1][The Gateway hasn't sent|the list of models yet.][ OK ]");
 		return;
 	}
 	for (i = 0; i < nmodel; i++, n++) {
@@ -5298,7 +5298,7 @@ static void settings_dialog(void)
 			if (!parse_ip(f[0], &ip, 0) || !ip) {
 				res = -1;
 				sd_focus = 0;
-				alert(1, "[1][Please type the gateway's|IP address, for example|192.168.1.10.][ OK ]");
+				alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.10.][ OK ]");
 			}
 		}
 	}
@@ -5605,7 +5605,7 @@ static void handle_msg(short *msg)
 			if (tcp_ip)
 				use_link(LINK_TCP);
 			else
-				alert(1, "[1][Type /connect and the IP|address of your gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
+				alert(1, "[1][Type /connect and the IP|address of the Gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
 			break;
 		case C_SER: use_link(LINK_SERIAL); break;
 		case C_ACCT: do_account(); break;
@@ -5880,8 +5880,8 @@ int main(void)
 
 	begin_message('I');
 	{
-		static const char hi[] = "Welcome to ClaudeST. Connecting to your Claude "
-			"gateway (claude_bridge.py) over the network or the serial port...";
+		static const char hi[] = "Welcome to ClaudeST. Connecting to the Gateway "
+			"(ClaudeST's bridge) over the network or the serial port...";
 		append(hi, sizeof(hi) - 1);
 	}
 

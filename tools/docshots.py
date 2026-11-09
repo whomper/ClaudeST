@@ -54,7 +54,7 @@ def boot(work, machine, showcase):
     for p in (out, inp):        # before Hatari, which won't start without them
         os.mkfifo(p)
     bridge = ([os.path.join(ROOT, "tools", "reel", "reel_bridge.py")] if showcase else
-              [os.path.join(ROOT, "bridge", "claude_bridge.py"), "--backend", "demo"])
+              [os.path.join(ROOT, "gateway", "claude-st", "bridge", "claude_bridge.py"), "--backend", "demo"])
     b = subprocess.Popen([sys.executable] + bridge + ["--pipe", out, inp],
                          stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     r = Rig(work, machine, extra=["--rs232-out", out, "--rs232-in", inp, "--drive-led", "no"])

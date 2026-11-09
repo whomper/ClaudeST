@@ -26,7 +26,7 @@ chats from the bridge's demo backend (`tools/docshots.py` takes them).
 ## Installing
 
 The [README](../README.md#getting-started) says what you need and how
-to get the session key. On the Pi, in your home folder:
+to get the session key. On the Gateway, in your home folder:
 
 ```sh
 sudo apt install -y git      # Raspberry Pi OS Lite only: it comes without git
@@ -40,7 +40,7 @@ Put the Atari's address in place of `192.168.1.20`. The installer asks
 for the session key and runs the bridge as a service that starts at
 every boot.
 
-Or the short way, every AERA gateway on the Pi in one line, ClaudeST's
+Or the short way, every AERA gateway on the Gateway in one line, ClaudeST's
 bridge among them (it also sets up the gateways of ECal and EContact,
 EFTP and EWeb, which do nothing until those apps use them):
 
@@ -51,14 +51,14 @@ sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/A
 `update-pi.sh` makes `aera-gateway` a command, so from then on
 `sudo aera-gateway` works in any folder.
 
-- **To update** the Pi, when a release's notes say the bridge changed:
+- **To update** the Gateway and the bridge, which AERA-Gateway releases:
   `cd ~/AERA-Gateway && ./update-pi.sh`. It keeps every setting.
-- **To check** what runs, and which ClaudeST release:
+- **To check** what runs, and which release:
   `gateway/aera-gateway status` in the same folder.
 
 On the Atari, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF`
 into one folder and run `CLAUDEST.PRG`. Choose **Options ▸ Settings…**,
-pick **Network** and type the Pi's address, port 2323.
+pick **Network** and type the Gateway's address, port 2323.
 
 ## The window
 
@@ -91,10 +91,10 @@ Replies still come in while it is iconified.
   status says *claude.ai silent*, or *Not signed in to claude.ai* when
   the session key has stopped working, and *Online* again once it's
   back. When nothing has passed for 30 seconds, ClaudeST asks the
-  gateway whether it's still there; with no answer in 20 seconds the dot
+  Gateway whether it's still there; with no answer in 20 seconds the dot
   goes red and the status says *Gateway silent*, and ClaudeST keeps
-  trying until the gateway answers. Over a serial cable this is the only
-  way to tell that the Pi has gone.
+  trying until the Gateway answers. Over a serial cable this is the only
+  way to tell that the Gateway has gone.
 - **Notices:** short messages such as *Loading chat...* or *Renamed*
   appear in grey at the right of the title bar for a few seconds.
 - **Tooltips:** rest the mouse on a name that's cut off, in the sidebar
@@ -187,7 +187,7 @@ menu: the models, then the effort levels that model supports.
 - **claude.ai:** new chats start on **Default model**, your account's
   own choice, until you pick one. A chat's effort is read from, and
   saved to, the chat's own settings on claude.ai, so the website shows
-  the same. The Pi also remembers the effort you choose for each chat
+  the same. The Gateway also remembers the effort you choose for each chat
   and Code session, in `/var/lib/claude-st/chat-effort.json` (the 500
   most recent), for chats where claude.ai doesn't report one.
 - **API backend:** the model and effort go with every request and are
@@ -239,7 +239,7 @@ Claude made with a script, such as a Word cover letter.
 - **Save to disk…** opens the GEM file selector with an 8.3 name such as
   `SNAKE_GA.PY` or `COVER_LE.DOC`. A file Claude made with a script, such
   as a Word document, is downloaded from claude.ai when you open or save
-  it, and not kept on the Pi afterwards. Text is saved in the Atari character
+  it, and not kept on the Gateway afterwards. Text is saved in the Atari character
   set with CR/LF line ends. Word, PDF and other binary files are saved
   unchanged.
 
@@ -256,7 +256,7 @@ Press `F8`, click the status line, or choose **Options ▸ Account…**.
   Ultra, Team or Enterprise.
 - **Usage:** a meter for each limit your plan has, as on claude.ai's Usage page: the
   current 5-hour session, this week's usage, and any included cloud
-  session credit, each with when it resets or expires, in the Pi's time
+  session credit, each with when it resets or expires, in the Gateway's time
   zone.
 - **Account:** your name, email, organisation and the date you joined.
 
@@ -267,7 +267,7 @@ started instead.
 
 **Chat ▸ Attach file…** (`Ctrl+O`) picks a file in the file selector and
 attaches it to your next message, as the paperclip does on claude.ai.
-ClaudeST sends it to the gateway straight away ("Attaching 40%" in the
+ClaudeST sends it to the Gateway straight away ("Attaching 40%" in the
 title bar), and the reply line shows it: `[NOTES.TXT]`, or `[2 files]`.
 Type your message and press `Return`, or press `Return` on the empty
 line to send the files alone. The message shows a grey **Attached**
@@ -404,19 +404,19 @@ opens on its own in any of them.
 | `Backspace` on the empty reply line | Remove the last attached file |
 | `Ctrl+O` | Chat ▸ Attach file…: attach a file to the next message |
 | `Ctrl+R` | Reconnect to the bridge |
-| `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
+| `Ctrl+,` | Options ▸ Settings: the Gateway's address and port, or the serial port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
 | `Ctrl+Q`, `Ctrl+U` | File ▸ Quit; `Ctrl+U` closes ClaudeST's only window, which quits too |
 | `Ctrl+W` | The next window: ClaudeST has one, so nothing |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
-sets the gateway address, and `/serial` switches to the serial port.
+sets the Gateway address, and `/serial` switches to the serial port.
 
 ## Settings (CLAUDEST.INF)
 
-**Options ▸ Settings…** (`Ctrl+,`) sets how ClaudeST reaches its gateway:
-**Network** (through STinG) with the gateway's address and port, or
+**Options ▸ Settings…** (`Ctrl+,`) sets how ClaudeST reaches the Gateway:
+**Network** (through STinG) with the Gateway's address and port, or
 **Serial** with the speed, and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
 moves between the two fields, `Esc` empties the one with the cursor,
@@ -450,12 +450,12 @@ The window always opens full screen with a new chat.
 
 | Where | What |
 |-------|------|
-| claude.ai | Your chats, projects, artifacts and Code sessions. The bridge fetches them each time you open them; with claude.ai, no chat is stored on the Pi. |
-| Pi: `/etc/claude-st/claude-st.env` | The session key (or API key) and the bridge's options, readable only by root and the bridge |
-| Pi: `/var/lib/claude-st/chat-effort.json` | The effort you chose for each chat and Code session |
-| Pi: `/var/lib/claude-st/chats/` | Only with the API backend: your chats, one file each |
-| Pi: the bridge's memory | The artifacts found in your recent chats, to load the list quickly; gone when the bridge restarts |
-| Pi: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
+| claude.ai | Your chats, projects, artifacts and Code sessions. The bridge fetches them each time you open them; with claude.ai, no chat is stored on the Gateway. |
+| Gateway: `/etc/claude-st/claude-st.env` | The session key (or API key) and the bridge's options, readable only by root and the bridge |
+| Gateway: `/var/lib/claude-st/chat-effort.json` | The effort you chose for each chat and Code session |
+| Gateway: `/var/lib/claude-st/chats/` | Only with the API backend: your chats, one file each |
+| Gateway: the bridge's memory | The artifacts found in your recent chats, to load the list quickly; gone when the bridge restarts |
+| Gateway: the log (`journalctl -u claude-st`) | Connections, errors, model changes and usage figures; not what you or Claude write |
 | Atari: `CLAUDEST.INF` | ClaudeST's settings |
 | Atari: `CLAUDEST.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
 | Atari: `CRASH.LOG` | What happened, if ClaudeST ever crashed (next to `CLAUDEST.PRG`) |
@@ -465,7 +465,7 @@ runs.
 
 ## Troubleshooting
 
-All commands run on the Pi.
+All commands run on the Gateway.
 
 | Problem | What to do |
 |---------|-----------|
@@ -474,7 +474,7 @@ All commands run on the Pi.
 | "claude.ai has moved this chat to its new chat system, and ClaudeST could not open its new part" | claude.ai moves some chats to its newer chat system. ClaudeST normally continues them there, but this time claude.ai refused. `run --probe-chat CHAT_ID` (see below) shows why. Meanwhile, start a new chat, or continue that one on claude.ai |
 | "Claude hasn't answered for 90 seconds", or a usage-limit message | Your claude.ai usage limit is reached (F8 shows it), so claude.ai can't answer until it resets; reading your chats still works. The message is sent: open the chat again later to see the answer |
 | "claude.ai says too many requests (HTTP 429)" | claude.ai is limiting requests for a while. Wait a few minutes; F8 shows your usage |
-| An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo gateway/aera-gateway set-key` in the AERA-Gateway folder |
+| An error mentions the session key, or HTTP 401/403 | claude.ai logged you out: get a new key and run `sudo aera-gateway set-key` in the AERA-Gateway folder |
 | Something else fails | Watch `journalctl -u claude-st -f` while you try again on the Atari |
 | ClaudeST itself crashed (on the Atari) | It says so, writes what happened to `CRASH.LOG` next to `CLAUDEST.PRG` and quits, leaving the Atari running. A crash in the system or a driver still gives the bombs; TOS keeps a record of them, and ClaudeST adds it to `CRASH.LOG` the next time it starts. Send `CRASH.LOG` to the author. Under MiNT or MagiC, which handle crashes themselves, there is none |
 
@@ -505,10 +505,13 @@ sudo systemctl restart claude-st
 ## The bridge on another computer
 
 The bridge runs on any computer with Python 3, including macOS and
-Windows.
+Windows. Take it from AERA-Gateway, which releases it (its
+`gateway/claude-st/bridge/` folder; ClaudeST's own checkout has the same
+copy there):
 
 ```sh
-cd bridge
+git clone https://github.com/whomper/AERA-Gateway.git
+cd AERA-Gateway/gateway/claude-st/bridge
 pip install -r requirements.txt
 export CLAUDE_SESSION_KEY='sk-ant-sid01-...'
 python3 claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20   # network
@@ -527,15 +530,15 @@ chats. `python3 claude_bridge.py --help` lists every option.
 | TT | Modem 1 |
 | Falcon 030 | the 9-pin Modem port |
 
-Use a null-modem cable and a USB-to-RS-232 adapter on the Pi. To use the
-Pi's GPIO UART instead, put a MAX3232 level-shifter board in between,
+Use a null-modem cable and a USB-to-RS-232 adapter on the Gateway. To use the
+Raspberry Pi's GPIO UART instead, put a MAX3232 level-shifter board in between,
 turn off the serial console in `raspi-config`, and install with
 `--serial /dev/serial0`. The speed is 19200 baud, 8N1; change it in
-**Options ▸ Settings** and give the Pi the same `--baud`.
+**Options ▸ Settings** and give the Gateway the same `--baud`.
 
 A WiFi modem on the serial port also works in transparent TCP mode:
-point it at the Pi's port 2323, keep ClaudeST on the serial link, and
-install the Pi with `--network --atari <the modem's IP>`.
+point it at the Gateway's port 2323, keep ClaudeST on the serial link, and
+install the Gateway with `--network --atari <the modem's IP>`.
 
 ## Icons
 
@@ -614,7 +617,7 @@ serial port connected to the bridge. Hatari has no network card: with
 `LINK=network`, `FAKESTNG.PRG` from `common/tools/fakesting` (built by the
 script, with the same cross-compiler) stands in for STinG. It tunnels its
 TCP connections over the serial port to `serial_bridge.py`, which connects
-to the bridge on TCP port 2323, as ClaudeST does on the Pi. FAKESTNG is for
+to the bridge on TCP port 2323, as ClaudeST does on the Gateway. FAKESTNG is for
 the emulator only; never install it on a real Atari.
 
 Hatari only connects the ST-style MFP serial port to the bridge, so on
@@ -658,11 +661,11 @@ them before committing: a slow machine can leave one half drawn.
 ```
 st/        the Atari program: claudest.c (UI and protocol), bidi_test.c
 help/      CLAUDEST.STG, the ST-Guide help: make help (needs HCP) -> binary/CLAUDEST.HYP
-bridge/    claude_bridge.py (links and protocol), backends.py (claude.ai,
-           API, demo), atari_text.py (charset and Markdown), test_bridge.py
-pi/        install.sh (hands on to gateway/aera-gateway) and the systemd service
-gateway/   a copy of AERA-Gateway's installer, aera-gateway, which sets up
-           the bridge (tools/sync-gateway.sh)
+gateway/   a copy of AERA-Gateway's (tools/sync-gateway.sh): the gateways,
+           aera-gateway (their installer) and claude-st/, ClaudeST's bridge
+           (claude_bridge.py, backends.py, atari_text.py, test_bridge.py)
+           and its service. The bridge lives and is released in AERA-Gateway
+           since its 1.37; ClaudeST owns its protocol and its tests
 common/    the AERA programs' shared code (a git subtree of AERA-Atari):
            atari/ (start-up, C library, TOS traps, AES/VDI, STinG client),
            src/bidi.c (right-to-left), tools/ (elf2tos.py, machines.py,

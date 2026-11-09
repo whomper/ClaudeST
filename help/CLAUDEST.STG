@@ -60,7 +60,7 @@
   program, the @{B}bridge@{b}, runs on a Raspberry Pi (or any Linux
   computer) on your network and talks to claude.ai for the Atari:
 
-    Atari (CLAUDEST.PRG) <-- STinG or serial --> Pi (bridge) <--> claude.ai
+    Atari (CLAUDEST.PRG) <-- STinG or serial --> Gateway (bridge) <--> claude.ai
 
   @{U}What you need@{u}
 
@@ -78,10 +78,10 @@
       a Falcon or TT, 25 to 50 on an ST, as STinG's manual says. It
       sets the speed of every STinG program.
 
-  Give the Pi a fixed address (a DHCP reservation in your router), and
+  Give the Gateway a fixed address (a DHCP reservation in your router), and
   the Atari too unless the bridge accepts any address (--atari any).
 
-  @{U}On the Pi@{u}, in your home folder (the first line on Raspberry
+  @{U}On the Gateway@{u}, in your home folder (the first line on Raspberry
   Pi OS Lite only, which comes without git; put the Atari's address
   in place of 192.168.1.20):
 
@@ -95,11 +95,11 @@
   The installer asks for your claude.ai @{B}sessionKey@{b} (a cookie from
   the website, starting with sk-ant-sid) and runs the bridge as a
   service that starts at every boot. To see what runs, and which
-  ClaudeST release:
+  release:
 
       gateway/aera-gateway status
 
-  Or the short way, every AERA gateway on the Pi in one line, ClaudeST's
+  Or the short way, every AERA gateway on the Gateway in one line, ClaudeST's
   bridge among them (it also sets up the gateways of ECal and EContact,
   EFTP and EWeb, which do nothing until those apps use them):
 
@@ -116,14 +116,14 @@
     2. Copy CLAUDEST.PRG, CLAUDEST.HYP and CLAUDEST.REF into one
        folder, any folder on any drive.
     3. Run CLAUDEST.PRG, choose Options > Settings... (Control+,), pick
-       Network and type the Pi's address, port 2323, or type
+       Network and type the Gateway's address, port 2323, or type
        @{B}/connect 192.168.1.10@{b} in the reply line. The status line
        shows Connecting..., then Online, with a green dot.
 
   ClaudeST keeps what you set in CLAUDEST.INF, which it writes next to
   the program.
 
-  If the Pi restarts or the network drops, ClaudeST reconnects by
+  If the Gateway restarts or the network drops, ClaudeST reconnects by
   itself. For a serial cable, see @{"Settings" link "Settings"}.
 
   @{U}Updating@{u}
@@ -132,7 +132,8 @@
     CLAUDEST.REF over the old ones. Your settings, in CLAUDEST.INF,
     stay as they are.
 
-    On the Pi, when a release's notes say the bridge changed, run:
+    On the Gateway, to take AERA-Gateway's latest release (it carries
+    the bridge), run:
 
       cd ~/AERA-Gateway && ./update-pi.sh
 
@@ -202,10 +203,10 @@
   the status says "claude.ai silent", or "Not signed in to claude.ai"
   when the session key has stopped working, and "Online" again once
   it's back. When nothing has passed for 30 seconds, ClaudeST asks the
-  gateway whether it's still there; with no answer in 20 seconds the
+  Gateway whether it's still there; with no answer in 20 seconds the
   dot goes red and the status says "Gateway silent", and ClaudeST
-  keeps trying until the gateway answers. Over a serial cable this is
-  the only way to tell that the Pi has gone.
+  keeps trying until the Gateway answers. Over a serial cable this is
+  the only way to tell that the Gateway has gone.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -341,7 +342,7 @@
 
   @{B}File > Attach file...@{b} (Control+O) picks a file in the file
   selector and attaches it to your next message, as the paperclip does
-  on claude.ai. ClaudeST sends it to the gateway straight away
+  on claude.ai. ClaudeST sends it to the Gateway straight away
   ("Attaching 40%" in the title bar), and the reply line shows it:
   [NOTES.TXT], or [2 files]. Type your message and press Return, or
   press Return on the empty line to send the files alone. The message
@@ -461,7 +462,7 @@
                       attached file
     Control+O         Attach a file to the next message
     Control+R         Reconnect to the bridge
-    Control+,         Settings: the gateway's address, or serial
+    Control+,         Settings: the Gateway's address, or serial
     Control+C X V     Copy, cut, paste the reply line
                       (Control+C with it empty: Claude's last answer)
     Help              This help, in EHypView, ST-Guide or HypView;
@@ -471,7 +472,7 @@
     Control+W         Quit (closes the window, the only one)
 
   In the reply line, @{B}/connect 192.168.1.10@{b} (or /connect
-  host:port) sets the gateway address, and @{B}/serial@{b} switches to
+  host:port) sets the Gateway address, and @{B}/serial@{b} switches to
   the serial port.
 @endnode
 
@@ -480,7 +481,7 @@
 @{U}Settings (CLAUDEST.INF)@{u}
 
   @{B}Options > Settings...@{b} (Control+,) sets how ClaudeST reaches
-  its gateway: Network (STinG) with the gateway's address and port, or
+  the Gateway: Network (STinG) with the Gateway's address and port, or
   Serial with the speed, and where your fonts keep the Hebrew letters
   (Hebrew in fonts: Atari, ISO 8859 or DOS 862). Tab moves between the
   two fields, Esc empties the one with the cursor, Clr/Home goes to
@@ -495,8 +496,8 @@
   any text editor; lines ClaudeST doesn't know are kept.
 
     LINK=network            or serial (Settings, /connect, /serial)
-    HOST=192.168.1.10       the gateway's address (Settings, /connect)
-    PORT=2323               the gateway's port
+    HOST=192.168.1.10       the Gateway's address (Settings, /connect)
+    PORT=2323               the Gateway's port
     BAUD=19200              4800, 9600 or 19200 (Settings)
     SERIALPORT=0            the port TOS chose (the default); on a TT or
                             Falcon, another port: 6 MFP, 7 SCC B (the
@@ -514,12 +515,12 @@
   Without a CLAUDEST.INF, ClaudeST uses the serial port.
 
   A @{B}serial cable@{b}: connect the Atari's Modem port to a
-  USB-to-RS-232 adapter on the Pi with a null-modem cable (never
-  straight to the Pi's pins), run
+  USB-to-RS-232 adapter on the Gateway with a null-modem cable (never
+  straight to the Raspberry Pi's pins), run
 
       sudo gateway/aera-gateway install claude --serial auto
 
-  on the Pi, and choose Options > Settings > Serial on the Atari.
+  on the Gateway, and choose Options > Settings > Serial on the Atari.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -528,8 +529,8 @@
 
   - @{B}claude.ai:@{b} your chats, projects, artifacts and Code
     sessions. The bridge fetches them each time; no chat is stored on
-    the Pi.
-  - @{B}Pi:@{b} your session key and the bridge's options (readable only
+    the Gateway.
+  - @{B}Gateway:@{b} your session key and the bridge's options (readable only
     by root and the bridge), and the effort you chose for each chat.
   - @{B}Atari:@{b} CLAUDEST.INF (settings), CLAUDEST.FNT (which fonts
     are fixed-width) and, if ClaudeST ever crashed, CRASH.LOG. The open
@@ -541,13 +542,13 @@
 @{U}Troubleshooting@{u}
 
   @{B}Connecting... never turns into Online@{b}
-    On the Pi, check "systemctl status claude-st"; on the Atari, the
+    On the Gateway, check "systemctl status claude-st"; on the Atari, the
     address in Options > Settings; and that the Atari's address matches
     the installer's --atari option.
 
   @{B}An error mentions the session key, or HTTP 401/403@{b}
     claude.ai logged you out: get a new sessionKey from the website and
-    run "sudo gateway/aera-gateway set-key" on the Pi.
+    run "sudo aera-gateway set-key" on the Gateway.
 
   @{B}"Claude hasn't answered for 90 seconds", or a usage limit@{b}
     Your claude.ai usage limit is reached (F8 shows it): claude.ai
@@ -564,7 +565,7 @@
     @{"Font" link "Font"}.
 
   @{B}Something else fails@{b}
-    Watch "journalctl -u claude-st -f" on the Pi while you try again on
+    Watch "journalctl -u claude-st -f" on the Gateway while you try again on
     the Atari.
 
   @{B}ClaudeST itself crashed@{b}

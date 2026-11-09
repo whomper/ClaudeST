@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-# ClaudeST: the Atari program (st/), its help (help/) and the Pi bridge
-# (bridge/, pi/).
+# ClaudeST: the Atari program (st/) and its help (help/). Its bridge lives
+# in AERA-Gateway (gateway/claude-st/, a read-only copy); its tests are
+# ClaudeST's and run here too.
 #
 #   make            binary/CLAUDEST.PRG (make -C st; apt install gcc-m68k-linux-gnu)
 #   make help       binary/CLAUDEST.HYP and .REF (needs hcp:
@@ -28,7 +29,7 @@ help:
 	$(MAKE) -C help HCP=$(HCP)
 
 test:
-	cd bridge && python3 -m unittest test_bridge
+	cd gateway/claude-st/bridge && python3 -m unittest test_bridge
 	$(MAKE) -C st test
 	$(MAKE) -C st
 	python3 common/tools/oddaccess.py st/claudest.elf

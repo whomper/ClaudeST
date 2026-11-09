@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bridge"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "gateway", "claude-st", "bridge"))
 import backends  # noqa: E402
 import claude_bridge  # noqa: E402
 
