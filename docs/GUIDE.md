@@ -407,7 +407,7 @@ opens on its own in any of them.
 | `Ctrl+,` | Options ▸ Settings: the gateway's address and port, or the serial port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
-| `Ctrl+U`, `Ctrl+Q` | File ▸ Close window, Quit: closing ClaudeST's only window quits |
+| `Ctrl+Q`, `Ctrl+U` | File ▸ Quit; `Ctrl+U` closes ClaudeST's only window, which quits too |
 | `Ctrl+W` | The next window: ClaudeST has one, so nothing |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
@@ -419,8 +419,8 @@ sets the gateway address, and `/serial` switches to the serial port.
 **Network** (through STinG) with the gateway's address and port, or
 **Serial** with the speed, and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
-moves between the two fields, `Esc` or `Clr/Home` empties the one with
-the cursor, Return is OK and `Undo` cancels. The dialogs and alerts have
+moves between the two fields, `Esc` empties the one with the cursor,
+`Clr/Home` goes to its start (`Shift+Clr/Home` to its end), Return is OK and `Undo` cancels. The dialogs and alerts have
 the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in 16
 colours or more), as every other program's there; there is no setting
 for it.

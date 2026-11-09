@@ -332,8 +332,7 @@ static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH,
-	C_CLOSE
+	C_B48, C_B96, C_B192, C_NET, C_SER, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -343,12 +342,11 @@ static const MBAR_ITEM m_desk[] = {
 	{ 0, 0, 0 }
 };
 /* File keeps the program's commands; the chats' own are under Chat, New
-   among them (the guidelines, 3.1; a tester, Erez 27 Oct 2026). ^U closes
-   the one window, so ClaudeST quits (3.2) */
+   among them (the guidelines, 3.1; a tester, Erez 27 Oct 2026). A
+   one-window program lists Quit alone; ^U still quits (handle_key; D3) */
 static const MBAR_ITEM m_file[] = {
 	{ "Reconnect", "^R", C_REF },
 	{ "-", 0, 0 },
-	{ "Close window", "^U", C_CLOSE },
 	{ "Quit", "^Q", C_QUIT },
 	{ 0, 0, 0 }
 };
@@ -3801,7 +3799,8 @@ static void td_paint(short framed)
 
 /* Asks for a line of text. buf holds the starting text and receives the
  * result (up to max-1 characters). Returns 1 for OK, 0 for Cancel.
- * Keys: typing, Backspace, Esc and Clr/Home empty the field, F10 Hebrew,
+ * Keys: typing, Backspace, Esc empties the field, Clr/Home to its start
+ * (Shift+Clr/Home to its end; C14), F10 Hebrew,
  * Return OK, Undo (and the window's closer) Cancel (the guidelines, 3.5).
  * Mouse: the buttons. */
 static short text_dialog(const char *title, const char *ok_label, char *buf, short max)
@@ -3827,9 +3826,9 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	btn_h = ch + 6;
 	dlg_w = fld_w + 8 * cw;
 	dlg_h = 3 * ch + btn_h + ch * 3;
-	/* over the conversation pane, so the sidebar item stays in view */
-	dlg_x = dlg_w + 8 <= pw ? px + (pw - dlg_w) / 2 : wx + (ww - dlg_w) / 2;
-	dlg_y = wy + (wh - dlg_h) / 3;
+	/* centred (CONTROLS 1: the dialog is always centred) */
+	dlg_x = wx + (ww - dlg_w) / 2;
+	dlg_y = wy + (wh - dlg_h) / 2;
 
 	own_open(title, ch + ch / 2 + 2, td_place, td_paint);
 	if (!own_win)
@@ -3846,8 +3845,12 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 				res = 1;
 			else if (dlg_cancel_key(e.kreturn, 1))	/* Undo, the closer */
 				res = 0;
-			else if (as == 0x1b || sc == 0x47)	/* Esc, Clr/Home: empty it */
+			else if (as == 0x1b)		/* Esc: empty it */
 				td_len = td_cur = td_start = 0;
+			else if (sc == 0x47) {		/* Clr/Home: its start, with Shift its end */
+				td_cur = e.kstate & (K_LSHIFT | K_RSHIFT) ? td_len : 0;
+				changed = 1;
+			}
 			else if (sc == 0x44)
 				toggle_hebrew();
 			else if (clip_key(e.kreturn))
@@ -5257,8 +5260,10 @@ static void settings_dialog(void)
 				res = 0;
 			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
 				sd_focus ^= 1;
-			else if (as == 0x1b || sc == 0x47)	/* Esc, Clr/Home: empty it */
+			else if (as == 0x1b)		/* Esc: empty it */
 				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
+			else if (sc == 0x47)		/* Clr/Home: its start, with Shift its end */
+				sd_cur[fo] = e.kstate & (K_LSHIFT | K_RSHIFT) ? sd_len[fo] : 0;
 			else if (clip_key(e.kreturn))
 				field_clip(clip_key(e.kreturn), f[fo], &sd_len[fo], &sd_cur[fo],
 					   (fo ? 5 : 15));
@@ -5544,7 +5549,7 @@ static void copy_answer(void)
 			t[k++] = tb[p];
 	while (k > 0 && t[k - 1] == '\n')
 		k--;
-	say_notice(clip_put(t, k) ? "Copied Claude's answer" : "Couldn't write the clipboard");
+	say_notice(clip_put(t, k) ? "Copied to the clipboard." : "Couldn't write the clipboard.");	/* D50 */
 	free(t);
 }
 
@@ -5559,7 +5564,7 @@ static void reply_clip(int what)
 		in_start = 0;
 		dirty |= D_INPUT;
 		if (what == CLIP_COPY)
-			say_notice("Copied to the clipboard");
+			say_notice("Copied to the clipboard.");
 	}
 }
 
@@ -5614,7 +5619,6 @@ static void handle_msg(short *msg)
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
 		case C_ANSWER: copy_answer(); break;
 		case C_QUIT:
-		case C_CLOSE: quit = 1; break;
 		case C_B48: set_baud(BAUD_4800); break;
 		case C_B96: set_baud(BAUD_9600); break;
 		case C_B192: set_baud(BAUD_19200); break;

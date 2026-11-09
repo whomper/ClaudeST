@@ -483,7 +483,8 @@
   its gateway: Network (STinG) with the gateway's address and port, or
   Serial with the speed, and where your fonts keep the Hebrew letters
   (Hebrew in fonts: Atari, ISO 8859 or DOS 862). Tab moves between the
-  two fields, Clr/Home clears the one with the cursor, and Return is OK.
+  two fields, Esc empties the one with the cursor, Clr/Home goes to
+  its start (Shift+Clr/Home to its end), and Return is OK.
   3D dialogs, next to the buttons, gives the alerts and the Font dialog
   the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in
   16 colours or more); untick it for the flat look. It is greyed where the AES has no 3D look.
