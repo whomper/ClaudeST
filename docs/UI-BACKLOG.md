@@ -16,9 +16,9 @@ Sizes: S small, H half a day, M more.
 
 | # | Item | Rows | Size | State |
 |---|---|---|---|---|
-| 1 | File lists `Quit` alone, not `Close window ^U` as well; ^U still quits | D3, MD7 | S | open |
-| 2 | Clipboard notices end with a full stop: `Copied to the clipboard.` / `Couldn't write the clipboard.` | D50, W17 | S | open |
-| 3 | Clr/Home in the text dialog goes to the start of the field (Esc empties); dialogs centred, not at a third of the height | C14 | S | open |
+| 1 | File lists `Quit` alone, not `Close window ^U` as well; ^U still quits | D3, MD7 | S | done on main (rides the bridge-move release) |
+| 2 | Clipboard notices end with a full stop: `Copied to the clipboard.` / `Couldn't write the clipboard.` | D50, W17 | S | done on main (rides the bridge-move release) |
+| 3 | Clr/Home in the text dialog goes to the start of the field (Esc empties); dialogs centred, not at a third of the height | C14 | S | done on main (rides the bridge-move release) |
 | 4 | Pop-up padding dropped once `popup()` adds its margin | D15, MD18 | S | waits for the hub (common/) |
 | 5 | A black title band in dialogs in place of the heading inside; in a MiNT or MagiC window the window's name is the title | D22, C4 | ? | open |
 | 6 | Dialog buttons and choices act on the release over them, with a pressed look | C7 | H | open |
