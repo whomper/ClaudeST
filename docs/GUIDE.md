@@ -42,6 +42,28 @@ less of a long chat); STinG with a working network, or a null-modem
 serial cable; a Raspberry Pi, or any Linux computer, on the same
 network; a claude.ai account, or an Anthropic API key.
 
+### How it reaches claude.ai
+
+An 8 MHz 68000 can't do modern HTTPS, so a small Python program, the
+bridge, does it for the Atari. It runs on the Gateway, as part of
+[AERA-Gateway](https://github.com/whomper/AERA-Gateway), which releases
+it; ClaudeST defines its protocol ([PROTOCOL.md](../PROTOCOL.md)) and
+owns its tests.
+
+```
+STinG:   Atari (CLAUDEST.PRG) --plain TCP, home LAN, port 2323--> Gateway (bridge) --HTTPS--> claude.ai
+Serial:  Atari (CLAUDEST.PRG) --null-modem cable, 19200 baud----> Gateway (bridge) --HTTPS--> claude.ai
+```
+
+- **Through STinG,** over Ethernet or WiFi, the Atari connects to the
+  bridge's port 2323. The bridge accepts only the addresses you gave
+  the installer with `--atari`.
+- **Through a serial cable,** the Atari's Modem port goes to a
+  USB-to-RS-232 adapter on the Gateway.
+- **The bridge** talks to claude.ai (or the Anthropic API) and sends the
+  Atari short lines of text in the Atari character set. The Atari does
+  all the drawing and word wrapping itself.
+
 ### 1. Get your claude.ai session key
 
 1. Log in to claude.ai in a desktop browser.
@@ -854,8 +876,8 @@ common/    the AERA programs' shared code (a git subtree of AERA-Atari):
 tools/     hatari-test.sh, sync-common.sh, sync-gateway.sh, bump.py,
            check_version.sh, docshots.py (the screenshots), icon/ (the
            desktop icon), reel/ (the demo video)
-tests/     hatari/: disk_budget.sh, font_gdos.py and long_field.sh
-           (README, Tests)
+tests/     hatari/: speed.py, disk_budget.sh, font_gdos.py and
+           long_field.sh (The Hatari rigs, above)
 icons/     the desktop icon files (make icons, from
            common/icons/CLAUDEST.txt)
 docs/      this guide, its screenshots, the demo recording and the help's
