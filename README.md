@@ -12,6 +12,11 @@ Atari (ECal,     --plain HTTP, proxy form--> Pi  ecalgate  --HTTPS--> caldav.icl
 Atari (EFTP)     --plain FTP-->              Pi  eftpgate  --FTPS-->  ftp.example.org
                                                            --SFTP-->  my.server.net
 Atari (EWeb)     --plain HTTP, proxy form--> Pi  webgate   --HTTPS--> any web site
+Atari (EConvert, --a PDF, plain HTTP-->      Pi  pdfgate   (converted on the Pi, nothing onwards)
+       EPDF)
+Atari (EMail,    --text, plain HTTP-->       Pi  translategate (a local engine, nothing onwards)
+       EWeb, EPDF)
+Atari (EPlay)    --plain HTTP-->             Pi  radiogate --HTTP(S)--> any web radio station
 Atari (ClaudeST) --STinG or a serial cable-> Pi  claude-st --HTTPS--> claude.ai
 ```
 
@@ -26,11 +31,17 @@ of them.
 | `dav`    | ECal and EContact   | `ecalgate.py`              | 8180                                     |
 | `ftp`    | EFTP                | `eftpgate.py`              | 2121, and 30000-30099 for data           |
 | `web`    | EWeb                | `webgate.py`               | 8280                                     |
+| `pdf`    | EConvert and EPDF   | `pdfgate.py` and aerapdf   | 8380                                     |
+| `translate` | EMail, EWeb, EPDF | `translategate.py`        | 8480                                     |
+| `radio`  | EPlay               | `radiogate.py`             | 8580                                     |
 | `claude` | ClaudeST            | ClaudeST's bridge          | 2323 (or a serial cable)                 |
+
+What each one speaks (requests, answers, refusals, limits) is in
+[docs/SERVICES.md](../docs/SERVICES.md).
 
 This folder is AERA-Gateway's
 ([whomper/AERA-Gateway](https://github.com/whomper/AERA-Gateway)). EMail,
-ECal, EContact, EFTP, EWeb and ClaudeST carry a copy of it, as they carry
+ECal, EContact, EFTP, EWeb, EPDF, EPlay and ClaudeST carry a copy of it, as they carry
 `common/` from AERA-Atari: change it in AERA-Gateway, never in a copy.
 
 ## Setting it up
@@ -108,7 +119,7 @@ GMX lets programs in only once POP3 and IMAP access is switched on in
 its settings. Outlook.com and Microsoft 365 accept only OAuth sign-in,
 which EMail can't do.
 
-In EMail, Options > Accounts: the Pi's IP address as the server (plain
+In EMail, Options > Accounts: the Gateway's IP address as the server (plain
 TOS with STinG can't always look up names on the home network), port 143
 for IMAP (110 for POP3), and the Pi again as the outgoing server on port
 587, with your usual mail login. When the gateway can't help (it can't
@@ -150,10 +161,10 @@ request in proxy form, `GET https://host/path HTTP/1.1`, and ecalgate:
   public holiday or sports feed can be several megabytes; trimmed, it fits
   an ST.
 
-In ECal and EContact, ≡ menu > Settings > Connection: Pi gateway = the
-Pi's IP address, port 8180. Then add your accounts with their real
+In ECal and EContact, ≡ menu > Settings > Connection: Gateway = the
+Gateway's IP address, port 8180. Then add your accounts with their real
 `https://` addresses: ecalgate does the rest. Check it from any browser on
-your network: `http://PI_IP:8180/` answers "ecalgate X.Y is running".
+your network: `http://GATEWAY_IP:8180/` answers "ecalgate X.Y is running".
 
 `--allow-local` lets it reach servers on your home network too (a
 Radicale or Nextcloud at home); `--port N` gives it another port; `-v`
@@ -193,7 +204,7 @@ MFMT to keep dates, UTF-8 names, passive mode). On the way it:
   on the Atari, LF on the server;
 - keeps the server's connection awake while EFTP keeps the Pi's.
 
-In EFTP, Options > Settings > **Secure**: Pi gateway = the Pi's IP
+In EFTP, Options > Settings > **Secure**: Gateway = the Gateway's IP
 address, port 2121. Then give your sites their real server names and
 choose FTPS or SFTP as their Protocol in File > Sites. Falcon mode
 doesn't need the Pi for FTPS (EFTP.PRG on a Falcon or TT does TLS
@@ -219,8 +230,8 @@ answer goes back as it came: the server's gzip or deflate as they are
 cookies and error pages unchanged. When webgate can't help, EWeb's
 "can't open" page shows a line that starts with "webgate:".
 
-In EWeb, Settings > Secure: Pi gateway = the Pi's IP address, port 8280.
-Check it from any browser on your network: `http://PI_IP:8280/` answers
+In EWeb, Settings > Secure: Gateway = the Gateway's IP address, port 8280.
+Check it from any browser on your network: `http://GATEWAY_IP:8280/` answers
 "webgate X.Y is running".
 
 Pictures come smaller: EWeb says how wide its page is, and webgate
@@ -247,7 +258,7 @@ checks servers against your own CA; `-v` logs every request (the
 server, never the address's path). Like ecalgate, it follows
 `HTTPS_PROXY` (`sudo systemctl edit webgate`).
 
-### The Pi's browser: snapshots and live view
+### The Gateway's browser: snapshots and live view
 
 Some sites are made by their scripts, and EWeb can't run those. With
 
@@ -267,7 +278,7 @@ browser's profile, with any logins, stays in `/var/lib/webgate/browser`.
 
 Sites behind Cloudflare's check ("Just a moment...") pass with it too:
 when a site answers EWeb with the check, a script for the big browsers,
-webgate opens the page in the Pi's browser, which passes the check, and
+webgate opens the page in the Gateway's browser, which passes the check, and
 EWeb gets the page it goes on to. The site's next pages go through the
 browser too, for the rest of the visit (until none has been asked for
 in 25 minutes). The pass stays in the browser: webgate never sends its
@@ -282,10 +293,149 @@ through webgate, so the home-network rule holds for it too: nothing at
 home without `--allow-local`, whatever a name's answer says, and no
 files from the Pi. `install web --no-browser` turns it off again.
 
+On Ubuntu (Lubuntu and the like, a laptop as the gateway), Chromium is
+a snap, which snapd starts only from its user's own systemd: there the
+browser runs as webgate's user service (`systemctl --user -M webgate@
+status webgate-browser`), webgate's home is `/var/lib/webgate`, snapd is
+told that homes may be in `/var/lib` (`snap set system homedirs`), and
+webgate's systemd runs without anyone logged in (`loginctl
+enable-linger webgate`). The profile is then in
+`/var/lib/webgate/snap/chromium/common/browser`, and the snap's own
+confinement is the browser's sandbox. The same command sets it all up.
+
+## pdf: EConvert's and EPDF's converter
+
+```
+sudo aera-gateway install pdf --allow ATARI_IP
+```
+
+EConvert and EPDF can have a PDF converted by the Gateway instead of by
+the Atari: much faster than a Falcon (a page in a second or two rather than
+minutes), and on any Atari, an ST included. The Atari sends the PDF,
+pdfgate converts it with aerapdf and sends the converted PDF back: the
+same file, byte for byte, that EConvert writes on a Falcon with the same
+settings, because aerapdf is EConvert's own converter (EPDF's source,
+copied into `pdf/` by `tools/sync-pdf.sh` at a named EPDF commit) built
+for the Pi. `install pdf` builds it (a few minutes; it installs gcc and
+make if they aren't there) and puts its fonts beside it in
+`/opt/aera-gateway-pdf`. `install all` includes it.
+
+In EConvert and EPDF on the Atari, Gateway mode, Through the Gateway:
+the Gateway's IP address, port 8380. Check it from any browser on your network:
+`http://GATEWAY_IP:8380/version` answers "aerapdf" and the EPDF commit it was
+built from. The exchange is EPDF's (its `docs/PI-GATEWAY.md`).
+
+One PDF is converted at a time, each with at most 600 seconds and 768 MB;
+a PDF of more than 64 MB is refused. The PDF and the result are on the
+Gateway's disk only while it converts. The log says which Atari converted how
+many bytes, never the file's name or what is in it.
+
+## translate: translation for the apps
+
+```
+sudo aera-gateway install translate
+sudo aera-gateway install translate --languages en,de,he
+```
+
+An app with its Translate setting on sends the Gateway text in UTF-8;
+translategate translates it on the Raspberry Pi with a local engine and
+sends it back. No text leaves the home network, and none is kept: no
+copy, no cache, and the log names only who asked, the two languages, the
+sizes and the time. With Translate off, an app never connects. The
+protocol is AERA-Atari's `standards/TRANSLATION-SERVICE.md`; the apps'
+client is `common/src/translate.c`.
+
+The engine is Argos Translate's models (OpenNMT, one a pair of
+languages) run by CTranslate2. `install translate` puts CTranslate2 and
+SentencePiece in a Python venv of their own, `/opt/translategate/venv`
+(it installs python3-venv if it isn't there), and downloads the models
+for English and German both ways (about 290 MB) into
+`/opt/translategate/models`, once; after that it works offline. It needs
+a Raspberry Pi with 4 GB of memory or more and the 64-bit Raspberry Pi OS
+(`uname -m` says aarch64; CTranslate2 isn't made for the 32-bit one): the
+models take about 500 MB loaded and stay loaded, so a short text (a
+subject, a few words) is answered in a second or two. translategate may
+take 1.5 GB at most, and when memory runs out on the Pi the kernel stops a
+browser's page or a conversion before it. `--languages en,de,he` names the
+languages to have (Hebrew added here; a language left out is removed):
+each one to and from English, and the others through English (Hebrew to
+German goes by way of English). Each language takes 120-300 MB loaded;
+on a 4 GB Pi there is room for 1108 MB of them, so `install translate`
+refuses a set of languages that wouldn't fit. An update keeps the engine and its models; `remove
+translate` removes them.
+
+The Gateway shapes the text, the same for every app: paragraphs come
+back as they were; the lines of a paragraph are translated as sentences
+and come back as one line, for the app to wrap, unless they are all
+short (an address, a list), when each line is kept; quote markers
+(`> `), web and e-mail addresses and numbers with units are left as they
+are. A text over 8 KB, a pair that isn't installed, an engine still
+loading or a text that takes over 60 seconds is refused with one line
+that starts with "translategate:". An app that goes away (Esc) stops the
+job.
+
+Short texts (a subject, a few words picked out) are given to the engine
+as a sentence, which it does far better, and a letter's commonest
+greetings and closings come from `gateway/translate-phrases.tsv`, a plain
+list that grows as real use shows a phrase the models get wrong. Known
+gaps, from the fixed sets: "Re:" before a subject isn't translated, and
+"הזמנה חדשה" (a new order) comes back as "A new invitation".
+
+The apps that translate also have a Languages page: tick the languages
+wanted, see the memory they take against the room there is, and on OK
+the Gateway installs and removes them itself (translategate-langs.service
+downloads them; translategate then starts again with them). Nothing is
+sent until the page closes with OK, and only from the Ataris allowed
+(`--allow`). The sizes are `gateway/translate-languages.tsv`'s.
+
+webgate and pdfgate reach translategate on the Gateway itself, through
+its local socket (`/run/translategate/local.sock`, open only to the
+`aera-translate` group; `gateway/translateclient.py`), so the models are
+loaded once, in translategate alone.
+
+Check it from any browser on your network: `http://GATEWAY_IP:8480/status`
+answers "translategate 1", the engine and "ready". `--port N` gives it
+another port, `-v` logs the status pages too, and `--engine stand-in`
+runs it without an engine (it answers in capitals: for the tests).
+`python3 tools/translate-check.py`, run on the Gateway, reports the
+machine, the system, the memory, and the engine's quality, speed (a
+piece of 2 KB, the size the apps send) and memory on the fixed sets in
+`tests/translate/`.
+
+## radio: EPlay's web radio
+
+```
+sudo aera-gateway install radio --allow ATARI_IP
+```
+
+EPlay plays MP3 stations by itself; through the Gateway it can play any
+station. A station may send MP3, AAC, Ogg or HLS (or a `.pls` or `.m3u`
+list of stations): radiogate passes MP3 on as it comes, and has ffmpeg
+convert the rest to MP3 (128 kbit/s, 44.1 kHz, stereo), so the Atari
+always gets MP3, with the songs' titles in it. HLS in fragmented MP4
+isn't taken. EPlay can also ask for a song's cover (`/art`) and, for a
+station that names no picture, its logo from radio-browser.info, a public
+directory of stations (`/logo`): both come as 64x64 JPEGs. For a logo, the
+Gateway sends that directory the station's address and name.
+`install radio` installs ffmpeg if it isn't there; `install all`
+includes it.
+
+In EPlay on the Atari: the Gateway's IP address, port 8580. Check it from
+any browser on your network: `http://GATEWAY_IP:8580/version` answers
+"radiogate" and the ffmpeg it converts with. radiogate is EPlay's own
+(`radio/radiogate.py` there, copied here by `tools/sync-radio.sh` at the
+commit in `gateway/EPLAY`).
+
+Two stations play at once, and ffmpeg runs on one thread with 256 MB, at
+a low priority; a station on the home network needs `--allow-local`. The
+log says which Atari listened to which station's host, for how long and
+how much, never the station's path or the titles.
+
 ## claude: ClaudeST's bridge
 
-The bridge is ClaudeST's own (it changes with `CLAUDEST.PRG`);
-`aera-gateway` sets it up from the latest ClaudeST release, or from a
+The bridge comes with AERA-Gateway, in `gateway/claude-st/` (it moved
+here from ClaudeST on 9 Nov 2026; ClaudeST owns its protocol and reviews
+its changes). `aera-gateway` sets it up from there, or from a ClaudeST
 copy you name with `--from`:
 
 ```
@@ -298,10 +448,10 @@ sudo aera-gateway set-key        paste a new claude.ai session key
 Its settings stay in `/etc/claude-st/claude-st.env` and its chats in
 `/var/lib/claude-st`; `remove claude` keeps both. ClaudeST's README says
 what the settings mean, and how to find the session key. In ClaudeST,
-Options > Settings > Network: the Pi's IP address, port 2323. In a
+Options > Settings > Network: the Gateway's IP address, port 2323. In a
 ClaudeST copy, `pi/install.sh` still works: it hands its options to
-`aera-gateway install claude`, which takes the bridge from ClaudeST's
-latest release, never from that copy.
+`aera-gateway install claude`, which takes the bridge that comes with
+AERA-Gateway, never from that copy.
 
 ## When something doesn't work
 
@@ -401,7 +551,7 @@ python3 -m unittest discover -s gateway -p 'test_*.py'
 - `test_webgate.py`: the proxy against a local server (compression,
   chunked answers, redirects, cookies, the home-network rule), pictures
   made smaller (with Pillow), pens with a stand-in aerapens on its
-  socket, the Pi's browser's way out with a stand-in name server, and
+  socket, the Gateway's browser's way out with a stand-in name server, and
   snapshots, live view and Cloudflare's check with stand-ins for the
   browser and the site.
 - `test_eftpgate.py`: an SFTP and an FTPS server on this computer, and a
@@ -409,11 +559,13 @@ python3 -m unittest discover -s gateway -p 'test_*.py'
   eftpgate as the Atari does.
 - `test_installer.py`: `aera-gateway` on a stand-in Pi: units, settings,
   taking over the apps' set-ups, the way back when a new gateway fails,
-  install all, the Pi's browser and aerapens' units.
+  install all, the Gateway's browser and aerapens' units.
 
 AERA-Gateway's `tests/systemd.sh` runs `aera-gateway` for real on a
 computer with systemd (CI does on every push): it sets the gateways up
 with the apps' old installers, takes them over, installs and removes,
-runs web with the Pi's browser (a stand-in Chromium) and with the real
+runs web with the Gateway's browser (a stand-in Chromium) and with the real
 aerapens behind its socket, and checks the claude recipe against
-ClaudeST's own `pi/install.sh`.
+ClaudeST's own `pi/install.sh`. `tests/snap.sh` sets up web with the
+browser on Ubuntu with the real Chromium snap, and takes a page and a
+live view picture through it.

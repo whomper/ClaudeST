@@ -1,0 +1,54 @@
+# The languages translategate can install: each to and from English, from
+# Argos Translate's index. Columns: the code, its name, the MB both models
+# take to download (loaded, they take about a quarter more). Sizes as
+# Argos served them on 7 Nov 2026; the Languages page shows these.
+en	English	0
+ar	Arabic	162
+az	Azerbaijani	234
+bg	Bulgarian	138
+bn	Bengali	135
+ca	Catalan	141
+cs	Czech	132
+da	Danish	130
+de	German	287
+el	Greek	135
+eo	Esperanto	233
+es	Spanish	355
+et	Estonian	298
+eu	Basque	144
+fa	Persian	231
+fi	Finnish	132
+fr	French	126
+ga	Irish	185
+gl	Galician	145
+he	Hebrew	230
+hi	Hindi	199
+hu	Hungarian	133
+id	Indonesian	130
+it	Italian	167
+ja	Japanese	227
+ko	Korean	229
+ky	Kyrgyz	295
+lt	Lithuanian	133
+lv	Latvian	133
+ms	Malay	132
+nb	Norwegian	127
+nl	Dutch	135
+pb	Portuguese (Brazil)	129
+pl	Polish	133
+pt	Portuguese	129
+ro	Romanian	135
+ru	Russian	336
+sk	Slovak	136
+sl	Slovenian	135
+sq	Albanian	134
+sv	Swedish	193
+sw	Swahili	144
+th	Thai	132
+tl	Tagalog	134
+tr	Turkish	234
+uk	Ukrainian	187
+ur	Urdu	132
+vi	Vietnamese	127
+zh	Chinese	138
+zt	Chinese (traditional)	139

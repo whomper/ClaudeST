@@ -180,7 +180,7 @@ class SFTPBackend(Backend):
         try:
             import paramiko
         except ImportError:
-            raise GateError(530, "SFTP needs paramiko on the Pi: sudo apt install python3-paramiko")
+            raise GateError(530, "SFTP needs paramiko on the Gateway: sudo apt install python3-paramiko")
         self.paramiko = paramiko
         try:
             sock = aeragate.dial(addrs, 20)
@@ -228,7 +228,7 @@ class SFTPBackend(Backend):
         if known is not None and key.get_name() in known:
             if known[key.get_name()] != key:
                 t.close()
-                raise GateError(530, "%s's SSH key has changed: if that is right, remove it from %s on the Pi"
+                raise GateError(530, "%s's SSH key has changed: if that is right, remove it from %s on the Gateway"
                                 % (host, path))
             return
         keys.add(name, key.get_name(), key)
