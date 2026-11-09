@@ -3986,8 +3986,10 @@ static void about(void)
 		      "Claude is a trademark of Anthropic PBC.",
 		      "Atari is a trademark of Atari Interactive." },
 		    icon_bits, icon16_px, icon16_rgb, icon256_px, icon256_rgb };
-	/* no address or port on the line */
-	about_net_line(conn, sizeof(conn), "STinG", ABOUT_GATEWAY, online ? ABOUT_ONLINE : ABOUT_OFFLINE);
+	/* no address or port on the line. "Gateway", the family's word since
+	   7 Nov 2026 (guidelines 7.3; common's ABOUT_GATEWAY says so from
+	   AERA-Atari's change, which this copy of common predates) */
+	about_net_line(conn, sizeof(conn), "STinG", "Gateway", online ? ABOUT_ONLINE : ABOUT_OFFLINE);
 	about_mem_line(mem, sizeof(mem));
 	about_show(&a);
 }
