@@ -9,6 +9,9 @@ says how they are.
   sudo ./aera-gateway install dav                           ECal's and EContact's (ecalgate)
   sudo ./aera-gateway install ftp                           EFTP's (eftpgate)
   sudo ./aera-gateway install web                           EWeb's (webgate)
+  sudo ./aera-gateway install pdf                           EConvert's and EPDF's converter (pdfgate)
+  sudo ./aera-gateway install translate                     translation for the apps (translategate)
+  sudo ./aera-gateway install radio                         EPlay's web radio (radiogate)
   sudo ./aera-gateway install claude --network --atari ATARI_IP
                                                             ClaudeST's bridge (claude-st)
   sudo ./aera-gateway install all --allow ATARI_IP --mail IMAP SMTP[:587] [POP3] [--browser]
@@ -36,7 +39,6 @@ import grp
 import hashlib
 import importlib.util
 import io
-import json
 import os
 import pwd
 import re
@@ -44,21 +46,20 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
-import urllib.request
 
-VERSION = "1.17"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.37"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
 UNITS = "/etc/systemd/system"
 OLD_BIN = "/usr/local/bin"                  # where the apps' own install.sh put them
-FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py", "webgate.py")
+FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py", "webgate.py", "pdfgate.py",
+         "translategate.py", "translatelangs.py", "translateclient.py", "translate-phrases.tsv", "translate-languages.tsv",
+         "radiogate.py")
 EXT = "webgate-ext"                         # webgate's browser extension, a folder next to them
 HOME_NETS = ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8")
-CLAUDEST = "whomper/ClaudeST"
 
 
 class Failed(Exception):
@@ -82,10 +83,14 @@ class Pi:
         return os.path.join(self.root, p.lstrip("/"))
 
     def run(self, *cmd, check=True, out="show", errors=True, input=None):
-        """out: "show" it, "hide" it or "keep" it (returned)"""
-        r = subprocess.run(cmd, input=input, universal_newlines=True,
-                           stdout={"show": None, "hide": subprocess.DEVNULL, "keep": subprocess.PIPE}[out],
-                           stderr=None if errors else subprocess.DEVNULL)
+        """out: "show" it, "hide" it or "keep" it (returned); a program that
+        isn't there fails as a shell's would (127), not with a traceback"""
+        try:
+            r = subprocess.run(cmd, input=input, universal_newlines=True,
+                               stdout={"show": None, "hide": subprocess.DEVNULL, "keep": subprocess.PIPE}[out],
+                               stderr=None if errors else subprocess.DEVNULL)
+        except OSError:
+            r = subprocess.CompletedProcess(cmd, 127, "" if out == "keep" else None, None)
         if check and r.returncode:
             raise Failed("%s failed" % " ".join(cmd))
         return r
@@ -284,12 +289,24 @@ def load(src, script):
     return mod
 
 
+TRANSLATE_GROUP = "aera-translate"       # who may use translategate's local socket
+
+
+def join_translate(pi, user):
+    """user (webgate, pdfgate) may use translategate's local socket: in its
+    group, made here if translate isn't installed (yet)"""
+    if not pi.ok("getent", "group", TRANSLATE_GROUP):
+        pi.run("groupadd", "--system", TRANSLATE_GROUP)
+    pi.run("usermod", "-a", "-G", TRANSLATE_GROUP, user)
+
+
 class Gateway:
     """emailgate, ecalgate or eftpgate: a script in OPT run as a service
     by a user of its own"""
     key = name = script = title = ""
     packages = ()               # Debian packages beyond python3 and ca-certificates
     state = False               # a StateDirectory (eftpgate's SSH host keys)
+    home = None                 # its user's home, when it needs one (webgate's, for Ubuntu's Chromium snap)
     removed = ""
 
     def unit_file(self):
@@ -583,7 +600,7 @@ class Dav(Gateway):
         return "\n".join([
             "",
             "ecalgate is running. In ECal and EContact on the Atari, Settings > Connection:",
-            "   Pi gateway:  %s" % ip,
+            "   Gateway:     %s" % ip,
             "   Port:        %s" % ns.port,
             "",
             "Check it from any browser on your network: http://%s:%s/" % (ip, ns.port)])
@@ -650,7 +667,7 @@ class Ftp(Gateway):
         return "\n".join([
             "",
             "eftpgate is running. In EFTP on the Atari, Options > Settings > Secure:",
-            "   Pi gateway:  %s" % ip,
+            "   Gateway:     %s" % ip,
             "   Port:        %s" % ns.port,
             "",
             "Then give your FTPS and SFTP sites their real server names in File > Sites."])
@@ -661,11 +678,17 @@ class Web(Gateway):
     title = "EWeb gateway for the Atari (HTTP and HTTPS)"
     removed = "webgate removed."
     packages = ("python3-pil",)             # Pillow: pictures made for the Atari's page
-    # the Pi's browser (--browser): Chromium full screen in a screen of
+    # the Gateway's browser (--browser): Chromium full screen in a screen of
     # its own, going out through webgate (127.0.0.1), as user webgate
     SCREEN, BROWSER = "webgate-screen", "webgate-browser"
     DISPLAY = ":99"
     PROFILE = "/var/lib/webgate/browser"
+    home = "/var/lib/webgate"
+    # Ubuntu's Chromium is a snap: snapd starts it only from its user's own
+    # systemd (a lingering webgate), with a home snapd knows (homedirs) and
+    # its profile and extension in the snap's own folder there
+    SNAP_DIR = "/var/lib/webgate/snap/chromium/common"
+    SNAP_UNIT = "/var/lib/webgate/.config/systemd/user/webgate-browser.service"
     MIN_MEMORY = 1536                       # MB: a Pi with 2 GB or more
     # aerapens (EWeb's pictures as the Atari's pens): built here from this
     # copy's pens/, run by systemd one a connection on its socket
@@ -713,12 +736,12 @@ class Web(Gateway):
             ns.browser = o.browser
 
     def prepare(self, pi, ns):
-        """the Pi's browser: enough memory (before anything changes), and its
+        """the Gateway's browser: enough memory (before anything changes), and its
         programs; and aerapens built"""
         if ns.browser:
             m = re.search(r"^MemTotal:\s+(\d+) kB", pi.read("/proc/meminfo") or "", re.M)
             if m and int(m.group(1)) // 1024 < self.MIN_MEMORY:
-                raise Failed("The Pi's browser needs a Pi with 2 GB of memory or more; this one has %d MB.\n"
+                raise Failed("The Gateway's browser needs a Pi with 2 GB of memory or more; this one has %d MB.\n"
                              "webgate works without it: sudo %s install web --no-browser"
                              % (int(m.group(1)) // 1024, PROG))
         self.build_pens(pi)
@@ -733,7 +756,7 @@ class Web(Gateway):
         if not pi.which("xdotool"):
             need.append("xdotool")
         if need:
-            heading("Installing the Pi's browser (%s): this takes a while" % ", ".join(need))
+            heading("Installing the Gateway's browser (%s): this takes a while" % ", ".join(need))
             pi.run("apt-get", "update", "-qq")
             pi.run("apt-get", "install", "-y", "-qq", *need)
 
@@ -741,14 +764,26 @@ class Web(Gateway):
         keep = [k for k in keep if not k.startswith("Environment=DISPLAY=")]
         return super().unit(ns, keep + (["Environment=DISPLAY=" + self.DISPLAY] if ns.browser else []))
 
+    def snap(self, pi):
+        """is the browser Ubuntu's Chromium snap (its chromium-browser
+        package only puts the snap in)?"""
+        path = pi.which("chromium", "chromium-browser") or ""
+        return path.startswith("/snap/") or (path.endswith("/chromium-browser") and pi.ok("snap", "list", "chromium")
+                                             and not pi.exists("/usr/lib/chromium-browser/chromium-browser"))
+
+    def profile(self, pi):
+        return self.SNAP_DIR + "/browser" if self.snap(pi) else self.PROFILE
+
     def browser_units(self, pi, ns):
-        """(the screen's unit, the browser's unit)"""
+        """(the screen's unit, the browser's unit: a system one, or for the
+        snap webgate's own user one)"""
         port = ns.browser_port
-        chromium = pi.which("chromium", "chromium-browser") or "/usr/bin/chromium"
-        ext = "%s/%s" % (OPT, EXT)
+        snap = self.snap(pi)
+        chromium = "/snap/bin/chromium" if snap else pi.which("chromium", "chromium-browser") or "/usr/bin/chromium"
+        ext = self.SNAP_DIR + "/" + EXT if snap else "%s/%s" % (OPT, EXT)
         args = [chromium, "--kiosk", "--no-first-run", "--no-default-browser-check", "--noerrdialogs",
                 "--disable-infobars", "--disable-session-crashed-bubble", "--password-store=basic",
-                "--user-data-dir=" + self.PROFILE, "--load-extension=" + ext, "--disable-extensions-except=" + ext,
+                "--user-data-dir=" + self.profile(pi), "--load-extension=" + ext, "--disable-extensions-except=" + ext,
                 # everything through webgate, which connects only where 7.3 lets it
                 "--proxy-server=http://127.0.0.1:%d" % port, "--proxy-bypass-list=<-loopback>;127.0.0.1:%d" % port,
                 # and it resolves nothing itself: names go to webgate as they are
@@ -758,22 +793,31 @@ class Web(Gateway):
         common = ["User=" + self.name, "Restart=always", "RestartSec=5",
                   "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes"]
         screen = "\n".join([
-            "[Unit]", "Description=webgate's screen for the Pi's browser (EWeb's snapshots and live view)",
+            "[Unit]", "Description=webgate's screen for the Gateway's browser (EWeb's snapshots and live view)",
             "After=%s.service" % self.name, "JoinsNamespaceOf=%s.service" % self.name, "",
             "[Service]",
             # tall enough for live view's window: EWeb's page width, three of its screens (webgate-ext sizes it)
             "ExecStart=%s %s -screen 0 1280x3072x24 -nolisten tcp" % (pi.which("Xvfb") or "/usr/bin/Xvfb",
                                                                     self.DISPLAY),
             "NoNewPrivileges=yes"] + common + ["", "[Install]", "WantedBy=multi-user.target", ""])
+        wait = ("ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do xdotool getdisplaygeometry >/dev/null "
+                "2>&1 && exit 0; sleep 1; done; exit 1'")
+        if snap:
+            # webgate's own systemd starts it (snapd's rule); the snap's
+            # confinement is its sandbox, and the screen is reached by its
+            # abstract socket
+            return screen, "\n".join([
+                "[Unit]", "Description=The Gateway's browser for EWeb (Ubuntu's Chromium snap, out through webgate only)",
+                "", "[Service]", "Environment=DISPLAY=" + self.DISPLAY, wait,
+                "ExecStart=" + " ".join(unit_word(w) for w in args), "Restart=always", "RestartSec=5",
+                "", "[Install]", "WantedBy=default.target", ""])
         browser = "\n".join([
-            "[Unit]", "Description=The Pi's browser for EWeb (Chromium, out through webgate only)",
+            "[Unit]", "Description=The Gateway's browser for EWeb (Chromium, out through webgate only)",
             "Requires=%s.service" % self.SCREEN, "After=%s.service %s.service" % (self.SCREEN, self.name),
             "JoinsNamespaceOf=%s.service" % self.name, "",
             "[Service]",
             "Environment=DISPLAY=" + self.DISPLAY, "Environment=HOME=/var/lib/webgate", "StateDirectory=webgate",
-            # the screen may take a moment
-            "ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do xdotool getdisplaygeometry >/dev/null "
-            "2>&1 && exit 0; sleep 1; done; exit 1'",
+            wait,               # (the screen may take a moment)
             "ExecStart=" + " ".join(unit_word(w) for w in args),
             "# Chromium's own sandbox needs its setuid helper or user namespaces: no NoNewPrivileges here"]
             + common + ["", "[Install]", "WantedBy=multi-user.target", ""])
@@ -783,20 +827,62 @@ class Web(Gateway):
         if not ns.browser:
             self.browser_off(pi, quiet=False)
             return
+        snap = self.snap(pi)
         screen, browser = self.browser_units(pi, ns)
+        if snap:
+            self.snap_ready(pi)
+            if pi.exists(unit_path(self.BROWSER)):          # a system browser unit from before
+                pi.run("systemctl", "disable", "--now", self.BROWSER + ".service", check=False, out="hide",
+                       errors=False)
+                pi.remove(unit_path(self.BROWSER))
         pi.write(unit_path(self.SCREEN), screen)
-        pi.write(unit_path(self.BROWSER), browser)
+        pi.write(self.SNAP_UNIT if snap else unit_path(self.BROWSER), browser)
         # Chromium keeps an extension's old background script in its
         # profile: a new webgate-ext starts afresh (the logins stay)
         for d in ("Service Worker", "Extension State", "Extension Rules"):
-            pi.rmtree("%s/Default/%s" % (self.PROFILE, d))
+            pi.rmtree("%s/Default/%s" % (self.profile(pi), d))
         pi.run("systemctl", "daemon-reload")
-        pi.run("systemctl", "enable", self.SCREEN + ".service", self.BROWSER + ".service", out="hide")
+        pi.run("systemctl", "enable", self.SCREEN + ".service", *([] if snap else [self.BROWSER + ".service"]),
+               out="hide")
         pi.run("systemctl", "restart", self.SCREEN + ".service", check=False)
-        pi.run("systemctl", "restart", self.BROWSER + ".service", check=False)
-        say("The Pi's browser (Chromium, in webgate's own screen) is running for EWeb's snapshots and live view.")
+        if snap:
+            user = ("systemctl", "--user", "-M", self.name + "@")
+            pi.run("chown", "-R", "%s:%s" % (self.name, self.name), self.home + "/.config", check=False)
+            pi.run(*user, "daemon-reload", check=False)
+            pi.run(*user, "enable", self.BROWSER + ".service", check=False, out="hide")
+            pi.run(*user, "restart", self.BROWSER + ".service", check=False)
+        else:
+            pi.run("systemctl", "restart", self.BROWSER + ".service", check=False)
+        say("The Gateway's browser (Chromium, in webgate's own screen) is running for EWeb's snapshots and live view.")
+
+    def snap_ready(self, pi):
+        """webgate as snapd wants the user it starts Chromium for: its home
+        (/var/lib/webgate) one snapd knows, its own systemd running
+        without a login, and the snap's folder there with webgate-ext"""
+        if (pi.out("getent", "passwd", self.name).split(":") + [""] * 6)[5] != self.home:
+            # usermod won't while webgate's programs run: a moment's stop
+            pi.run("systemctl", "stop", self.name + ".service", check=False)
+            pi.run("usermod", "--home", self.home, self.name)
+            pi.run("systemctl", "start", self.name + ".service", check=False)
+        dirs = [d for d in pi.out("snap", "get", "system", "homedirs").strip().split(",") if d]
+        if "/var/lib" not in dirs:
+            pi.run("snap", "set", "system", "homedirs=" + ",".join(dirs + ["/var/lib"]))
+        pi.run("loginctl", "enable-linger", self.name)
+        d = self.home
+        for part in ("", "/snap", "/snap/chromium", "/snap/chromium/common", "/snap/chromium/common/browser"):
+            pi.run("install", "-d", "-o", self.name, "-g", self.name, d + part)
+        pi.rmtree(self.SNAP_DIR + "/" + EXT)
+        for f in sorted(glob.glob(pi.path("%s/%s/*" % (OPT, EXT)))):
+            pi.copy(f, "%s/%s/%s" % (self.SNAP_DIR, EXT, os.path.basename(f)), 0o644)
+        # the snap reads only what is its user's in its home (AppArmor's owner rules)
+        pi.run("chown", "-R", "%s:%s" % (self.name, self.name), self.SNAP_DIR + "/" + EXT)
 
     def browser_off(self, pi, quiet=True):
+        if pi.exists(self.SNAP_UNIT):
+            user = ("systemctl", "--user", "-M", self.name + "@")
+            pi.run(*user, "disable", "--now", self.BROWSER + ".service", check=False, out="hide", errors=False)
+            pi.remove(self.SNAP_UNIT)
+            pi.run("loginctl", "disable-linger", self.name, check=False, errors=False)
         if not pi.exists(unit_path(self.BROWSER)) and not pi.exists(unit_path(self.SCREEN)):
             return
         for u in (self.BROWSER, self.SCREEN):
@@ -804,7 +890,7 @@ class Web(Gateway):
             pi.remove(unit_path(u))
         pi.run("systemctl", "daemon-reload")
         if not quiet:
-            say("The Pi's browser is off (its profile, with any logins, stays in %s)." % self.PROFILE)
+            say("The Gateway's browser is off (its profile, with any logins, stays in %s)." % self.profile(pi))
 
     def after_remove(self, pi):
         self.browser_off(pi)
@@ -927,7 +1013,8 @@ class Web(Gateway):
 
     def before_start(self, pi):
         """aerapens and aerajsc in place before webgate starts, so that its
-        first look finds them"""
+        first look finds them; translategate's socket open to it"""
+        join_translate(pi, self.name)
         self.jsc_start(pi)
         if not self.pens_built:
             return
@@ -1000,20 +1087,381 @@ class Web(Gateway):
     def describe(self, ns):
         return "servers at home %s%s%s" % ("allowed" if ns.allow_local else "refused",
                                            ", CA " + ns.cafile if ns.cafile else "",
-                                           "; the Pi's browser" if ns.browser else "")
+                                           "; the Gateway's browser" if ns.browser else "")
 
     def tell(self, ns, ip):
         return "\n".join([
             "",
             "webgate is running. In EWeb on the Atari, Settings > Secure:",
-            "   Pi gateway:  %s" % ip,
+            "   Gateway:     %s" % ip,
             "   Port:        %s" % ns.port,
             "",
             "Check it from any browser on your network: http://%s:%s/" % (ip, ns.port)])
 
 
+class Pdf(Gateway):
+    """pdfgate: PDFs converted for EConvert and EPDF by aerapdf, EPDF's
+    converter, built here from this copy's pdf/ (EPDF's source at the
+    commit in pdf/EPDF, tools/sync-pdf.sh)"""
+    key, name, script = "pdf", "pdfgate", "pdfgate.py"
+    title = "PDF converter for EConvert and EPDF on the Atari"
+    removed = "pdfgate removed."
+    PDF_SRC = os.path.join(os.path.dirname(HERE), "pdf")
+    PDF_DIR = "/opt/aera-gateway-pdf"
+    built = None                            # this install's aerapdf, built in prepare() ("kept": as it is)
+    source = None                           # the sum of the pdf/ it is built from
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Pi (8380 is the default)")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None, help="log every request")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.port is not None:
+            ns.port = o.port
+        if o.verbose is not None:
+            ns.verbose = o.verbose
+
+    def check(self, ns):
+        if not os.path.isdir(os.path.join(self.PDF_SRC, "epdf")):
+            raise Failed("This copy has no pdf/ (EPDF's converter): install pdf from AERA-Gateway itself.")
+
+    def pdf_sum(self):
+        """a sum of this copy's pdf/: the same sum, the same aerapdf"""
+        h = hashlib.sha256()
+        for top, dirs, files in sorted(os.walk(self.PDF_SRC)):
+            dirs[:] = sorted(d for d in dirs if d != "build")
+            for f in sorted(files):
+                if f != "aerapdf":
+                    path = os.path.join(top, f)
+                    h.update(os.path.relpath(path, self.PDF_SRC).encode() + b"\0")
+                    with open(path, "rb") as fh:
+                        h.update(fh.read())
+        return h.hexdigest()
+
+    def prepare(self, pi, ns):
+        """aerapdf built from pdf/, unless the one there is from the same pdf/"""
+        self.built = None
+        self.source = self.pdf_sum()
+        if pi.exists(self.PDF_DIR + "/aerapdf") and \
+                (pi.read(self.PDF_DIR + "/BUILT") or "").strip() == self.source:
+            self.built = "kept"
+            return
+        need = [pkg for prog, pkg in (("cc", "gcc"), ("make", "make")) if not pi.which(prog)]
+        if need:
+            heading("Installing %s, to build aerapdf (EPDF's converter)" % " and ".join(need))
+            pi.run("apt-get", "update", "-qq")
+            pi.run("apt-get", "install", "-y", "-qq", *need)
+        heading("Building aerapdf: this takes a few minutes on a Pi")
+        tmp = tempfile.mkdtemp(prefix="aerapdf-")
+        shutil.copytree(self.PDF_SRC, os.path.join(tmp, "pdf"), ignore=shutil.ignore_patterns("aerapdf", "build"))
+        if pi.run("make", "-s", "-C", os.path.join(tmp, "pdf"), check=False).returncode != 0 or \
+                not os.path.isfile(os.path.join(tmp, "pdf", "aerapdf")):
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise Failed("aerapdf didn't build (see above): pdfgate isn't installed.")
+        self.built = tmp
+
+    def before_start(self, pi):
+        """aerapdf, its fonts and which EPDF it is from, in place before
+        pdfgate starts; translategate's socket open to it (aerapdf's
+        translator)"""
+        join_translate(pi, self.name)
+        if not self.built or self.built == "kept":
+            self.built = None
+            return
+        try:
+            pdf = os.path.join(self.built, "pdf")
+            pi.rmtree(self.PDF_DIR + "/fonts")
+            pi.makedirs(self.PDF_DIR + "/fonts")
+            pi.copy(os.path.join(pdf, "aerapdf"), self.PDF_DIR + "/aerapdf", 0o755)
+            for f in sorted(glob.glob(os.path.join(pdf, "epdf", "third_party", "liberation", "fonts", "*.ttf"))):
+                pi.copy(f, "%s/fonts/%s" % (self.PDF_DIR, os.path.basename(f)), 0o644)
+            with open(os.path.join(pdf, "EPDF")) as fh:
+                pi.write(self.PDF_DIR + "/SOURCE", fh.read().strip() + "\n")
+            pi.write(self.PDF_DIR + "/BUILT", self.source + "\n")
+        finally:
+            shutil.rmtree(self.built, ignore_errors=True)
+            self.built = None
+
+    def after_remove(self, pi):
+        pi.rmtree(self.PDF_DIR)
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "pdfgate is running. In EConvert and EPDF on the Atari, Gateway mode, Through the Gateway:",
+            "   Gateway:     %s" % ip,
+            "   Port:        %s" % ns.port,
+            "",
+            "Check it from any browser on your network: http://%s:%s/version" % (ip, ns.port)])
+
+
+class Translate(Gateway):
+    """translategate: text translated on the Pi for the Atari apps, by a
+    local engine (no text leaves the home network). The engine, Argos
+    Translate's models run by CTranslate2, is in a venv of its own under
+    /opt/translategate with its models, downloaded once here and offline
+    after (Erez, 7 Nov 2026); "stand-in" needs nothing (CI)."""
+    key, name, script = "translate", "translategate", "translategate.py"
+    title = "Translation for the Atari apps (a local engine, nothing leaves the home network)"
+    removed = "translategate removed."
+    DIR = "/opt/translategate"
+    VENV = DIR + "/venv"
+    MODELS = DIR + "/models"
+    INDEX = "https://raw.githubusercontent.com/argosopentech/argospm-index/main/index.json"
+    LANGUAGES = "en,de"                     # the default (Erez, 7 Nov 2026)
+    PIP = ("ctranslate2>=4,<5", "sentencepiece>=0.2,<0.3")
+    MAX_MEMORY = 1536                       # MB translategate may take (MemoryMax) on a 4 GB Pi
+    MIN_MEMORY = 3500                       # MB: the models loaded beside the other gateways (a 4 GB Pi
+                                            # says about 3790)
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Pi (8480 is the default)")
+        ap.add_argument("--engine", choices=("argos", "stand-in"),
+                        help="argos (the default): Argos Translate's models; stand-in: no engine, for tests")
+        ap.add_argument("--languages", metavar="CODES",
+                        help="the languages to have, e.g. en,de (the default), en,de,he: exactly these (others "
+                             "removed), each one to and from English, the others through English; each takes "
+                             "120-300 MB loaded, 1108 MB of them at most")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None, help="log every request")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def take_over(self, pi, ns):
+        ns.engine = "argos"
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        if o.port is not None:
+            ns.port = o.port
+        if o.engine is not None:
+            ns.engine = o.engine
+        if o.verbose is not None:
+            ns.verbose = o.verbose
+        self.languages = None
+        if o.languages is not None:
+            codes = [c.strip() for c in o.languages.split(",") if c.strip()]
+            if len(codes) < 2 or not all(re.fullmatch(r"[a-z]{2,3}", c) for c in codes):
+                raise Usage("--languages: two or more codes, e.g. en,de")
+            self.languages = codes
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        if ns.engine != ns.default["engine"]:
+            out += ["--engine", ns.engine]
+        out += ["--local", self.LOCAL]          # for webgate and pdfgate (translateclient)
+        out += ["-v"] if ns.verbose else []
+        return out + [w for i, w in enumerate(ns.extra)
+                      if w != "--local" and (i == 0 or ns.extra[i - 1] != "--local")]
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def unit(self, ns, keep):
+        text = super().unit(ns, keep)
+        if ns.engine == "argos":
+            text = text.replace("ExecStart=/usr/bin/python3 ", "ExecStart=%s/bin/python3 " % self.VENV)
+        # the engine's memory (about 420 MB at its peak), beside the other
+        # gateways on a 4 GB Pi; and when memory runs out, the kernel takes
+        # a browser's page or a conversion before the loaded models
+        # (the models may change from the Atari's Languages page, up to
+        # translatelangs.CAP_MB of them: the most they may take, always)
+        mm = "%dM" % self.MAX_MEMORY if ns.engine == "argos" else "1G"
+        text = text.replace("Restart=always", "MemoryMax=%s\nOOMScoreAdjust=-300\nRestart=always" % mm, 1)
+        # the languages' job's files (request, job), translategate's to write;
+        # the local socket's folder, open to the group the gateways that
+        # translate are in (aera-translate), and to no one else
+        return text.replace("NoNewPrivileges=yes", "StateDirectory=translategate\nGroup=%s\n"
+                            "RuntimeDirectory=translategate\nRuntimeDirectoryMode=0750\nNoNewPrivileges=yes"
+                            % self.GROUP, 1)
+
+    def describe(self, ns):
+        return "engine " + ns.engine
+
+    def prepare(self, pi, ns):
+        """the engine: the memory for it (before anything changes), its venv
+        and its models; kept as they are on an update"""
+        if ns.engine != "argos":
+            return
+        arch = self.arch(pi)
+        if not self.arch_ok(pi):
+            raise Failed("translategate's engine needs a 64-bit system (CTranslate2 is made for aarch64 and "
+                         "x86_64): uname -m says %s.\nOn a Raspberry Pi: the 64-bit Raspberry Pi OS." % arch)
+        if not self.memory_ok(pi):
+            raise Failed("translategate's engine needs a Pi with 4 GB of memory or more; this one has %d MB."
+                         % self.memory(pi))
+        venv = pi.path(self.VENV)
+        if not pi.ok(venv + "/bin/python3", "-c", "import ctranslate2, sentencepiece"):
+            heading("Setting up translategate's engine (CTranslate2, in %s)" % self.VENV)
+            if not pi.ok("python3", "-c", "import venv, ensurepip"):
+                pi.run("apt-get", "update", "-qq")
+                pi.run("apt-get", "install", "-y", "-qq", "python3-venv", "python3-pip")
+            pi.rmtree(self.VENV)
+            pi.run("python3", "-m", "venv", venv)
+            pi.run(venv + "/bin/pip", "install", "-q", *self.PIP)
+        have = {os.path.basename(os.path.dirname(f))
+                for f in glob.glob(pi.path(self.MODELS) + "/*/metadata.json")}
+        want = self.languages or sorted({c for p in have for c in p.split("_")}) or self.LANGUAGES.split(",")
+        # Argos's models go to and from English (a few others aside): a
+        # pair through English, he>en>de, is what translategate does for the rest
+        missing = [p for x in sorted(set(want) - {"en"}) for p in ((x, "en"), ("en", x))
+                   if "%s_%s" % p not in have]
+        if missing:
+            self.fetch(pi, missing)
+        if self.languages:                  # exactly these: the others' models removed
+            for d in have:
+                if not set(d.split("_")) <= set(want) | {"en"}:
+                    pi.rmtree("%s/%s" % (self.MODELS, d))
+        # the models' room: what translatelangs (and the Languages page) allow
+        tl = load(HERE, "translatelangs.py")
+        need = tl.size_mb(want)
+        if need > tl.CAP_MB:
+            for a, b in missing:
+                pi.rmtree("%s/%s_%s" % (self.MODELS, a, b))
+            raise Failed("The translation models for %s take %d MB; %d MB fit beside the other gateways. "
+                         "Name fewer languages (--languages en,de)." % (",".join(sorted(set(want) | {"en"})),
+                                                                       need, tl.CAP_MB))
+
+    def memory(self, pi):
+        m = re.search(r"^MemTotal:\s+(\d+) kB", pi.read("/proc/meminfo") or "", re.M)
+        return int(m.group(1)) // 1024 if m else None
+
+    def arch(self, pi):
+        return pi.out("uname", "-m").strip()
+
+    def arch_ok(self, pi):
+        return self.arch(pi) in ("", "aarch64", "arm64", "x86_64")
+
+    def memory_ok(self, pi):
+        mb = self.memory(pi)
+        return mb is None or mb >= self.MIN_MEMORY
+
+    def fetch(self, pi, pairs):
+        """Argos Translate's models for pairs, from its index (once; offline after)"""
+        heading("Downloading the translation models: %s" % ", ".join("%s>%s" % p for p in pairs))
+        tl = load(HERE, "translatelangs.py")
+        try:
+            urls = tl.links(pairs)
+            for p in sorted(urls):
+                say("   %s>%s from %s" % (p[0], p[1], urls[p]))
+                tl.fetch(p, urls[p], pi.path(self.MODELS))
+        except tl.Fail as e:
+            raise Failed(str(e))
+
+    LOCAL = "/run/translategate/local.sock"
+    GROUP = TRANSLATE_GROUP                 # the gateways that may use the local socket
+
+    UNITS_LANGS = ("translategate-langs.path", "translategate-langs.service")
+
+    def langs_units(self):
+        """the languages' job: translategate writes a request, systemd runs
+        translatelangs for it, as translategate's user, the only one of the
+        two that connects anywhere (Argos Translate's downloads)"""
+        path = "\n".join([
+            "[Unit]", "Description=translategate's languages: a request from an app's Languages page", "",
+            "[Path]", "PathModified=/var/lib/translategate/request", "Unit=translategate-langs.service", "",
+            "[Install]", "WantedBy=multi-user.target", ""])
+        svc = "\n".join([
+            "[Unit]", "Description=translategate's languages: Argos Translate's models put in and taken out", "",
+            "[Service]", "Type=oneshot", "User=translategate",
+            "ExecStart=/usr/bin/python3 %s/translatelangs.py job" % OPT,
+            "StateDirectory=translategate", "ReadWritePaths=%s" % self.MODELS,
+            "TimeoutStartSec=3600", "MemoryMax=256M",
+            "NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes",
+            "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX", ""])
+        return {self.UNITS_LANGS[0]: path, self.UNITS_LANGS[1]: svc}
+
+    def before_start(self, pi):
+        """the models translategate's own (the Languages page changes them),
+        the languages' job set up, and the local socket's group"""
+        if not pi.ok("getent", "group", self.GROUP):
+            pi.run("groupadd", "--system", self.GROUP)
+        pi.makedirs(self.MODELS)
+        pi.run("chown", "-R", "translategate:translategate", self.MODELS)
+        for name, text in self.langs_units().items():
+            pi.write("%s/%s" % (UNITS, name), text)
+        pi.run("systemctl", "daemon-reload")
+        pi.run("systemctl", "enable", "--now", self.UNITS_LANGS[0], out="hide")
+
+    def after_remove(self, pi):
+        pi.run("systemctl", "disable", "--now", *self.UNITS_LANGS, check=False, out="hide", errors=False)
+        for name in self.UNITS_LANGS:
+            pi.remove("%s/%s" % (UNITS, name))
+        pi.run("systemctl", "daemon-reload")
+        pi.rmtree(self.DIR)
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "translategate is running%s. In the apps on the Atari, Translate:" % (
+                "" if ns.engine == "argos" else " (engine: %s)" % ns.engine),
+            "   Gateway:  %s" % ip,
+            "   Port:     %s" % ns.port,
+            "",
+            "Check it from any browser on your network: http://%s:%s/status" % (ip, ns.port)])
+
+
 MAIL = Mail()
-GATEWAYS = [MAIL, Dav(), Ftp(), Web()]
+class Radio(Gateway):
+    """radiogate: web radio for EPlay, as MP3 (EPlay's radio/radiogate.py,
+    tools/sync-radio.sh); ffmpeg converts what isn't MP3 (Erez, 8 Nov 2026)"""
+    key, name, script = "radio", "radiogate", "radiogate.py"
+    title = "Web radio for EPlay on the Atari (stations as MP3)"
+    removed = "radiogate removed."
+    packages = ("ffmpeg",)
+
+    def options(self, ap):
+        super().options(ap)
+        ap.add_argument("--port", type=int, help="the port on the Gateway (8580 is the default)")
+        ap.add_argument("--allow-local", action="store_true", default=None,
+                        help="also play stations on the home network")
+        ap.add_argument("--no-allow-local", dest="allow_local", action="store_false")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None, help="log every request")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        for k in ("port", "allow_local", "verbose"):
+            if getattr(o, k) is not None:
+                setattr(ns, k, getattr(o, k))
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        out += ["--allow-local"] if ns.allow_local else []
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def unit(self, ns, keep):
+        # (ffmpeg, a stream or two, beside the engine and the browser)
+        return super().unit(ns, keep).replace("Restart=always", "MemoryMax=768M\nRestart=always", 1)
+
+    def describe(self, ns):
+        return "stations at home %s" % ("allowed" if ns.allow_local else "refused")
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "radiogate is running. In EPlay on the Atari, web radio through the Gateway:",
+            "   Gateway:     %s" % ip,
+            "   Port:        %s" % ns.port,
+            "",
+            "Check it from any browser on your network: http://%s:%s/version" % (ip, ns.port)])
+
+
+GATEWAYS = [MAIL, Dav(), Ftp(), Web(), Pdf(), Translate(), Radio()]
 
 
 def put_files(pi, src):
@@ -1024,7 +1472,7 @@ def put_files(pi, src):
     pi.rmtree(old)
     pi.makedirs(new)
     for f in FILES:
-        pi.copy(os.path.join(src, f), "%s/%s" % (new, f), 0o644 if f == "aeragate.py" else 0o755)
+        pi.copy(os.path.join(src, f), "%s/%s" % (new, f), 0o755 if f.endswith(".py") and f != "aeragate.py" else 0o644)
     for f in sorted(glob.glob(os.path.join(src, EXT, "*"))):
         pi.copy(f, "%s/%s/%s" % (new, EXT, os.path.basename(f)), 0o644)
     had = pi.exists(OPT)
@@ -1051,7 +1499,11 @@ def need_packages(pi, gw):
     for package, module in (("python3-paramiko", "paramiko"), ("python3-pil", "PIL")):
         if package in gw.packages and not pi.ok("python3", "-c", "import " + module):
             need.append(package)
+    if "ffmpeg" in gw.packages and not pi.which("ffmpeg"):
+        need.append("ffmpeg")
     if need:
+        if "ffmpeg" in need:
+            heading("Installing ffmpeg, for the stations that don't send MP3")
         pi.run("apt-get", "update", "-qq")
         pi.run("apt-get", "install", "-y", "-qq", *need)
 
@@ -1068,7 +1520,8 @@ def install_gateway(pi, gw, o, src=HERE):
     gw.prepare(pi, ns)
     need_packages(pi, gw)
     if not pi.ok("id", gw.name):
-        pi.run("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", gw.name)
+        pi.run("useradd", "--system", "--no-create-home", *(["--home-dir", gw.home] if gw.home else []),
+               "--shell", "/usr/sbin/nologin", gw.name)
     undo, done = put_files(pi, src)
     pi.write(gw.unit_file(), gw.unit(ns, carried(old_unit)))
     pi.run("systemctl", "daemon-reload")
@@ -1099,7 +1552,7 @@ def install_gateway(pi, gw, o, src=HERE):
     if old_script and os.path.dirname(old_script) != OPT:
         pi.remove(old_script)           # the app's own copy: this one answers now
     firewall(pi, gw.open_ports(ns), ns.allow)
-    say(gw.tell(ns, pi.ip() or "PI_IP"))
+    say(gw.tell(ns, pi.ip() or "GATEWAY_IP"))
 
 
 def remove_gateway(pi, gw):
@@ -1118,10 +1571,12 @@ def remove_gateway(pi, gw):
 # ---------------------------------------------------------------- ClaudeST's bridge
 
 class Claude:
-    """ClaudeST's bridge, from a ClaudeST copy (a checkout or a release):
-    the bridge and its unit stay ClaudeST's, this sets them up as its
-    pi/install.sh did"""
+    """ClaudeST's bridge, from this copy's claude-st/ (moved here from
+    ClaudeST, Erez 9 Nov 2026; ClaudeST owns its protocol and reviews its
+    changes), or with --from from a ClaudeST copy with bridge/ and pi/:
+    set up as ClaudeST's pi/install.sh did"""
     key, name = "claude", "claude-st"
+    BRIDGE_SRC = os.path.join(HERE, "claude-st")
     PREFIX = "/opt/claude-st"
     CONF_DIR = "/etc/claude-st"
     CONF = "/etc/claude-st/claude-st.env"
@@ -1144,8 +1599,9 @@ CLAUDE_SESSION_KEY=
 
     def options(self, ap):
         ap.add_argument("--from", dest="source", metavar="DIR",
-                        help="the ClaudeST copy to take the bridge from (default: the latest release)")
-        ap.add_argument("--tag", help="the ClaudeST release to take it from, e.g. v1.34")
+                        help="a ClaudeST copy (bridge/ and pi/) to take the bridge from (default: this "
+                             "AERA-Gateway's own)")
+        ap.add_argument("--tag", help=argparse.SUPPRESS)
         ap.add_argument("--backend", help="claudeai (default), api or demo")
         ap.add_argument("--network", action="store_const", const="tcp", dest="mode",
                         help="network: ClaudeST connects over STinG (Ethernet or WiFi)")
@@ -1205,7 +1661,18 @@ CLAUDE_SESSION_KEY=
         return s
 
     def source(self, o):
-        """(a folder with ClaudeST's bridge/ and pi/, what it is)"""
+        """(a folder with the bridge's bridge/, its unit file, what it is)"""
+        if o.tag:
+            raise Usage("--tag: the bridge comes with AERA-Gateway now (ClaudeST's releases no longer carry it); "
+                        "an older one: --from a ClaudeST copy")
+        if not o.source:
+            d = self.BRIDGE_SRC
+            if not os.path.isfile(os.path.join(d, "bridge", "claude_bridge.py")):
+                raise Failed("This copy has no claude-st/ (ClaudeST's bridge): install claude from AERA-Gateway "
+                             "itself, or --from a ClaudeST copy.")
+            with open(os.path.join(d, "CLAUDEST")) as f:
+                return d, os.path.join(d, "claude-st.service"), "AERA-Gateway %s (ClaudeST %s)" % (
+                    VERSION, f.read().strip()[:12])
         if o.source:
             d = os.path.abspath(o.source)
             for f in ("bridge/claude_bridge.py", "bridge/requirements.txt", "pi/claude-st.service"):
@@ -1218,31 +1685,8 @@ CLAUDE_SESSION_KEY=
                                      universal_newlines=True).stdout.strip()
             except OSError:
                 rev = ""
-            return d, "ClaudeST %sfrom %s" % (rev + " " if rev else "", d)
-        tag = o.tag
-        try:
-            if not tag:
-                with urllib.request.urlopen("https://api.github.com/repos/%s/releases/latest" % CLAUDEST,
-                                            timeout=30) as r:
-                    tag = json.load(r)["tag_name"]
-            if not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
-                raise Failed("%s isn't a release name" % tag)
-            d = tempfile.mkdtemp(prefix="claudest-")
-            with urllib.request.urlopen("https://github.com/%s/archive/refs/tags/%s.tar.gz" % (CLAUDEST, tag),
-                                        timeout=60) as r:
-                data = r.read()
-        except (OSError, ValueError, KeyError) as e:
-            raise Failed("can't fetch ClaudeST %s from GitHub (%s); or give a copy with --from DIR"
-                         % (tag or "(the latest release)", e))
-        wanted = re.compile(r"(bridge/[A-Za-z0-9_]+\.py|bridge/requirements\.txt|pi/claude-st\.service)")
-        with tarfile.open(fileobj=io.BytesIO(data)) as t:
-            for m in t.getmembers():
-                rest = m.name.split("/", 1)[-1]
-                if m.isfile() and wanted.fullmatch(rest):
-                    os.makedirs(os.path.join(d, os.path.dirname(rest)), exist_ok=True)
-                    with open(os.path.join(d, rest), "wb") as f:
-                        f.write(t.extractfile(m).read())
-        return d, "ClaudeST %s" % tag
+            return d, os.path.join(d, "pi", "claude-st.service"), \
+                "ClaudeST %sfrom %s" % (rev + " " if rev else "", d)
 
     def install(self, pi, o):
         if o.remove:
@@ -1250,14 +1694,10 @@ CLAUDE_SESSION_KEY=
         if o.set_key:
             return self.set_key(pi)
         s = self.settings(pi, o)
-        src, what = self.source(o)
-        try:
-            self.set_up(pi, s, src, what)
-        finally:
-            if not o.source:
-                shutil.rmtree(src, ignore_errors=True)        # the release, fetched for this
+        src, unit, what = self.source(o)
+        self.set_up(pi, s, src, unit, what)
 
-    def set_up(self, pi, s, src, what):
+    def set_up(self, pi, s, src, unit, what):
 
         heading("Installing packages")
         pi.run("apt-get", "update", "-qq")
@@ -1312,7 +1752,7 @@ CLAUDE_SESSION_KEY=
                 self.set_var(pi, "ANTHROPIC_API_KEY", key)
 
         heading("Installing the service")
-        pi.copy(os.path.join(src, "pi", "claude-st.service"), self.unit_file(), 0o644)
+        pi.copy(unit, self.unit_file(), 0o644)
         pi.run("systemctl", "daemon-reload")
         pi.run("systemctl", "enable", "claude-st", out="hide")
         pi.run("systemctl", "restart", "claude-st")
@@ -1322,12 +1762,12 @@ CLAUDE_SESSION_KEY=
             if pi.run("ls", "-l", "/dev/serial/by-id/", check=False, errors=False).returncode:
                 say("(no USB serial adapters plugged in)")
             if pi.exists("/dev/serial0"):
-                say("Pi UART: /dev/serial0 (needs an RS-232 level shifter, see ClaudeST's README)")
+                say("The Raspberry Pi's UART: /dev/serial0 (needs an RS-232 level shifter, see ClaudeST's README)")
 
         heading("Done")
         if s.mode == "tcp":
             say("Backend: %s   network: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
-                "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "PI_IP",
+                "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "GATEWAY_IP",
                                                                                          s.tcp_port))
         else:
             say("Backend: %s   serial port: %s   baud: %s" % (s.backend, s.port, s.baud))
@@ -1362,7 +1802,10 @@ CLAUDE = Claude()
 SERVICES = {g.key: g for g in GATEWAYS + [CLAUDE]}
 NAMES = {"email": "mail", "emailgate": "mail", "cal": "dav", "ecal": "dav", "econtact": "dav",
          "contacts": "dav", "ecalgate": "dav", "eftp": "ftp", "eftpgate": "ftp",
-         "claudest": "claude", "claude-st": "claude", "eweb": "web", "webgate": "web"}
+         "claudest": "claude", "claude-st": "claude", "eweb": "web", "webgate": "web",
+         "epdf": "pdf", "econvert": "pdf", "pdfgate": "pdf",
+         "translation": "translate", "translategate": "translate",
+         "eplay": "radio", "radiogate": "radio"}
 
 
 def service(name):
@@ -1380,22 +1823,22 @@ def status(pi, src=HERE):
     stale = False
     for svc in GATEWAYS + [CLAUDE]:
         if not svc.installed(pi):
-            say("  %-7s %-10s not installed" % (svc.key, svc.name))
+            say("  %-9s %-13s not installed" % (svc.key, svc.name))
             continue
         state = pi.out("systemctl", "is-active", svc.name).strip() or "stopped"
         if svc is CLAUDE:
-            say("  %-7s %-10s %-9s %s" % (svc.key, svc.name, state, svc.describe(pi)))
+            say("  %-9s %-13s %-9s %s" % (svc.key, svc.name, state, svc.describe(pi)))
             continue
         try:
             ns, _, script = svc.current(pi, src)
         except Failed as e:
-            say("  %-7s %-10s %-9s %s" % (svc.key, svc.name, state, e))
+            say("  %-9s %-13s %-9s %s" % (svc.key, svc.name, state, e))
             continue
         ports = " ".join("%s%s" % (p, "" if listening(pi, p) else " (not listening)") for p in svc.ports(ns))
         who = "only " + ", ".join(ns.allow) if ns.allow else "home network"
-        say("  %-7s %-10s %-9s port %s; %s; %s" % (svc.key, svc.name, state, ports, who, svc.describe(ns)))
+        say("  %-9s %-13s %-9s port %s; %s; %s" % (svc.key, svc.name, state, ports, who, svc.describe(ns)))
         if os.path.dirname(script) != OPT:
-            say("          set up by the app's own install.sh: sudo %s update takes it over" % PROG)
+            say("                          set up by the app's own install.sh: sudo %s update takes it over" % PROG)
             stale = True
     if any(svc.installed(pi) for svc in GATEWAYS) and not stale:
         differ = [f for f in FILES if pi.read("%s/%s" % (OPT, f)) != open(os.path.join(src, f)).read()]
@@ -1416,7 +1859,7 @@ def update(pi, o, src=HERE):
         install_gateway(pi, g, settings_for(g, []), src)
     if CLAUDE.installed(pi):
         heading("Updating claude (claude-st)")
-        args = (["--from", o.source] if o.source else []) + (["--tag", o.tag] if o.tag else [])
+        args = ["--from", o.source] if o.source else []
         CLAUDE.install(pi, settings_for(CLAUDE, args))
 
 
@@ -1429,6 +1872,17 @@ def install_all(pi, o, src=HERE):
     for svc in GATEWAYS + [CLAUDE]:
         if svc is MAIL and not o.mail and not svc.installed(pi) and not pi.exists(Mail.STUNNEL):
             skipped.append("mail (name your provider's servers: --mail IMAP SMTP[:587] [POP3])")
+            continue
+        if svc.key == "pdf" and not os.path.isdir(os.path.join(Pdf.PDF_SRC, "epdf")):
+            skipped.append("pdf (EPDF's converter comes only with AERA-Gateway itself, not an app's copy)")
+            continue
+        if svc.key == "translate" and not svc.installed(pi) and not svc.arch_ok(pi):
+            skipped.append("translate (its engine needs the 64-bit Raspberry Pi OS: uname -m says %s)"
+                           % svc.arch(pi))
+            continue
+        if svc.key == "translate" and not svc.installed(pi) and not svc.memory_ok(pi):
+            skipped.append("translate (its engine needs a Pi with 4 GB of memory or more; this one has %d MB)"
+                           % svc.memory(pi))
             continue
         if svc is CLAUDE:
             argv = ["--from", o.source] if o.source else []
@@ -1478,13 +1932,14 @@ def main(argv=None, pi=None):
             raise Usage("%s: the commands are install, update, status, remove and set-key" % cmd)
         if cmd == "install" and rest[:1] == ["all"]:
             ap = argparse.ArgumentParser(prog="aera-gateway install all",
-                                         description="mail, dav, ftp, web and claude, for one Atari")
+                                         description="every service, for one Atari")
             ap.add_argument("--allow", action="append", metavar="ATARI_IP",
                             help="the Atari that may use them (more: IP1,IP2); claude's --atari too")
             ap.add_argument("--mail", nargs="+", metavar="SERVER",
                             help="IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]: without them, mail is left out")
-            ap.add_argument("--browser", action="store_true", help="web with the Pi's browser (a Pi with 2 GB)")
-            ap.add_argument("--from", dest="source", metavar="DIR", help="ClaudeST's bridge from this copy")
+            ap.add_argument("--browser", action="store_true", help="web with the Gateway's browser (a Pi with 2 GB)")
+            ap.add_argument("--from", dest="source", metavar="DIR",
+                            help="ClaudeST's bridge from this ClaudeST copy (default: this AERA-Gateway's own)")
             o = ap.parse_args(rest[1:])
             if o.mail and len(o.mail) not in (2, 3):
                 raise Usage("--mail IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]")
@@ -1494,8 +1949,8 @@ def main(argv=None, pi=None):
             return 0
         if cmd == "update":
             ap = argparse.ArgumentParser(prog="aera-gateway update")
-            ap.add_argument("--from", dest="source", metavar="DIR", help="ClaudeST's bridge from this copy")
-            ap.add_argument("--tag", help="ClaudeST's bridge from this release (default: the latest)")
+            ap.add_argument("--from", dest="source", metavar="DIR",
+                            help="ClaudeST's bridge from this ClaudeST copy (default: this AERA-Gateway's own)")
             o = ap.parse_args(rest)
         elif cmd == "set-key":
             if rest:

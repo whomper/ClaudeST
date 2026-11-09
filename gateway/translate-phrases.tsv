@@ -1,0 +1,31 @@
+# translategate's phrases: a letter's greetings and closings, which the
+# small models get wrong alone ("בברכה" -> "welcome"). A text that is one of
+# these (the case and the punctuation after it aside) is answered from here,
+# its punctuation kept; anything longer goes to the engine. Add a line as
+# real use shows one: from, to, the phrase, its translation (tabs between).
+he	en	בברכה	Best regards
+he	en	בברכה רבה	Kind regards
+he	en	בברכת	Regards
+he	en	תודה	Thanks
+he	en	תודה רבה	Thank you very much
+he	en	להתראות	See you
+he	en	שלך	Yours
+he	en	בכבוד רב	Respectfully
+he	en	שבוע טוב	Have a good week
+he	en	שבת שלום	Shabbat shalom
+he	en	חג שמח	Happy holiday
+he	en	שלום	Hello
+en	he	best regards	בברכה
+en	he	kind regards	בברכה
+en	he	regards	בברכה
+en	he	best wishes	בברכה
+en	he	thanks	תודה
+en	he	thank you	תודה
+en	he	many thanks	תודה רבה
+en	he	cheers	תודה
+en	he	see you	להתראות
+en	he	yours	שלך
+en	he	sincerely	בכבוד רב
+en	he	yours sincerely	בכבוד רב
+en	he	hello	שלום
+en	he	hi	שלום
