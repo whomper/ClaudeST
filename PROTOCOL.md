@@ -1,14 +1,14 @@
 # ClaudeST line protocol
 
 ClaudeST (on the Atari) and `claude_bridge.py` (on a modern computer)
-exchange plain lines over the serial link: fields separated by TAB
+exchange plain lines over a TCP connection: fields separated by TAB
 (`0x09`), lines ended by LF (`0x0A`). Text is in the Atari ST character
 set; the bridge converts to and from Unicode. Text fields never contain
 TAB or LF. Lines from the bridge are at most ~200 bytes.
 
-The link is either TCP (ClaudeST connects through STinG to the bridge's
-`--tcp` port, 2323 by default) or the serial port (19200 baud, 8N1, no
-flow control). The protocol is the same on both.
+ClaudeST connects through STinG to the bridge's `--tcp` port, 2323 by
+default. (Up to ClaudeST 2.2 the same lines could also go over a serial
+cable, 19200 baud, 8N1; from 2.3 ClaudeST uses the network only.)
 
 ## Atari → bridge
 

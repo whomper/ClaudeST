@@ -139,11 +139,9 @@ def main():
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "icon", "add_to_emuicon.py"),
                     args.emuicon, os.path.join(hd, "EMUICON.RSC")], check=True)
     with open(os.path.join(hd, "CLAUDEST.INF"), "w", newline="") as f:
-        f.write("[OPTIONS]\r\nLINK=serial\r\nSERIALPORT=6\r\n")     # Hatari's Falcon: the MFP serial port
+        f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n")     # over STinG: FAKESTNG.PRG
     with open(os.path.join(hd, "EMUDESK.INF"), "w", newline="") as f:
         f.write(DESKTOP_INF)
-    for name in ("st_out", "st_in"):        # Hatari makes cmd.fifo itself
-        os.mkfifo(os.path.join(work, name))
     avi = os.path.join(out, "claude-st-falcon.avi")
     shots = os.path.join(work, "shots")
     os.makedirs(shots)
@@ -152,19 +150,18 @@ def main():
     os.environ["AERA_TOS"] = "emutos"         # the video shows EmuTOS's desktop
     falcon = machines.Machine("Falcon:16", hd)
     print(falcon.describe(), flush=True)
+    net = falcon.network()      # FAKESTNG.PRG in AUTO and its tunnel, for STinG
     xvfb = None
     if subprocess.run(["xdpyinfo"], env=rig.env, capture_output=True).returncode:
         xvfb = subprocess.Popen(["Xvfb", rig.display, "-screen", "0", "1024x768x24"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
-    bridge = subprocess.Popen([sys.executable, os.path.join(HERE, "reel_bridge.py"), "--pipe",
-                               os.path.join(work, "st_out"), os.path.join(work, "st_in")],
+    bridge = subprocess.Popen([sys.executable, os.path.join(HERE, "reel_bridge.py"), "--tcp", "127.0.0.1:2323"],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     hatari = subprocess.Popen(
         ["hatari", "-w", "--statusbar", "no", "--borders", "no", "--zoom", "1"] + falcon.args() +
-        ["--fast-boot", "yes",
-         "--rs232-out", os.path.join(work, "st_out"), "--rs232-in", os.path.join(work, "st_in"),
-         "--cmd-fifo", rig.fifo, "--screenshot-dir", shots,
+        ["--fast-boot", "yes"] + net +
+        ["--cmd-fifo", rig.fifo, "--screenshot-dir", shots,
          "--avirecord", "--avi-vcodec", "png", "--png-level", "1",   # light compression
          "--avi-file", avi, "--log-level", "warn"],
         env=falcon.env(dict(rig.env, SDL_VIDEODRIVER="x11")),      # a window xdotool can find
@@ -245,6 +242,7 @@ def main():
         hatari.terminate()
         hatari.wait()
         bridge.terminate()
+        falcon.stop()
         if xvfb:
             xvfb.terminate()
     if args.shots:

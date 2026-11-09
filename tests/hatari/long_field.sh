@@ -18,10 +18,15 @@ trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; if [ $fail = 0 ]; then rm -
 
 mkdir -p "$W/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
-printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/claudest.inf"
-case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/claudest.inf" ;; esac
+# over STinG, as on a real Atari: common's FAKESTNG.PRG stands in for it
+# in Hatari, tunnelling the TCP connection over the emulated serial port
+mkdir -p "$W/drive/AUTO"
+make -s -C "$ROOT/common/tools/fakesting"
+cp "$ROOT/common/tools/fakesting/FAKESTNG.PRG" "$W/drive/AUTO/"
+printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n' > "$W/drive/claudest.inf"
 mkfifo "$W/out" "$W/in"
-python3 "$HERE/long_field_bridge.py" --backend demo --pipe "$W/out" "$W/in" > "$W/bridge.log" 2>&1 &
+python3 "$HERE/long_field_bridge.py" --backend demo --tcp 127.0.0.1:2323 > "$W/bridge.log" 2>&1 &
+python3 "$ROOT/common/tools/fakesting/serial_bridge.py" "$W/out" "$W/in" > "$W/tunnel.log" 2>&1 &
 LINES=$(python3 "$ROOT/common/tools/machines.py" args "$MACHINE" "$W/drive")
 ARGS=()
 while IFS= read -r line; do ARGS+=("$line"); done <<< "$LINES"
@@ -41,7 +46,7 @@ wait_for 180 grep -q "session usage" "$W/bridge.log" || { echo "FAIL ClaudeST di
 sleep 3
 # Chats (F2), the first one's menu (Tab, Insert), Rename...
 key 0x3c 6; key 0x0f; key 0x52 1.5; key 0x50; key 0x50; key 0x50; key 0x1c 2
-key 0x47			# Clr/Home: the old name gone
+key 0x01			# Esc: the old name gone (Clr/Home goes to the start since C14)
 # 60 letters: a to z, a to z, a to h (the US layout's scancodes)
 abc=(0x1e 0x30 0x2e 0x20 0x12 0x21 0x22 0x23 0x17 0x24 0x25 0x26 0x32
      0x31 0x18 0x19 0x10 0x13 0x1f 0x14 0x16 0x2f 0x11 0x2d 0x15 0x2c)

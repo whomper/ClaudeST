@@ -33,11 +33,10 @@ Download the latest `claudest-x.y.zip` from **[Releases](../../releases/latest)*
 1. Set up the Gateway with [AERA-Gateway](https://github.com/whomper/AERA-Gateway#getting-started) and
    your claude.ai [session key](docs/GUIDE.md#1-get-your-claudeai-session-key).
 2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder on the Atari and run it.
-3. Choose **Options ▸ Settings…** (`Ctrl+,`), pick **Network** and type the Gateway's address (port
-   2323). The status line shows *Online* with a green dot.
+3. Choose **Options ▸ Settings…** (`Ctrl+,`) and type the Gateway's address (port 2323). The status line shows *Online* with a green dot.
 
-**Needs:** TOS 1.04 or newer, EmuTOS or MiNT; 640×200 or larger; about 370 KB free RAM; STinG or a
-null-modem cable; a claude.ai account or an Anthropic API key.
+**Needs:** TOS 1.04 or newer, EmuTOS or MiNT; 640×200 or larger; about 370 KB free RAM; STinG with a
+network (Ethernet or WiFi); a claude.ai account or an Anthropic API key.
 
 Under TOS, put `FOLDR100.PRG` first in `AUTO`; with STinG, set `STING.CPX`'s Delay to 10 on a Falcon
 or TT, 25 to 50 on an ST. [Installing](docs/GUIDE.md#installing) has every step and why.
@@ -46,8 +45,8 @@ or TT, 25 to 50 on an ST. [Installing](docs/GUIDE.md#installing) has every step 
 
 An 8 MHz 68000 can't do modern HTTPS, so the AERA apps reach the internet through
 [AERA-Gateway](https://github.com/whomper/AERA-Gateway#readme), a small set of services on a Raspberry Pi or
-any Linux computer on your network. ClaudeST's bridge is one of them: ClaudeST reaches it over STinG or a
-serial cable, and the bridge talks to claude.ai for it ([how](docs/GUIDE.md#how-it-reaches-claudeai)).
+any Linux computer on your network. ClaudeST's bridge is one of them: ClaudeST reaches it over STinG, and the
+bridge talks to claude.ai for it ([how](docs/GUIDE.md#how-it-reaches-claudeai)).
 
 ## Building
 

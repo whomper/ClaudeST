@@ -7,7 +7,7 @@ It has a realistic set of chats and projects, and answers the question
 typed in the video with a pre-written reply, streamed at a natural pace.
 Nothing here talks to claude.ai: it is for screen recordings only.
 
-    reel_bridge.py --pipe FROM_ST TO_ST
+    reel_bridge.py --tcp HOST:PORT
 """
 import os
 import sys
@@ -113,11 +113,11 @@ class ShowcaseBackend(backends.DemoBackend):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4 or sys.argv[1] != "--pipe":
+    if len(sys.argv) != 3 or sys.argv[1] != "--tcp":
         sys.exit(__doc__)
     import logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-    link = claude_bridge.PipeLink(sys.argv[2], sys.argv[3])
+    link = claude_bridge.TcpLink(sys.argv[2])
     try:
         claude_bridge.Session(link, ShowcaseBackend()).run()
     except (KeyboardInterrupt, EOFError):

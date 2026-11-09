@@ -25,11 +25,16 @@ trap 'kill $(jobs -p) 2>/dev/null; if [ $fail = 0 ]; then rm -rf "$W"; else echo
 
 mkdir -p "$W/drive"
 cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
-printf '[OPTIONS]\r\nLINK=serial\r\n' > "$W/drive/claudest.inf"
-case $MACHINE in Falcon*) printf 'SERIALPORT=6\r\n' >> "$W/drive/claudest.inf" ;; esac
+# over STinG, as on a real Atari: common's FAKESTNG.PRG stands in for it
+# in Hatari, tunnelling the TCP connection over the emulated serial port
+mkdir -p "$W/drive/AUTO"
+make -s -C "$ROOT/common/tools/fakesting"
+cp "$ROOT/common/tools/fakesting/FAKESTNG.PRG" "$W/drive/AUTO/"
+printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n' > "$W/drive/claudest.inf"
 head -c 40960 /dev/urandom > "$W/drive/BIG.TXT"
 mkfifo "$W/out" "$W/in"
-python3 "$HERE/disk_bridge.py" --backend demo --pipe "$W/out" "$W/in" > "$W/bridge.log" 2>&1 &
+python3 "$HERE/disk_bridge.py" --backend demo --tcp 127.0.0.1:2323 > "$W/bridge.log" 2>&1 &
+python3 "$ROOT/common/tools/fakesting/serial_bridge.py" "$W/out" "$W/in" > "$W/tunnel.log" 2>&1 &
 LINES=$(python3 "$ROOT/common/tools/machines.py" args "$MACHINE" "$W/drive")
 ARGS=()
 while IFS= read -r line; do ARGS+=("$line"); done <<< "$LINES"
@@ -50,7 +55,9 @@ count() { python3 "$HERE/disk_count.py" "$W/trace" "$@" || fail=1; }
 # online: the bridge has sent the usage after the Atari's HELLO
 wait_for 180 grep -q "session usage" "$W/bridge.log" || { echo "FAIL ClaudeST didn't come online in 180 s"; fail=1; exit 1; }
 sleep 3
-a=$(mark); count 0 "$a" start Fopen=1 Fcreate=0 Fwrite=0
+# from ClaudeST's own start: what AUTO's programs (FAKESTNG) did at boot isn't its
+s=$(grep -n 'Pexec(0, "C:\\CLAUDEST.PRG"' "$W/trace" | head -1 | cut -d: -f1)
+a=$(mark); count "${s:-0}" "$a" start Fopen=1 Fcreate=0 Fwrite=0
 
 for i in $(seq 20); do key 0x23 0.3; key 0x17 0.3; key 0x1c 6; done	# "hi", Return
 b=$(mark); count "$a" "$b" "20 replies" any=0

@@ -4,7 +4,7 @@
 """ClaudeST's speed rig (the guidelines' Speed: the stock machines set it),
 on the family's common/tests/speed: ClaudeST built with
 -DAES_PROFILE=20 into WORK-build, the bridge speed_bridge.py's (a long
-conversation, a long streamed reply, at 19200 baud's pace), and each
+conversation, a long streamed reply, over STinG through FAKESTNG), and each
 action's longest stretch between event calls against its time.
 
     python3 tests/hatari/speed.py WORK [--machine ST:mono] [--nvdi]
@@ -80,8 +80,7 @@ def main():
     a = ap.parse_args()
     work = os.path.abspath(a.work)
     prg = a.prg or build(work + "-build")
-    out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")
-    r = speed.Rig(work, a.machine, nvdi=a.nvdi, extra=["--rs232-out", out, "--rs232-in", inp, "--drive-led", "no"])
+    r = speed.Rig(work, a.machine, nvdi=a.nvdi, extra=["--drive-led", "no"])
     lock = "/tmp/.X%s-lock" % r.display.lstrip(":")
     for _ in range(100):        # the last run's X server, still going
         if not os.path.exists(lock):
@@ -92,19 +91,19 @@ def main():
         os.makedirs(os.path.dirname(named), exist_ok=True)
         shutil.copy(prg, named)
     r.put(named)
-    falcon = a.machine.startswith("Falcon")
-    # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
-    r.write("claudest.inf", "[OPTIONS]\nLINK=serial\n" + ("SERIALPORT=6\n" if falcon else ""))
-    for p in (out, inp):        # before Hatari, which won't start without them
-        os.mkfifo(p)
+    # over STinG, as on a real Atari: Hatari has no network card, so
+    # common's FAKESTNG.PRG stands in for STinG and tunnels the TCP
+    # connection over the emulated serial port (machines.py's network())
+    r.extra += r.m.network()
+    r.write("claudest.inf", "[OPTIONS]\nHOST=127.0.0.1\nPORT=2323\n")
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "tests", "hatari", "speed_bridge.py"),
-                               "--backend", "demo", "--pipe", out, inp],
+                               "--backend", "demo", "--tcp", "127.0.0.1:2323"],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
     try:
         r.start("C:\\CLAUDEST.PRG")
         r.act("Recents shown (F2)", speed.WINDOW, lambda: r.key("F2"))
         r.act("list cursor moved (Tab)", speed.KEY, lambda: r.key("Tab"))
-        # 40 KB at 1920 bytes a second: still() would take a pause for the end
+        # 40 KB through the emulated network: still() would take a pause for the end
         r.act("a long chat arriving (each slice)", SLICE, lambda: (r.key("Return"), time.sleep(40)))
         r.act("a line up (5 times)", speed.LINE, lambda: r.key(*["Up"] * 5))
         r.act("a line down (5 times)", speed.LINE, lambda: r.key(*["Down"] * 5))
@@ -175,9 +174,6 @@ def main():
         fails += not same(before, r.shot("press-let-go"), "a list row pressed and let go elsewhere: nothing more")
         r.act("a list row clicked (its chat opened on the release)", speed.WINDOW, lambda: r.click(row_x, row_y))
         fails += not differ(before, r.shot("press-clicked"), "a list row clicked: its chat opened")
-        lost = "the serial ring was full" in r.console()
-        print(("FAIL  " if lost else "ok    ") + "no byte from the bridge lost (the ring never full)", flush=True)
-        fails += lost
         return r.report() or (1 if fails else 0)
     finally:
         r.stop()

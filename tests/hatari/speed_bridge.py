@@ -4,10 +4,9 @@
 """The demo bridge for speed.py: a long conversation at the top of
 Recents ("Long conversation", 40 turns, about 40 KB of paragraphs, lists
 and code), and a long reply to anything sent, streamed in small pieces
-as claude.ai does. The arguments are claude_bridge.py's.
-What it writes goes at 19200 baud's pace, as a serial port's would:
-Hatari hands the Atari a FIFO's bytes as fast as it can read them, which
-fills ClaudeST's 16 KB ring and drops the rest while it draws."""
+as claude.ai does. The arguments are claude_bridge.py's (the rig gives
+--tcp: ClaudeST reaches it over STinG, through common's FAKESTNG.PRG).
+FAKESTNG's tunnel paces what goes to the Atari, as a network would."""
 import os
 import sys
 import time
@@ -63,22 +62,5 @@ class SpeedBackend(backends.DemoBackend):
 
 
 backends.DemoBackend = SpeedBackend
-BYTES_PER_SEC = 1920.0          # 19200 baud, 10 bits a byte
-pipe_write = claude_bridge.PipeLink.write
-free_at = [0.0]
-
-
-def paced_write(self, data):
-    for i in range(0, len(data), 64):
-        part = data[i:i + 64]
-        wait = free_at[0] - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        pipe_write(self, part)
-        free_at[0] = max(free_at[0], time.time()) + len(part) / BYTES_PER_SEC
-
-
-claude_bridge.PipeLink.write = paced_write
-
 if __name__ == "__main__":
     claude_bridge.main()

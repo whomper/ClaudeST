@@ -6,7 +6,7 @@
  * A single GEM window: the sidebar on the left (New chat, Search, Chats,
  * Projects, Artifacts and the current list), the active conversation on
  * the right with an input line underneath. The machine talks a small
- * line protocol over the serial port (AUX:) to claude_bridge.py running
+ * line protocol over TCP (STinG) to claude_bridge.py running
  * on any modern computer, which does the TLS/HTTP work against claude.ai.
  * See ../PROTOCOL.md.
  */
@@ -265,19 +265,8 @@ static struct {
 static short text_diff;			/* draw_text: rows as shown are left alone */
 static short pending_scroll;		/* lines auto-scrolled since last redraw */
 
-/* serial */
-static IOREC *iorec;
-static char *old_ibuf;
-static short old_ibufsiz, old_low, old_high;
-#define RXBUF 16384
-static char rxring[RXBUF];
-static short baud = BAUD_19200;
-static short serial_is_open;
-
-/* link to the bridge: serial port, or TCP through STinG */
-#define LINK_SERIAL 0
-#define LINK_TCP    1
-static short link = LINK_SERIAL;
+/* the link to the bridge: TCP through STinG (the serial cable went in
+   2.3, Erez 9 Nov 2026: networking only) */
 static u32 tcp_ip;
 static u16 tcp_port = 2323;
 static short tcp_cn = -1;
@@ -332,7 +321,7 @@ static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_B48, C_B96, C_B192, C_NET, C_SER, C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
+	C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -367,13 +356,6 @@ static const MBAR_ITEM m_chat[] = {
 static const MBAR_ITEM m_opts[] = {
 	{ "Settings...", "^,", C_SET },
 	{ "-", 0, 0 },
-	{ "4800 baud", 0, C_B48 },
-	{ "9600 baud", 0, C_B96 },
-	{ "19200 baud", 0, C_B192 },
-	{ "-", 0, 0 },
-	{ "Network (STinG)", 0, C_NET },
-	{ "Serial port", 0, C_SER },
-	{ "-", 0, 0 },
 	{ "Account...", "F8", C_ACCT },
 	{ "Font...", 0, C_FONT },
 	{ 0, 0, 0 }
@@ -388,141 +370,6 @@ static const MBAR_TITLE bar[] = {
 	{ " Options ", m_opts }, { " Help ", m_help }, { 0, 0 }
 };
 static MBAR mb;
-
-static void check(int cmd, int on)
-{
-	short o = mbar_object(&mb, cmd);
-	if (o > 0)
-		mb.tree[o].ob_state = on ? CHECKED : 0;
-}
-
-static void menu_check_baud(void)
-{
-	check(C_B48, baud == BAUD_4800);
-	check(C_B96, baud == BAUD_9600);
-	check(C_B192, baud == BAUD_19200);
-	check(C_NET, link == LINK_TCP);
-	check(C_SER, link == LINK_SERIAL);
-}
-
-/* ------------------------------------------------------------------ */
-/* serial port                                                         */
-/* ------------------------------------------------------------------ */
-
-/* run in supervisor mode via Supexec, with interrupts masked */
-static short ints_off(void)
-{
-	short sr;
-	__asm__ volatile("move.w %%sr,%0\n\tor.w #0x0700,%%sr" : "=d"(sr) : : "memory", "cc");
-	return sr;
-}
-
-static void ints_restore(short sr)
-{
-	__asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "memory", "cc");
-}
-
-/* In supervisor mode: under MiNT the IOREC is the system's memory, which
-   memory protection keeps a program from reading. MiNT may have none to
-   give (Iorec() says 0): then TOS's own buffer stays */
-static void sup_set_iorec(void)
-{
-	short sr;
-	if (!iorec)
-		return;
-	sr = ints_off();
-	old_ibuf = iorec->ibuf;
-	old_ibufsiz = iorec->ibufsiz;
-	old_low = iorec->ibuflow;
-	old_high = iorec->ibufhi;
-	iorec->ibuf = rxring;
-	iorec->ibufsiz = RXBUF;
-	iorec->ibufhd = 0;
-	iorec->ibuftl = 0;
-	iorec->ibuflow = RXBUF / 4;
-	iorec->ibufhi = RXBUF * 3 / 4;
-	ints_restore(sr);
-}
-
-static void sup_restore_iorec(void)
-{
-	short sr;
-	if (!iorec)
-		return;
-	sr = ints_off();
-	iorec->ibuf = old_ibuf;
-	iorec->ibufsiz = old_ibufsiz;
-	iorec->ibufhd = 0;
-	iorec->ibuftl = 0;
-	iorec->ibuflow = old_low;
-	iorec->ibufhi = old_high;
-	ints_restore(sr);
-}
-
-/* The ring read in one go: Bconstat and Bconin, two BIOS traps a byte,
-   cost an ST 0.2 ms a byte (615 ms for 3000), this one trap a pass.
-   Only under plain TOS, where the BIOS fills the IOREC that is ours
-   (sup_set_iorec); under MiNT or MagiC, or when the bytes turn out to go
-   elsewhere (a serial driver with buffers of its own), Bconin as before */
-static u8 rx_take[256];
-static short rx_direct;
-static short rx_fill;		/* what the ring held before the last sup_drain */
-
-static long sup_drain(void)
-{
-	IOREC *io = iorec;
-	short hd, tl, n = 0;
-	if (!io || io->ibuf != rxring || io->ibufsiz != RXBUF)
-		return -1;
-	hd = io->ibufhd;
-	tl = io->ibuftl;
-	if (hd < 0 || hd >= RXBUF || tl < 0 || tl >= RXBUF)
-		return -1;
-	rx_fill = tl - hd;
-	if (rx_fill < 0)
-		rx_fill += RXBUF;
-	while (hd != tl && n < (short)sizeof(rx_take)) {
-		if (++hd >= RXBUF)
-			hd = 0;
-		rx_take[n++] = (u8)rxring[hd];
-	}
-	io->ibufhd = hd;
-	return n;
-}
-
-static short aux_port;		/* CLAUDEST.INF "port N": Bconmap device, 0 = TOS's choice */
-static short old_port;
-
-static void serial_open(void)
-{
-	if (serial_is_open)
-		return;
-	serial_is_open = 1;
-	/* on a TT or Falcon, "port N" picks which serial port AUX means; TOS
-	 * versions without Bconmap return the opcode (44) and change nothing */
-	old_port = 0;
-	if (aux_port) {
-		long prev = Bconmap(-1);
-		if (prev != 44 && prev > 0) {
-			old_port = (short)prev;
-			Bconmap(aux_port);
-		}
-	}
-	Rsconf(baud, 0, -1, -1, -1, -1);
-	iorec = Iorec(0);
-	Supexec(sup_set_iorec);
-	rx_direct = !get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L);	/* MiNT, MagX */
-}
-
-static void serial_close(void)
-{
-	if (!serial_is_open)
-		return;
-	serial_is_open = 0;
-	Supexec(sup_restore_iorec);
-	if (old_port)
-		Bconmap(old_port);
-}
 
 static void set_status(const char *s)
 {
@@ -546,12 +393,9 @@ static void tcp_lost(short code)
 
 static void link_flush(void)
 {
-	short i, tries = 0;
+	short tries = 0;
 
-	if (link == LINK_SERIAL) {
-		for (i = 0; i < txlen; i++)
-			Bconout(DEV_AUX, (u8)txbuf[i]);
-	} else if (tcp_cn >= 0) {
+	if (tcp_cn >= 0) {
 		for (;;) {
 			short r = sting_send(tcp_cn, txbuf, txlen);
 			if (r == E_NORMAL)
@@ -2643,46 +2487,18 @@ static void tcp_check_open(void)
 	}
 }
 
+/* what came, for 20 ms at most: then the events again (the guidelines'
+   Speed), the rest on the next pass. STinG keeps what isn't read yet,
+   and TCP slows the bridge down meanwhile, so nothing is lost; without
+   the limit a pass took in 4 KB at network speed, and drawing it kept an
+   ST from its events for 840 ms (a long chat arriving: 840 -> 230 ms on
+   ST-1, 575 -> 130 on Falcon-4; 40 ms gave 235 and 165) */
 static void poll_link(void)
 {
-	static char buf[512];
+	static char buf[256];
 	short budget;
+	u32 t0 = tos_ms();
 
-	if (link == LINK_SERIAL) {
-		/* what came, for 40 ms at most: then the events again (the
-		   guidelines' Speed), the rest on the next pass. But all of it
-		   while the ring is over a quarter full: a slow machine drawing
-		   between passes would otherwise take bytes more slowly than
-		   19200 baud brings them, and a full ring drops them (an ST lost
-		   1.1 KB of a 40 KB chat so) */
-		u32 t0 = tos_ms();
-		short taken = 0;
-		static short told;
-		do {
-			short i, n = 0;
-			if (rx_direct) {
-				/* asked first: a byte coming after it is no sign */
-				short any = Bconstat(DEV_AUX) != 0;
-				n = (short)Supexec(sup_drain);
-				if (n < 0 || (any && !n))
-					rx_direct = n = 0;	/* not where the bytes go */
-			}
-			if (!rx_direct)
-				while (n < (short)sizeof(rx_take) && Bconstat(DEV_AUX))
-					rx_take[n++] = (u8)Bconin(DEV_AUX);
-			if (!n)
-				break;
-			if (rx_direct && rx_fill >= RXBUF - 1 && !told) {
-				nf_debug("ClaudeST: the serial ring was full: bytes were lost\n");
-				told = 1;
-			} else if (rx_fill < RXBUF / 2)
-				told = 0;
-			for (i = 0; i < n; i++)
-				rx_byte(rx_take[i]);
-			taken += n;
-		} while (tos_ms() - t0 < 40 || (rx_direct ? rx_fill > RXBUF / 4 : taken < 3000));
-		return;
-	}
 	if (tcp_cn < 0) {
 		if (tcp_opening >= 0)
 			tcp_check_open();
@@ -2690,7 +2506,7 @@ static void poll_link(void)
 			tcp_connect();
 		return;
 	}
-	for (budget = 8; budget > 0 && tcp_cn >= 0; budget--) {
+	for (budget = 16; budget > 0 && tcp_cn >= 0 && tos_ms() - t0 < 20; budget--) {
 		short i, n = sting_count(tcp_cn);
 		if (n == E_NODATA || n == 0)
 			break;
@@ -2747,16 +2563,8 @@ static short parse_ip(const char *s, u32 *ip, u16 *port)
 
 static void parse_config_line(const char *l)
 {
-	if (!memcmp(l, "tcp ", 4) && parse_ip(l + 4, &tcp_ip, &tcp_port))
-		link = LINK_TCP;
-	else if (!memcmp(l, "serial", 6))
-		link = LINK_SERIAL;
-	else if (!memcmp(l, "baud 4800", 9))
-		baud = BAUD_4800;
-	else if (!memcmp(l, "baud 9600", 9))
-		baud = BAUD_9600;
-	else if (!memcmp(l, "baud 19200", 10))
-		baud = BAUD_19200;
+	if (!memcmp(l, "tcp ", 4))	/* "serial", "baud" and "port": the cable's, gone */
+		parse_ip(l + 4, &tcp_ip, &tcp_port);
 	else if (!memcmp(l, "font ", 5)) {
 		/* font <id> <points> <hebrew: 0 Atari, 1 ISO, 2 DOS> */
 		short v[3] = { 1, 0, 0 }, k = 0;
@@ -2771,8 +2579,6 @@ static void parse_config_line(const char *l)
 		font_pt = v[1];
 		hebfont = v[2] <= HEB_DOS ? v[2] : HEB_ATARI;
 	}
-	else if (!memcmp(l, "port ", 5) && l[5] >= '6' && l[5] <= '9')
-		aux_port = l[5] - '0';
 	else if (!memcmp(l, "model ", 6)) {
 		/* model <id> [<effort>] */
 		const char *e = l + 6;
@@ -2839,21 +2645,13 @@ static u16 inf_num(const char **v)
 static short inf_setting(const char *l)
 {
 	const char *v;
-	if (inf_key(l, "LINK", &v))
-		link = (*v == 's' || *v == 'S') ? LINK_SERIAL : LINK_TCP;
-	else if (inf_key(l, "HOST", &v)) {
+	if (inf_key(l, "HOST", &v)) {
 		if (!parse_ip(v, &tcp_ip, 0))
 			tcp_ip = 0;
 	} else if (inf_key(l, "PORT", &v)) {
 		u16 n = inf_num(&v);
 		if (n)
 			tcp_port = n;
-	} else if (inf_key(l, "BAUD", &v)) {
-		u16 n = inf_num(&v);
-		baud = n == 4800 ? BAUD_4800 : n == 9600 ? BAUD_9600 : BAUD_19200;
-	} else if (inf_key(l, "SERIALPORT", &v)) {
-		u16 n = inf_num(&v);
-		aux_port = n >= 6 && n <= 9 ? n : 0;
 	} else if (inf_key(l, "FONT", &v)) {
 		u16 id = inf_num(&v);
 		font_id = id ? id : 1;
@@ -2887,8 +2685,10 @@ static void inf_line(const char *l)
 		return;
 	{
 		const char *v;
-		if (inf_key(l, "HEBREW", &v))
-			return;		/* retired (F10 only, guideline 5.3): not kept */
+		if (inf_key(l, "HEBREW", &v) || inf_key(l, "LINK", &v) || inf_key(l, "BAUD", &v) ||
+		    inf_key(l, "SERIALPORT", &v))
+			return;		/* retired: HEBREW (F10 only, guideline 5.3); the serial
+				   cable's LINK, BAUD, SERIALPORT (2.3): not kept */
 	}
 	if (strchr(l, '=')) {		/* someone else's setting: keep it */
 		n = strlen(l);
@@ -3019,17 +2819,11 @@ static void save_config(void)
 		  "; Most of these are set in Options > Settings; see the guide.\r\n"
 		  "; 1 means on, 0 means off.\r\n\r\n[OPTIONS]\r\n\r\n");
 	p += strlen(p);
-	p = inf_put(p, "how ClaudeST reaches the Gateway: network (STinG) or serial", "LINK",
-		    link == LINK_TCP ? "network" : "serial");
 	v[0] = 0;
 	if (tcp_ip)
 		ip_to_str(tcp_ip, v);
-	p = inf_put(p, "network: the Gateway's IP address (where the ClaudeST bridge runs)", "HOST", v);
-	p = inf_put_num(p, "network: the Gateway's port, 2323 unless you changed it there", "PORT", tcp_port);
-	p = inf_put_num(p, "serial: the speed, 4800, 9600 or 19200 (the bridge's --baud)", "BAUD",
-			baud == BAUD_4800 ? 4800 : baud == BAUD_9600 ? 9600 : 19200);
-	p = inf_put_num(p, "serial: 0 = the Modem port TOS picks; 6-9 = that serial device (Bconmap)",
-			"SERIALPORT", aux_port);
+	p = inf_put(p, "the Gateway's IP address (where the ClaudeST bridge runs)", "HOST", v);
+	p = inf_put_num(p, "the Gateway's port, 2323 unless you changed it there", "PORT", tcp_port);
 	{
 		char *q = put_num(v, font_id);
 		*q++ = ',';
@@ -3053,25 +2847,17 @@ static void save_config(void)
 	safe_save("claudest.inf", "claudest.in$", text, p - text);
 }
 
-static void use_link(short l)
+/* a new address or port: connect there, and keep it */
+static void use_address(void)
 {
-	if (link == LINK_TCP && tcp_cn >= 0)
+	if (tcp_cn >= 0)
 		sting_close(tcp_cn);
 	if (tcp_opening >= 0)
 		sting_close(tcp_opening);
 	tcp_cn = tcp_opening = -1;
-	link = l;
 	online = 0;
 	rxlen = 0;
-	if (link == LINK_SERIAL) {
-		serial_open();
-		set_status("Waiting for bridge...");
-		send_hello();
-	} else {
-		serial_close();
-		next_connect = 0;	/* connect on the next tick */
-	}
-	menu_check_baud();
+	next_connect = 0;	/* connect on the next tick */
 	save_config();
 }
 
@@ -3253,7 +3039,7 @@ static void attach_file(const char *path)
 				dirty |= D_TITLE;
 				flush_dirty();
 			}
-			if (link == LINK_TCP && tcp_cn < 0)
+			if (tcp_cn < 0)
 				break;		/* the connection went */
 		}
 		if (off < n)
@@ -3314,13 +3100,11 @@ static void submit(void)
 		if (parse_ip(input + 9, &ip, &port)) {
 			tcp_ip = ip;
 			tcp_port = port;
-			use_link(LINK_TCP);
+			use_address();
 		} else {
 			alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(the Gateway's address)][ OK ]");
 			return;
 		}
-	} else if (!search_mode && !strcmp(input, "/serial")) {
-		use_link(LINK_SERIAL);
 	} else if (search_mode) {
 		tx_cmd("FIND", input, 0);
 		search_mode = 0;
@@ -3415,21 +3199,10 @@ static void scroll_list(short delta)
 static void about(void);
 static void keys_dialog(void);
 
-static void set_baud(short b)
-{
-	baud = b;
-	if (link == LINK_SERIAL) {
-		Rsconf(baud, 0, -1, -1, -1, -1);
-		send_hello();
-	}
-	menu_check_baud();
-	save_config();
-}
-
 /* is the gateway still there? Asked when nothing has passed either way
    for PING_QUIET and Claude isn't answering; a gateway that doesn't
    answer within PING_WAIT is taken as gone: offline, and connecting
-   again as when it drops (a serial cable has no other way to tell) */
+   again as when it drops */
 static void heartbeat(void)
 {
 	u32 now;
@@ -3448,28 +3221,22 @@ static void heartbeat(void)
 	ping_at = 0;
 	can_ping = 0;
 	online = 0;
-	if (link == LINK_TCP) {
-		if (tcp_cn >= 0)
-			sting_close(tcp_cn);
-		tcp_cn = -1;
-		next_connect = ticks + 125;	/* again in ~5 s */
-	}
+	if (tcp_cn >= 0)
+		sting_close(tcp_cn);
+	tcp_cn = -1;
+	next_connect = ticks + 125;	/* again in ~5 s */
 	set_status("Gateway silent");	/* short: the sidebar is narrow */
 }
 
 static void reconnect(void)
 {
-	if (link == LINK_TCP) {
-		if (tcp_cn >= 0)
-			sting_close(tcp_cn);
-		if (tcp_opening >= 0)
-			sting_close(tcp_opening);
-		tcp_cn = tcp_opening = -1;
-		online = 0;
-		next_connect = 0;
-	} else {
-		send_hello();
-	}
+	if (tcp_cn >= 0)
+		sting_close(tcp_cn);
+	if (tcp_opening >= 0)
+		sting_close(tcp_opening);
+	tcp_cn = tcp_opening = -1;
+	online = 0;
+	next_connect = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -3900,7 +3667,7 @@ static const char *const keys_k[][2] = {
 	{ "^O", "attach a file; Bksp removes it" },
 	{ "^C ^X ^V", "copy, cut, paste" },
 	{ "^R", "reconnect to the Gateway" },
-	{ "^,", "settings: the Gateway, serial" },
+	{ "^,", "settings: the Gateway's address" },
 	{ "Help", "the user guide" },
 	{ "^U  ^Q", "close the window: quit" },
 };
@@ -4219,13 +3986,8 @@ static void about(void)
 		      "Claude is a trademark of Anthropic PBC.",
 		      "Atari is a trademark of Atari Interactive." },
 		    icon_bits, icon16_px, icon16_rgb, icon256_px, icon256_rgb };
-	if (link == LINK_TCP)	/* no address or port on the line */
-		about_net_line(conn, sizeof(conn), "STinG", ABOUT_GATEWAY, online ? ABOUT_ONLINE : ABOUT_OFFLINE);
-	else {
-		strcpy(conn, baud == BAUD_4800 ? "Serial port, 4800 baud" :
-		       baud == BAUD_9600 ? "Serial port, 9600 baud" : "Serial port, 19200 baud");
-		strcpy(conn + strlen(conn), online ? "  \xF9  online" : "  \xF9  offline");
-	}
+	/* no address or port on the line */
+	about_net_line(conn, sizeof(conn), "STinG", ABOUT_GATEWAY, online ? ABOUT_ONLINE : ABOUT_OFFLINE);
 	about_mem_line(mem, sizeof(mem));
 	about_show(&a);
 }
@@ -5097,39 +4859,31 @@ static void move_cursor(short d)
 		redraw_item_row(lcur);
 }
 
-/* Options > Settings... (^,), as in the other AERA programs: how
- * ClaudeST reaches its gateway. Network: the gateway's address and port;
- * serial: the speed. Tab moves between the two fields, Return is OK, Undo
- * Cancel; Esc empties the field with the cursor (the guidelines, 3.5).
- * The choices are the AES's radio buttons, the rest its buttons (5.6). */
-static const char *const sp_label[3] = { "4800", "9600", "19200" };
-static const short sp_baud[3] = { BAUD_4800, BAUD_9600, BAUD_19200 };
+/* Options > Settings... (^,), as in the other AERA programs: the
+ * Gateway's address and port, and where fonts keep the Hebrew letters.
+ * Tab moves between the two fields, Return is OK, Undo Cancel; Esc
+ * empties the field with the cursor (the guidelines, 3.5). The choices
+ * are the AES's radio buttons, the rest its buttons (5.6). */
 /* where the system and bitmap fonts keep the Hebrew letters (the Font
    dialog's own sample row before the family's dialog) */
 static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
 /* what Settings shows, for its paint, and where */
 static char sd_f[2][24];
 static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
-static short sd_nl, sd_nb, sd_nh, sd_focus;
-static short sd_lh, sd_ly[5], sd_chw, sd_ch_x[2], sd_fx[2], sd_fy[2];
-static short sd_sp_w, sd_sp_x[3], sd_hb_w, sd_hb_x[3], sd_obj[8];
-static unsigned short sd_shown[8];	/* the choices' states as drawn */
+static short sd_nh, sd_focus;
+static short sd_lh, sd_ly[3], sd_fx[2], sd_fy[2];
+static short sd_hb_w, sd_hb_x[3], sd_obj[3];
+static unsigned short sd_shown[3];	/* the choices' states as drawn */
 
 static void sd_place(void)
 {
 	short cx = dlg_x + 20 * cw, i;		/* where the controls start */
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 3; i++)
 		sd_ly[i] = dlg_y + ch + sd_lh * (i + 1) + sd_lh / 2;
-	sd_chw = 11 * cw;			/* Network | Serial */
-	sd_ch_x[0] = cx;
-	sd_ch_x[1] = cx + sd_chw + cw;
 	for (i = 0; i < 2; i++) {
 		sd_fx[i] = cx;
-		sd_fy[i] = sd_ly[i + 1] - 3;
+		sd_fy[i] = sd_ly[i] - 3;
 	}
-	sd_sp_w = 7 * cw;
-	for (i = 0; i < 3; i++)
-		sd_sp_x[i] = cx + i * (sd_sp_w + cw);
 	sd_hb_w = 9 * cw;
 	for (i = 0; i < 3; i++)
 		sd_hb_x[i] = cx + i * (sd_hb_w + cw);
@@ -5137,12 +4891,8 @@ static void sd_place(void)
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
 	own_begin();
-	for (i = 0; i < 8; i++) {
-		short x = i < 2 ? sd_ch_x[i] : i < 5 ? sd_sp_x[i - 2] : sd_hb_x[i - 5];
-		short w = i < 2 ? sd_chw : i < 5 ? sd_sp_w : sd_hb_w, y = sd_ly[i < 2 ? 0 : i < 5 ? 3 : 4] - 3;
-		const char *l = i == 0 ? "Network" : i == 1 ? "Serial" : i < 5 ? sp_label[i - 2] : hb_label[i - 5];
-		sd_obj[i] = own_add(x, y, w, ch + 6, RBUTTON, l);
-	}
+	for (i = 0; i < 3; i++)
+		sd_obj[i] = own_add(sd_hb_x[i], sd_ly[2] - 3, sd_hb_w, ch + 6, RBUTTON, hb_label[i]);
 	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
 	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
 }
@@ -5151,10 +4901,8 @@ static void sd_place(void)
 static void sd_states(void)
 {
 	short i;
-	for (i = 0; i < 8; i++) {
-		short on = i < 2 ? (i == 0) == (sd_nl == LINK_TCP) : i < 5 ? sp_baud[i - 2] == sd_nb : sd_nh == i - 5;
-		own_t[sd_obj[i]].ob_state = on ? SELECTED : 0;
-	}
+	for (i = 0; i < 3; i++)
+		own_t[sd_obj[i]].ob_state = sd_nh == i ? SELECTED : 0;
 }
 
 /* the parts that change: the choices, the fields */
@@ -5162,10 +4910,10 @@ static void sd_live(void)
 {
 	short i;
 	/* the choices the AES draws again: those chosen or let go since (an
-	   ST draws one in ~20 ms; all eight each pass took Settings 425 ms
+	   ST draws one in ~20 ms; all of them each pass made Settings slow
 	   to open) */
 	sd_states();
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < 3; i++)
 		if (own_t[sd_obj[i]].ob_state != sd_shown[i]) {
 			own_draw(sd_obj[i]);
 			sd_shown[i] = own_t[sd_obj[i]].ob_state;
@@ -5194,14 +4942,12 @@ static void sd_paint(short framed)
 	short i;
 	sd_states();
 	own_frame(framed);	/* the choices too */
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < 3; i++)
 		sd_shown[i] = own_t[sd_obj[i]].ob_state;
 	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
-	text(dlg_x + 2 * cw, sd_ly[0], "Connect through", 15, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[1], "Gateway address", 15, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[2], "Gateway port", 12, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[3], "Serial speed", 12, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[4], "Hebrew in fonts", 15, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[0], "Gateway address", 15, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[1], "Gateway port", 12, 0, 1);
+	text(dlg_x + 2 * cw, sd_ly[2], "Hebrew in fonts", 15, 0, 1);
 	if (!framed)
 		sd_live();	/* over the screen the loop draws these next */
 }
@@ -5220,8 +4966,6 @@ static void settings_dialog(void)
 		sd_len[i] = sd_cur[i] = strlen(f[i]);
 		sd_start[i] = 0;
 	}
-	sd_nl = link;
-	sd_nb = baud;
 	sd_nh = hebfont;
 	sd_focus = 0;
 
@@ -5231,7 +4975,7 @@ static void settings_dialog(void)
 	dlg_w = 52 * cw;
 	if (dlg_w > ww - 2 * cw)
 		dlg_w = ww - 2 * cw;
-	dlg_h = ch + sd_lh * 7 + btn_h + ch;
+	dlg_h = ch + sd_lh * 5 + btn_h + ch;
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
@@ -5274,17 +5018,12 @@ static void settings_dialog(void)
 		if (e.which & MU_BUTTON) {
 			short mx = e.mx, my = e.my;
 			for (i = 0; i < 2; i++) {
-				if (mx >= sd_ch_x[i] && mx < sd_ch_x[i] + sd_chw && my >= sd_ly[0] - 3 && my < sd_ly[0] + ch + 3)
-					sd_nl = i == 0 ? LINK_TCP : LINK_SERIAL;
 				if (mx >= sd_fx[i] && mx < sd_fx[i] + sd_cols[i] * cw && my >= sd_fy[i] && my < sd_fy[i] + ch + 6)
 					sd_focus = i;
 			}
-			for (i = 0; i < 3; i++) {
-				if (mx >= sd_sp_x[i] && mx < sd_sp_x[i] + sd_sp_w && my >= sd_ly[3] - 3 && my < sd_ly[3] + ch + 3)
-					sd_nb = sp_baud[i];
-				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[4] - 3 && my < sd_ly[4] + ch + 3)
+			for (i = 0; i < 3; i++)
+				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[2] - 3 && my < sd_ly[2] + ch + 3)
 					sd_nh = i;
-			}
 			if (my >= btn_y && my < btn_y + btn_h) {
 				if (mx >= ok_x && mx < ok_x + btn_w)
 					res = 1;
@@ -5293,7 +5032,7 @@ static void settings_dialog(void)
 			}
 		}
 		/* an address that doesn't read as one: back to it */
-		if (res == 1 && sd_nl == LINK_TCP) {
+		if (res == 1) {
 			u32 ip;
 			if (!parse_ip(f[0], &ip, 0) || !ip) {
 				res = -1;
@@ -5315,18 +5054,16 @@ static void settings_dialog(void)
 			port = port * 10 + (*q++ - '0');
 		if (!port)
 			port = 2323;
-		changed = sd_nl != link || (sd_nl == LINK_TCP && (ip != tcp_ip || port != tcp_port));
+		changed = ip != tcp_ip || port != tcp_port;
 		if (ip)
 			tcp_ip = ip;
 		tcp_port = port;
-		if (sd_nb != baud)
-			set_baud(sd_nb);
 		if (sd_nh != hebfont) {	/* the window's Hebrew, drawn anew */
 			hebfont = sd_nh;
 			on_resize();
 		}
 		if (changed)
-			use_link(sd_nl);	/* connects again, saves */
+			use_address();	/* connects again, saves */
 		else
 			save_config();
 	}
@@ -5601,13 +5338,6 @@ static void handle_msg(short *msg)
 		case C_NEW: do_new_chat(); break;
 		case C_FIND: do_search(); break;
 		case C_REF: reconnect(); break;
-		case C_NET:
-			if (tcp_ip)
-				use_link(LINK_TCP);
-			else
-				alert(1, "[1][Type /connect and the IP|address of the Gateway|in the reply line, e.g.|/connect 192.168.1.10][ OK ]");
-			break;
-		case C_SER: use_link(LINK_SERIAL); break;
 		case C_ACCT: do_account(); break;
 		case C_FONT: font_menu(); break;
 		case C_HELP: help(); break;
@@ -5619,9 +5349,6 @@ static void handle_msg(short *msg)
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
 		case C_ANSWER: copy_answer(); break;
 		case C_QUIT:
-		case C_B48: set_baud(BAUD_4800); break;
-		case C_B96: set_baud(BAUD_9600); break;
-		case C_B192: set_baud(BAUD_19200); break;
 		}
 		menu_tnormal(mb.tree, msg[3], 1);
 		break;
@@ -5752,7 +5479,7 @@ static short alloc_buffers(void)
 }
 
 /* ClaudeST crashed and CRASH.LOG is written (common/atari/crash.c): say
-   so, let the connection and the serial port go, and leave GEM tidy */
+   so, let the connection go, and leave GEM tidy */
 static void crash_quit(const char *what)
 {
 	char a[200];
@@ -5761,7 +5488,6 @@ static void crash_quit(const char *what)
 	form_alert(1, a);
 	if (tcp_cn >= 0)
 		sting_close(tcp_cn);
-	serial_close();
 	if (win > 0) {
 		wind_close(win);
 		wind_delete(win);
@@ -5850,7 +5576,6 @@ int main(void)
 		appl_exit();
 		return 1;
 	}
-	menu_check_baud();
 	menu_bar(mb.tree, 1);
 	graf_mouse(ARROW, 0);
 
@@ -5881,15 +5606,10 @@ int main(void)
 	begin_message('I');
 	{
 		static const char hi[] = "Welcome to ClaudeST. Connecting to the Gateway "
-			"(ClaudeST's bridge) over the network or the serial port...";
+			"(ClaudeST's bridge) over the network...";
 		append(hi, sizeof(hi) - 1);
 	}
 
-	menu_check_baud();
-	if (link == LINK_SERIAL) {
-		serial_open();
-		send_hello();
-	}
 	dirty = D_ALL;
 	if (crash_previous()) {
 		flush_dirty();
@@ -5959,7 +5679,7 @@ int main(void)
 						redraw_dot(i);
 			}
 		}
-		if (!online && ticks - last_hello > 125 && (link == LINK_SERIAL || tcp_cn >= 0))
+		if (!online && ticks - last_hello > 125 && tcp_cn >= 0)
 			send_hello();
 		heartbeat();
 		{
@@ -5991,7 +5711,6 @@ int main(void)
 		sting_close(tcp_cn);
 	if (tcp_opening >= 0)
 		sting_close(tcp_opening);
-	serial_close();
 	wind_close(win);
 	wind_delete(win);
 	menu_bar(mb.tree, 0);

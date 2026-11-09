@@ -32,12 +32,9 @@ Sizes: S small, H half a day, M more.
 **Nothing to do:** D46 (written from ClaudeST's list keys), D52 (F-keys as views), D51 ("Show" is
 right), the out-of-range alert.
 
-## Fault to fix at the next release (not a UI item)
+## Fault found 9 Nov 2026 (not a UI item): gone with the serial cable
 
-**MiNT with memory protection, over the serial cable** (the hub, 9 Nov 2026; by reading, not yet
-reproduced). `serial_open` points the system's serial IOREC at ClaudeST's own `rxring`
-(`sup_set_iorec`), also under MiNT, so the serial driver writes into ClaudeST's memory at interrupt
-time; the program is built with PRGFLAGS 0 (private memory), and memory protection would stop the
-system. The fix, at the next release: skip the repoint under MiNT (`rx_direct` already treats MiNT as
-"the bytes go elsewhere"), or build with PRGFLAGS 0x17 (Global). Check it on MiNT with memory
-protection (`common/tests/xaaes/run.py --mem-prot`) before and after.
+**MiNT with memory protection, over the serial cable** (the hub, 9 Nov 2026; by reading). ClaudeST
+pointed the system's serial IOREC at its own buffer, also under MiNT, which memory protection would
+stop. Moot from 2.3: Erez removed the serial cable (9 Nov 2026), and with it the IOREC code; ClaudeST
+reaches the Gateway through STinG only.

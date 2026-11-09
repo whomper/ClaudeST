@@ -60,14 +60,14 @@
   program, the @{B}bridge@{b}, runs on a Raspberry Pi (or any Linux
   computer) on your network and talks to claude.ai for the Atari:
 
-    Atari (CLAUDEST.PRG) <-- STinG or serial --> Gateway (bridge) <--> claude.ai
+    Atari (CLAUDEST.PRG) <-- STinG --> Gateway (bridge) <--> claude.ai
 
   @{U}What you need@{u}
 
     - An ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or newer, EmuTOS
       or MiNT, a screen of 640 x 200 or more, about 370 KB free RAM
       (it makes do with 260 KB, keeping less of a long chat)
-    - STinG with a working network, or a null-modem serial cable
+    - STinG with a working network (Ethernet or WiFi)
     - A Raspberry Pi, or any Linux computer, on the same network
     - A claude.ai account (or an Anthropic API key)
     - Under TOS: Atari's FOLDR100.PRG first in AUTO, renamed for more
@@ -115,8 +115,8 @@
     1. Load STinG and check that the network works.
     2. Copy CLAUDEST.PRG, CLAUDEST.HYP and CLAUDEST.REF into one
        folder, any folder on any drive.
-    3. Run CLAUDEST.PRG, choose Options > Settings... (Control+,), pick
-       Network and type the Gateway's address, port 2323, or type
+    3. Run CLAUDEST.PRG, choose Options > Settings... (Control+,) and
+       type the Gateway's address, port 2323, or type
        @{B}/connect 192.168.1.10@{b} in the reply line. The status line
        shows Connecting..., then Online, with a green dot.
 
@@ -124,7 +124,7 @@
   the program.
 
   If the Gateway restarts or the network drops, ClaudeST reconnects by
-  itself. For a serial cable, see @{"Settings" link "Settings"}.
+  itself.
 
   @{U}Updating@{u}
 
@@ -205,8 +205,7 @@
   it's back. When nothing has passed for 30 seconds, ClaudeST asks the
   Gateway whether it's still there; with no answer in 20 seconds the
   dot goes red and the status says "Gateway silent", and ClaudeST
-  keeps trying until the Gateway answers. Over a serial cable this is
-  the only way to tell that the Gateway has gone.
+  keeps trying until the Gateway answers.
 @endnode
 
 ## ------------------------------------------------------------------------
@@ -353,9 +352,6 @@
   PDFs, programs, archives. The limits are claude.ai's: up to 20 files
   in a chat, 500 MB each.
 
-  Over a serial cable a file takes a while: about a minute for every
-  50 KB at 19200 baud. The network is much quicker.
-
   @{B}To change your mind@{b}, press Backspace on the empty reply line:
   the last attached file is removed.
 
@@ -462,7 +458,7 @@
                       attached file
     Control+O         Attach a file to the next message
     Control+R         Reconnect to the bridge
-    Control+,         Settings: the Gateway's address, or serial
+    Control+,         Settings: the Gateway's address
     Control+C X V     Copy, cut, paste the reply line
                       (Control+C with it empty: Claude's last answer)
     Help              This help, in EHypView, ST-Guide or HypView;
@@ -472,55 +468,39 @@
     Control+W         Quit (closes the window, the only one)
 
   In the reply line, @{B}/connect 192.168.1.10@{b} (or /connect
-  host:port) sets the Gateway address, and @{B}/serial@{b} switches to
-  the serial port.
+  host:port) sets the Gateway address.
 @endnode
 
 ## ------------------------------------------------------------------------
 @node "Settings" "Settings (CLAUDEST.INF)"
 @{U}Settings (CLAUDEST.INF)@{u}
 
-  @{B}Options > Settings...@{b} (Control+,) sets how ClaudeST reaches
-  the Gateway: Network (STinG) with the Gateway's address and port, or
-  Serial with the speed, and where your fonts keep the Hebrew letters
-  (Hebrew in fonts: Atari, ISO 8859 or DOS 862). Tab moves between the
-  two fields, Esc empties the one with the cursor, Clr/Home goes to
-  its start (Shift+Clr/Home to its end), and Return is OK.
-  3D dialogs, next to the buttons, gives the alerts and the Font dialog
-  the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in
-  16 colours or more); untick it for the flat look. It is greyed where the AES has no 3D look.
+  @{B}Options > Settings...@{b} (Control+,) sets the Gateway's address
+  and port (ClaudeST reaches it through STinG), and where your fonts
+  keep the Hebrew letters (Hebrew in fonts: Atari, ISO 8859 or DOS
+  862). Tab moves between the two fields, Esc empties the one with the
+  cursor, Clr/Home goes to its start (Shift+Clr/Home to its end), and
+  Return is OK. The dialogs have the AES's 3D look where it has one
+  (TOS 4, MagiC, XaAES, EmuTOS in 16 colours or more).
 
   ClaudeST saves its settings to CLAUDEST.INF, next to CLAUDEST.PRG, as
   soon as you change them, as the other AERA programs do: an [OPTIONS]
   part, NAME=value lines and a ; note above each. You can edit it with
   any text editor; lines ClaudeST doesn't know are kept.
 
-    LINK=network            or serial (Settings, /connect, /serial)
     HOST=192.168.1.10       the Gateway's address (Settings, /connect)
     PORT=2323               the Gateway's port
-    BAUD=19200              4800, 9600 or 19200 (Settings)
-    SERIALPORT=0            the port TOS chose (the default); on a TT or
-                            Falcon, another port: 6 MFP, 7 SCC B (the
-                            Falcon's Modem port), 8 TT-MFP, 9 SCC A
     FONT=1,8                Options > Font: the font's id (1 = system
                             font) and size
     HEBFONT=0               Settings, Hebrew in fonts: where the font
                             keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862)
-    DIALOGS3D=1             Settings, 3D dialogs: 1 the AES's 3D look
-                            where it has one, 0 flat
     SIDEBAR=240             the sidebar's width, by dragging the divider
                             (0: ClaudeST's choice)
     MODEL=...  EFFORT=...   the model chip / F9 (empty: the defaults)
 
-  Without a CLAUDEST.INF, ClaudeST uses the serial port.
-
-  A @{B}serial cable@{b}: connect the Atari's Modem port to a
-  USB-to-RS-232 adapter on the Gateway with a null-modem cable (never
-  straight to the Raspberry Pi's pins), run
-
-      sudo gateway/aera-gateway install claude --serial auto
-
-  on the Gateway, and choose Options > Settings > Serial on the Atari.
+  The serial cable's settings from ClaudeST 2.2 and earlier (LINK,
+  BAUD, SERIALPORT) are ignored and left out at the next save:
+  ClaudeST 2.3 reaches the Gateway through STinG only.
 @endnode
 
 ## ------------------------------------------------------------------------

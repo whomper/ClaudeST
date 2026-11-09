@@ -9,7 +9,7 @@ whole in it.
     tests/hatari/font_gdos.py WORK [--machine Falcon:16] [--prg CLAUDEST.PRG]
                               [--boot SECONDS]
 
-With the demo bridge on the serial port, it opens the demo's Hebrew chat,
+With the demo bridge over STinG (FAKESTNG.PRG), it opens the demo's Hebrew chat,
 then Options > Font... (with the mouse: there is no key), the family's
 Font dialog (common/ui/fontsel.c): Family, Style and Size lists.
   1. The dialog opens on the system font (the click that opened it chose
@@ -107,18 +107,12 @@ def main():
     shutil.copy(prg, os.path.join(hd, "CLAUDEST.PRG"))
     inf = os.path.join(hd, "claudest.inf")
     with open(inf, "w", newline="") as f:
-        # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
-        f.write("[OPTIONS]\r\nLINK=serial\r\n" +
-                ("SERIALPORT=6\r\n" if a.machine.startswith("Falcon") else ""))
+        # over STinG: FAKESTNG.PRG stands in for it (the Rig's network)
+        f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n")
 
-    out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")
-    for p in (out, inp):        # before Hatari, which won't start without them
-        if not os.path.exists(p):
-            os.mkfifo(p)
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "gateway", "claude-st", "bridge", "claude_bridge.py"),
-                               "--backend", "demo", "-v", "--pipe", out, inp],
+                               "--backend", "demo", "-v", "--tcp", "127.0.0.1:2323"],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
-    serial = ["--rs232-out", out, "--rs232-in", inp]
 
     fails = []
 
@@ -140,7 +134,7 @@ def main():
         r.move(*rest)
         return r.shot(name)
 
-    r = Rig(work, a.machine, extra=serial)
+    r = Rig(work, a.machine, network=True)
     skipped = False
     try:
         r.wait(boot, limit=60)
@@ -168,13 +162,14 @@ def main():
         def font_dialog(name):
             """Options > Font...: Options is the fifth title (the first,
             " ClaudeST " since 1.68, starts two cells in; Chat before
-            Options since 1.67), Font... its eleventh item (twelfth until
-            Hebrew keys left the menu, 2.1). The first
+            Options since 1.67), Font... its fourth item (Settings, a
+            line, Account, Font: the baud and link ticks left with the
+            serial cable in 2.3; Hebrew keys in 2.1). The first
             time, every GDOS font is measured before the selector shows:
             minutes at 16 MHz with Erez's 137 families"""
             r.move(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar // 2)
             time.sleep(1)
-            r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 10 * ch + ch // 2)
+            r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 3 * ch + ch // 2)
             end = time.time() + 900
             while time.time() < end:
                 time.sleep(3)
@@ -284,7 +279,7 @@ def main():
         r.stop()
 
     if not skipped and not fails:
-        r = Rig(work, a.machine, extra=serial)
+        r = Rig(work, a.machine, network=True)
         try:
             r.wait(boot, limit=60)
             again = hebrew_chat(r, "5-restarted")

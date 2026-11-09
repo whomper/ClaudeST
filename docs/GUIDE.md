@@ -19,7 +19,6 @@ chats from the bridge's demo backend (`tools/docshots.py` takes them).
 - [What is stored where](#what-is-stored-where)
 - [Troubleshooting](#troubleshooting)
 - [The bridge on another computer](#the-bridge-on-another-computer)
-- [Serial cables and ports](#serial-cables-and-ports)
 - [Icons](#icons)
 - [Building](#building)
 
@@ -38,8 +37,8 @@ the Gateway and **192.168.1.20** for the Atari; use your own.
 **Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or
 newer, EmuTOS or MiNT; a 640×200 or larger screen, monochrome or
 colour; about 370 KB of free RAM (ClaudeST makes do with 260 KB, keeping
-less of a long chat); STinG with a working network, or a null-modem
-serial cable; a Raspberry Pi, or any Linux computer, on the same
+less of a long chat); STinG with a working network (Ethernet or WiFi);
+a Raspberry Pi, or any Linux computer, on the same
 network; a claude.ai account, or an Anthropic API key.
 
 ### How it reaches claude.ai
@@ -51,15 +50,13 @@ it; ClaudeST defines its protocol ([PROTOCOL.md](../PROTOCOL.md)) and
 owns its tests.
 
 ```
-STinG:   Atari (CLAUDEST.PRG) --plain TCP, home LAN, port 2323--> Gateway (bridge) --HTTPS--> claude.ai
-Serial:  Atari (CLAUDEST.PRG) --null-modem cable, 19200 baud----> Gateway (bridge) --HTTPS--> claude.ai
+Atari (CLAUDEST.PRG) --STinG, plain TCP, home LAN, port 2323--> Gateway (bridge) --HTTPS--> claude.ai
 ```
 
 - **Through STinG,** over Ethernet or WiFi, the Atari connects to the
   bridge's port 2323. The bridge accepts only the addresses you gave
-  the installer with `--atari`.
-- **Through a serial cable,** the Atari's Modem port goes to a
-  USB-to-RS-232 adapter on the Gateway.
+  the installer with `--atari`. (ClaudeST 2.2 and earlier could also use
+  a serial cable; from 2.3 it is networking only.)
 - **The bridge** talks to claude.ai (or the Anthropic API) and sends the
   Atari short lines of text in the Atari character set. The Atari does
   all the drawing and word wrapping itself.
@@ -133,8 +130,8 @@ looks for its files in lowercase.
    pinging the Gateway.
 2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one
    folder, any folder on any drive.
-3. Run `CLAUDEST.PRG`, choose **Options ▸ Settings…** (`Ctrl+,`), pick
-   **Network** and type the Gateway's address (port 2323). Or type
+3. Run `CLAUDEST.PRG`, choose **Options ▸ Settings…** (`Ctrl+,`) and
+   type the Gateway's address (port 2323). Or type
    `/connect 192.168.1.10` in the reply line. The status line at the
    bottom left shows *Connecting…*, then *Online*, with a green dot.
 
@@ -171,22 +168,6 @@ saved as `CLAUDEST.INF`. The Gateway keeps the bridge's service name,
 `claude-st`. A Gateway set up with ClaudeST's own `pi/install.sh`
 (ClaudeST 2.1 and earlier) is taken over as it is: clone AERA-Gateway
 and run `./update-pi.sh`.
-
-### Using a serial cable instead
-
-Connect the Atari's Modem port to a USB-to-RS-232 adapter on the
-Gateway with a null-modem cable. Don't wire the Atari straight to the
-Raspberry Pi's GPIO pins: the Atari's ±12 V signals damage the
-Raspberry Pi. Then, on the Gateway:
-
-```sh
-sudo gateway/aera-gateway install claude --serial auto
-```
-
-On the Atari, choose **Options ▸ Settings…** and pick **Serial** (a new
-ClaudeST, with nothing set yet, starts on the serial port). Both sides
-use 19200 baud by default. [Serial cables and ports](#serial-cables-and-ports)
-says which port to use on each Atari.
 
 ### Using the Anthropic API instead of claude.ai
 
@@ -267,8 +248,7 @@ Replies still come in while it is iconified.
   back. When nothing has passed for 30 seconds, ClaudeST asks the
   Gateway whether it's still there; with no answer in 20 seconds the dot
   goes red and the status says *Gateway silent*, and ClaudeST keeps
-  trying until the Gateway answers. Over a serial cable this is the only
-  way to tell that the Gateway has gone.
+  trying until the Gateway answers.
 - **Notices:** short messages such as *Loading chat...* or *Renamed*
   appear in grey at the right of the title bar for a few seconds.
 - **Tooltips:** rest the mouse on a name that's cut off, in the sidebar
@@ -450,8 +430,6 @@ line for each file, and so do messages with files in chats you open.
 - **What can go:** any file, as on the website: text, pictures, PDFs,
   programs, archives. The limits are claude.ai's: up to 20 files in a
   chat, 500 MB each.
-- **Over a serial cable** a file takes a while: about a minute for
-  every 50 KB at 19200 baud. The network is much quicker.
 - **To change your mind,** press `Backspace` on the empty reply line:
   the last attached file is removed.
 - **In chats,** text files go in with their text, as the website sends
@@ -578,20 +556,19 @@ opens on its own in any of them.
 | `Backspace` on the empty reply line | Remove the last attached file |
 | `Ctrl+O` | Chat ▸ Attach file…: attach a file to the next message |
 | `Ctrl+R` | Reconnect to the bridge |
-| `Ctrl+,` | Options ▸ Settings: the Gateway's address and port, or the serial port |
+| `Ctrl+,` | Options ▸ Settings: the Gateway's address and port |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, paste the reply line (`Ctrl+C` with it empty: Claude's last answer) |
 | `Help` | This help (`CLAUDEST.HYP`) in EHypView, ST-Guide or HypView (without one: how to get one, or the keys). The **Help** menu has the same, and **Keys…** |
 | `Ctrl+Q`, `Ctrl+U` | File ▸ Quit; `Ctrl+U` closes ClaudeST's only window, which quits too |
 | `Ctrl+W` | The next window: ClaudeST has one, so nothing |
 
 In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
-sets the Gateway address, and `/serial` switches to the serial port.
+sets the Gateway address.
 
 ## Settings (CLAUDEST.INF)
 
-**Options ▸ Settings…** (`Ctrl+,`) sets how ClaudeST reaches the Gateway:
-**Network** (through STinG) with the Gateway's address and port, or
-**Serial** with the speed, and where your fonts keep the Hebrew letters
+**Options ▸ Settings…** (`Ctrl+,`) sets the Gateway's address and port
+(ClaudeST reaches it through STinG), and where your fonts keep the Hebrew letters
 (*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
 moves between the two fields, `Esc` empties the one with the cursor,
 `Clr/Home` goes to its start (`Shift+Clr/Home` to its end), Return is OK and `Undo` cancels. The dialogs and alerts have
@@ -605,14 +582,13 @@ desktop sets to the program's own), as soon as you change them, in the format of
 `[OPTIONS]` part, one `NAME=value` per line, and a `;` note above each.
 You can also edit it in any text editor; lines ClaudeST doesn't know are
 kept. A `CLAUDEST.INF` from before 1.38 (`tcp 192.168.1.10 2323` and so
-on) is still read, and written in the new form the next time.
+on) is still read, and written in the new form the next time. The
+serial cable's settings (`LINK=`, `BAUD=`, `SERIALPORT=`, before 2.3) are
+ignored and left out the next time ClaudeST saves.
 
 | Setting | Set by |
 |------|--------|
-| `LINK=network` or `serial` | Options ▸ Settings, Options ▸ Network (STinG) / Serial port, `/connect`, `/serial`. Without a `CLAUDEST.INF`, ClaudeST uses the serial port |
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
-| `BAUD=19200` (or 9600, 4800) | Options ▸ Settings, or the baud items in Options |
-| `SERIALPORT=0` | edit by hand, on a TT or Falcon only to use another serial port than the one TOS has chosen (0, the default): 6 = MFP (TT Modem 1), 7 = SCC B (Modem 2, the Falcon's Modem port), 8 = TT-MFP (Serial 1), 9 = SCC A (Serial 2) |
 | `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
@@ -688,31 +664,12 @@ git clone https://github.com/whomper/AERA-Gateway.git
 cd AERA-Gateway/gateway/claude-st/bridge
 pip install -r requirements.txt
 export CLAUDE_SESSION_KEY='sk-ant-sid01-...'
-python3 claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20   # network
-python3 claude_bridge.py --serial /dev/ttyUSB0                     # serial
+python3 claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20
 ```
 
 `--backend api` (with `ANTHROPIC_API_KEY`) uses the Anthropic API;
 chats are then stored in `~/.claude-st/`. `--backend demo` uses sample
 chats. `python3 claude_bridge.py --help` lists every option.
-
-## Serial cables and ports
-
-| Machine | Port |
-|---------|------|
-| ST, STE, Mega ST/STE | the 25-pin Modem (RS-232) port |
-| TT | Modem 1 |
-| Falcon 030 | the 9-pin Modem port |
-
-Use a null-modem cable and a USB-to-RS-232 adapter on the Gateway. To use the
-Raspberry Pi's GPIO UART instead, put a MAX3232 level-shifter board in between,
-turn off the serial console in `raspi-config`, and install with
-`--serial /dev/serial0`. The speed is 19200 baud, 8N1; change it in
-**Options ▸ Settings** and give the Gateway the same `--baud`.
-
-A WiFi modem on the serial port also works in transparent TCP mode:
-point it at the Gateway's port 2323, keep ClaudeST on the serial link, and
-install the Gateway with `--network --atari <the modem's IP>`.
 
 ## Icons
 
@@ -778,7 +735,6 @@ tools/hatari-test.sh                 # demo chats, no account needed
 CLAUDE_SESSION_KEY='sk-ant-sid01-...' tools/hatari-test.sh claudeai
 MACHINE=Falcon tools/hatari-test.sh  # ST (the default), ST-1, TT or Falcon
 MACHINE=ST:med tools/hatari-test.sh  # a machine with another screen
-LINK=network tools/hatari-test.sh    # over STinG, as on the network
 ```
 
 The machines are the AERA family's test machines, from
@@ -786,18 +742,14 @@ The machines are the AERA family's test machines, from
 screens): your own TOS images when `~/.aera/tos` has them (`tos104us.img`,
 `tos306.img`, `tos404.img`), else EmuTOS 1.4, which the script downloads
 the first time. It starts the bridge and boots
-[Hatari](https://hatari.tuxfamily.org/) into ClaudeST, with the emulated
-serial port connected to the bridge. Hatari has no network card: with
-`LINK=network`, `FAKESTNG.PRG` from `common/tools/fakesting` (built by the
-script, with the same cross-compiler) stands in for STinG. It tunnels its
-TCP connections over the serial port to `serial_bridge.py`, which connects
-to the bridge on TCP port 2323, as ClaudeST does on the Gateway. FAKESTNG is for
-the emulator only; never install it on a real Atari.
-
-Hatari only connects the ST-style MFP serial port to the bridge, so on
-the Falcon the script puts `SERIALPORT=6` in `CLAUDEST.INF`; a real
-Falcon uses its Modem port, the one TOS chooses, so it needs no
-`SERIALPORT` line.
+[Hatari](https://hatari.tuxfamily.org/) into ClaudeST, which reaches the
+bridge over STinG. Hatari has no network card: `FAKESTNG.PRG` from
+`common/tools/fakesting` (built by the script, with the same
+cross-compiler) stands in for STinG. It tunnels its TCP connections over
+the emulated serial port to `serial_bridge.py`, which connects to the
+bridge on TCP port 2323, as ClaudeST does on the Gateway. The rigs work
+the same way. FAKESTNG is for the emulator only; never install it on a
+real Atari.
 
 ### The Hatari rigs
 

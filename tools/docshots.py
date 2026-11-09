@@ -48,16 +48,13 @@ def boot(work, machine, showcase):
     os.makedirs(hd)
     shutil.copy(os.path.join(ROOT, "binary", "CLAUDEST.PRG"), hd)
     with open(os.path.join(hd, "claudest.inf"), "w", newline="") as f:
-        # Hatari wires only the MFP port to the bridge: on a Falcon, port 6
-        f.write("[OPTIONS]\r\nLINK=serial\r\n" + ("SERIALPORT=6\r\n" if machine.startswith("Falcon") else ""))
-    out, inp = os.path.join(work, "st_out"), os.path.join(work, "st_in")
-    for p in (out, inp):        # before Hatari, which won't start without them
-        os.mkfifo(p)
+        # over STinG: FAKESTNG.PRG stands in for it (the Rig's network)
+        f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n")
     bridge = ([os.path.join(ROOT, "tools", "reel", "reel_bridge.py")] if showcase else
               [os.path.join(ROOT, "gateway", "claude-st", "bridge", "claude_bridge.py"), "--backend", "demo"])
-    b = subprocess.Popen([sys.executable] + bridge + ["--pipe", out, inp],
+    b = subprocess.Popen([sys.executable] + bridge + ["--tcp", "127.0.0.1:2323"],
                          stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)
-    r = Rig(work, machine, extra=["--rs232-out", out, "--rs232-in", inp, "--drive-led", "no"])
+    r = Rig(work, machine, network=True, extra=["--drive-led", "no"])
     r.bridge_proc = b
     r.wait(45)
     r.move(*REST)
