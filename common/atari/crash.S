@@ -93,6 +93,8 @@ crash_term:
 	movem.l	%d0-%d2/%a0-%a2,-(%sp)
 	jsr	crash_restore
 	movem.l	(%sp)+,%d0-%d2/%a0-%a2
+	tst.l	crash_old_term		| MiNT: the process may have had none
+	beq.s	1f
 	move.l	crash_old_term,-(%sp)
-	rts
+1:	rts
 

@@ -11,7 +11,7 @@
 #include "util.h"
 
 /* how a connection is protected */
-#define SEC_PLAIN    0	/* none (through the Pi gateway, or a local server) */
+#define SEC_PLAIN    0	/* none (through the Gateway, or a local server) */
 #define SEC_TLS      1	/* TLS from the first byte (993, 995, 465, 443, 990) */
 #define SEC_STARTTLS 2	/* plain first, then STARTTLS / STLS / AUTH TLS (143, 110, 587, 21) */
 
@@ -78,6 +78,18 @@ extern long net_sendbuf;
 /* add text (a crash report) at the end of the log, after what is still
    buffered: crash_report = conn_log_append (crash.h) */
 void conn_log_append(const char *text, long n);
+/* The log is capped (guidelines 6.5): a write that would take it over
+   conn_log_max (256 KB; 0 = no cap) moves it to NAME.OLD (the extension
+   replaced; an older NAME.OLD goes) and starts a new one. conn_log_size,
+   if the app sets it (to its pf_handle_size), gives the size of the open
+   file, so the check costs no look at the folder; without it the size is
+   looked at once a run and counted. */
+extern long conn_log_max;
+extern long (*conn_log_size)(int h);
+/* one line, "start -- APP VERSION, date time" (the date only where the clock
+   has one), for an app to call once at its start; conn.c never calls it.
+   app_version: "EMail 1.23" */
+void conn_log_start(const char *app_version);
 /* the shape of a login (lengths, '@', '-') without the login itself, so
    the log shows a cut-off or mistyped password without giving it away */
 void conn_log_login(const char *who, const char *user, const char *pass);
@@ -88,5 +100,20 @@ extern long conn_bytes, conn_bytes_out;
 extern void (*conn_tick)(void);
 /* set by the UI (Esc, the Stop button): every wait ends at once */
 extern int conn_stop;
+
+/* The three phases of handing work to the Gateway (a PDF to convert, a
+   letter to translate, a page to render; Erez, 7 Nov 2026), so the status
+   line can say where the time goes. A gateway client calls conn_phase at
+   each change when it is set (never when NULL):
+     GATE_SEND     the request goes out (bytes: its size);
+     GATE_WAIT     all of it is sent and the Gateway works (bytes 0);
+     GATE_RECEIVE  the answer comes in (bytes: its size, -1 if unknown);
+     GATE_DONE     finished, with an answer or a failure (bytes 0).
+   An app sets the status line from its handler (guideline 7.3 has the
+   words) and shows progress inside SEND and RECEIVE from conn_bytes_out
+   and conn_bytes in its conn_tick. "Sent" means handed to the network:
+   the last few KB may still be on the way. */
+enum { GATE_SEND = 1, GATE_WAIT, GATE_RECEIVE, GATE_DONE };
+extern void (*conn_phase)(int phase, long bytes);
 
 #endif

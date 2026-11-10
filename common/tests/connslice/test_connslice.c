@@ -21,6 +21,10 @@ static long fed, feed_len;
 int pf_open(const char *path, int mode) { return -1; }
 long pf_write(int h, const void *buf, long n) { return n; }
 void pf_close(int h) { }
+long pf_size(const char *path) { return -1; }
+int pf_remove(const char *path) { return 0; }
+int pf_rename(const char *from, const char *to) { return 0; }
+long pf_seek(int h, long off) { return off; }
 void pf_now(PFTIME *t) { memset(t, 0, sizeof(*t)); }
 unsigned long pf_ms(void) { return now; }
 

@@ -111,6 +111,9 @@ def fetch(spec, d, names, source=False):
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import hubonly
+    hubonly.require("getrelease.py")
     args = sys.argv[1:]
     source = args[:1] == ["--source"]
     if source:

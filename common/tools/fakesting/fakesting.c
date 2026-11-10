@@ -11,6 +11,10 @@
  * connection; this one multiplexes up to four, in frames:
  *
  *   Atari -> bridge   'O' cn ip[4] port[2]   open
+ *                     'U' cn ip[4] port[2]   open a UDP connection (its
+ *                                             data frames a datagram each;
+ *                                             NAMESERVER's 10.0.2.3:53 the
+ *                                             bridge's DNS, FAKESTING_DNS)
  *                     'D' cn len[2] data      send
  *                     'C' cn                  close
  *                     'A' cn len[2]           len bytes were read: the
@@ -29,7 +33,8 @@
 
 long get_dftab(void), TCP_open(void), TCP_close(void), TCP_send(void),
      TCP_wait_state(void), CNbyte_count(void), CNget_block(void),
-     get_err_text(void), resolve(void), unsupported(void);
+     get_err_text(void), resolve(void), unsupported(void),
+     getvstr(void), UDP_open(void), UDP_send(void);
 
 typedef struct {
 	char magic[10];
@@ -42,9 +47,9 @@ static struct {
 	const char *module, *author, *version;
 	void *fn[32];
 } tpl = { "TRANSPORT_TCPIP", "fake", "01.00", {
-	unsupported, unsupported, unsupported, unsupported, get_err_text, unsupported,
+	unsupported, unsupported, unsupported, unsupported, get_err_text, getvstr,
 	unsupported, TCP_open, TCP_close, TCP_send, TCP_wait_state,
-	unsupported, unsupported, unsupported, unsupported, unsupported,
+	unsupported, UDP_open, TCP_close, UDP_send, unsupported,
 	CNbyte_count, unsupported, unsupported, CNget_block, unsupported,
 	resolve,
 } };
@@ -190,6 +195,59 @@ static void pump(void)
 long c_unsupported(const short *a) { (void)a; return -32; }
 long c_get_err_text(const short *a) { (void)a; return (long)"fake STinG error"; }
 long c_resolve(const short *a) { (void)a; return -13; }	/* E_CANTRESOLVE: use IP addresses */
+
+/* STinG's configuration: NAMESERVER is the bridge's DNS (FAKESTING_DNS
+   on the build machine), the rest unset ("0", as STinG answers) */
+long c_getvstr(const short *a)
+{
+	const char *var = (const char *)get_long(a), *t = "NAMESERVER";
+	while (*var && *var == *t)
+		var++, t++;
+	return (long)(*var || *t ? "0" : "10.0.2.3");
+}
+
+/* a UDP connection: opened at once (STinG's is), the bridge's answer
+   ('S') awaited by the first datagram sent */
+long c_UDP_open(const short *a)
+{
+	u32 ip = get_long(a);
+	u16 port = (u16)a[2];
+	short cn, i;
+	for (cn = 0; cn < NCONN && conn[cn].used; cn++)
+		;
+	if (cn == NCONN)
+		return -9;		/* E_NOCCB */
+	conn[cn].used = 1;
+	conn[cn].open = conn[cn].eof = conn[cn].refused = 0;
+	conn[cn].head = conn[cn].tail = 0;
+	out('U');
+	out(cn);
+	for (i = 3; i >= 0; i--)
+		out((int)(ip >> (i * 8)));
+	out(port >> 8);
+	out(port);
+	return cn;
+}
+
+long c_UDP_send(const short *a)
+{
+	short cn = a[0], len = a[3], i;
+	const unsigned char *buf = (const unsigned char *)get_long(a + 1);
+	u32 start = tos_hz200();
+	if (cn < 0 || cn >= NCONN || !conn[cn].used || len < 0)
+		return -9;
+	while (!conn[cn].open && !conn[cn].refused && tos_hz200() - start < 400)
+		pump();
+	if (!conn[cn].open)
+		return -9;
+	out('D');
+	out(cn);
+	out(len >> 8);
+	out(len);
+	for (i = 0; i < len; i++)
+		out(buf[i]);
+	return 0;
+}
 
 long c_get_dftab(const short *a)
 {

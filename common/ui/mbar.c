@@ -18,6 +18,10 @@
 #include <string.h>
 #include "mbar.h"
 
+/* the app's menu bar for dialog.c (dlg_menu: a menu title chosen while a dialog window is open is dropped and shown normal,
+   MD17): a weak definition, so the one in dialog.c is the one where dialog.c is linked, and there is storage where it isn't */
+OBJECT *dlg_menu __attribute__((weak));
+
 #define G_IBOX_SPEC 0x00000000L
 #define BAR_SPEC    0x00001100L	/* no frame, black on white */
 #define DROP_SPEC   0x00FF1100L	/* one pixel frame */
@@ -173,11 +177,14 @@ int mbar_build(MBAR *m, const MBAR_TITLE *titles, short cw, short ch, short scre
 	set(&tree[screen_obj], 0, first_drop, last_drop, G_IBOX, G_IBOX_SPEC,
 	    0, bar_h, screen_w, (short)(screen_h - bar_h));
 	tree[m->nobjects - 1].ob_flags |= LASTOB;
+	dlg_menu = tree;
 	return 0;
 }
 
 void mbar_free(MBAR *m)
 {
+	if (dlg_menu == m->tree)
+		dlg_menu = 0;
 	free(m->pool);
 	free(m->cmd_of);
 	free(m->tree);

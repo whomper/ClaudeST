@@ -125,6 +125,32 @@ static int head(void)
 	return io_head == 0;
 }
 
+/* A picture's destination must be memory the system gave out: the DSP's
+   words are written in supervisor mode, where a NULL or stale pointer
+   (a picture let go while a turn was given in the middle of its decoding)
+   writes over the vectors at $0 or over ROM and nothing bombs at once
+   (EWeb 0.73, Erez's crash.log 7 Nov 2026). ST RAM is _membot to phystop,
+   TT RAM $01000000 to ramtop (when ramvalid says it); anything else is
+   refused: the DSP is given up for the picture (pic_dsp_failed), the CPU
+   does it, and pic_dsp_bad says which address it was. */
+unsigned long pic_dsp_bad;
+
+static int dest_ok(const void *d, long span)
+{
+	unsigned long a = (unsigned long) d, e = a + span;
+	unsigned long membot = *(volatile unsigned long *) 0x432, phystop = *(volatile unsigned long *) 0x42E;
+	if (a >= membot && e <= phystop && e >= a)
+		return 1;
+	if (*(volatile unsigned long *) 0x5A8 == 0x1357BD13UL) {
+		unsigned long ramtop = *(volatile unsigned long *) 0x5A4;
+		if (a >= 0x01000000UL && e <= ramtop && e >= a)
+			return 1;
+	}
+	pic_dsp_bad = a ? a : 1;
+	pic_dsp_failed = 1;
+	return 0;
+}
+
 /* Each word is waited for: jpeg.a56 sends them from its host interrupt
    while it decodes the next MCU, so one may come late (an interrupt
    waits out a REP) */
@@ -132,6 +158,8 @@ static void sup_get16(void)
 {
 	unsigned short *d = io_s, *o;
 	int r, c;
+	if (io_rows > 0 && !dest_ok(d, (io_rows - 1) * io_pitch * 2 + io_cols * 2L))
+		return;
 	if (!head())
 		return;
 	for (r = 0; r < io_rows; r++, d += io_pitch)
@@ -146,6 +174,8 @@ static void sup_get24(void)
 {
 	unsigned char *d = io_b, *o;
 	int r, c;
+	if (io_rows > 0 && !dest_ok(d, (io_rows - 1) * io_pitch + io_cols * 3L))
+		return;
 	if (!head())
 		return;
 	for (r = 0; r < io_rows; r++, d += io_pitch)

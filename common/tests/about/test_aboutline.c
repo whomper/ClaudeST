@@ -26,9 +26,9 @@ int main(void)
 	about_net_line(b, sizeof(b), "STinG", ABOUT_DIRECT, ABOUT_ONLINE);
 	is(b, "STinG  \xF9  Direct  \xF9  online", "STinG, Direct, online");
 	about_net_line(b, sizeof(b), "none", ABOUT_GATEWAY, ABOUT_OFFLINE);
-	is(b, "No network  \xF9  Pi gateway  \xF9  offline", "no stack: No network");
-	about_net_line(b, sizeof(b), "MiNTnet", "Serial port, 19200 baud", 0);
-	is(b, "MiNTnet  \xF9  Serial port, 19200 baud", "no state: two items");
+	is(b, "No network  \xF9  Gateway  \xF9  offline", "no stack: No network");
+	about_net_line(b, sizeof(b), "MiNTnet", "Gateway, port 2323", 0);
+	is(b, "MiNTnet  \xF9  Gateway, port 2323", "no state: two items");
 
 	about_mem_format(b, sizeof(b), 1, 12 * MB, 0, 98 * MB + MB / 5, 3 * MB + MB / 10);
 	is(b, "TT RAM  \xF9  Free: 98.2 MB TT, 3.1 MB ST", "all in TT RAM");

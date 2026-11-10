@@ -49,6 +49,21 @@ with tempfile.TemporaryDirectory() as d:
           prg[:2] == b"\x60\x1a" and struct.unpack(">HHHH", prg[28:36]) ==
           (0x3F3C, (t.tm_year - 1980) << 9 | t.tm_mon << 5 | t.tm_mday, 0x3F3C, 0x2B))
 
+    m = machines.Machine("STE", os.path.join(d, "ste"))
+    a = m.args()
+    check("STE: Hatari's STE, 4 MB, mono by default; EmuTOS where no tos162.img (not TOS 1.04: no DMA sound)",
+          a[a.index("--machine") + 1] == "ste" and a[a.index("--memsize") + 1] == "4" and "mono" in a and
+          m.describe() == "STE:mono, EmuTOS 1.4")
+    check("STE: C:\\AUTO\\CLOCK.PRG as an ST's (no clock)",
+          os.path.exists(os.path.join(d, "ste", "AUTO", "CLOCK.PRG")))
+    m = machines.Machine("STE:med", os.path.join(d, "stem"))
+    check("STE:med: ST medium", "med" in m.args())
+    with open(os.path.join(tos, "tos162.img"), "wb") as f:
+        f.write(struct.pack(">HH", 0x602E, 0x162) + bytes(60))
+    m = machines.Machine("STE", os.path.join(d, "ste2"))
+    m.args()
+    check("STE with Erez's tos162.img: TOS 1.62 named", m.describe() == "STE:mono, TOS 1.62")
+
     m = machines.Machine("TT", os.path.join(d, "tt"))
     a = m.args()
     check("TT: 68030 code in 16 MB of TT RAM, TT medium", a[a.index("--ttram") + 1] == "16"

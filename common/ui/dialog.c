@@ -10,6 +10,7 @@
  * form_keybd and objc_edit see it, and so is Esc in a dialog without a
  * text field; in a text field Esc empties it, as GEM's form_do does.
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "tos.h"
@@ -114,7 +115,18 @@ const char *dlg_title = "";
 static const char *next_name;		/* dlg_name's, for the next dlg_open */
 static short next_band;			/* dlg_band's, for the next dlg_open */
 void (*dlg_redraw_hook)(const short *msg);
+OBJECT *dlg_menu;
 int dlg_window_on = -1;
+
+/* a menu title chosen while a dialog window is open (MiNT, MagiC: the AES doesn't hold the menu bar there): the dialog
+   is the user's business, so the choice is dropped, as it can't be made on TOS, and the title is shown normal again
+   (MD17, 9 Nov 2026: the AES leaves it highlighted until the app says). It used to be kept and run when the dialog
+   closed. The app's menu bar is dlg_menu (mbar_build sets it) */
+static void menu_drop_msg(const short *msg)
+{
+	if (dlg_menu)
+		menu_tnormal(dlg_menu, msg[3], 1);
+}
 
 /* the screen under the box, kept in memory while it shows (form_alert's
    way); vro_cpyfm through a workstation of our own */
@@ -383,6 +395,45 @@ static int clip(short *x, short *y, short *w, short *h, short cx, short cy, shor
 	return *w > 0 && *h > 0;
 }
 
+/* dlg_draw_one and dlg_draw_range: part of a flat tree (every object the root's child) in the piece
+   (x, y, w, h), each object alone, without the AES's walk through the others. some 1: object a; 2: the root
+   alone (the ground), then objects a to b - 1 that show, in the order the tree has them; 3: those objects only.
+   The mouse is hidden by the caller. rng_until: the time (tos_ms) after which no more objects are started, 0 none;
+   rng_next: the first object not drawn (b when all are) */
+static unsigned long rng_until;
+static short rng_next;
+
+static int cpu_some(OBJECT *tree, int some, short a, short b, short x, short y, short w, short h);
+
+static int over_budget(short drawn)
+{
+	return rng_until && drawn && tos_ms() >= rng_until;
+}
+
+static void some_draw(OBJECT *tree, int some, short a, short b, short x, short y, short w, short h)
+{
+	short i, drawn = 0;
+	rng_next = b;
+	if (cpu_some(tree, some, a, b, x, y, w, h))
+		return;
+	if (some == 1) {
+		objc_draw(tree, a, 0, x, y, w, h);
+		return;
+	}
+	if (some == 2)
+		objc_draw(tree, 0, 0, x, y, w, h);
+	for (i = a; i < b; i++) {
+		if (tree[i].ob_flags & HIDETREE)
+			continue;
+		if (over_budget(drawn)) {
+			rng_next = i;
+			return;
+		}
+		objc_draw(tree, i, 0, x, y, w, h);
+		drawn++;
+	}
+}
+
 /* while a piece of a dialog window is drawn: that piece, which the app's
    own drawing keeps within (dlg_cut) */
 static short lim[4];
@@ -391,7 +442,7 @@ static int lim_on;
 /* the dialog's window, the part (x, y, w, h) of it drawn again through
    the AES's list of what shows of it: the tree, then what the app draws
    over it */
-static void win_paint(short i, short x, short y, short w, short h)
+static void win_paint_some(short i, short x, short y, short w, short h, int some, short a, short b)
 {
 	short rx, ry, rw, rh;
 	wind_update(BEG_UPDATE);
@@ -401,7 +452,9 @@ static void win_paint(short i, short x, short y, short w, short h)
 		if (clip(&rx, &ry, &rw, &rh, x, y, w, h)) {
 			lim[0] = rx, lim[1] = ry, lim[2] = rw, lim[3] = rh;
 			lim_on = 1;
-			if (dw[i].tree)
+			if (dw[i].tree && some)
+				some_draw(dw[i].tree, some, a, b, rx, ry, rw, rh);
+			else if (dw[i].tree)
 				objc_draw(dw[i].tree, 0, 8, rx, ry, rw, rh);
 			if (dw[i].draw)
 				dw[i].draw(rx, ry, rw, rh);
@@ -411,6 +464,11 @@ static void win_paint(short i, short x, short y, short w, short h)
 	}
 	graf_mouse(M_ON, 0);
 	wind_update(END_UPDATE);
+}
+
+static void win_paint(short i, short x, short y, short w, short h)
+{
+	win_paint_some(i, x, y, w, h, 0, 0, 0);
 }
 
 int dlg_cut(short *x, short *y, short *w, short *h)
@@ -1052,7 +1110,53 @@ long dlg_fast_count(void)
 {
 	return fast_count;
 }
+
+/* some_draw's objects the CPU's way where fast_draw's conditions hold (TOS's own screen, flat, text.c's drawing
+   in it): the objects in the order the tree has them, each drawn whole before the next, so what overlaps comes out
+   as objc_draw's with none of fast_draw's reckoning of what the AES draws later; the root's ground first (some 2).
+   1 if drawn, 0 where the AES does it all */
+static int cpu_some(OBJECT *tree, int some, short a, short b, short cx, short cy, short cw, short cch)
+{
+	short ch = aes_ch(), clip[4], i, to = some == 1 ? (short)(a + 1) : b, drawn = 0;
+	if (!dlg_fast_on || !scr_cpu_wins || !scr_cpu_wins() || ch < 0 || dlg_windowed() || !root_ok(tree))
+		return 0;
+	clip[0] = cx;
+	clip[1] = cy;
+	clip[2] = cx + cw - 1;
+	clip[3] = cy + cch - 1;
+	scr_clip(clip);
+	if (some == 2)
+		box_paint(tree[0].ob_x, tree[0].ob_y, tree[0].ob_width, tree[0].ob_height, (signed char)(tree[0].ob_spec >> 16),
+			  (short)((tree[0].ob_spec >> 12) & 0x0f), box_pen(tree[0].ob_spec), tree[0].ob_state);
+	for (i = a; i < to; i++) {
+		SHOWN sh;
+		short kind;
+		if (tree[i].ob_flags & HIDETREE)
+			continue;
+		reach(tree, i, (short)(tree[0].ob_x + tree[i].ob_x), (short)(tree[0].ob_y + tree[i].ob_y), &sh);
+		if (sh.x2 < cx || sh.y2 < cy || sh.x1 >= cx + cw || sh.y1 >= cy + cch)
+			continue;
+		if (over_budget(drawn)) {
+			rng_next = i;
+			break;
+		}
+		kind = fast_kind(tree, i, ch);
+		if (kind == K_AES)
+			objc_draw(tree, i, 0, cx, cy, cw, cch);
+		else
+			cpu_object(&tree[i], kind, sh.x, sh.y, ch, -1);
+		drawn++;
+	}
+	scr_clip(0);
+	return 1;
+}
 #else
+
+static int cpu_some(OBJECT *tree, int some, short a, short b, short x, short y, short w, short h)
+{
+	(void)tree, (void)some, (void)a, (void)b, (void)x, (void)y, (void)w, (void)h;
+	return 0;
+}
 
 /* without -DDLG_CPU (accessories, programs for the 68030 only): every
    dialog objc_draw's, none of the CPU's drawing linked in (EMAILCHK.ACC
@@ -1241,6 +1345,38 @@ void dlg_draw(OBJECT *tree, short obj)
 		objc_draw(tree, 0, 8, x, y, w, h);
 }
 
+/* the area (x, y, w, h) of the open dialog drawn by some_draw: through the window's list of what shows, or
+   straight over the screen */
+static void draw_some(OBJECT *tree, int some, short a, short b, short x, short y, short w, short h)
+{
+	short i = ndw - 1;
+	if (i >= 0 && dw[i].h > 0) {
+		win_paint_some(i, x, y, w, h, some, a, b);
+		return;
+	}
+	graf_mouse(M_OFF, 0);
+	some_draw(tree, some, a, b, x, y, w, h);
+	graf_mouse(M_ON, 0);
+}
+
+void dlg_draw_one(OBJECT *tree, short obj)
+{
+	short x, y;
+	rng_until = 0;
+	objc_offset(tree, obj, &x, &y);
+	draw_some(tree, 1, obj, 0, x, y, tree[obj].ob_width, tree[obj].ob_height);
+}
+
+short dlg_draw_range(OBJECT *tree, short area, short first, short end, int ground, unsigned long budget_ms)
+{
+	short x, y;
+	rng_until = budget_ms && !dlg_in_window() ? tos_ms() + budget_ms : 0;
+	objc_offset(tree, area, &x, &y);
+	draw_some(tree, ground ? 2 : 3, first, end, x - 3, y - 3, tree[area].ob_width + 6, tree[area].ob_height + 6);
+	rng_until = 0;
+	return rng_next;
+}
+
 #ifdef DLG_CLICK
 #include "click.h"
 
@@ -1253,7 +1389,9 @@ static void held_msg(short *msg)
 	short k, i = ndw - 1;
 	for (k = 0; k <= i && dw[k].h != msg[3]; k++)
 		;
-	if (msg[0] == WM_REDRAW && k <= i && dw[k].h > 0) {
+	if (msg[0] == MN_SELECTED && dlg_in_window()) {
+		menu_drop_msg(msg);
+	} else if (msg[0] == WM_REDRAW && k <= i && dw[k].h > 0) {
 		wind_update(END_UPDATE);
 		win_paint(k, msg[4], msg[5], msg[6], msg[7]);
 		wind_update(BEG_UPDATE);
@@ -1339,7 +1477,9 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 			int mine = 1;		/* taken here: the caller doesn't see it */
 			for (k = 0; k <= i && dw[k].h != msg[3]; k++)
 				;
-			if (msg[0] == WM_REDRAW && k <= i && dw[k].h > 0) {
+			if (msg[0] == MN_SELECTED) {
+				menu_drop_msg(msg);	/* a menu choice while the dialog waits: dropped (MD17), whoever asked for messages */
+			} else if (msg[0] == WM_REDRAW && k <= i && dw[k].h > 0) {
 				wind_update(END_UPDATE);
 				win_paint(k, msg[4], msg[5], msg[6], msg[7]);
 				wind_update(BEG_UPDATE);
@@ -1415,9 +1555,42 @@ short dlg_evnt(short flags, short clicks, short mask, short state,
 	}
 }
 
+/* objc_find(tree, 0, 8, mx, my) in C: the last (topmost) object that shows and holds the point, children
+   after their parent, -1 outside the root. The AES's walk through a Settings dialog's hundred objects took
+   an 8 MHz ST 45 to 50 ms a click (TOS 1.04, 9 Nov 2026); this is under a millisecond */
+static short find_in(OBJECT *tree, short i, short ox, short oy, short depth, short mx, short my)
+{
+	short x = (short)(ox + tree[i].ob_x), y = (short)(oy + tree[i].ob_y), found = i, k;
+	if ((tree[i].ob_flags & HIDETREE) || mx < x || my < y || mx >= x + tree[i].ob_width || my >= y + tree[i].ob_height)
+		return -1;
+	if (depth > 0 && tree[i].ob_head >= 0) {
+		for (k = tree[i].ob_head;; k = tree[k].ob_next) {	/* the last child's next is the parent */
+			short r = find_in(tree, k, x, y, (short)(depth - 1), mx, my);
+			if (r >= 0)
+				found = r;
+			if (tree[k].ob_next == i || tree[k].ob_next < 0)
+				break;
+		}
+	}
+	return found;
+}
+
+int dlg_find_own = 1;
+
+/* the AES's own where it draws 3D (an indicator's or activator's border is part of the object: AES 4 reckons it
+   in objc_find), ours where it doesn't */
+short dlg_find(OBJECT *tree, short mx, short my)
+{
+	if (!dlg_find_own || (tree[0].ob_flags & 0x0600))		/* FL3DMASK */
+		return objc_find(tree, 0, 8, mx, my);
+	return find_in(tree, 0, 0, 0, 8, mx, my);
+}
+
+int (*dlg_keys)(OBJECT *tree, short key, short kstate, short edit, short *field);
+
 short dlg_do(OBJECT *tree, short start, short cancel)
 {
-	short next, edit = 0, idx = 0, cont = 1, m[8];
+	short next, edit = 0, idx = 0, cont = 1, m[8], hk, want;
 	int win = dlg_in_window();
 	AEVENT e;
 	if (!win) {
@@ -1425,7 +1598,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 		wind_update(BEG_MCTRL);
 	}
 	flush_keys();
-	next = start > 0 ? start : first_field(tree);
+	next = start > 0 ? start : start < 0 ? 0 : first_field(tree);
 	while (cont) {
 		LFIELD *lf;
 		if (next > 0 && next != edit) {
@@ -1442,8 +1615,18 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 		if (e.which & MU_KEYBD) {
 			if (dlg_esc(e.kreturn) && !dlg_undo(e.kreturn))
 				e.kreturn = 0x011b;	/* ^[ too: the key objc_edit empties a field on */
+			want = 0;
 			if (heb_f10(e.kreturn)) {
 				/* the Hebrew keyboard switched */
+			} else if (dlg_keys && (hk = dlg_keys(tree, e.kreturn, e.kstate, edit, &want)) != 0) {
+				/* the app's own key (settings.c's focus, Space, the arrows); it says where the text cursor goes */
+				if (want > 0) {
+					next = want;
+				} else if (want < 0 && edit > 0) {
+					objc_edit(tree, edit, 0, &idx, ED_END);
+					edit = 0;
+					next = 0;
+				}
 			} else if (lf && !dlg_undo(e.kreturn) && lf_key(lf, e.kreturn, key_char ? key_char(e.kstate, e.kreturn) : e.kreturn & 0xff, e.kstate, &idx)) {
 				/* the long field took it (Esc empties it) */
 			} else if (dlg_cancel_key(e.kreturn, edit > 0)) {
@@ -1466,7 +1649,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 			}
 		}
 		if ((e.which & MU_BUTTON) && cont) {
-			next = objc_find(tree, 0, 8, e.mx, e.my);
+			next = dlg_find(tree, e.mx, e.my);
 			if (next < 0) {
 				Bconout(2, 7);		/* outside the box: the bell, as form_do */
 				next = 0;
@@ -1503,7 +1686,6 @@ int dlg_win_button(OBJECT *tree, short o)
 }
 
 #ifdef DLG_TRACE
-#include <stdio.h>
 /* built with -DDLG_TRACE: each exit object's place on the screen to the
    emulator's console (NatFeats), "DLG exit OBJ X Y W H TEXT", so a test
    rig in Hatari can click it */
@@ -1537,19 +1719,37 @@ static void trace(OBJECT *tree)
 #define FL3DACT 0x0600
 #define FL3DMASK 0x0600
 
+static short g3_v, g3_q[4], g3_asked, g3_rc;
+
 int dlg_3d_ok(void)
 {
 	static int ok = -1;
 	short v, a, b, c, d;
 	if (ok < 0) {
 		v = aes_version();
+		g3_v = v;
 		ok = v >= 0x0340;
 		/* appl_getinfo(13): 3D objects; asked only where it exists (an
 		   AES 4, or ?AGI): EmuTOS's hangs */
-		if (ok && (v >= 0x0400 || get_cookie(0x3F414749L)) && appl_getinfo(13, &a, &b, &c, &d))
-			ok = a != 0;
+		if (ok && (v >= 0x0400 || get_cookie(0x3F414749L))) {
+			g3_asked = 1;
+			g3_rc = appl_getinfo(13, &a, &b, &c, &d);
+			g3_q[0] = a; g3_q[1] = b; g3_q[2] = c; g3_q[3] = d;
+			if (g3_rc)
+				ok = a != 0;
+		}
 	}
 	return ok;
+}
+
+/* one line for the log: what dlg_3d_ok asked the AES and what it answered
+   (a dialog drawn flat where it should be 3D: Erez's Falcon, 8 Nov) */
+int dlg_3d_why(char *buf, int size)
+{
+	int ok = dlg_3d_ok();
+	return snprintf(buf, size, "3D dialogs: %s; AES %04x, appl_getinfo(13) %s: %d %d %d %d",
+			ok ? "on" : "off", g3_v & 0xffff, g3_asked ? (g3_rc ? "answered" : "failed") : "not asked",
+			g3_q[0], g3_q[1], g3_q[2], g3_q[3]);
 }
 
 int dlg_3d_on = 1;

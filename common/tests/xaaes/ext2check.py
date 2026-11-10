@@ -19,6 +19,7 @@ def main():
     ap.add_argument("work")
     ap.add_argument("tos")
     ap.add_argument("--display", default=":88")
+    ap.add_argument("--mem-prot", action="store_true", help="run.py's --mem-prot")
     a = ap.parse_args()
     bad = 0
     prg = os.path.join(HERE, "build", "EXT2TEST.PRG")
@@ -39,7 +40,8 @@ def main():
             print("ext2test.prg on the ext2 drive, started from there", flush=True)
             shutil.copy(prg, os.path.join(src, "ext2test.prg"))
             args += ["--start", "d:\\ext2test.prg"]
-        r = subprocess.run(args + ["--ext2", src, "--display", a.display, "--steps", "until EXT2 done 150"],
+        r = subprocess.run(args + ["--ext2", src, "--display", a.display, "--steps", "until EXT2 done 150"] +
+                           (["--mem-prot"] if a.mem_prot else []),
                            capture_output=True, text=True)
         print(r.stdout, end="")
         bad += checks(work, r.returncode)

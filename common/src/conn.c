@@ -143,14 +143,20 @@ const char *conn_security(CONN *c)
 long conn_bytes, conn_bytes_out;
 int conn_stop;
 void (*conn_tick)(void);
+void (*conn_phase)(int phase, long bytes);
 
 /* the log is written in blocks: opening the file for every line made a
    big download crawl on an Atari disk. Milestones (" -- ", " !! ")
    write it out at once, so a crash loses little; but not those of a TLS
    handshake (start_tls) */
-static char logstat[4096];
-static char *logbuf = logstat;
-static int loglen, logcap = sizeof(logstat), job_hold;
+/* The buffer is taken from the heap at the first line logged and given
+   back when the log is switched off (conn_logfile empty): an app that
+   logs nothing carries no 4 KB of BSS (EMail, 7 Nov 2026: translation
+   needed those 4 KB on a 1 MB ST). Where the heap has no 4 KB the lines
+   are written out one at a time, as the unbuffered log always was. */
+#define LOG_SMALL 4096
+static char *logbuf;
+static int loglen, logcap, job_hold, logbig;
 
 /* a job's milestones (" -- ") stay in the buffer too until it ends (the
    guidelines, 6.5: a sync that wrote each one opened the log 30 times),
@@ -168,50 +174,155 @@ long net_sendbuf = 4096;
 
 void conn_log_hold(int on)
 {
-	if (on && !job_hold && conn_logfile[0] && logbuf == logstat &&
-	    conn_log_hold_bytes > (long)sizeof(logstat)) {
+	if (on && !job_hold && conn_logfile[0] && !logbig &&
+	    conn_log_hold_bytes > LOG_SMALL) {
 		char *b = malloc(conn_log_hold_bytes);
 		if (b) {
-			memcpy(b, logbuf, loglen);
+			if (logbuf) {
+				memcpy(b, logbuf, loglen);
+				free(logbuf);
+			}
 			logbuf = b;
 			logcap = (int)conn_log_hold_bytes;
+			logbig = 1;
 		}
 	}
 	job_hold = on;
 	if (!on) {
 		conn_log_flush();
-		if (logbuf != logstat) {
+		if (logbig) {
 			free(logbuf);
-			logbuf = logstat;
-			logcap = sizeof(logstat);
+			logbuf = 0;
+			logcap = 0;
+			logbig = 0;
 		}
 	}
 }
 
-void conn_log_flush(void)
+/* The log's size is capped (guidelines 6.5, 7.3): EMAIL.LOG and the others
+   were appended to across runs without end. A write that would take the
+   file over conn_log_max (256 KB) moves it to NAME.OLD, replacing an older
+   NAME.OLD, and starts a new NAME.LOG: the last 256 to 512 KB are always
+   there. The size comes from the handle that is open for the write anyway
+   (conn_log_size, which an app sets to its pf_handle_size: one Fseek, no
+   look at the folder); without the hook the file is looked at once a run
+   (pf_size) and the bytes written are counted from there. A flush is one
+   open; a roll-over is a second. */
+#ifndef LOG_MAX
+#define LOG_MAX (256L * 1024)
+#endif
+long conn_log_max = LOG_MAX;
+long (*conn_log_size)(int h);
+static long log_known = -1;
+static unsigned long log_known_for;	/* a sum of the name the size is for */
+
+/* "C:\APP\EMAIL.LOG" -> "C:\APP\EMAIL.OLD" (a dot in a folder's name is not
+   an extension) */
+static void log_old_name(char *old)
+{
+	size_t i, n = strlen(conn_logfile), dot = n;
+	for (i = 0; i < n; i++) {
+		char c = conn_logfile[i];
+		if (c == '.')
+			dot = i;
+		else if (c == PF_SEP || c == '/' || c == '\\')
+			dot = n;
+	}
+	memcpy(old, conn_logfile, dot);
+	strcpy(old + dot, ".OLD");
+}
+
+static void log_write(const char *s, long n)
 {
 	int h;
+	long size = 0;
+	if (!conn_logfile[0] || n <= 0)
+		return;
+	if (conn_log_max > 0 && !conn_log_size) {
+		unsigned long sum = 1;
+		const char *p;
+		for (p = conn_logfile; *p; p++)
+			sum = sum * 31 + (unsigned char)*p;
+		if (sum != log_known_for) {
+			size = pf_size(conn_logfile);
+			log_known = size < 0 ? 0 : size;
+			log_known_for = sum;
+		}
+	}
+	if ((h = pf_open(conn_logfile, PF_APPEND)) < 0)
+		return;
+	if (conn_log_max > 0) {
+		if (conn_log_size) {
+			size = conn_log_size(h);
+			if (size < 0)
+				size = 0;
+			else
+				pf_seek(h, size);	/* the hook may leave the place at the start */
+		} else {
+			size = log_known;
+		}
+		if (size > 0 && size + n > conn_log_max) {
+			char old[sizeof(conn_logfile) + 4];
+			pf_close(h);
+			log_old_name(old);
+			pf_remove(old);		/* TOS doesn't rename over a file */
+			if (pf_rename(conn_logfile, old) != 0)
+				pf_remove(conn_logfile);	/* the cap holds even so */
+			if ((h = pf_open(conn_logfile, PF_APPEND)) < 0) {
+				log_known = 0;
+				return;
+			}
+			size = 0;
+		}
+		log_known = size + n;
+	}
+	pf_write(h, s, n);
+	pf_close(h);
+}
+
+/* one line at the start of a run, for an app to call once: "EMail 1.23,
+   2026-11-09 14:05:31" (the date only where the clock has one) */
+void conn_log_start(const char *app_version)
+{
+	char line[96];
+	PFTIME t;
+	int n;
+	if (!conn_logfile[0])
+		return;
+	memset(&t, 0, sizeof(t));
+	pf_now(&t);
+	n = snprintf(line, sizeof(line), "%s", app_version ? app_version : "");
+	if (t.year >= 1980 && n >= 0 && n < (int)sizeof(line) - 24)
+		snprintf(line + n, sizeof(line) - n, ", %04d-%02d-%02d %02d:%02d:%02d", t.year, t.mon,
+			 t.day, t.hour, t.min, t.sec);
+	conn_log("start", " -- ", line, (long)strlen(line));
+}
+
+void conn_log_flush(void)
+{
 	if (!loglen)
 		return;
-	if (conn_logfile[0] && (h = pf_open(conn_logfile, PF_APPEND)) >= 0) {
-		pf_write(h, logbuf, loglen);
-		pf_close(h);
-	}
+	log_write(logbuf, loglen);
 	loglen = 0;
 }
 
 void conn_log_append(const char *text, long n)
 {
-	int h;
 	conn_log_flush();
-	if (conn_logfile[0] && (h = pf_open(conn_logfile, PF_APPEND)) >= 0) {
-		pf_write(h, text, n);
-		pf_close(h);
-	}
+	log_write(text, n);
 }
 
 static void log_add(const char *s, long n)
 {
+	if (!logbuf) {
+		logbuf = malloc(LOG_SMALL);
+		if (logbuf)
+			logcap = LOG_SMALL;
+	}
+	if (!logbuf) {			/* no room: this piece goes straight out */
+		log_write(s, n);
+		return;
+	}
 	while (n > 0) {
 		long k = (long)logcap - loglen;
 		if (k > n)
@@ -248,8 +359,15 @@ static void log_stamp(void)
 
 void conn_log(const char *who, const char *dir, const char *text, long n)
 {
-	if (!conn_logfile[0])
+	if (!conn_logfile[0]) {		/* switched off: the buffer goes back */
+		log_known_for = 0;	/* and the file's size is looked at again */
+		if (logbuf) {
+			free(logbuf);
+			logbuf = 0;
+			logcap = loglen = logbig = 0;
+		}
 		return;
+	}
 	log_stamp();
 	log_add(who, strlen(who));
 	log_add(dir, strlen(dir));

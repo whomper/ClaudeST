@@ -27,6 +27,14 @@
    where Esc stops the transfer) passes -1: Esc and Undo then give -1,
    told apart from every button, and no object is drawn or changed. */
 short dlg_do(OBJECT *tree, short start, short cancel);
+/* start < 0: no text field gets the cursor (the focus is on a control: settings.c's keyboard reach, D25) */
+
+/* The app's own key, offered to dlg_do before its own (after F10): key as evnt_multi gives it, kstate, edit the object whose
+   text field has the cursor (0: none), *field set by the function: > 0 the text field that gets the cursor, < 0 the
+   cursor leaves its field, 0 as it is. It returns 1 when it took the key (dlg_do does nothing else with it), 0 to leave it
+   to dlg_do. NULL by default; settings.c sets it while its dialog is up (Tab, Space, arrows: the keyboard reach, 5.10).
+   A function that serves one tree checks `tree` and takes nothing of another dialog's (a button's own dialog) */
+extern int (*dlg_keys)(OBJECT *tree, short key, short kstate, short edit, short *field);
 
 /* the whole of it: the screen and mouse kept (wind_update), the tree
    centred (form_center) on a multiple of 16 pixels across (its text on a
@@ -101,6 +109,22 @@ void dlg_more(void (*draw)(short x, short y, short w, short h));
 int dlg_cut(short *x, short *y, short *w, short *h);
 /* an object of the open dialog drawn again, through what shows of it */
 void dlg_draw(OBJECT *tree, short obj);
+/* Part of the open dialog drawn again without the AES's walk through every object (a flat tree: all the root's
+   children; a Settings dialog has a hundred, 35 ms of an 8 MHz ST's walk for each tab drawn, 9 Nov 2026):
+   dlg_draw_one: object obj alone, its own box;
+   dlg_draw_range: the area of object `area` and 3 pixels round it: with `ground` the root alone first (its fill), then
+   objects first to end - 1 that are not HIDETREE, each alone, in order. The objects must not need anything of the others
+   drawn under them but the root. Through what shows of the window, as dlg_draw; with -DDLG_CPU, the CPU draws what it
+   can, as dlg_open's does. budget_ms (0: none; not in a window): no object is started after that many ms, and the
+   first one not drawn comes back (end when all are): the caller makes an event call (evnt_timer_(0)) and goes on from
+   there with ground 0, so no stretch between event calls is long (the guidelines' Speed) */
+void dlg_draw_one(OBJECT *tree, short obj);
+short dlg_draw_range(OBJECT *tree, short area, short first, short end, int ground, unsigned long budget_ms);
+/* objc_find(tree, 0, 8, x, y) without the AES's walk (45 to 50 ms a click on a Settings dialog on an 8 MHz ST): the
+   last object that shows and holds the point, -1 outside the box. The AES's own where it draws 3D (its borders are
+   part of the object); dlg_find_own 0 (the tests) asks it always. dlg_do takes its clicks through it */
+short dlg_find(OBJECT *tree, short x, short y);
+extern int dlg_find_own;
 /* where the open dialog is now */
 void dlg_area(short *x, short *y, short *w, short *h);
 /* 1 where dialogs open in a window (aes_count() != 1, or MagiC);
@@ -128,6 +152,11 @@ void dlg_band(short obj);
    while a dialog loop that takes none waits (a PEOPLE question, VA_START,
    AP_TERM): up to eight, given back as they came */
 extern void (*dlg_redraw_hook)(const short *msg);
+/* The app's menu bar (mbar.h's MBAR.tree; mbar_build sets it where dialog.c is linked, an app with its own bar sets it):
+   a menu title chosen while a dialog window is open (MN_SELECTED: the AES doesn't hold the bar there) is dropped, not
+   kept and run after the dialog closes, and the title is shown normal again (menu_tnormal) (MENUS 1.8, MD17). Without it
+   the choice is dropped all the same and the app's menu_tnormal is the app's. A dialog over the screen (TOS) can't have one. */
+extern OBJECT *dlg_menu;
 
 /* 1 for Esc and Undo, as evnt_multi gives them (scan code in the high
    byte) */
@@ -149,6 +178,7 @@ int dlg_cancel_key(short key, int in_field);
 void dlg_3d(OBJECT *tree);
 /* 1 where the AES draws 3D objects */
 int dlg_3d_ok(void);
+int dlg_3d_why(char *buf, int size);	/* a log line: why 3D is on or off */
 /* 1, the default: 3D wherever the AES has it. No app sets it: there is no
    setting for it (a tester, Erez 27 Oct 2026: an AES without 3D ignores
    the flags anyway). The tests set 0 to see the flat look on a 3D AES */

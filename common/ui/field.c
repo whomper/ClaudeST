@@ -24,6 +24,7 @@
 #define SC_CLRHOME   0x47
 #define SC_ESC       0x01
 #define LEFT_KEY     0x4b00
+#define RIGHT_KEY    0x4d00
 
 /* what the field shows: the text from off, as far as it shows, with the
    cursor in it; a quarter of the field is kept to the cursor's left when
@@ -222,6 +223,15 @@ int lf_key(LFIELD *f, short key, short ch, short kstate, short *idx)
 	}
 	if (!strcmp(was, f->view) && off == f->off && cur == f->cur)
 		return 1;			/* nothing moved: at an end, or full */
+	if (!strcmp(was, f->view) && off == f->off && *idx == cur - off && (f->cur == cur - 1 || f->cur == cur + 1)) {
+		/* an arrow inside what is shown: the AES moves its cursor one place. Putting it at the end
+		   (ED_INIT) and walking it back showed it jump to the end and back at every arrow */
+		short at = *idx;
+		objc_edit(f->tree, f->obj, f->cur < cur ? LEFT_KEY : RIGHT_KEY, idx, ED_CHAR);
+		if (*idx == f->cur - f->off)
+			return 1;
+		*idx = at;			/* an AES that didn't move it: the long way */
+	}
 	objc_edit(f->tree, f->obj, 0, idx, ED_END);
 	if (strcmp(was, f->view))
 		draw(f);

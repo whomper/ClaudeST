@@ -4,7 +4,7 @@
  * tls_none.c - the ST edition (NAMEST.PRG/.ACC) has no TLS of its own: an
  * ST is too slow for it, and leaving out BearSSL's 150 KB leaves room for
  * STinG and the program's data on a 1 MB machine. It reaches secure
- * servers through the Raspberry Pi gateway.
+ * servers through the Gateway.
  *
  * The app names its Falcon edition in TLS_FULL_EDITION (e.g. -D
  * TLS_FULL_EDITION=\"ECAL.ACC\"), for the message below.
@@ -30,7 +30,7 @@ void (*tls_log)(const char *msg);
 int (*tls_rsa_accel)(unsigned char *x, size_t xlen, const unsigned char *n, size_t nlen,
 		     const unsigned char *e, size_t elen);
 
-static const char why[] = "this is the ST edition: secure connections go through the Raspberry Pi gateway "
+static const char why[] = "this is the ST edition: secure connections go through the Gateway "
 			  "(Falcon mode is in " TLS_FULL_EDITION ")";
 
 int tls_load_anchors(const char *path, char *err, int errlen)

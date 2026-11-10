@@ -80,7 +80,7 @@ int tls_ovl_load(char *err, int errlen)
 	cpu = get_cookie(0x5F435055L);		/* _CPU: 0, 10, 20, 30, 40, 60 */
 	if (cpu < 20) {
 		str_copy(err, "a Direct connection needs a 68020 or better (a TT, a Falcon): "
-			 "use the Raspberry Pi gateway", errlen);
+			 "use the Gateway", errlen);
 		return 0;
 	}
 	t0 = pf_ms();

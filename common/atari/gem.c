@@ -210,7 +210,13 @@ static short aes(short op, short nin, short nout, short nain, short naout)
 }
 
 short appl_init(void) { return aes(10, 0, 1, 0, 0); }
-short appl_exit(void) { return aes(19, 0, 1, 0, 0); }
+static void kq_off(void);
+
+short appl_exit(void)
+{
+	kq_off();
+	return aes(19, 0, 1, 0, 0);
+}
 
 short graf_handle(short *wchar, short *hchar, short *wbox, short *hbox)
 {
@@ -628,6 +634,16 @@ short aes_count(void)
 	return global[1];
 }
 
+/* an AES that runs several programs at once: ap_count -1, or the MagX or MiNT cookie where a version of the AES
+   (MagiC's) reports something else in ap_count: evnt_multi_'s double click needs it (EFTP, 9 Nov) */
+static int aes_multi(void)
+{
+	static short k = -1;		/* worked out once: the cookies don't change while the program runs, and a cookie walk is a Supexec call */
+	if (k < 0)
+		k = aes_count() < 0 || get_cookie(0x4D616758L) || get_cookie(0x4D694E54L);	/* MagX, MiNT */
+	return k;
+}
+
 /* the GEM file selector; the titled version needs AES 1.4 (TOS 1.04) */
 short fsel_exinput(char *path, char *name, short *button, const char *title)
 {
@@ -833,6 +849,117 @@ static int arrow_echoes(void)
 	return k;
 }
 
+/* Keys typed while the program is busy (key_ctrl, key_shift in gem.h). TOS's
+   AES reads a key from the BIOS keyboard buffer when the program next
+   calls it, and gives kstate as it is then: a Shift+^N typed during a
+   long draw comes as 0x310E with kstate 0, the same as ^N (Hatari, TOS
+   1.04: tests/busykeys). With conterm's bit 3 set (0x484) every entry
+   in the BIOS buffer carries the shift state of the moment it was typed
+   in its top byte, and the AES doesn't mind. So the first call of
+   evnt_multi_ (or key_state_init) sets the bit and notes where the
+   buffer's end is; when the AES gives a key, the entries written since are
+   added to a list (the AES moves the keys out of the BIOS buffer into its
+   own queue at once, the entries stay where they were written), the key is
+   looked for in it, and the state it was typed with goes into kstate:
+   every shortcut test is right with no change in the app. The ones that
+   waited before it in the list were taken by someone else (a form_do)
+   and go. appl_exit puts the bit back if it was off. Not under MagiC or
+   MiNT, whose AES takes the keys as they are typed. */
+static unsigned char kq_old;
+static short kq_state = -1;		/* -1 not looked at, 0 off, 1 on */
+static short kq_last;			/* the BIOS buffer's write place when the list was last brought up to date */
+static IOREC *kq_io;
+#define KQ_MAX 32
+static struct {
+	unsigned char shift;
+	short key;
+} kq[KQ_MAX];
+static short kq_n;
+
+static void sup_kq_on(void)
+{
+	unsigned char v;
+	__asm__ volatile("move.b 0x484.w,%0" : "=d"(v));
+	kq_old = v;
+	__asm__ volatile("or.b #8,0x484.w" : : : "cc", "memory");
+}
+
+static void sup_kq_off(void)
+{
+	if (!(kq_old & 8))
+		__asm__ volatile("and.b #0xf7,0x484.w" : : : "cc", "memory");
+}
+
+static void kq_off(void)
+{
+	if (kq_state == 1) {
+		Supexec(sup_kq_off);
+		kq_state = 0;
+	}
+}
+
+/* the shift state on from here, if the AES is TOS's */
+static void kq_init(void)
+{
+	kq_state = 0;
+	kq_n = 0;
+	if (global[0] < 0x0400 && !get_cookie(0x4D616758L) && !get_cookie(0x4D694E54L)) {	/* MagX, MiNT */
+		kq_io = Iorec(1);
+		if (kq_io && kq_io->ibufsiz >= 8) {
+			Supexec(sup_kq_on);
+			kq_last = kq_io->ibuftl;
+			kq_state = 1;
+		}
+	}
+}
+
+/* an app that is busy before its first evnt_multi_ (its start) calls this right after appl_init: the keys typed
+   from then on carry their shift state */
+void key_state_init(void)
+{
+	if (kq_state < 0)
+		kq_init();
+}
+
+/* the keys written to the BIOS buffer since the last time, with their shift state, added to the list */
+static void kq_note(void)
+{
+	short tl = kq_io->ibuftl;
+	while (kq_last != tl) {
+		const unsigned char *p;
+		kq_last = (short)(kq_last + 4);
+		if (kq_last >= kq_io->ibufsiz)
+			kq_last = 0;
+		p = (const unsigned char *)kq_io->ibuf + kq_last;
+		if (kq_n == KQ_MAX) {		/* full: the oldest goes */
+			short i;
+			for (i = 1; i < KQ_MAX; i++)
+				kq[i - 1] = kq[i];
+			kq_n--;
+		}
+		kq[kq_n].shift = (unsigned char)(p[0] & 0x0f);
+		kq[kq_n].key = (short)(p[1] << 8 | p[3]);
+		kq_n++;
+	}
+}
+
+/* the AES gave a key: kstate gets what was held when it was typed */
+static void kq_fix(AEVENT *ev)
+{
+	short i, j;
+	if (kq_state != 1)
+		return;
+	kq_note();
+	for (j = 0; j < kq_n && kq[j].key != ev->kreturn; j++)
+		;
+	if (j == kq_n)			/* not in it: kstate stays as the AES gave it */
+		return;
+	ev->kstate |= kq[j].shift;
+	for (i = j + 1; i < kq_n; i++)
+		kq[i - j - 1] = kq[i];
+	kq_n -= j + 1;
+}
+
 static short evnt_multi_aes(short flags, short clicks, short mask, short state,
 			    unsigned long timer, short *msg, AEVENT *ev);
 
@@ -842,10 +969,20 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 	for (;;) {
 		short last = arr_win, which;	/* only the very next event can be its echo */
 		u32 t0 = last >= 0 ? tos_ms() : 0;
-		short two = clicks == 0x101 && aes_count() < 0;
+		/* A wait for the left button's press, asked as 0x101 or as the plain 1, 1, 1 that filepick's, EFTP's
+		   and the guidelines' 5.8 window loops ask: XaAES drops a double click whole for either (the hub's
+		   rig, 9 Nov 2026). Asked for two as 0x102, the plain 1, 1, 1's state 1 makes it hand back the
+		   same press every 10 ms; 0x102 with the state 0 (what the callers of 0x101 ask: mask 3, state 0)
+		   gives each press once, with its count. A wait for a release (state 0) keeps its count. */
+		short two = aes_multi() && (clicks == 0x101 || (clicks == 1 && mask == 1 && state == 1));
+		short st = two && clicks == 1 ? 0 : state;
 		if (flags & MU_MESAG)
 			arr_win = -1;
-		which = evnt_multi_aes(flags, two ? 0x102 : clicks, mask, state, timer, msg, ev);
+		if ((flags & MU_KEYBD) && kq_state < 0)
+			kq_init();
+		which = evnt_multi_aes(flags, two ? 0x102 : clicks, mask, st, timer, msg, ev);
+		if (which & MU_KEYBD)
+			kq_fix(ev);
 		if (two && (which & MU_BUTTON))
 			aes_double = ev->breturn >= 2;
 		if (!(which & MU_MESAG) || msg[0] != WM_ARROWED || !arrow_echoes())

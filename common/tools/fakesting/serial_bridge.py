@@ -104,6 +104,28 @@ class Bridge:
                 except OSError as e:
                     log("conn %d: %s" % (cn, e))
                     self.send(b"S" + bytes([cn, 0]))
+            elif t == b"U":
+                ip = socket.inet_ntoa(self.read(4))
+                port = struct.unpack(">H", self.read(2))[0]
+                to = (ip, port)
+                if (ip, port) == ("10.0.2.3", 53):	# FAKESTNG's NAMESERVER
+                    dns = os.environ.get("FAKESTING_DNS", "")
+                    if dns:
+                        h, _, p = dns.rpartition(":")
+                        to = (h, int(p))
+                log("conn %d: UDP %s:%d" % (cn, to[0], to[1]))
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(to)
+                    with self.lock:
+                        self.socks[cn] = s
+                    with self.cv:
+                        self.credit[cn] = WINDOW
+                    self.send(b"S" + bytes([cn, 1]))
+                    threading.Thread(target=self.reader, args=(cn, s), daemon=True).start()
+                except OSError as e:
+                    log("conn %d: %s" % (cn, e))
+                    self.send(b"S" + bytes([cn, 0]))
             elif t == b"D":
                 n = struct.unpack(">H", self.read(2))[0]
                 data = self.read(n)

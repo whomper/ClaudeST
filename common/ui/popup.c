@@ -8,6 +8,16 @@
  *
  * Labels starting with '-' are separators, with '~' disabled items, and
  * with '\x08' (the Atari check mark) checked ones.
+ *
+ * Two contracts for the labels (D15, 9 Nov 2026; popup.h):
+ *   popup(), popup_alt()      the old one: the label carries its own padding,
+ *                             two spaces ("  Text", "\x08 Text"), the text 4
+ *                             cells in; an unpadded "\x08Text" sits a cell
+ *                             right of "Text".
+ *   popup_m(), popup_m_alt()  the new one: a label is its words ("Text",
+ *                             "~Text", "\x08Text"); the box puts every text 2
+ *                             cells in and the tick in the margin before it,
+ *                             checked or not, so rows line up.
  */
 #include <string.h>
 #include "gemui.h"
@@ -35,6 +45,7 @@ static void pclip(int on, short *r)
 #define MAXROWS 64
 
 static short px, py, pw, ih, sh;
+static short margin;			/* 1: popup_m's contract, 0: the old one */
 static short rowy[MAXROWS];		/* each row's top, from the box's */
 
 static short rowh(const char *const *lab, short i)
@@ -91,10 +102,12 @@ static void item(const char *const *lab, short i, short on)
 	fill(&r, on ? 1 : 0);
 	if (l[0] == '\x08') {
 		/* a check mark in the margin, where the first of the two
-		   spaces would be: the text stays where unchecked text is */
+		   spaces would be: the old contract's text stays where its
+		   padded unchecked text is, the new one's where all text is */
 		text_at(px + cw / 2, y + (ih - ch) / 2, "\x08", 1, 1, on ? TX_INVERSE : 0);
 		l++;
-		x0 = px + 3 * cw;
+		if (!margin)
+			x0 = px + 3 * cw;
 	} else if (l[0] == '~') {
 		l++;
 	}
@@ -127,12 +140,55 @@ static short mouse(short *mx, short *my)
 GRECT popup_area;
 short popup_put_back;
 
+static short run(short x, short y, short alt_y, const char *const *lab, short n);
+
 short popup(short x, short y, const char *const *lab, short n)
 {
 	return popup_alt(x, y, -1, lab, n);
 }
 
 short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
+{
+	margin = 0;
+	return run(x, y, alt_y, lab, n);
+}
+
+short popup_m(short x, short y, const char *const *lab, short n)
+{
+	return popup_m_alt(x, y, -1, lab, n);
+}
+
+short popup_m_alt(short x, short y, short alt_y, const char *const *lab, short n)
+{
+	margin = 1;
+	return run(x, y, alt_y, lab, n);
+}
+
+/* A choice pop-up over its button (D27, the AES's own pop-ups' way, 5.7): the ticked row `sel` is over the
+   button whose top-left is (x, y): the box's rows start 2 pixels down and their text a pixel in, so its row
+   `sel` begins a pixel above the button. Rows are those layout() makes (separators count), so the place is
+   right for a menu with lines and when the rows are squeezed to fit a short screen. Where that would put the
+   box off the desktop it is moved, not flipped above. The new contract (popup_m): labels are words. */
+short popup_over(short x, short y, const char *const *lab, short n, short sel)
+{
+	short bh, top;
+	font_sys_push();
+	if (n > MAXROWS)
+		n = MAXROWS;
+	if (sel < 0 || sel >= n)
+		sel = 0;
+	bh = layout(lab, n);
+	top = (short)(y - rowy[sel] - 1);
+	if (top + bh + 2 > desk_y + desk_h)
+		top = (short)(desk_y + desk_h - bh - 2);
+	if (top < desk_y)
+		top = desk_y;
+	font_sys_pop();
+	margin = 1;
+	return run(x, top, -1, lab, n);
+}
+
+static short run(short x, short y, short alt_y, const char *const *lab, short n)
 {
 	short i, w = 0, sel = -1, res = -1, held, moved = 0, bh;
 	short mx, my, ox, oy, m[8], clipr[4];
@@ -144,7 +200,7 @@ short popup_alt(short x, short y, short alt_y, const char *const *lab, short n)
 	if (n > MAXROWS)
 		n = MAXROWS;
 	for (i = 0; i < n; i++) {
-		short l = (short)strlen(lab[i]) - (lab[i][0] == '~');
+		short l = (short)strlen(lab[i]) - (lab[i][0] == '~') - (margin && lab[i][0] == '\x08');
 		if (l > w)
 			w = l;
 	}
