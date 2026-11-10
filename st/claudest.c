@@ -4787,8 +4787,22 @@ static void tip_poll(short events)
 		return;
 	tip_done = 1;			/* once per resting place */
 	t = tip_text(mx, my, &ty);
-	if (t)
-		show_tip(mx, t, ty);
+	if (t) {
+		/* BubbleGEM's first, when it runs (D18): a Hebrew title in the
+		   order it is seen, as ClaudeST's own box draws it (text_bidi) */
+		static char vis[BIDI_MAX + 1];
+		short n = strlen(t);
+		const char *b = t;
+		if (bidi_has_rtl(t, n)) {
+			if (n > BIDI_MAX)
+				n = BIDI_MAX;
+			bidi_visual(t, n, bidi_is_rtl(t, n), vis);
+			vis[n] = 0;
+			b = vis;
+		}
+		if (!tip_bubble(b, mx, my))
+			show_tip(mx, t, ty);
+	}
 }
 
 static void handle_rclick(short mx, short my)
@@ -5856,6 +5870,7 @@ int main(void)
 	if (apid < 0)
 		return 1;
 	key_state_init();	/* Shift typed during the long start keeps its state (gem.h) */
+	tip_init(0);		/* BubbleGEM's text buffer (tip_bubble); the box is ClaudeST's own */
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
 	dlg_title = "ClaudeST";		/* dialogs in a window (3.5) */
 	notify_init("CLAUDEST");	/* BGEM.NG's notifications (4.5) */
