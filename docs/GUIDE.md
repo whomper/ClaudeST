@@ -593,7 +593,7 @@ ignored and left out the next time ClaudeST saves.
 | Setting | Set by |
 |------|--------|
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
-| `FONT=1,8` | Options ▸ Font: the font's id (1 = the system font) and size (8 or 16 for the system font's two sizes) |
+| `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |

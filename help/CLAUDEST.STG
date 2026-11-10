@@ -494,8 +494,8 @@
 
     HOST=192.168.1.10       the Gateway's address (Settings, /connect)
     PORT=2323               the Gateway's port
-    FONT=1,8                Options > Font: the font's id (1 = system
-                            font) and size
+    FONT=System font,8      Options > Font: the font's name (System
+                            font, or a GDOS font's) and size
     HEBFONT=0               Settings, Hebrew in fonts: where the font
                             keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862)
     SIDEBAR=240             the sidebar's width, by dragging the divider

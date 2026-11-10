@@ -90,6 +90,9 @@ short cst_gl_wchar, cst_gl_hchar;	/* the same, for the shared blocks (st/ui.h) *
  * system font (font_pt 8 or 16: its 8x8 or 8x16 size; 0 the screen's
  * own), else a GDOS font at font_pt points */
 static short font_id = 1, font_pt;
+/* the text font's name, as CLAUDEST.INF keeps it (FONT=name,points, D43):
+   "" the system font; the GDOS id is looked up from it at the start */
+static char font_name[33];
 static short cur_font_id = 1, cur_font_pt;	/* the font set now (set_font) */
 static short set_font(short id, short pt);
 static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
@@ -2717,9 +2720,34 @@ static short inf_setting(const char *l)
 		if (n)
 			tcp_port = n;
 	} else if (inf_key(l, "FONT", &v)) {
-		u16 id = inf_num(&v);
-		font_id = id ? id : 1;
-		font_pt = inf_num(&v);
+		/* FONT=name,points; before 2.5 FONT=id,points, read once and
+		   written the new way (D43, D44): the id's name is found at
+		   the start (font_apply) */
+		const char *c = strrchr(v, ',');
+		short digits = 1, k;
+		for (k = 0; v + k < (c ? c : v + strlen(v)); k++)
+			if (v[k] < '0' || v[k] > '9')
+				digits = 0;
+		if (digits && k) {
+			u16 id = inf_num(&v);
+			font_id = id ? id : 1;
+			font_pt = inf_num(&v);
+			font_name[0] = 0;
+		} else {
+			short n = c ? c - v : (short)strlen(v);
+			if (n > (short)sizeof(font_name) - 1)
+				n = sizeof(font_name) - 1;
+			memcpy(font_name, v, n);
+			font_name[n] = 0;
+			if (!strcmp(font_name, "System font"))
+				font_name[0] = 0;
+			font_id = font_name[0] ? 0 : 1;		/* found by name at the start */
+			font_pt = 0;
+			if (c) {
+				v = c + 1;
+				font_pt = inf_num(&v);
+			}
+		}
 	} else if (inf_key(l, "HEBFONT", &v)) {
 		u16 n = inf_num(&v);
 		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
@@ -2889,11 +2917,13 @@ static void save_config(void)
 	p = inf_put(p, "the Gateway's IP address (where the ClaudeST bridge runs)", "HOST", v);
 	p = inf_put_num(p, "the Gateway's port, 2323 unless you changed it there", "PORT", tcp_port);
 	{
-		char *q = put_num(v, font_id);
+		char *q = v;
+		strcpy(q, font_id != 1 && font_name[0] ? font_name : "System font");
+		q += strlen(q);
 		*q++ = ',';
 		*put_num(q, font_pt) = 0;
 	}
-	p = inf_put(p, "text font: GDOS font id (1 = system font), size (system font: 0, 8 small, 16 large)",
+	p = inf_put(p, "text font: its name (System font, or a GDOS font's), size in points (system font: 0, 8 small, 16 large)",
 		    "FONT", v);
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
@@ -3944,12 +3974,36 @@ static void font_reselect(void)
 	ch = keep_ch;
 }
 
+/* a loaded font's name (vqt_name's, its padding cut): id's, into out
+   (33 bytes); or, with out's name given and id 0, the id that has it */
+static short font_lookup(short id, char *out)
+{
+	short i, n = 1 + (gdos_fonts > 0 ? gdos_fonts : 0);
+	char nm[34];
+	for (i = 1; i <= n; i++) {
+		short k, fid = vqt_name(vh, i, nm);
+		nm[32] = 0;
+		for (k = strlen(nm); k > 0 && nm[k - 1] == ' '; k--)
+			nm[k - 1] = 0;
+		if (id ? fid == id : !strcmp(nm, out)) {
+			if (id)
+				strcpy(out, nm);
+			return fid;
+		}
+	}
+	return 0;
+}
+
 /* the chosen font, or the system font if it's gone */
 static void font_apply(void)
 {
 	if (font_id != 1 && gdos_fonts < 0)
 		gdos_fonts = vq_gdos() ? vst_load_fonts(vh, 0) : 0;
-	if (!set_font(font_id, font_pt)) {
+	if (font_id == 0)		/* FONT=name,points: its id now */
+		font_id = font_name[0] ? font_lookup(0, font_name) : 1;
+	else if (font_id != 1 && !font_name[0])	/* FONT=id,points (before 2.5) */
+		font_lookup(font_id, font_name);
+	if (!font_id || !set_font(font_id, font_pt)) {
 		font_id = 1;
 		font_pt = 0;
 		set_font(1, 0);
@@ -4069,6 +4123,7 @@ static void take_font(fontsel *fs)
 {
 	font_id = fs->id;
 	font_pt = fs->pt;
+	strlcpy_(font_name, fs->id != 1 ? fs->font : "", sizeof(font_name));
 	font_apply();
 	save_config();
 	on_resize();		/* lay out again, wrap the text anew */
