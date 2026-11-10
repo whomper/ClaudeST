@@ -3355,13 +3355,21 @@ enum { OWN_MAX = 12 };
 static OBJECT own_t[OWN_MAX];
 static short own_ax[OWN_MAX], own_ay[OWN_MAX], own_n;
 static short own_c[4];			/* the clip the paint keeps to */
+static short own_band_h;		/* the title band's height */
+static const char *own_band_name;
 
-static void own_begin(void)
+/* the dialog's tree, and the name its title band shows (D22, CONTROLS 1:
+   a black band, row 0, the full width, white words a cell in, as the
+   family's G_BOXTEXT te_color 0x1071 looks). In a window of the AES's
+   the window's title says it: the band lies above the window (own_open's
+   head), so it is never seen there */
+static void own_begin_named(const char *name)
 {
 	memset(own_t, 0, sizeof(own_t));
 	own_t[0].ob_next = own_t[0].ob_head = own_t[0].ob_tail = -1;
 	own_t[0].ob_type = G_BOX;
 	own_n = 1;
+	own_band_name = name;
 }
 
 /* a button at x, y on the screen: an exit button, or a choice (RBUTTON) */
@@ -3467,6 +3475,7 @@ static void *own_under;		/* the screen under it (dlg_under), on TOS */
 
 static void own_open(const char *name, short head, void (*place)(void), void (*paint)(short framed))
 {
+	own_band_h = head;
 	own_place = place;
 	own_paint = paint;
 	own_win = 0;
@@ -3506,6 +3515,45 @@ static void own_open(const char *name, short head, void (*place)(void), void (*p
 	text_clip(vh, own_clipr);
 	memcpy(own_c, own_clipr, sizeof(own_c));
 	paint(1);
+}
+
+/* a left press at mx, my: on one of the dialog's buttons (EXIT), it is
+   shown pressed while the pointer is over it, and acts only when let go
+   over it (C7, the guidelines' 5.8: buttons on the release); the button,
+   or -1 (let go elsewhere, or the press was on no button) */
+static short own_cut(void);
+
+static short own_press(short mx, short my)
+{
+	short i, in = 1, x, y, b, k, m[8];
+	AEVENT e;
+	for (i = 1; i < own_n; i++)
+		if ((own_t[i].ob_flags & EXIT) && mx >= own_ax[i] && mx < own_ax[i] + own_t[i].ob_width &&
+		    my >= own_ay[i] && my < own_ay[i] + own_t[i].ob_height)
+			break;
+	if (i >= own_n)
+		return -1;
+	for (;;) {
+		short want = in ? SELECTED : 0;
+		if ((own_t[i].ob_state & SELECTED) != want) {
+			own_t[i].ob_state = (own_t[i].ob_state & ~SELECTED) | want;
+			graf_mouse(M_OFF, 0);
+			if (own_cut())
+				own_draw(i);
+			graf_mouse(M_ON, 0);
+		}
+		graf_mkstate(&x, &y, &b, &k);
+		if (!(b & 1))
+			break;
+		in = x >= own_ax[i] && x < own_ax[i] + own_t[i].ob_width &&
+		     y >= own_ay[i] && y < own_ay[i] + own_t[i].ob_height;
+		evnt_multi_(MU_TIMER, 0, 0, 0, 20, m, &e);
+	}
+	if (in) {		/* what it does is drawn next: the button as it was */
+		own_t[i].ob_state &= ~SELECTED;
+		return i;
+	}
+	return -1;
 }
 
 /* after each event: where a moved window has its parts now */
@@ -3585,9 +3633,27 @@ static void own_frame(short framed)
 		own_t[i].ob_x = own_ax[i] - r->ob_x;
 		own_t[i].ob_y = own_ay[i] - r->ob_y;
 	}
+
 	own_t[own_n - 1].ob_flags |= LASTOB;
 	dlg_3d(own_t);
 	own_draw(0);
+	{
+		/* the band, the box's top row: its words in black on white,
+		   then the row turned over (as a selected list row: on TOS's
+		   screen the CPU's, where the AES's white-on-black G_BOXTEXT
+		   cost Settings 20 ms on an ST) */
+		short box[4], n = strlen(own_band_name);
+		box[0] = r->ob_x;
+		box[1] = r->ob_y;
+		box[2] = r->ob_x + r->ob_width - 1;
+		box[3] = r->ob_y + own_band_h - 1;
+		if (n > r->ob_width / cw - 2)
+			n = r->ob_width / cw - 2;
+		fill(box[0], box[1], box[2], box[3], 0);
+		text_white((box[0] + cw + 7) & ~7, box[1], own_band_name, n, 0, 1);
+		scr_xor(vh, box);
+		own_gem();	/* scr_xor leaves the writing mode as replace */
+	}
 }
 
 /* the text box's state, for its paint */
@@ -3602,7 +3668,7 @@ static void td_place(void)
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
-	own_begin();
+	own_begin_named(td_title);
 	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
 	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, td_ok);
 }
@@ -3610,7 +3676,6 @@ static void td_place(void)
 static void td_paint(short framed)
 {
 	own_frame(framed);
-	text_bidi(fld_x, dlg_y + ch / 2 + 2, td_title, td_tl, 1, 1, 0);
 	/* the field */
 	line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
 	line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
@@ -3652,7 +3717,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 
-	own_open(title, ch + ch / 2 + 2, td_place, td_paint);
+	own_open(title, ch, td_place, td_paint);
 	if (!own_win)
 		graf_mouse(M_ON, 0);
 	wait_release();
@@ -3687,13 +3752,9 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 			}
 		}
 		if (e.which & MU_BUTTON) {
-			short mx = e.mx, my = e.my;
-			if (my >= btn_y && my < btn_y + btn_h) {
-				if (mx >= ok_x && mx < ok_x + btn_w)
-					res = 1;
-				else if (mx >= cancel_x && mx < cancel_x + btn_w)
-					res = 0;
-			}
+			short b = own_press(e.mx, e.my);
+			if (b >= 0)
+				res = own_ax[b] == ok_x;
 			wait_release();
 		}
 	}
@@ -3733,7 +3794,7 @@ static void keys_place(void)
 {
 	btn_y = dlg_y + dlg_h - btn_h - ch / 2 - 2;
 	ok_x = dlg_x + (dlg_w - btn_w) / 2;
-	own_begin();
+	own_begin_named("ClaudeST's keys");
 	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
 }
 
@@ -3742,9 +3803,7 @@ static void keys_paint(short framed)
 	short lh = keys_lh, i, y, x0 = dlg_x + 2 * cw;
 	short cols = dlg_w / cw - 4 - KEYCOL;		/* room for the words */
 	own_frame(framed);
-	y = dlg_y + ch / 2 + 2;
-	text(x0, y, "ClaudeST's keys", 15, 1, 1);
-	y += lh + lh / 2;
+	y = dlg_y + ch + 3 + lh / 2;	/* below the band */
 	for (i = 0; i < KEYS_N && y + lh <= btn_y; i++, y += lh) {
 		short n = strlen(keys_k[i][1]);
 		text(x0, y, keys_k[i][0], strlen(keys_k[i][0]), 1, 1);
@@ -3773,7 +3832,7 @@ static void keys_dialog(void)
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 
-	own_open("ClaudeST's keys", ch + ch / 2 + 2, keys_place, keys_paint);
+	own_open("ClaudeST's keys", ch, keys_place, keys_paint);
 	if (!own_win)
 		graf_mouse(M_ON, 0);
 	wait_release();
@@ -3782,10 +3841,10 @@ static void keys_dialog(void)
 		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
 		if (e.which & MU_KEYBD)
 			done = 1;
-		if (e.which & MU_BUTTON) {
+		if ((e.which & MU_BUTTON) && own_press(e.mx, e.my) >= 0)
+			done = 1;	/* its OK, let go over it */
+		if (e.which & MU_BUTTON)
 			wait_release();
-			done = 1;
-		}
 	}
 	own_close();
 }
@@ -4954,7 +5013,7 @@ static void sd_place(void)
 	btn_y = dlg_y + dlg_h - btn_h - ch;
 	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
 	cancel_x = ok_x - btn_w - 2 * cw;
-	own_begin();
+	own_begin_named("Settings");
 	for (i = 0; i < 3; i++)
 		sd_obj[i] = own_add(sd_hb_x[i], sd_ly[2] - 3, sd_hb_w, ch + 6, RBUTTON, hb_label[i]);
 	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
@@ -5008,7 +5067,6 @@ static void sd_paint(short framed)
 	own_frame(framed);	/* the choices too */
 	for (i = 0; i < 3; i++)
 		sd_shown[i] = own_t[sd_obj[i]].ob_state;
-	text(dlg_x + 2 * cw, dlg_y + ch / 2 + 2, "Settings", 8, 1, 1);
 	text(dlg_x + 2 * cw, sd_ly[0], "Gateway address", 15, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[1], "Gateway port", 12, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[2], "Hebrew in fonts", 15, 0, 1);
@@ -5045,7 +5103,7 @@ static void settings_dialog(void)
 	dlg_x = wx + (ww - dlg_w) / 2;
 	dlg_y = wy + (wh - dlg_h) / 2;
 
-	own_open("Settings", ch + ch / 2 + 2, sd_place, sd_paint);
+	own_open("Settings", ch, sd_place, sd_paint);
 	if (own_win)
 		graf_mouse(M_OFF, 0);		/* as over the screen: the loop draws first */
 
@@ -5088,11 +5146,10 @@ static void settings_dialog(void)
 			for (i = 0; i < 3; i++)
 				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[2] - 3 && my < sd_ly[2] + ch + 3)
 					sd_nh = i;
-			if (my >= btn_y && my < btn_y + btn_h) {
-				if (mx >= ok_x && mx < ok_x + btn_w)
-					res = 1;
-				else if (mx >= cancel_x && mx < cancel_x + btn_w)
-					res = 0;
+			{
+				short b = own_press(mx, my);
+				if (b >= 0)
+					res = own_ax[b] == ok_x;
 			}
 		}
 		/* an address that doesn't read as one: back to it */
