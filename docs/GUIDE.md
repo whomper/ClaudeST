@@ -613,6 +613,7 @@ The window always opens full screen with a new chat.
 | Atari: `CLAUDEST.INF` | ClaudeST's settings |
 | Atari: `CLAUDEST.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
 | Atari: `CRASH.LOG` | What happened, if ClaudeST ever crashed (next to `CLAUDEST.PRG`) |
+| Atari: `CLAUDEST.LOG` | The steps of the last quit, written one by one: if the Atari bombs as ClaudeST quits, the last line is how far it got (next to `CLAUDEST.PRG`; send it with `CRASH.LOG`) |
 
 The open conversation lives only in the Atari's memory while ClaudeST
 runs.

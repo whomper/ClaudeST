@@ -73,7 +73,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "2.3"
+#define VERSION "2.4"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
@@ -320,9 +320,34 @@ static void choose_save_file(const char *name);
 static void save_chunk(const char *hex, long size);
 static void finish_save(void);
 static void save_config(void);
+static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
+
+/* each step of the quit in CLAUDEST.LOG beside the program, written and
+   closed at once, so a quit that bombs leaves the last step it reached
+   (the hub, 10 Nov 2026: EFTP and EMail bombed at quit, a program that
+   hooked a vector over the crash catcher; EFTP's quit_step). 0 starts the
+   file afresh; ClaudeST keeps no other log of its own (the bridge's is
+   on the Gateway) */
+static void quit_step(const char *what)
+{
+	char path[160];
+	long fh;
+	strlcpy_(path, home_dir, sizeof(path));
+	strlcpy_(path + strlen(path), "CLAUDEST.LOG", sizeof(path) - strlen(path));
+	fh = what ? Fopen(path, 1) : -1;
+	if (fh < 0)
+		fh = Fcreate(path, 0);
+	if (fh < 0)
+		return;
+	if (!what)
+		what = "ClaudeST " APP_VERSION " quits";
+	Fseek(0, (short)fh, 2);
+	Fwrite((short)fh, strlen(what), what);
+	Fwrite((short)fh, 2, "\r\n");
+	Fclose((short)fh);
+}
 static void say_notice(const char *s);
 static char *put_num(char *p, u16 v);
-static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 
 /* ------------------------------------------------------------------ */
 /* menu bar (built in code, so no .RSC file is needed)                 */
@@ -2279,7 +2304,9 @@ static void handle_line(char *s)
 		menu_target = -1;
 		nav_pending = -1;
 		list_loading = 0;
-		dirty |= D_SIDEBAR;
+		/* drawn when the list ends ('E'), once: a list that came over
+		   two turns of the loop was drawn empty, then whole (TOS 1.04,
+		   an 8 MHz ST: 190 ms more at the start, the hub's runq256) */
 		break;
 	case 'I':			/* I <id> <label> */
 		if (!drop_list && nitems < MAXITEMS && n > 2) {
@@ -2338,8 +2365,8 @@ static void handle_line(char *s)
 	case 'W':			/* show the picker */
 		show_picker();
 		break;
-	case 'E':			/* end of list */
-		dirty |= D_LIST;
+	case 'E':			/* end of list: its title and rows, drawn once */
+		dirty |= D_SIDEBAR;
 		break;
 	case 'C':			/* C <id> : current chat (for highlight) */
 		/* just started, the pane is empty: don't highlight the chat
@@ -6056,18 +6083,30 @@ int main(void)
 	   for the gateway's log: where a real machine waits (the guidelines'
 	   Speed). Gateways before 1.65 take BYE and leave the rest */
 	tx_cmd("BYE", aes_slowest(), 0);
+	quit_step(0);
 	if (tcp_cn >= 0)
 		sting_close(tcp_cn);
 	if (tcp_opening >= 0)
 		sting_close(tcp_opening);
+	quit_step("the Gateway's connection closed");
 	wind_close(win);
 	wind_delete(win);
+	quit_step("window closed");
 	menu_bar(mb.tree, 0);
 	av_exit();
 	theme_exit();
+	quit_step("colours, menu bar and AV given back");
 	v_clsvwk(vh);
+	quit_step("VDI given back");
 	Mfree(tb);
 	crash_remove();
+	{
+		char l[160];
+		strlcpy_(l, "crash catcher off; hooked over it: ", sizeof(l));
+		strlcpy_(l + strlen(l), crash_over()[0] ? crash_over() : "nothing", sizeof(l) - strlen(l));
+		quit_step(l);
+	}
 	appl_exit();
+	quit_step("out of the AES");
 	return 0;
 }

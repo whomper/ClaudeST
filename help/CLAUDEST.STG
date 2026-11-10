@@ -517,8 +517,9 @@
   - @{B}Gateway:@{b} your session key and the bridge's options (readable only
     by root and the bridge), and the effort you chose for each chat.
   - @{B}Atari:@{b} CLAUDEST.INF (settings), CLAUDEST.FNT (which fonts
-    are fixed-width) and, if ClaudeST ever crashed, CRASH.LOG. The open
-    conversation lives only in memory while ClaudeST runs.
+    are fixed-width), CLAUDEST.LOG (the steps of the last quit) and, if
+    ClaudeST ever crashed, CRASH.LOG. The open conversation lives only
+    in memory while ClaudeST runs.
 @endnode
 
 ## ------------------------------------------------------------------------
