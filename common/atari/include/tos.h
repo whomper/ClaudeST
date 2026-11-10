@@ -122,6 +122,14 @@ static inline long trap13_www(short fn, short a, short b)
 	return r;
 }
 
+static inline long trap13_wwl(short fn, short a, long b)
+{
+	register long r __asm__("d0");
+	__asm__ volatile("move.l %3,-(%%sp)\n\tmove.w %2,-(%%sp)\n\tmove.w %1,-(%%sp)\n\ttrap #13\n\taddq.l #8,%%sp"
+		: "=r"(r) : "r"(fn), "r"(a), "r"(b) : TRAP_CLOBBER);
+	return r;
+}
+
 static inline long trap14_w(short fn)
 {
 	register long r __asm__("d0");
@@ -205,6 +213,9 @@ static inline long trap14_wl(short fn, long a)
 #define Bconstat(d)        trap13_ww(1, (d))
 #define Bconin(d)          trap13_ww(2, (d))
 #define Bconout(d, c)      trap13_www(3, (d), (c))
+/* a vector by its number (-1: just ask). 0x102 is etv_term, the terminate vector: $408 on TOS, a process's own
+   under MiNT, where a write to $408 is never seen (tests/xaaes/termtest.c) */
+#define Setexc(n, v)       trap13_wwl(5, (n), (long)(v))
 #define Bcostat(d)         trap13_ww(8, (d))
 #define DEV_AUX 1		/* AUX: the ST's RS-232, the Falcon's modem port (Bconmap) */
 #define Drvmap()           trap13_w(10)
