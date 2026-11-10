@@ -2587,12 +2587,18 @@ static void tcp_check_open(void)
    the limit a pass took in 4 KB at network speed, and drawing it kept an
    ST from its events for 840 ms (a long chat arriving: 840 -> 230 ms on
    ST-1, 575 -> 130 on Falcon-4; 40 ms gave 235 and 165) */
+/* 1: the last poll_link stopped at its budget with data still coming
+   (a burst: the start's lists, models and usage) */
+static short link_more;
+static short starting = 1;	/* until the first key or click */
+
 static void poll_link(void)
 {
 	static char buf[256];
 	short budget;
 	u32 t0 = tos_ms();
 
+	link_more = 0;
 	if (tcp_cn < 0) {
 		if (tcp_opening >= 0)
 			tcp_check_open();
@@ -2617,6 +2623,7 @@ static void poll_link(void)
 		}
 		for (i = 0; i < n; i++)
 			rx_byte((u8)buf[i]);
+		link_more = budget == 1 || tos_ms() - t0 >= 20;	/* stopped with more to read */
 	}
 }
 
@@ -6064,7 +6071,15 @@ int main(void)
 			static u32 text_at;
 			u32 now = tos_ms();
 			short drew = 0;
-			if (!busy || !(dirty & D_TEXT) || (ev.which & (MU_KEYBD | MU_BUTTON)) || now - text_at >= 100) {
+			/* at the start, a burst (the list, the models, the usage, one
+			   after another) is drawn once it has come, not a part each
+			   turn: an ST drew the title and status three times, 130 to
+			   230 ms each (the guidelines' Speed, the start's 2,000) */
+			if (ev.which & (MU_KEYBD | MU_BUTTON))
+				starting = 0;	/* the user's from now on: drawn as ever */
+			if (starting && link_more)
+				;
+			else if (!busy || !(dirty & D_TEXT) || (ev.which & (MU_KEYBD | MU_BUTTON)) || now - text_at >= 100) {
 				if (dirty & D_TEXT)
 					text_at = now;
 				drew = dirty || pending_scroll;
