@@ -64,7 +64,7 @@ unsigned long tip_wait(unsigned long other)
 
 /* BubbleGEM's bubble at the pointer, when it runs (it takes the text from global memory at once and
    shows and takes it away itself; its lines end in '\n'): 1 when it was asked */
-static int bubble(const char *text, short mx, short my)
+int tip_bubble(const char *text, short mx, short my)
 {
 	short id = appl_find("BUBBLE  "), msg[8];
 	char *b;
@@ -152,7 +152,7 @@ static void show(tip_text_fn text)
 	if (!text || !text(hx, hy, t, (int)sizeof(t)) || !t[0])
 		return;
 	t[TEXT - 1] = 0;
-	if (!bubble(t, hx, hy))
+	if (!tip_bubble(t, hx, hy))
 		box(t);
 }
 
