@@ -40,6 +40,7 @@
 #include "hebkey.h"
 #include "arrowed.h"
 #include "theme.h"
+#include "tooltip.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -4570,7 +4571,7 @@ static short list_hit(short mx, short my)
 
 static short tip_on, tip_x, tip_y, tip_w, tip_h;
 static short tip_mx = -1, tip_my = -1, tip_done;
-static long tip_still;
+static u32 tip_still;			/* tos_ms when the pointer came to rest */
 
 /* the cut-off text under (mx, my), or 0 */
 static const char *tip_text(short mx, short my, short *ty)
@@ -4707,7 +4708,11 @@ static void show_tip(short mx, const char *t, short ty)
 	tip_on = 1;
 }
 
-/* called every turn of the main loop: show a tip after ~0.6 s at rest */
+/* called every turn of the main loop: show a tip after the family's
+   TIP_DELAY at rest (common tooltip.h, D18: 700 ms, timed by the clock,
+   not by turns of the loop). The box is ClaudeST's own: what it covers is
+   kept and put back, where common's has the window drawn again (300 ms
+   on an ST: a row pressed with a tip up, 5.8) */
 static void tip_poll(short events)
 {
 	short mx, my, mb, ks, ty;
@@ -4719,11 +4724,11 @@ static void tip_poll(short events)
 		hide_tip();
 		tip_mx = mx;
 		tip_my = my;
-		tip_still = ticks;
+		tip_still = tos_ms();
 		tip_done = 0;
 		return;
 	}
-	if (tip_on || tip_done || ticks - tip_still < 15)
+	if (tip_on || tip_done || tos_ms() - tip_still < TIP_DELAY)
 		return;
 	tip_done = 1;			/* once per resting place */
 	t = tip_text(mx, my, &ty);
