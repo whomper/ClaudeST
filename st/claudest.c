@@ -4994,6 +4994,10 @@ static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
 static char sd_f[2][24];
 static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
 static short sd_nh, sd_focus;
+/* the stops Tab visits, in the order they were added (D25): the two
+   fields, the radio group (one stop), Cancel, OK */
+enum { SD_ADDR, SD_PORT, SD_HEB, SD_CANCEL, SD_OK, SD_STOPS };
+static short sd_ring, sd_ring_at = -1;	/* the focus ring wanted; where it is drawn */
 static short sd_lh, sd_ly[3], sd_fx[2], sd_fy[2];
 static short sd_hb_w, sd_hb_x[3], sd_obj[3];
 static unsigned short sd_shown[3];	/* the choices' states as drawn */
@@ -5029,6 +5033,31 @@ static void sd_states(void)
 }
 
 /* the parts that change: the choices, the fields */
+/* the ring's box round stop k (SD_HEB and on) */
+static void sd_ring_box(short k, short *b)
+{
+	if (k == SD_HEB) {
+		b[0] = sd_hb_x[0];
+		b[1] = sd_ly[2] - 3;
+		b[2] = sd_hb_x[2] + sd_hb_w - 1;
+		b[3] = sd_ly[2] + ch + 2;
+	} else {
+		b[0] = k == SD_OK ? ok_x : cancel_x;
+		b[1] = btn_y;
+		b[2] = b[0] + btn_w - 1;
+		b[3] = btn_y + btn_h - 1;
+	}
+	{
+		/* 2 pixels between it and the control as drawn: the AES's 3D
+		   look draws buttons 3 pixels bigger all round */
+		short k = dlg_3d_ok() ? 6 : 3;
+		b[0] -= k;
+		b[1] -= k;
+		b[2] += k;
+		b[3] += k;
+	}
+}
+
 static void sd_live(void)
 {
 	short i;
@@ -5041,6 +5070,31 @@ static void sd_live(void)
 			own_draw(sd_obj[i]);
 			sd_shown[i] = own_t[sd_obj[i]].ob_state;
 		}
+	/* the focus ring: a thin frame 2 pixels outside the control with the
+	   focus, once a key was used, gone after a click (CONTROLS 5, D25);
+	   a field shows its cursor instead */
+	{
+		short want = sd_ring && sd_focus >= SD_HEB ? sd_focus : -1;
+		if (want != sd_ring_at) {
+			short b[4];
+			text_clip(vh, own_c);	/* the dialog's: a field's drawing may have narrowed it */
+			if (sd_ring_at >= 0) {		/* the old one: the box's ground again */
+				sd_ring_box(sd_ring_at, b);
+				own_clear(b[0], b[1], b[2], b[1]);
+				own_clear(b[0], b[3], b[2], b[3]);
+				own_clear(b[0], b[1], b[0], b[3]);
+				own_clear(b[2], b[1], b[2], b[3]);
+			}
+			if (want >= 0) {
+				sd_ring_box(want, b);
+				line(b[0], b[1], b[2], b[1], 1);
+				line(b[2], b[1], b[2], b[3], 1);
+				line(b[2], b[3], b[0], b[3], 1);
+				line(b[0], b[3], b[0], b[1], 1);
+			}
+			sd_ring_at = want;
+		}
+	}
 	/* the fields: the one with the cursor is edited */
 	for (i = 0; i < 2; i++) {
 		fld_x = sd_fx[i];
@@ -5064,6 +5118,7 @@ static void sd_paint(short framed)
 {
 	short i;
 	sd_states();
+	sd_ring_at = -1;	/* drawn again with the rest */
 	own_frame(framed);	/* the choices too */
 	for (i = 0; i < 3; i++)
 		sd_shown[i] = own_t[sd_obj[i]].ob_state;
@@ -5089,7 +5144,9 @@ static void settings_dialog(void)
 		sd_start[i] = 0;
 	}
 	sd_nh = hebfont;
-	sd_focus = 0;
+	sd_focus = SD_ADDR;
+	sd_ring = 0;
+	sd_ring_at = -1;
 
 	sd_lh = ch + (dlg_3d_ok() ? 12 : 8);	/* raised choices don't touch */
 	btn_w = 10 * cw;
@@ -5119,14 +5176,40 @@ static void settings_dialog(void)
 		graf_mouse(M_OFF, 0);
 		if (e.which & MU_KEYBD) {
 			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			short fo = sd_focus;
+			short fo = sd_focus, field = fo <= SD_PORT;
+			short back = sc == 0x48 || (sc == 0x4b && !field);	/* Up; Left off a field */
+			short fwd = sc == 0x50 || (sc == 0x4d && !field);	/* Down; Right off a field */
+			/* the keyboard's reach (CONTROLS 5, D25): Tab and Shift+Tab
+			   through the stops; Up and Down between the fields and
+			   from stop to stop; the arrows choose in the radio group,
+			   no wrapping; Space works a button; Return is OK, Esc
+			   empties a field and is Cancel elsewhere */
+			if (sc == 0x0f || back || fwd || (as == ' ' && !field))
+				sd_ring = 1;	/* the ring, from the first such key on */
 			if (as == 0x0d)
 				res = 1;
 			else if (dlg_cancel_key(e.kreturn, 1))	/* Undo, the closer */
 				res = 0;
-			else if (sc == 0x0f || sc == 0x48 || sc == 0x50)	/* Tab, up, down */
-				sd_focus ^= 1;
-			else if (as == 0x1b)		/* Esc: empty it */
+			else if (sc == 0x0f)		/* Tab, Shift+Tab */
+				sd_focus = (sd_focus + (key_shift(e.kstate, e.kreturn) ? SD_STOPS - 1 : 1)) % SD_STOPS;
+			else if (fo == SD_HEB && (back || fwd)) {
+				if (back && sd_nh > 0)
+					sd_nh--;
+				else if (fwd && sd_nh < 2)
+					sd_nh++;
+			} else if (back || fwd) {
+				if (field && !(back ? fo > SD_ADDR : fo < SD_PORT))
+					;		/* Up and Down stay among the fields */
+				else if (back && fo > 0)
+					sd_focus--;
+				else if (fwd && fo < SD_STOPS - 1)
+					sd_focus++;
+			} else if (!field) {
+				if (as == ' ' && fo >= SD_CANCEL)
+					res = fo == SD_OK;
+				else if (as == 0x1b)
+					res = 0;
+			} else if (as == 0x1b)		/* Esc: empty it */
 				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
 			else if (sc == 0x47)		/* Clr/Home: its start, with Shift its end */
 				sd_cur[fo] = key_shift(e.kstate, e.kreturn) ? sd_len[fo] : 0;
@@ -5135,10 +5218,12 @@ static void settings_dialog(void)
 					   (fo ? 5 : 15));
 			else if (sc != 0x44)		/* no Hebrew in an address */
 				edit_key(f[fo], &sd_len[fo], &sd_cur[fo], fo ? 5 : 15, e.kstate, e.kreturn);
-			f[fo][sd_len[fo]] = 0;
+			if (field)
+				f[fo][sd_len[fo]] = 0;
 		}
 		if (e.which & MU_BUTTON) {
 			short mx = e.mx, my = e.my;
+			sd_ring = 0;		/* a click takes the ring away */
 			for (i = 0; i < 2; i++) {
 				if (mx >= sd_fx[i] && mx < sd_fx[i] + sd_cols[i] * cw && my >= sd_fy[i] && my < sd_fy[i] + ch + 6)
 					sd_focus = i;
