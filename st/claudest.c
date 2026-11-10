@@ -358,9 +358,10 @@ static const MBAR_ITEM m_chat[] = {
 	{ "Attach file...", "^O", C_ATTACH },
 	{ 0, 0, 0 }
 };
+/* dialog items first, ticks after (Erez, 10 Nov 2026: D6, D13); since
+   2.3 there are no ticks, so no line */
 static const MBAR_ITEM m_opts[] = {
 	{ "Settings...", "^,", C_SET },
-	{ "-", 0, 0 },
 	{ "Account...", "F8", C_ACCT },
 	{ "Font...", 0, C_FONT },
 	{ 0, 0, 0 }
