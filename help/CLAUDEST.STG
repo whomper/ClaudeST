@@ -229,6 +229,9 @@
   @{B}Search@{b} (F5 or Control+F) empties the list and turns the reply
   line into "Find:". Type words from a chat's title and press Return.
 
+  @{B}Chat > Hide chat list@{b} (Shift+Control+S) gives the chat the
+  whole window; Show chat list, or any of F2 to F6, brings the list back.
+
   @{B}New chat@{b} (F1 or Control+N) starts a new conversation.
 
   A long conversation shows its last 40 messages.
@@ -442,6 +445,7 @@
     F3                Projects
     F4                Artifacts
     F5, Control+F     Search chat titles
+    Shift+Control+S   Hide or show the chat list
     F6                Code
     F8                Account
     F9                Model and effort

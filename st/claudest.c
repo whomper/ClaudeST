@@ -117,7 +117,8 @@ static short wx, wy, ww, wh;		/* window work area */
 static short quit;
 
 /* layout */
-static short sb_w;			/* sidebar width */
+static short sb_w;			/* sidebar width; -1 hidden */
+static short sb_hidden;			/* the chat list hidden (Shift+^S, D45) */
 static short sb_user;			/* width set by dragging the divider, 0 = auto */
 static short over_divider;		/* mouse is over the divider (MU_M1) */
 static short px, pw;			/* chat pane x / width */
@@ -326,7 +327,7 @@ static char home_dir[128];		/* CLAUDEST.PRG's own folder (app_dir) */
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH
+	C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH, C_SIDEBAR
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -356,6 +357,10 @@ static const MBAR_ITEM m_chat[] = {
 	{ "New chat", "^N", C_NEW },
 	{ "Search chats", "^F", C_FIND },
 	{ "Attach file...", "^O", C_ATTACH },
+	{ "-", 0, 0 },
+	/* "Show chat list" while it is hidden (set_sidebar): the same length,
+	   so the item's text is changed in place (D45, Erez 10 Nov 2026) */
+	{ "Hide chat list", "\x01^S", C_SIDEBAR },
 	{ 0, 0, 0 }
 };
 /* dialog items first, ticks after (Erez, 10 Nov 2026: D6, D13); since
@@ -1139,7 +1144,9 @@ static void layout(void)
 	for (r = 0; r < SHOWN_MAX; r++)		/* the pane moves: all of it drawn */
 		shown[r].off = -1;
 
-	if (sb_user) {
+	if (sb_hidden) {
+		sb_w = -1;		/* the chat from the window's left edge */
+	} else if (sb_user) {
 		sb_w = sb_user;
 		if (sb_w > ww - 34 * cw)
 			sb_w = ww - 34 * cw;
@@ -1238,6 +1245,8 @@ static short nav_active(short i)
  * and the text is written in replace mode, padded to its full width. */
 static void draw_status(short full)
 {
+	if (sb_hidden)		/* it is in the sidebar (W12) */
+		return;
 	static short last_tx = -1, last_sb = -1;
 	short x = sx, tx = x, n, room, dtx;
 	/* pixels are twice as tall as wide where the system font is 8x8 */
@@ -1322,6 +1331,8 @@ static void draw_status(short full)
 
 static void draw_sidebar(void)
 {
+	if (sb_hidden)
+		return;
 	short i, y;
 	short x = sx, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
 
@@ -2117,6 +2128,8 @@ static void flush_dirty(void)
 	} else {
 		/* the menu and list only: the header never changes, and the
 		 * status area has its own update below */
+		if (sb_hidden)
+			dirty &= ~(D_SIDEBAR | D_LIST | D_STATUS);
 		if (dirty & D_SIDEBAR)
 			redraw(D_SIDEBAR, wx, wy + title_h + 1, sb_w, status_y - 2 - (wy + title_h + 1));
 		else if (dirty & D_LIST)
@@ -3773,6 +3786,7 @@ static const char *const keys_k[][2] = {
 	{ "F1  ^N", "a new chat" },
 	{ "F2 F6 F3 F4", "Chats, Code, Projects, Artifacts" },
 	{ "F5  ^F", "search the chat titles" },
+	{ "Shift+^S", "hide or show the chat list" },
 	{ "Tab, Return", "pick and open a sidebar item" },
 	{ "Insert", "the item's menu (or right-click)" },
 	{ "F8  F9", "account; model and effort" },
@@ -4735,7 +4749,10 @@ static short divider_x(void)
 
 static void set_divider_watch(void)
 {
-	evnt_set_m1(over_divider, divider_x() - 2, wy, 5, wh);
+	if (sb_hidden)		/* no divider: a box no pointer reaches */
+		evnt_set_m1(0, -8, -8, 1, 1);
+	else
+		evnt_set_m1(over_divider, divider_x() - 2, wy, 5, wh);
 }
 
 /* the divider's two columns turned over (common scr_xor: by the CPU on
@@ -4860,7 +4877,7 @@ static void handle_click(short mx, short my)
 		pb_click(&lbar, mx, my, list_bar_scroll, list_bar_goto);
 		return;
 	}
-	if (mx >= divider_x() - 2 && mx <= divider_x() + 2) {
+	if (!sb_hidden && mx >= divider_x() - 2 && mx <= divider_x() + 2) {
 		drag_divider();
 		return;
 	}
@@ -5276,6 +5293,7 @@ static void settings_dialog(void)
 }
 
 static void do_list(const char *kind);
+static void set_sidebar(short hide);
 
 /* Esc in the window (the guidelines, 3.5; a tester, Erez 27 Oct 2026):
    the reply, several lines, is never emptied by it (Shift+Delete does
@@ -5308,6 +5326,8 @@ static void handle_key(short kstate, short kr)
 	case 0x62: help(); return;					/* Help */
 	case 0x61: return;	/* Undo: undoes nothing yet (3.2: as ^Z, not Esc) */
 	case 0x52:						/* Insert: item menu */
+		if (sb_hidden)
+			return;
 		{
 			short i = lcur;
 			if (i < 0)
@@ -5319,11 +5339,11 @@ static void handle_key(short kstate, short kr)
 		return;
 	case 0x0f: move_cursor(shift ? -1 : 1); return;			/* Tab */
 	case 0x3b: do_new_chat(); return;				/* F1 */
-	case 0x3c: do_list("CHATS"); return;				/* F2 */
-	case 0x3d: do_list("PROJECTS"); return;				/* F3 */
-	case 0x3e: do_list("ARTIFACTS"); return;			/* F4 */
-	case 0x3f: do_search(); return;					/* F5 */
-	case 0x40: do_list("CODE"); return;				/* F6 */
+	case 0x3c: set_sidebar(0); do_list("CHATS"); return;		/* F2 */
+	case 0x3d: set_sidebar(0); do_list("PROJECTS"); return;		/* F3 */
+	case 0x3e: set_sidebar(0); do_list("ARTIFACTS"); return;	/* F4 */
+	case 0x3f: set_sidebar(0); do_search(); return;			/* F5 */
+	case 0x40: set_sidebar(0); do_list("CODE"); return;		/* F6 */
 	case 0x42: do_account(); return;				/* F8 */
 	case 0x43: model_menu(); return;				/* F9 */
 	case 0x44: toggle_hebrew(); return;				/* F10 */
@@ -5349,7 +5369,8 @@ static void handle_key(short kstate, short kr)
 	}
 	switch (ascii) {
 	case 0x0e: do_new_chat(); return;	/* ^N */
-	case 0x06: do_search(); return;		/* ^F */
+	case 0x06: set_sidebar(0); do_search(); return;	/* ^F */
+	case 0x13: set_sidebar(!sb_hidden); return;	/* Shift+^S (^S alone: the Shift lost while busy) */
 	case 0x0f: choose_attach(); return;	/* ^O */
 	case 0x12: reconnect(); return;		/* ^R */
 	case 0x11: quit = 1; return;		/* ^Q */
@@ -5379,6 +5400,27 @@ static void handle_key(short kstate, short kr)
 /* ------------------------------------------------------------------ */
 
 #define WKIND (NAME | CLOSER | FULLER | MOVER | SIZER | UPARROW | DNARROW | VSLIDE)
+
+/* the chat list hidden or shown (Shift+^S; a list asked for shows it): the
+   chat takes the window's width, the text wrapped anew, as a resize does;
+   the menu item says what it will do next */
+static void set_sidebar(short hide)
+{
+	short o = mbar_object(&mb, C_SIDEBAR);
+	if (hide == sb_hidden)
+		return;
+	sb_hidden = hide;
+	if (o >= 0) {
+		char *t = strstr((char *)mb.tree[o].ob_spec, hide ? "Hide" : "Show");
+		if (t)
+			memcpy(t, hide ? "Show" : "Hide", 4);
+	}
+	if (tip_on)
+		hide_tip();
+	over_divider = 0;
+	graf_mouse(ARROW, 0);
+	on_resize();
+}
 
 static void on_resize(void)
 {
@@ -5542,7 +5584,8 @@ static void handle_msg(short *msg)
 		switch (mbar_command(&mb, msg[4])) {
 		case C_ABOUT: about(); break;
 		case C_NEW: do_new_chat(); break;
-		case C_FIND: do_search(); break;
+		case C_FIND: set_sidebar(0); do_search(); break;
+		case C_SIDEBAR: set_sidebar(!sb_hidden); break;
 		case C_REF: reconnect(); break;
 		case C_ACCT: do_account(); break;
 		case C_FONT: font_menu(); break;
@@ -5631,7 +5674,7 @@ static void handle_msg(short *msg)
 		   so), else the text, whose the window's sliders are (D37) */
 		ARROW_PANE panes[1];
 		short n = 0, page;
-		if (nitems > list_rows) {
+		if (!sb_hidden && nitems > list_rows) {
 			panes[0].r.x = wx;
 			panes[0].r.y = list_y;
 			panes[0].r.w = sb_w;

@@ -287,6 +287,9 @@ Replies still come in while it is iconified.
 - **Search** (`F5`) empties the list and turns the reply line into
   *Find:*. Type words from a chat's title and press `Return`.
 
+**Chat ▸ Hide chat list** (`Shift+Ctrl+S`) gives the chat the whole
+window; **Show chat list**, or any of `F2` to `F6`, brings the list back.
+
 A long conversation shows its last 40 messages.
 
 ## Right-click menus
@@ -543,6 +546,7 @@ opens on its own in any of them.
 | `F3` | Projects |
 | `F4` | Artifacts |
 | `F5` / `Ctrl+F` | Search chat titles |
+| `Shift+Ctrl+S` | Chat ▸ Hide chat list (Show chat list): the chat across the whole window. `F2` to `F6` and Search show the list again |
 | `F6` | Code |
 | `F8` | Account |
 | `F9` | Model and effort |
