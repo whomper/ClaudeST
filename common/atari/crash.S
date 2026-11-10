@@ -15,6 +15,22 @@
 | line F: in the program's code a crash (it has no FPU instruction);
 | anywhere else on at once to the handler before ours (TOS's, an FPU
 | emulator's, a 68040/68060 package's), touching nothing
+| Every entry has an XBRA header ('XBRA', 'AERA', the handler before it),
+| the standard one: a program that hooks the vector after this one finds
+| who it chains to, and crash_restore can take this one out of the chain
+| when it isn't on top any more (otherwise the vector would lead into the
+| program's memory after it has gone: bombs, now and then, after it quits)
+	.globl	crash_slot
+	.data
+	.even
+crash_slot:			| where each vector's handler before ours is kept
+	.long	0, 0, crash_old_2, crash_old_3, crash_old_4, crash_old_5
+	.long	crash_old_6, crash_old_7, crash_old_8, 0, 0, crash_old_11
+	.text
+	.even
+	.long	0x58425241, 0x41455241	| 'XBRA', 'AERA'
+crash_old_11:
+	.long	0
 crash_e11:
 	move.l	%d0,-(%sp)
 	move.l	6(%sp),%d0		| the PC (2(sp) of the frame)
@@ -26,21 +42,25 @@ crash_e11:
 	pea	11.w
 	bra	common
 1:	move.l	(%sp)+,%d0
-	move.l	crash_old+44,-(%sp)
+	move.l	crash_old_11,-(%sp)
 	rts
-crash_e2:	pea	2.w
-	bra.s	common
-crash_e3:	pea	3.w
-	bra.s	common
-crash_e4:	pea	4.w
-	bra.s	common
-crash_e5:	pea	5.w
-	bra.s	common
-crash_e6:	pea	6.w
-	bra.s	common
-crash_e7:	pea	7.w
-	bra.s	common
-crash_e8:	pea	8.w
+
+	.macro	ENTRY n
+	.long	0x58425241, 0x41455241	| 'XBRA', 'AERA'
+crash_old_\n:
+	.long	0
+crash_e\n:
+	pea	\n\().w
+	bra	common
+	.endm
+
+	ENTRY	2
+	ENTRY	3
+	ENTRY	4
+	ENTRY	5
+	ENTRY	6
+	ENTRY	7
+	ENTRY	8
 
 | (sp) = vector number, 4(sp) = the exception frame. The registers are
 | kept on this stack while crash_take looks, not in crash_regs: a fault
@@ -81,14 +101,18 @@ chain_quick:			| a fault while one is handled: the old way
 	move.l	4(%sp),%d0
 	lsl.l	#2,%d0
 	move.l	%a0,-(%sp)
-	lea	crash_old,%a0
-	move.l	(%a0,%d0.l),8(%sp)	| the vector number's place: the old handler
+	lea	crash_slot,%a0
+	move.l	(%a0,%d0.l),%a0
+	move.l	(%a0),8(%sp)		| the vector number's place: the old handler
 	move.l	(%sp)+,%a0
 	move.l	(%sp)+,%d0
 	rts
 
 | etv_term: the program is ending, however it ends; put the vectors back
-	.globl	crash_term
+	.globl	crash_term, crash_old_term
+	.long	0x58425241, 0x41455241	| 'XBRA', 'AERA'
+crash_old_term:
+	.long	0
 crash_term:
 	movem.l	%d0-%d2/%a0-%a2,-(%sp)
 	jsr	crash_restore

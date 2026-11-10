@@ -27,7 +27,10 @@
 
 /* shared with crash.S */
 short crash_busy, crash_cpu, crash_fvec, crash_newsr;
-long crash_regs[15], crash_usp, crash_old[12], crash_old_term;
+long crash_regs[15], crash_usp;
+extern long crash_old_term;		/* crash.S, in crash_term's XBRA header */
+extern long *const crash_slot[12];	/* crash.S: each entry's XBRA "before" slot */
+#define crash_old(i) (*crash_slot[i])
 long crash_stack_top;
 void crash_e2(void), crash_e3(void), crash_e4(void), crash_e5(void),
      crash_e6(void), crash_e7(void), crash_e8(void), crash_e11(void), crash_term(void);
@@ -143,7 +146,7 @@ long crash_take(unsigned short *f, long vec)
 {
 	const unsigned short *s = !crash_cpu && vec <= 3 ? f + 4 : f;
 	long size;
-	u32 pc = (u32)s[1] << 16 | s[2], old = (u32)crash_old[vec];
+	u32 pc = (u32)s[1] << 16 | s[2], old = (u32)crash_old(vec);
 	/* a 68000 (and 68010) uses 24 bits of an address: TOS 1.x's own
 	   handlers carry the vector's number in the top byte ($08FC0B0A) */
 	u32 at = crash_cpu < 20 ? old & 0xFFFFFFUL : old;
@@ -190,17 +193,84 @@ static volatile long *low(long a)
 	return p;
 }
 
+/* who had hooked a vector over ours by the time the program ended
+   (crash_over): "bus error: NVDI" and so on */
+static char over[160];
+static int over_n;
+static unsigned short hooked;	/* the vectors sup_install put the catcher on, by bit */
+static int hk_safe(u32 a);
+
+/* one piece onto over[], ", " between the vectors; by hand, as it runs
+   from etv_term on the ending process's stack (no vsnprintf there) */
+static void over_put(const char *t)
+{
+	if (t[0] != ':' && over_n)
+		over[over_n++] = ',', over[over_n++] = ' ';
+	while (*t && over_n < (int)sizeof(over) - 1)
+		over[over_n++] = *t++;
+}
+
+/* ours off vector v: from the vector itself when ours is on top, else out
+   of the XBRA chain of the programs that hooked it after us (the one whose
+   "before" slot holds ours gets ours's "before"); supervisor mode. A chain
+   without XBRA on top of ours can't be walked: noted, as an unhook that
+   failed leaves the vector leading into the program's memory */
+static void unhook(long v, long ours, long old, const char *what)
+{
+	u32 a = (u32)*low(v);
+	int n;
+	if (a == (u32)ours) {
+		*low(v) = old;
+		return;
+	}
+	if (crash_cpu < 20)
+		a &= 0xFFFFFFUL;
+	for (n = 0; n < 16 && hk_safe(a); n++) {
+		long *p = (long *)a;
+		if (p[-3] != 0x58425241L)	/* 'XBRA' */
+			break;
+		if (over_n < (int)sizeof(over) - 48) {
+			u32 id = (u32)p[-2];
+			int i;
+			over_put(what);
+			over_put(": ");
+			for (i = 24; i >= 0; i -= 8) {
+				char c = (char)(id >> i);
+				over[over_n++] = c > ' ' && c < 127 ? c : '?';
+			}
+		}
+		if ((u32)p[-1] == (u32)ours || (crash_cpu < 20 && ((u32)p[-1] & 0xFFFFFFUL) == (u32)ours)) {
+			p[-1] = old;			/* out of the chain */
+			return;
+		}
+		a = (u32)p[-1];
+		if (crash_cpu < 20)
+			a &= 0xFFFFFFUL;
+	}
+	if (over_n < (int)sizeof(over) - 72) {
+		over_put(what);
+		over_put(": hooked over, not taken off");
+	}
+}
+
+const char *crash_over(void)
+{
+	return over;
+}
+
 /* the vectors as they were; supervisor mode */
 void crash_restore(void)
 {
 	int i;
 	if (!installed)
 		return;
+	over_n = 0;
 	for (i = 2; i <= 11; i++)
-		if (CAUGHT(i) && *low(i * 4L) == (long)entry[i])
-			*low(i * 4L) = crash_old[i];
-	if (*low(0x408L) == (long)crash_term)
-		*low(0x408L) = crash_old_term;
+		if (CAUGHT(i) && (hooked & (1 << i)))
+			unhook(i * 4L, (long)entry[i], crash_old(i), names[i]);
+	unhook(0x408L, (long)crash_term, crash_old_term, "etv_term");
+	over[over_n] = 0;
+	hooked = 0;
 	installed = 0;
 }
 
@@ -294,8 +364,9 @@ static void sup_install(void)
 		if (i == 11 && tos1)
 			continue;
 		if (CAUGHT(i)) {
-			crash_old[i] = *low(i * 4L);
+			crash_old(i) = *low(i * 4L);
 			*low(i * 4L) = (long)entry[i];
+			hooked |= 1 << i;
 		}
 	}
 	crash_old_term = *low(0x408L);	/* etv_term */

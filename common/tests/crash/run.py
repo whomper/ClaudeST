@@ -67,7 +67,7 @@ def run(machine, kind, reset=False):
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     h = subprocess.Popen(args, env=env, stdout=open(log, "w"), stderr=subprocess.STDOUT)
     want = "CRASHT previous" if reset else "CRASHT repeat done" if kind == "r" else "CRASHT cleanup"
-    done = ("CRASHT no crash", "CRASHT protect", "CRASHT line F not ours", "CRASHT emulator")
+    done = ("CRASHT no crash", "CRASHT protect", "CRASHT over", "CRASHT line F not ours", "CRASHT emulator")
     t_end = time.time() + (240 if kind == "r" else 60)
     reset_sent = False
     try:
@@ -154,6 +154,15 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
         check("CrashTest 1.0: " + NAMES["f"] in rep and
               ("(CrashTest+$" in rep.split("\r\n")[2] if rep.count("\r\n") > 2 else False),
               tag + " the program's own line F caught, in its code")
+    # another program hooks vector 2 and etv_term over the catcher and
+    # stays: the catcher comes out of both chains (Erez, 10 Nov 2026: two
+    # bombs just after EFTP quit, now and then)
+    d, con, rep = run(machine, "o")
+    tag = "%s hooked over by another program:" % machine
+    check("CRASHT over bus-ok" in con, tag + " out of vector 2's chain")
+    check("term-ok" in con, tag + " out of etv_term's chain")
+    check(re.search(r"CRASHT over \S+ \S+: bus error, 2 bombs: OVER, etv_term: OVER", con) is not None,
+          tag + " named (crash_over)")
     # ten crashes caught in supervisor mode in one boot: TOS's savptr
     # ($4A2) and the supervisor stack hold steady
     d, con, rep = run(machine, "r")

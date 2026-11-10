@@ -71,6 +71,8 @@ void conn_log_hold(int on);
 /* the held log's buffer, taken from the heap for the job: 16384; 0 (or
    up to 4096) keeps the 4 KB static one */
 extern long conn_log_hold_bytes;
+/* the log buffer's size, bytes (256 to 4096, 4096 by default): an app short of heap lowers it before it logs (conn.c) */
+extern long conn_log_small;
 /* STinG's output buffer for each connection opened from now on: 4096;
    up to 32000 (back to 4096 when STinG's pool hasn't the room).
    MiNTnet's buffers are the kernel's */

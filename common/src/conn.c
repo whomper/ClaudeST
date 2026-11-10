@@ -155,6 +155,11 @@ void (*conn_phase)(int phase, long bytes);
    needed those 4 KB on a 1 MB ST). Where the heap has no 4 KB the lines
    are written out one at a time, as the unbuffered log always was. */
 #define LOG_SMALL 4096
+/* the buffer's size: an app short of heap (an accessory on a 1 MB ST,
+   whose first boot has a few KB to spare: EContact 10 Nov 2026, 8 of 350
+   contacts left out) sets it to 1024 before it logs; the log is then
+   written in smaller pieces, not lost */
+long conn_log_small = LOG_SMALL;
 static char *logbuf;
 static int loglen, logcap, job_hold, logbig;
 
@@ -175,7 +180,7 @@ long net_sendbuf = 4096;
 void conn_log_hold(int on)
 {
 	if (on && !job_hold && conn_logfile[0] && !logbig &&
-	    conn_log_hold_bytes > LOG_SMALL) {
+	    conn_log_hold_bytes > conn_log_small) {
 		char *b = malloc(conn_log_hold_bytes);
 		if (b) {
 			if (logbuf) {
@@ -315,9 +320,10 @@ void conn_log_append(const char *text, long n)
 static void log_add(const char *s, long n)
 {
 	if (!logbuf) {
-		logbuf = malloc(LOG_SMALL);
+		long n = conn_log_small >= 256 && conn_log_small <= LOG_SMALL ? conn_log_small : LOG_SMALL;
+		logbuf = malloc(n);
 		if (logbuf)
-			logcap = LOG_SMALL;
+			logcap = (int)n;
 	}
 	if (!logbuf) {			/* no room: this piece goes straight out */
 		log_write(s, n);

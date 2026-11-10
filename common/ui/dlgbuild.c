@@ -254,6 +254,14 @@ static void make_ticks(short hc)
 	tick_rows = rows;
 }
 
+/* the tick box's two bitmaps (db_tick_on, db_tick_off) made for a cell height
+   hc (8 or 16), for an app that draws its own objects (EContact's fields) */
+void db_tick_bits(short hc)
+{
+	if (tick_rows != (hc >= 16 ? 16 : 8))
+		make_ticks(hc);
+}
+
 short db_tick(DLGB *b, short x, short y, const char *label, short *var)
 {
 	short k, lbl;
