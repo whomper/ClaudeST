@@ -2276,7 +2276,9 @@ static void handle_line(char *s)
 		menu_target = -1;
 		nav_pending = -1;
 		list_loading = 0;
-		dirty |= D_SIDEBAR;
+		/* drawn when the list ends ('E'), once: a list that came over
+		   two turns of the loop was drawn empty, then whole (TOS 1.04,
+		   an 8 MHz ST: 190 ms more at the start, the hub's runq256) */
 		break;
 	case 'I':			/* I <id> <label> */
 		if (!drop_list && nitems < MAXITEMS && n > 2) {
@@ -2335,8 +2337,8 @@ static void handle_line(char *s)
 	case 'W':			/* show the picker */
 		show_picker();
 		break;
-	case 'E':			/* end of list */
-		dirty |= D_LIST;
+	case 'E':			/* end of list: its title and rows, drawn once */
+		dirty |= D_SIDEBAR;
 		break;
 	case 'C':			/* C <id> : current chat (for highlight) */
 		/* just started, the pane is empty: don't highlight the chat
