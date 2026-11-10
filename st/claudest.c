@@ -38,6 +38,7 @@
 #include "offdraw.h"
 #include "click.h"
 #include "hebkey.h"
+#include "arrowed.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -5474,7 +5475,29 @@ static void handle_msg(short *msg)
 		else
 			set_curr(msg[4], msg[5], msg[6], msg[7]);
 		break;
-	case WM_ARROWED:
+	case WM_ARROWED: {
+		/* the pane under the pointer (a wheel, on AESes that send it
+		   so), else the text, whose the window's sliders are (D37) */
+		ARROW_PANE panes[1];
+		short n = 0, page;
+		if (nitems > list_rows) {
+			panes[0].r.x = wx;
+			panes[0].r.y = list_y;
+			panes[0].r.w = sb_w;
+			panes[0].r.h = status_y - 2 - list_y;
+			panes[0].id = 1;
+			n = 1;
+		}
+		if (arrow_target(panes, n, 0)) {
+			page = list_rows > 1 ? list_rows - 1 : 1;
+			switch (msg[4]) {
+			case 0: scroll_list(-page); break;
+			case 1: scroll_list(page); break;
+			case 2: scroll_list(-1); break;
+			case 3: scroll_list(1); break;
+			}
+			break;
+		}
 		switch (msg[4]) {
 		case 0: scroll_text(-(rows - 1)); break;
 		case 1: scroll_text(rows - 1); break;
@@ -5482,6 +5505,7 @@ static void handle_msg(short *msg)
 		case 3: scroll_text(1); break;
 		}
 		break;
+	}
 	case WM_VSLID:
 		if (nlines > rows) {
 			short want = (short)((long)msg[4] * (nlines - rows) / 1000);
