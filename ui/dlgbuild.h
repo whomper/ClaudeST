@@ -148,5 +148,7 @@ void db_end(DLGB *b);
 
 /* the tick box's drawing: the bitmaps for the font's height, 0 before the first db_tick */
 extern BITBLK db_tick_on, db_tick_off;
+/* make them for a cell height hc (8 or 16) without building a dialog (db_tick does it as it goes) */
+void db_tick_bits(short hc);
 
 #endif

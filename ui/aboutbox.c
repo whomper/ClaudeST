@@ -385,34 +385,74 @@ static void icon256_draw(const unsigned char *px, const unsigned char *map, shor
    palette is TOS's, else the nearest (an app's theme may have taken pens
    16 and up: EMail's). Nothing is lent, so nothing else on the screen
    changes colour while the box is open. */
+static short (*pal_cache)[3];		/* the palette as the last full search saw it */
+static short pal_known;			/* 256 once it is whole */
+
+/* A few of the icon's pens changed (an app's theme.c takes pens 16 to 21):
+   each takes the nearest of the 16 system pens and the icon's own pens that
+   kept their colour, 16 + 20 questions rather than 256. When many changed
+   (NVDI's palette), the whole palette is asked once and kept while the
+   icon's pens still read as they did then (the guidelines' Speed). */
+#define FEW 8
+
 static void icon256_pens(const short (*rgb)[4], unsigned char *map)
 {
-	short i, p, have[3], (*pal)[3] = 0;
-	for (i = 0; rgb[i][0]; i++) {
-		long best = -1;
+	short i, j, p, n, nmiss = 0, have[32][3], sys[16][3];
+	char ok[32];
+	for (n = 0; n < 32 && rgb[n][0]; n++) {
+		vq_color(vdi_h, rgb[n][0], have[n]);
+		ok[n] = abs(have[n][0] - rgb[n][1]) + abs(have[n][1] - rgb[n][2]) + abs(have[n][2] - rgb[n][3]) <= 24;
+		nmiss += !ok[n];
+	}
+	if (nmiss && nmiss <= FEW)
+		for (p = 0; p < 16; p++)
+			vq_color(vdi_h, p, sys[p]);
+	else if (nmiss) {
+		int same = pal_known == 256;
+		if (!pal_cache)
+			pal_cache = malloc(256 * sizeof(*pal_cache));
+		for (i = 0; same && i < n; i++)
+			same = pal_cache && pal_cache[rgb[i][0]][0] == have[i][0] &&
+			       pal_cache[rgb[i][0]][1] == have[i][1] && pal_cache[rgb[i][0]][2] == have[i][2];
+		if (pal_cache && !same) {
+			for (p = 0; p < 256; p++)
+				vq_color(vdi_h, p, pal_cache[p]);
+			pal_known = 256;
+		}
+	}
+	for (i = 0; i < n; i++) {
+		long best = -1, d;
 		short pen = rgb[i][0];
-		vq_color(vdi_h, pen, have);
-		if (abs(have[0] - rgb[i][1]) + abs(have[1] - rgb[i][2]) + abs(have[2] - rgb[i][3]) > 24) {
-			/* the palette asked once, not 256 times a colour (the
-			   guidelines' Speed) */
-			if (!pal && (pal = malloc(256 * sizeof(*pal))) != 0)
-				for (p = 0; p < 256; p++)
-					vq_color(vdi_h, p, pal[p]);
-			for (p = 0; pal && p < 256; p++) {
-				long d;
-				short *h = pal[p];
-				d = (long)(h[0] - rgb[i][1]) * (h[0] - rgb[i][1]) +
-				    (long)(h[1] - rgb[i][2]) * (h[1] - rgb[i][2]) +
-				    (long)(h[2] - rgb[i][3]) * (h[2] - rgb[i][3]);
-				if (best < 0 || d < best) {
-					best = d;
-					pen = p;
+		if (!ok[i]) {
+			if (nmiss <= FEW) {
+				for (p = 0; p < 16; p++) {
+					d = (long)(sys[p][0] - rgb[i][1]) * (sys[p][0] - rgb[i][1]) +
+					    (long)(sys[p][1] - rgb[i][2]) * (sys[p][1] - rgb[i][2]) +
+					    (long)(sys[p][2] - rgb[i][3]) * (sys[p][2] - rgb[i][3]);
+					if (best < 0 || d < best)
+						best = d, pen = p;
 				}
-			}
+				for (j = 0; j < n; j++) {
+					if (!ok[j])
+						continue;
+					d = (long)(have[j][0] - rgb[i][1]) * (have[j][0] - rgb[i][1]) +
+					    (long)(have[j][1] - rgb[i][2]) * (have[j][1] - rgb[i][2]) +
+					    (long)(have[j][2] - rgb[i][3]) * (have[j][2] - rgb[i][3]);
+					if (best < 0 || d < best)
+						best = d, pen = rgb[j][0];
+				}
+			} else
+				for (p = 0; pal_cache && p < 256; p++) {
+					short *h = pal_cache[p];
+					d = (long)(h[0] - rgb[i][1]) * (h[0] - rgb[i][1]) +
+					    (long)(h[1] - rgb[i][2]) * (h[1] - rgb[i][2]) +
+					    (long)(h[2] - rgb[i][3]) * (h[2] - rgb[i][3]);
+					if (best < 0 || d < best)
+						best = d, pen = p;
+				}
 		}
 		map[rgb[i][0]] = (unsigned char)pen;
 	}
-	free(pal);
 }
 #endif
 

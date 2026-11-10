@@ -213,6 +213,36 @@ static void xbra_unhook(void)
 	*v70 = *(long *)(xbra_block + 4);
 }
 
+/* o: another program hooks vector 2 and etv_term over the catcher, with
+   XBRA ('OVER'), and stays: crash_remove takes the catcher out of both
+   chains (each 'OVER' block's old becomes what was there before the
+   catcher), and crash_over names them. Otherwise the vectors lead into
+   the program's memory after it has gone */
+static unsigned short *ov2, *ovt;
+static long orig2, origt, now2, nowt, old2, oldt;
+static volatile long *volatile v2 = (volatile long *)0x8L, *volatile vt = (volatile long *)0x408L;
+static void ov_before(void)
+{
+	orig2 = *v2;
+	origt = *vt;
+}
+static void ov_hook(void)
+{
+	*(long *)(ov2 + 4) = *v2;
+	*v2 = (long)(ov2 + 6);
+	*(long *)(ovt + 4) = *vt;
+	*vt = (long)(ovt + 6);
+}
+static void ov_look(void)
+{
+	now2 = *v2;
+	nowt = *vt;
+	old2 = *(long *)(ov2 + 4);
+	oldt = *(long *)(ovt + 4);
+	*v2 = orig2;		/* the test's own blocks off again */
+	*vt = origt;
+}
+
 int main(void)
 {
 	char inf[8];
@@ -277,7 +307,25 @@ int main(void)
 	}
 	if (Fopen("C:\\STAGE1.TXT", 0) >= 0 && (xbra_block = outside(xbra_code, sizeof xbra_code)))
 		Supexec(xbra_hook);
+	if (kind == 'o') {
+		if (!(ov2 = outside(xbra_code, sizeof xbra_code)) || !(ovt = outside(xbra_code, sizeof xbra_code)))
+			return 1;
+		ov2[2] = ovt[2] = 0x4F56;	/* 'OVER' */
+		ov2[3] = ovt[3] = 0x4552;
+		Supexec(ov_before);
+	}
 	crash_install("C:\\", "CrashTest", "1.0");
+	if (kind == 'o') {
+		char t[240];
+		Supexec(ov_hook);
+		crash_remove();
+		Supexec(ov_look);
+		snprintf(t, sizeof(t), "CRASHT over %s %s: %s\n",
+			 now2 == (long)(ov2 + 6) && old2 == orig2 ? "bus-ok" : "bus-wrong",
+			 nowt == (long)(ovt + 6) && oldt == origt ? "term-ok" : "term-wrong", crash_over());
+		nf_debug(t);
+		return 0;
+	}
 	if (xbra_block)
 		Supexec(xbra_unhook);
 	crash_cleanup = cleanup;

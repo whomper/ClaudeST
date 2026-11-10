@@ -60,6 +60,10 @@ const char *crash_previous(void);
    the app's log ("line F chained after XBRA 'XXXX' ($123456)") */
 const char *crash_vectors(void);
 /* where CRASH.LOG is ("" before crash_install, or when it does nothing) */
+/* after crash_remove: who had hooked one of the catcher's vectors over it
+   ("bus error, 2 bombs: NVDI", by XBRA name), and whether the catcher
+   could be taken out of that chain; "" when every vector was still its */
+const char *crash_over(void);
 const char *crash_log(void);
 /* test builds (-DCRASH_TEST) only: F1 to F5 (the scancode) crash on
    purpose: a bus error in the program, one in its code in supervisor
