@@ -22,6 +22,9 @@ CFLAGS  := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin \
 # dialogs drawn by the CPU on a 68000 (common dialog.c, DLG_CPU): about a
 # third faster on an 8 MHz ST (EFTP, the hub, 1 Nov 2026)
 CFLAGS  += -DDLG_CPU
+# dialog loops ask the AES for one click, so a press comes at once
+# (common dialog.h; the guidelines, 5.8; C16, the hub, 10 Nov 2026)
+CFLAGS  += -DDLG_CLICK
 # the speed rig's build (../tests/hatari/speed.py): EXTRA_CFLAGS=-DAES_PROFILE=20
 CFLAGS  += $(EXTRA_CFLAGS)
 LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/atari/link.ld \
