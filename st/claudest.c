@@ -39,6 +39,7 @@
 #include "click.h"
 #include "hebkey.h"
 #include "arrowed.h"
+#include "theme.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -961,7 +962,7 @@ static short text_bidi(short x, short y, const char *s, short n, short fx, short
  * sixteen system pens hold them now (guideline 5.2): another palette,
  * NVDI's say, can have them elsewhere. Pens above 15 are never read:
  * others' pictures set them, whatever the VDI's table says */
-static short pen[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+static short tos_pen[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
 static void pens_init(void)
 {
@@ -982,28 +983,35 @@ static void pens_init(void)
 			    (long)(have[2] - tos[k][2]) * (have[2] - tos[k][2]);
 			if (best < 0 || d < best || (d == best && p == k)) {
 				best = d;
-				pen[k] = p;
+				tos_pen[k] = p;
 			}
 		}
 	}
 }
 
+/* the selection bar: the family's one selection colour (theme.c, D42),
+   black in monochrome and four colours (theme's colour is 0 there) */
+static short sel_pen(void)
+{
+	return colour ? pen[P_SEL] : 1;
+}
+
 static short accent(void)
 {
-	return ncolors >= 4 ? pen[2] : 1;	/* red where we have colour, else black */
+	return ncolors >= 4 ? tos_pen[2] : 1;	/* red where we have colour, else black */
 }
 
 /* code blocks in blue, as on claude.ai; four colours have no blue */
 static short code_colour(void)
 {
-	return ncolors >= 16 ? pen[4] : ncolors >= 4 ? pen[3] : 1;
+	return ncolors >= 16 ? tos_pen[4] : ncolors >= 4 ? tos_pen[3] : 1;
 }
 
 /* inline code: red, the standard colours' nearest to claude.ai's
    burgundy, or underlined in black and white */
 static short inl_colour(void)
 {
-	return ncolors >= 4 ? pen[2] : 1;
+	return ncolors >= 4 ? tos_pen[2] : 1;
 }
 
 static short inl_fx(void)
@@ -1259,16 +1267,16 @@ static void draw_status(short full)
 	}
 	if (usage_pct >= 0) {
 		short ry = rry, rx = rrx;
-		short fc = usage_pct >= 90 ? accent() : colour ? pen[4] : 1;
+		short fc = usage_pct >= 90 ? accent() : colour ? tos_pen[4] : 1;
 		ring(x + rx, status_y + row_h - 1, rx, ry, rx / 6 + 1, usage_pct,
-		     fc, colour ? pen[8] : 1, !colour, 1);
+		     fc, colour ? tos_pen[8] : 1, !colour, 1);
 	}
 	room = (wx + sb_w - 4 - tx) / cw;
 	if (room > (short)sizeof(t) - 1)
 		room = sizeof(t) - 1;
 	if (ncolors >= 4)
 		ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
-		     online ? pen[3] : pen[2], 0, 0, 1);
+		     online ? tos_pen[3] : tos_pen[2], 0, 0, 1);
 	else
 		ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
 		     1, 0, 0, 1);
@@ -1336,7 +1344,7 @@ static void draw_sidebar(void)
 		if (!row_visible(y, y + row_h))
 			continue;
 		if (nav_active(i)) {
-			fill(wx + 4, y, wx + sb_w - 5, y + row_h - 2, 1);
+			fill(wx + 4, y, wx + sb_w - 5, y + row_h - 2, sel_pen());
 			text(x, y + (row_h - ch) / 2 - 1, nav_labels[i], strlen(nav_labels[i]), 1, 0);
 		} else {
 			text(x, y + (row_h - ch) / 2 - 1, nav_labels[i], strlen(nav_labels[i]), i == 0 ? 1 : 0, 1);
@@ -1367,7 +1375,7 @@ static void draw_sidebar(void)
 			   the dotted "light" text, which is hard to read (Erez,
 			   29 Oct 2026) */
 			if (ncolors >= 16)
-				text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, pen[9]);
+				text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, tos_pen[9]);
 			else
 				text(x, y + (row_h - ch) / 2 - 1, it->label, n, HEAD_FX, 1);
 			continue;
@@ -1381,7 +1389,7 @@ static void draw_sidebar(void)
 			box[1] = y - 1;
 			box[2] = lr;
 			box[3] = y + row_h - 3;
-			if (text_plain_state() > 0 && !bidi_has_rtl(it->label, n)) {
+			if (!colour && text_plain_state() > 0 && !bidi_has_rtl(it->label, n)) {
 				/* on TOS's own screen: the label in black on the white
 				   just filled, then a selected row turned over (common
 				   scr_xor), the same pixels as a black box and white
@@ -1392,7 +1400,7 @@ static void draw_sidebar(void)
 					scr_xor(vh, box);
 			} else {
 				if (sel)
-					fill(box[0], box[1], box[2], box[3], 1);
+					fill(box[0], box[1], box[2], box[3], sel_pen());
 				text_bidi(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, sel ? 0 : 1,
 					  lr - 1 - (it->pinned ? cw + 4 : 0));
 			}
@@ -1411,11 +1419,11 @@ static void draw_sidebar(void)
 				short colour = ncolors >= 16;
 				if (it->state == 'W') {
 					if (dot_pulse)
-						ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? pen[9] : 1, 0, 0, 0);
+						ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? tos_pen[9] : 1, 0, 0, 0);
 				} else if (it->state == 'A')
-					ring(dx, dy, 3, ry + 1, 3, 100, sel ? 0 : colour ? pen[6] : 1, 0, 0, 0);
+					ring(dx, dy, 3, ry + 1, 3, 100, sel ? 0 : colour ? tos_pen[6] : 1, 0, 0, 0);
 				else
-					ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? pen[4] : accent(), 0, 0, 0);
+					ring(dx, dy, 2, ry, 2, 100, sel ? 0 : colour ? tos_pen[4] : accent(), 0, 0, 0);
 			}
 			if (it->pinned) {
 				/* a small filled diamond: pinned / starred */
@@ -5665,6 +5673,7 @@ int main(void)
 	vq_extnd(vh, 1, work_out);
 	pb_vdi(vh);		/* the list's bar: its slider's move by the VDI (common's fast way) */
 	planes = work_out[4];
+	theme_init(ncolors >= 16, 0, 0);	/* the family's selection colour (D42): after planes */
 	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
 	x8_box(&dx, dy, &dw, dh);
 	if (win < 0) {
@@ -5793,6 +5802,7 @@ int main(void)
 	wind_delete(win);
 	menu_bar(mb.tree, 0);
 	av_exit();
+	theme_exit();
 	v_clsvwk(vh);
 	Mfree(tb);
 	crash_remove();
