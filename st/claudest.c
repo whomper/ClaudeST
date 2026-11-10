@@ -305,7 +305,7 @@ static short nmodel, neffort;
 static char cur_model[28], cur_effort[8];
 static char pref_model[28], pref_effort[8];	/* the user's choice, kept in CLAUDEST.INF */
 static short pref_sent;				/* sent to the bridge since HELLO */
-static short chip_x0, chip_x1;			/* the model chip in the reply line */
+static short chip_x0, chip_x1, chip_y;		/* the model chip in the title bar */
 
 static void tx_cmd(const char *a, const char *b, const char *c);
 static void show_picker(void);
@@ -1517,6 +1517,7 @@ static void draw_title(void)
 		short y1 = wy + (title_h - sch) / 2 - 2, y2 = y1 + sch + 3;
 		chip_x1 = px + pw - cw / 2 - 1;
 		chip_x0 = chip_x1 - (cl + 1) * scw;
+		chip_y = y1;
 		line(chip_x0, y1, chip_x1, y1, 1);
 		line(chip_x1, y1, chip_x1, y2, 1);
 		line(chip_x1, y2, chip_x0, y2, 1);
@@ -3304,20 +3305,25 @@ static void wait_release(void)
 	}
 }
 
-/* list and right-click menus: the AERA programs' shared popup
- * (common/ui/popup.c), above the row it is for when there is no room
- * below; what it covered is repainted at once */
-static short menu_popup(short x, short y, short alt_y, const char *const *lab, short n)
+/* what a popup covered, repainted at once (unless popup.c put it back) */
+static short popup_done(short r)
 {
-	short r, saved = text_dirty_row;
-	text_noclip(vh);	/* popup.c clips by vs_clip, not text.c */
-	r = popup_alt(x, y, alt_y, lab, n);
+	short saved = text_dirty_row;
 	if (popup_put_back)	/* the screen under it is back as it was */
 		return r;
 	text_dirty_row = 0;
 	redraw(D_ALL, popup_area.x, popup_area.y, popup_area.w, popup_area.h);
 	text_dirty_row = saved;
 	return r;
+}
+
+/* list and right-click menus: the AERA programs' shared popup
+ * (common/ui/popup.c), above the row it is for when there is no room
+ * below. Labels are words: popup_m adds the margin (D15) */
+static short menu_popup(short x, short y, short alt_y, const char *const *lab, short n)
+{
+	text_noclip(vh);	/* popup.c clips by vs_clip, not text.c */
+	return popup_done(popup_m_alt(x, y, alt_y, lab, n));
 }
 
 /* ------------------------------------------------------------------ */
@@ -4370,19 +4376,22 @@ static void model_menu(void)
 {
 	static char lab[NMODEL + NEFFORT + 1][24];
 	const char *lp[NMODEL + NEFFORT + 1];
-	short i, n = 0, r;
+	short i, n = 0, r, sel = 0;
 	if (!nmodel) {
 		alert(1, "[1][The Gateway hasn't sent|the list of models yet.][ OK ]");
 		return;
 	}
 	for (i = 0; i < nmodel; i++, n++) {
-		strcpy(lab[n], strcmp(mod_id[i], cur_model) ? " " : "\x08");	/* ticked (common/ui/popup.c) */
-		strlcpy_(lab[n] + 1, mod_lab[i], 20);
+		short on = !strcmp(mod_id[i], cur_model);
+		if (on)
+			sel = n;
+		strcpy(lab[n], on ? "\x08" : "");	/* ticked in popup_m's margin */
+		strlcpy_(lab[n] + on, mod_lab[i], 20);
 	}
 	if (neffort) {
-		strcpy(lab[n++], "----------------");
+		strcpy(lab[n++], "-");
 		for (i = 0; i < neffort; i++, n++) {
-			strcpy(lab[n], strcmp(eff_id[i], cur_effort) ? " " : "\x08");
+			strcpy(lab[n], strcmp(eff_id[i], cur_effort) ? "" : "\x08");
 			strcat(lab[n], "Effort: ");
 			strlcpy_(lab[n] + strlen(lab[n]), eff_lab[i], 13);
 		}
@@ -4390,7 +4399,11 @@ static void model_menu(void)
 	for (i = 0; i < n; i++)
 		lp[i] = lab[i];
 	flush_dirty();
-	r = menu_popup(chip_x0 ? chip_x0 : px + pw / 2, wy + title_h + 1, -1, lp, n);
+	/* over the chip, the current model over it (D27); with no chip
+	   (a narrow window), under the title */
+	text_noclip(vh);
+	r = popup_done(chip_x0 ? popup_over(chip_x0, chip_y, lp, n, sel)
+			       : popup_m(px + pw / 2, wy + title_h + 1, lp, n));
 	if (r < 0)
 		return;
 	if (r < nmodel)
