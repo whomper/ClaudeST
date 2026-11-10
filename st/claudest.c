@@ -261,6 +261,9 @@ static struct {
 	long off;		/* -1: not known (as good as changed) */
 	short len;
 	u8 kind, role;
+	u8 stale;		/* the buffer's text was replaced since: the same
+				   offset may hold other text, so sum decides */
+	u16 sum;		/* while stale: row_sum of the text it showed */
 } shown[SHOWN_MAX];
 static short text_diff;			/* draw_text: rows as shown are left alone */
 static short pending_scroll;		/* lines auto-scrolled since last redraw */
@@ -655,6 +658,35 @@ static short grows_plainly(short li)
 	       !memchr(t, MK_INL, l->len) && !bidi_has_rtl(t, l->len);
 }
 
+/* the text at the buffer's offsets may be another now: a row whose line
+   has the same offset is left as it is only if its text is the same
+   (draw_text compared offsets alone, so a cleared chat's "Loading...",
+   where the old text's line had been, left that line on the screen:
+   Erez, 10 Nov 2026) */
+static u16 row_sum(long off, short len)
+{
+	const u8 *t = (const u8 *)tb + off;
+	u16 h = 0;
+	short i;
+	for (i = 0; i < len; i++)
+		h = (u16)((h << 3 | h >> 13) ^ t[i]);
+	return h;
+}
+
+/* before the text changes: what each row shows, summed while it is still
+   in the buffer (only here, not at each draw: the ST's page scroll) */
+static void forget_shown(void)
+{
+	short r;
+	for (r = 0; r < SHOWN_MAX; r++) {
+		if (shown[r].off >= 0 && !shown[r].stale && shown[r].off + shown[r].len <= tlen)
+			shown[r].sum = row_sum(shown[r].off, shown[r].len);
+		else if (shown[r].off >= 0 && !shown[r].stale)
+			shown[r].off = -1;	/* not in the buffer: as good as changed */
+		shown[r].stale = 1;
+	}
+}
+
 /* drop the oldest half of the conversation when the buffer fills up */
 static void trim_buffer(void)
 {
@@ -665,6 +697,7 @@ static void trim_buffer(void)
 		cut = tlen;
 	else
 		cut++;
+	forget_shown();
 	memmove(tb, tb + cut, tlen - cut);
 	tlen -= cut;
 	rewrap_all();
@@ -700,6 +733,7 @@ static void append(const char *s, short n)
 
 static void clear_text(void)
 {
+	forget_shown();
 	tlen = 0;
 	nlines = 0;
 	top_line = 0;
@@ -1626,19 +1660,24 @@ static void draw_text(short from_row)
 		/* the clip takes the whole row: then it shows what is drawn now */
 		whole = clip[0] <= px && clip[2] >= px + pw - 1 && clip[1] <= y && clip[3] >= y + ch - 1;
 		if (text_diff && whole && r < SHOWN_MAX) {
+			short stale = shown[r].stale;
 			if (li >= nlines ? shown[r].off == -2 :
 			    shown[r].off == lines[li].off && shown[r].len == lines[li].len &&
-			    shown[r].kind == lines[li].kind && shown[r].role == lines[li].role)
+			    shown[r].kind == lines[li].kind && shown[r].role == lines[li].role &&
+			    (!stale || shown[r].sum == row_sum(lines[li].off, lines[li].len))) {
+				shown[r].stale = 0;
 				continue;		/* as it is on the screen */
-			if (li < nlines && shown[r].off == lines[li].off && shown[r].kind == lines[li].kind &&
+			}
+			if (!stale && li < nlines && shown[r].off == lines[li].off && shown[r].kind == lines[li].kind &&
 			    shown[r].role == lines[li].role && grows_plainly(li))
 				col = shown[r].len < lines[li].len ? shown[r].len : lines[li].len;
 			/* the same line drawn again whole where it was (its words
 			   wrapped anew): what would flicker */
-			again = !col && li < nlines && shown[r].off == lines[li].off;
+			again = !stale && !col && li < nlines && shown[r].off == lines[li].off;
 		}
 		if (r < SHOWN_MAX) {
 			shown[r].off = !whole ? -1 : li < nlines ? lines[li].off : -2;
+			shown[r].stale = 0;
 			if (li < nlines) {
 				shown[r].len = lines[li].len;
 				shown[r].kind = lines[li].kind;
