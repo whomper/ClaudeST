@@ -1786,7 +1786,7 @@ static void reply_clip(int what);
 static short edit_key(char *buf, short *len, short *cur, short max, short kstate, short kr)
 {
 	u8 ascii = kr & 0xff, scan = (kr >> 8) & 0xff, c;
-	short shift = kstate & (K_LSHIFT | K_RSHIFT);
+	short shift = key_shift(kstate, kr);	/* also typed while busy (gem.h) */
 	short ctrl = key_ctrl(kstate, kr) || scan == 0x73 || scan == 0x74;
 	short dir = 0;
 
@@ -3669,7 +3669,7 @@ static short text_dialog(const char *title, const char *ok_label, char *buf, sho
 			else if (as == 0x1b)		/* Esc: empty it */
 				td_len = td_cur = td_start = 0;
 			else if (sc == 0x47) {		/* Clr/Home: its start, with Shift its end */
-				td_cur = e.kstate & (K_LSHIFT | K_RSHIFT) ? td_len : 0;
+				td_cur = key_shift(e.kstate, e.kreturn) ? td_len : 0;
 				changed = 1;
 			}
 			else if (sc == 0x44)
@@ -5070,7 +5070,7 @@ static void settings_dialog(void)
 			else if (as == 0x1b)		/* Esc: empty it */
 				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
 			else if (sc == 0x47)		/* Clr/Home: its start, with Shift its end */
-				sd_cur[fo] = e.kstate & (K_LSHIFT | K_RSHIFT) ? sd_len[fo] : 0;
+				sd_cur[fo] = key_shift(e.kstate, e.kreturn) ? sd_len[fo] : 0;
 			else if (clip_key(e.kreturn))
 				field_clip(clip_key(e.kreturn), f[fo], &sd_len[fo], &sd_cur[fo],
 					   (fo ? 5 : 15));
@@ -5154,7 +5154,7 @@ static void handle_key(short kstate, short kr)
 {
 	u8 ascii = kr & 0xff;
 	u8 scan = (kr >> 8) & 0xff;
-	short shift = kstate & (K_LSHIFT | K_RSHIFT);
+	short shift = key_shift(kstate, kr);	/* also typed while busy (gem.h) */
 
 	if (crash_test(scan))		/* test builds only: F1-F4 crash on purpose */
 		return;
@@ -5609,6 +5609,7 @@ int main(void)
 	apid = appl_init();
 	if (apid < 0)
 		return 1;
+	key_state_init();	/* Shift typed during the long start keeps its state (gem.h) */
 	phys = graf_handle(&cw, &ch, &wbox, &hbox);
 	dlg_title = "ClaudeST";		/* dialogs in a window (3.5) */
 	notify_init("CLAUDEST");	/* BGEM.NG's notifications (4.5) */
