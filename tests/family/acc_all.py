@@ -44,6 +44,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.join(HERE, "..", "..", "tools")
 sys.path.insert(0, TOOLS)
 import machines  # noqa: E402
+import hubonly  # noqa: E402
+
+hubonly.require("acc_all.py")
 
 args = [a for a in sys.argv[1:]]
 nvdi = "--nvdi" in args

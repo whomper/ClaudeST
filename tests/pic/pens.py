@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""aerapens (tools/pens), the Pi gateway's pens, against the Atari's own
+"""aerapens (tools/pens), the Gateway's pens, against the Atari's own
 code: each picture fetch.sh gets and run.py makes, to the pens of a
 monochrome ST, ST medium, ST low and a Falcon's 256 colours, W wide and at
 a third of its size, by aerapens built for this machine and for a Pi

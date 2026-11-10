@@ -55,6 +55,6 @@ _BasePage:
 	.space	4
 _is_acc:
 	.space	2
-	.even
-	.space	STACK_SIZE
+	.balign	4			| a longword-aligned top: every long the stack
+	.space	STACK_SIZE		| takes is one bus cycle on a 68030, not two
 _stack_top:

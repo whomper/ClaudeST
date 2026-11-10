@@ -15,7 +15,8 @@ HD is the folder Hatari shows as C:. From a rig:
     subprocess.Popen(["hatari"] + m.args() + ["--auto", "C:\\\\APP.PRG"], env=m.env())
     print(m.describe())         # "Falcon:256, TOS 4.04" - put it in the report
 
-The TOS: Erez's own (TOS 1.04 from his ST, TOS 4.04 from his Falcon) when
+The TOS: Erez's own (TOS 1.04 from his ST, TOS 4.04 from his Falcon; the
+STE's tos162.img, where he has one) when
 the folder $AERA_TOS (~/.aera/tos) has them, else EmuTOS 1.4, fetched once
 into ~/.cache/aera. AERA_TOS=emutos takes EmuTOS always. The TOS images
 are never put in git (Atari's copyright), nor sent anywhere.
@@ -23,7 +24,7 @@ are never put in git (Atari's copyright), nor sent anywhere.
 Each machine starts with its own settings: its own HOME for Hatari (so no
 NVRAM is shared between rigs), the Falcon's screen mode in its NVRAM and,
 for a real TOS 4, in C:\\NEWDESK.INF (TOS 4's desktop takes the mode from
-there), unless the rig brought its own. An ST, which has no clock, gets
+there), unless the rig brought its own. An ST or an STE, which has no clock, gets
 C:\\AUTO\\CLOCK.PRG, setting this computer's date and time. Standard Python
 only.
 
@@ -62,12 +63,40 @@ import time
 import urllib.request
 import zipfile
 
+# Erez's configuration, the one every app's testing has once (his word, 10 Nov 2026): a Falcon with TOS 4.04,
+# 4 MB and NVDI, in the 256 colours his own screen uses. His Falcon has 14 MB, but 4 MB runs it as well, and 4 MB
+# is the stock Falcon (Falcon-4: 68030 at 16 MHz, no FPU). A rig takes it as machine ERZ_MACHINE with NVDI on
+# (AERA_WITH_NVDI=1, or erz_env()); a container with no TOS images or NVDI runs the same machine on EmuTOS
+# without NVDI and says so in describe(), and the hub runs it for real.
+ERZ_MACHINE = "Falcon-4:256"
+
+
+def nvdi_here(env=None):
+    """True when Erez's NVDI is on this computer (the folder Machine.nvdi() reads)"""
+    e = os.environ if env is None else env
+    src = e.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
+    return os.path.exists(os.path.join(src, "auto", "nvdi.prg"))
+
+
+def erz_env(env=None):
+    """the environment that makes a rig run Erez's configuration: NVDI on every Falcon it starts. Where this
+    computer has no NVDI it is left off (the stand-in: the same machine on EmuTOS, as describe() says), so a rig
+    can call this unconditionally; AERA_WITH_NVDI set by hand still stops with 'no NVDI here'."""
+    e = dict(os.environ if env is None else env)
+    if nvdi_here(e):
+        e["AERA_WITH_NVDI"] = "1"
+    return e
+
+
 # name: (what it is, Hatari's arguments, screens (the first is the default), real TOS file)
 MACHINES = {
     "ST": ("Erez's 1040 ST: 68000 at 8 MHz, 4 MB",
            ["--machine", "st", "--memsize", "4"], ["mono", "med", "low"], "tos104us.img"),
     "ST-1": ("an ST with 1 MB, the smallest the family runs on (the ST editions)",
              ["--machine", "st", "--memsize", "1"], ["mono", "med", "low"], "tos104us.img"),
+    "STE": ("an STE: 68000 at 8 MHz, 4 MB, its 8-bit DMA sound (EPlay's STE edition, 7 Nov 2026); "
+            "TOS 1.62 (STE's own; 1.04 has no DMA sound), else EmuTOS",
+            ["--machine", "ste", "--memsize", "4"], ["mono", "med", "low"], "tos162.img"),
     "TT": ("a TT030: 68030 at 32 MHz, 68882, 4 MB ST RAM and 16 MB TT RAM (68030 code in fast RAM)",
            ["--machine", "tt", "--cpuclock", "32", "--fpu", "68882", "--memsize", "4",
             "--ttram", "16", "--addr24", "off"], ["ttmed", "mono", "med"], "tos306.img"),
@@ -75,12 +104,12 @@ MACHINES = {
                "14 MB ST RAM, 128 MB TT RAM, the DSP, VGA",
                ["--machine", "falcon", "--cpuclock", "32", "--fpu", "68882", "--memsize", "14",
                 "--ttram", "128", "--addr24", "off", "--dsp", "emu", "--monitor", "vga"],
-               ["16", "256"], "tos404.img"),
+               ["16", "256", "65536"], "tos404.img"),
     "Falcon-4": ("a Falcon030 as sold: 68030 at 16 MHz, no FPU, 4 MB ST RAM and no TT RAM, the DSP, VGA "
                  "(Erez, 19 Oct 2026: the machine for all three accessories loaded at once)",
                  ["--machine", "falcon", "--cpuclock", "16", "--memsize", "4", "--ttram", "0",
                   "--addr24", "on", "--dsp", "emu", "--monitor", "vga"],
-                 ["16", "256"], "tos404.img"),
+                 ["16", "256", "65536"], "tos404.img"),
 }
 
 SCREENS = {
@@ -90,8 +119,10 @@ SCREENS = {
     "ttmed": ["--monitor", "vga", "--tos-res", "ttmed"],  # TT 640x480, 16 colours
     "16": [],                                           # Falcon 640x480, 16 colours
     "256": [],                                          # Falcon 640x480, 256 colours
+    "65536": [],                                        # Falcon 640x480, true colour (16 bits)
 }
-FALCON_MODE = {"16": 0x001A, "256": 0x001B}    # VGA | 80 columns | 4 or 8 planes
+FALCON_MODE = {"16": 0x001A, "256": 0x001B,    # VGA | 80 columns | 4 or 8 planes
+               "65536": 0x001C}                 # ... | 16 bits (R5G6B5, Motorola order)
 
 EMUTOS = ("https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip",
           "1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663", "etos512us.img")
@@ -180,6 +211,20 @@ def emutos():
     return img
 
 
+def xvfb_stop(p, timeout=10):
+    """end an Xvfb xvfb() started and wait for it to be gone (terminate alone
+    returns while its socket still answers: the next rig took it for a
+    display and Hatari found no X; EMail, 8 Nov 2026). None is fine."""
+    if p is None:
+        return
+    p.terminate()
+    try:
+        p.wait(timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait()
+
+
 def xvfb(display, size="1024x768x24", timeout=20):
     """An X display for a rig: None when one answers on display already,
     else the Xvfb started on it, once it answers (Hatari started on a
@@ -193,9 +238,16 @@ def xvfb(display, size="1024x768x24", timeout=20):
         except FileNotFoundError:   # no xdpyinfo: the server's socket answers
             # (a socket left by an Xvfb that was killed is only a file:
             # taken for a display, the rig's xdotool found no window)
+            # (and a dying Xvfb's socket still answers for a moment: its lock
+            # must name a process that is alive, EMail 8 Nov 2026)
+            n = display.lstrip(":").split(".")[0]
+            try:
+                os.kill(int(open("/tmp/.X%s-lock" % n).read().strip()), 0)
+            except (OSError, ValueError):
+                return False
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
-                sock.connect("/tmp/.X11-unix/X" + display.lstrip(":").split(".")[0])
+                sock.connect("/tmp/.X11-unix/X" + n)
                 return True
             except OSError:
                 return False
@@ -251,7 +303,10 @@ class Machine:
     def describe(self):
         return "%s:%s, %s" % (self.name, self.screen,
                               "TOS " + tos_version(self.tos) if self.real else "EmuTOS 1.4") + \
-            ("; with " + ", ".join(self.with_accs) if getattr(self, "with_accs", None) else "")
+            ("; with " + ", ".join(self.with_accs) if getattr(self, "with_accs", None) else "") + \
+            ("; NVDI" if os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else "") + \
+            (" (Erez's configuration)" if "%s:%s" % (self.name, self.screen) == ERZ_MACHINE and self.real and
+             os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else "")
 
     def args(self):
         """Hatari's arguments; also writes the machine's own settings"""
@@ -317,6 +372,9 @@ class Machine:
     def accs(self, apps):
         """the family's accessories alongside (see above); returns what was put
         on C:, e.g. ["ECal v2.16"]"""
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import hubonly
+        hubonly.require("machines.py accs()")
         os.makedirs(self.hd, exist_ok=True)
         done = []
         for app in apps:

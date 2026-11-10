@@ -7,7 +7,7 @@ B      := build
 
 $(B)/test_loghold: test_loghold.c ../../src/conn.c ../../src/tls_none.c ../../src/util.c stub/plat.h
 	@mkdir -p $(B)
-	cc $(CFLAGS) -fsanitize=address,undefined -Wl,--wrap=malloc -o $@ test_loghold.c ../../src/conn.c ../../src/tls_none.c ../../src/util.c
+	cc $(CFLAGS) -fsanitize=address,undefined -Wl,--wrap=malloc -Wl,--wrap=free -o $@ test_loghold.c ../../src/conn.c ../../src/tls_none.c ../../src/util.c
 test: $(B)/test_loghold
 	./$(B)/test_loghold
 clean:

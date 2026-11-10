@@ -1725,8 +1725,11 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 		     (e > BR_ERR_RECV_FATAL_ALERT && e < BR_ERR_RECV_FATAL_ALERT + 256)))
 			*retry = TLS_RETRY_ANY_CIPHER;
 		else if (rsa_only && retry &&
-			 (e == BR_ERR_RECV_FATAL_ALERT + 40 || e == BR_ERR_RECV_FATAL_ALERT + 71))
-			*retry = TLS_RETRY_ECDSA;
+			 ((e == BR_ERR_IO && !answered && !t->xt.certs) ||
+			  e == BR_ERR_RECV_FATAL_ALERT + 40 || e == BR_ERR_RECV_FATAL_ALERT + 71))
+			*retry = TLS_RETRY_ECDSA;	/* (or closed with no answer at all:
+							   www.atari.org.pl, an ECDSA certificate
+							   only, resets an RSA-only hello) */
 		explain(e, host, err, errlen);
 		xt_free(&t->xt);
 		free(t);

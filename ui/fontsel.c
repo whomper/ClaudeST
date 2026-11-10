@@ -5,8 +5,9 @@
  * from ECal's font selector, laid out as NVDI's WDIALOG one: the Family
  * list, and beside it the Style list and the Size list; below them the
  * Type line, a small sample in the font chosen (Erez, 20 Oct 2026: no
- * Hebrew samples, no Pt: field, a quarter smaller), OK and Cancel. 48 by
- * 17 cells of the system font: ST medium's 640 x 200 too.
+ * Hebrew samples, no Pt: field, a quarter smaller), Cancel and OK (10 wide, OK
+ * at the right) under a black title band " Font" (a window's own title where
+ * the AES has windows). 48 by 17 cells of the system font: ST medium's 640 x 200 too.
  *
  * The programs lay their text out in character cells, so only the
  * system font and the fixed-width GDOS fonts with letters are listed
@@ -800,6 +801,15 @@ static short tr_add(short type, short flags, short state, long spec, short x, sh
 	return i;
 }
 
+/* the title band (5.10, D22): the first row, the dialog's width, white on black, the text left with a space before it as
+   Settings has it (db_band); in a window of the AES's the window's own title replaces it (dlg_band) */
+static TEDINFO band_ted = { (char *)" Font", (char *)"", (char *)"", 3, 0, 0, 0x1071, 0, 0, 6, 1 };
+
+static short tr_band(short w)
+{
+	return tr_add(G_BOXTEXT, 0, 0, (long)&band_ted, 0, 0, w, 1);
+}
+
 static short tr_text(short x, short y, const char *s)
 {
 	return tr_add(G_STRING, 0, 0, (long)s, x, y, (short)strlen(s), 1);
@@ -957,7 +967,7 @@ static void fl_show(LIST *l, short k)
 #define D_SIZES   1		/* the font changed: its sizes to look at */
 #define D_PREVIEW 4		/* the type line and the sample to draw */
 
-static short o_ok, o_cancel, o_type, o_prev;
+static short o_ok, o_cancel, o_type, o_prev, o_band;
 static short dirty, pt, want;
 static fontsel *fs;
 
@@ -1332,6 +1342,7 @@ int fontsel_run(fontsel *s)
 	/* 48 x 17 cells: ST medium's and ST high's rows under the menu bar,
 	   a quarter smaller than the first (Erez) */
 	tr_begin(48, 17);
+	o_band = tr_band(48);
 	tr_text(2, 1, "Family");
 	tr_text(30, 1, "Style");
 	lf.obj = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 2, 26, 9);
@@ -1341,8 +1352,9 @@ int fontsel_run(fontsel *s)
 	tr_text(2, 11, "Type:");
 	o_type = tr_add(G_IBOX, 0, 0, 0L, 8, 11, 38, 1);
 	o_prev = tr_add(G_BOX, 0, 0, 0x00FF1100L, 2, 12, 44, 3);
-	o_ok = tr_add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"OK", 26, 15, 9, 1);
-	o_cancel = tr_add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", 37, 15, 9, 1);
+	/* Cancel then OK, OK at the right, 10 wide each (5.10, D26: Settings' W - 24 and W - 12) */
+	o_cancel = tr_add(G_BUTTON, SELECTABLE | EXIT, 0, (long)"Cancel", 24, 15, 10, 1);
+	o_ok = tr_add(G_BUTTON, SELECTABLE | EXIT | DEFAULT, 0, (long)"OK", 36, 15, 10, 1);
 	tr_end();
 	/* the borders and focus rings are drawn outside the boxes: the
 	   lists and Size a few pixels down, so no label loses its top or
@@ -1368,6 +1380,7 @@ int fontsel_run(fontsel *s)
 	/* in a window of the AES's on MiNT and MagiC (3.5), else over the
 	   screen */
 	dlg_name("Font");
+	dlg_band(o_band);		/* in a window its title says it (3.5) */
 	dlg_open(fs_tree, &x, &y, &w, &h);
 	for (i = 0; i < 3; i++)
 		fl_place(&lists[i]);

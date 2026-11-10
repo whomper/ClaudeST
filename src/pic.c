@@ -3252,6 +3252,14 @@ static void row_two(PIC_DITHER *dt, const unsigned short *px, const unsigned cha
 	}
 }
 
+/* A 5-6-5 pixel's components as 8 bits, the top bits repeated: white is
+   255 (a bare shift gave 248/252/248, and the error diffusion carried -7
+   on every white pixel until a grey pen won: white dotted over near-white
+   fills; EPDF and Erez's photo, 7 Nov 2026). The DSP's tables below are
+   the same numbers (dither.a56 keeps bit parity with dither_many) */
+#define C5(x) ((((x) & 31) << 3) | (((x) & 31) >> 2))
+#define C6(x) ((((x) & 63) << 2) | (((x) & 63) >> 4))
+
 static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *o)
 {
 	/* Floyd-Steinberg: each pixel's error (what it wanted less its pen)
@@ -3269,7 +3277,7 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 	if (dt->rows == NULL) {
 		for (n = 0; n < w; n++) {
 			unsigned v = px[n];
-			o[n] = (unsigned char) nearest_far(pal, (v >> 8) & 0xF8, (v >> 3) & 0xFC, (v << 3) & 0xF8);
+			o[n] = (unsigned char) nearest_far(pal, C5(v >> 11), C6((v >> 5) & 63), C5(v & 31));
 		}
 		return;
 	}
@@ -3283,9 +3291,9 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 			er = eg = eb = 0;
 			continue;
 		}
-		r = (int) ((v >> 8) & 0xF8) + ((er + c[0]) >> 4);
-		g = (int) ((v >> 3) & 0xFC) + ((eg + c[1]) >> 4);
-		b = (int) ((v << 3) & 0xF8) + ((eb + c[2]) >> 4);
+		r = (int) C5(v >> 11) + ((er + c[0]) >> 4);
+		g = (int) C6((v >> 5) & 63) + ((eg + c[1]) >> 4);
+		b = (int) C5(v & 31) + ((eb + c[2]) >> 4);
 		r = r < -128 ? -128 : r > 383 ? 383 : r;
 		g = g < -128 ? -128 : g > 383 ? 383 : g;
 		b = b < -128 ? -128 : b > 383 ? 383 : b;
@@ -3424,12 +3432,12 @@ static void dd_palette(const PIC_PAL *pal)
 	memset(w, 0, 0xe1 * sizeof *w);
 	for (i = 0; i < 64; i++) {
 		if (i < 32) {
-			w[i] = ((unsigned long) (8 * i - 128) << 15) & DD_MASK;
-			w[0x70 + (i < 16 ? i : i - 32)] = ((unsigned long) (8 * i - 128) << 15) & DD_MASK;
+			w[i] = ((unsigned long) (C5(i) - 128) << 15) & DD_MASK;
+			w[0x70 + (i < 16 ? i : i - 32)] = ((unsigned long) (C5(i) - 128) << 15) & DD_MASK;
 			w[0x80 + i] = ((unsigned long) (16 * (i - 16) + 136) << 12) & DD_MASK;
 			w[0xa0 + i] = (0UL - (1UL << (23 - 8 * (i % 3)))) & DD_MASK;
 		}
-		w[0x40 + (i < 32 ? i : i - 64)] = ((unsigned long) (4 * i - 128) << 15) & DD_MASK;
+		w[0x40 + (i < 32 ? i : i - 64)] = ((unsigned long) (C6(i) - 128) << 15) & DD_MASK;
 	}
 	w[0xe0] = 0xFDFDFEUL;			/* -$020202's low word */
 	dsp_load(D_LOADY, 0, w, 0xe1);

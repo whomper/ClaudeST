@@ -10,6 +10,26 @@
  * starts. Plain TOS only: MiNT and MagiC catch crashes themselves. Not
  * in a desk accessory, which runs inside other programs and must never
  * end: crash_install does nothing there.
+ *
+ * The terminate vector (etv_term, vector number 0x102): the catcher puts
+ * crash_term on it, which puts the exception vectors back however the
+ * program ends and goes on to the handler it found. On TOS that vector is
+ * $408, written in supervisor mode. Under MiNT it is the process's own and
+ * only Setexc(0x102, ...) sets it (a write to $408 is never called, even
+ * at a Pterm); crash_install puts crash_term there with Setexc, and there
+ * it restores nothing (the exception vectors are MiNT's) and just passes
+ * on. A program's own handler for when it ends (EPlay's: its vectors, the
+ * DMA, the matrix) is put on top of it, the same way on both:
+ *
+ *     old = Setexc(0x102, -1);		(crash_term, once crash_install ran)
+ *     Setexc(0x102, my_term);		(a user mode call on TOS too)
+ *
+ * and my_term keeps every register, does its work and ends by going on to
+ * `old` (move.l old,-(sp); rts), as crash_term does. Called by Pterm on
+ * TOS (supervisor mode) and, under MiNT, in the process when it ends by
+ * Pterm, by a signal such as SIGTERM or SIGBUS, never for SIGKILL
+ * (tests/xaaes/termtest.c). crash_term is global, and crash_old_term the
+ * handler it goes on to (0: none), for a chain that goes on to them by name.
  */
 #ifndef CRASH_H
 #define CRASH_H
@@ -18,8 +38,12 @@
    version name the program in the report ("EMail", "1.30") and must
    stay where they are */
 void crash_install(const char *workdir, const char *app, const char *version);
-/* put the vectors back (also done by itself however the program ends) */
+/* put the vectors back (also done by itself however the program ends); under MiNT crash_term comes off etv_term
+   if it is the one on it */
 void crash_remove(void);
+/* the terminate handler (crash.S) and the one it goes on to */
+void crash_term(void);
+extern long crash_old_term;
 /* what the program was doing, for the report (the status line's text) */
 void crash_note(const char *what);
 /* after a crash, with the report written: tell the user and close GEM

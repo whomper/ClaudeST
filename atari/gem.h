@@ -157,6 +157,42 @@ static inline int key_ctrl(short kstate, short key)
 				     scan != 0x1c && scan != 0x72);
 }
 
+#ifndef K_ALT
+#define K_ALT    0x08
+#endif
+#define K_CAPS   0x10
+
+/* A Shift key typed while the program was busy (Erez's task #139, 9 Nov
+ * 2026). On TOS the AES gives kstate as it is when the program reads the
+ * key, so Shift typed during a long draw is gone: 0x4838 arrives with
+ * kstate 0. evnt_multi_ (gem.c) now puts the state of the moment the key
+ * was typed in kstate (conterm bit 3: the BIOS buffer's entries carry it;
+ * key_state_init() starts it early), and then (kstate & 3) is right. This
+ * is the fallback for what reaches a program without evnt_multi_ (a
+ * dialog read by the AES's form_do, MagiC's or MiNT's own state aside)
+ * and says what the key's code gives away, measured in Hatari on TOS 1.04
+ * (tests/busykeys): Shift+letter (an upper-case letter with Caps Lock
+ * off), Shift+cursor keys, Home and Insert (the digit they send), Shift+F1
+ * to F10 (scancodes 0x54 to 0x5D). NOT told apart: Ctrl+Shift+letter (the
+ * same ^letter), Ctrl+Shift+arrows (0x73, 0x74, 0x77, 0x75...), Shift+Delete, Tab,
+ * Return, Backspace: with kstate lost these are the plain key. So a Shift
+ * variant must never mean more than the plain key (the guidelines, 3.2). */
+static inline int key_shift(short kstate, short key)
+{
+	short scan = (key >> 8) & 0xff;
+	short ascii = key & 0xff;
+	if (kstate & (K_RSHIFT | K_LSHIFT))
+		return 1;
+	if (ascii && (scan == 0x48 || scan == 0x50 || scan == 0x4b || scan == 0x4d || scan == 0x47 || scan == 0x52))
+		return 1;		/* Shift+Up '8', Down '2', Left '4', Right '6', Home '7', Insert '0' */
+	if (scan >= 0x54 && scan <= 0x5d)
+		return 1;		/* Shift+F1 to F10 */
+	return ascii >= 'A' && ascii <= 'Z' && !(kstate & K_CAPS);
+}
+
+/* call right after appl_init in a program whose start is long: the keys typed from then on keep their shift state */
+void key_state_init(void);
+
 typedef struct {
 	short which, mx, my, mbutton, kstate, kreturn, breturn;
 } AEVENT;

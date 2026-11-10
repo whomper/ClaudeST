@@ -125,6 +125,9 @@ get_sr:
 	STUB	get_err_text
 	STUB	unsupported
 	STUB	resolve
+	STUB	getvstr
+	STUB	UDP_open
+	STUB	UDP_send
 
 | ---- the reset hook for a cookie jar FAKESTNG made itself ----
 | TOS 1.04 and older don't clear _p_cookies at a reset; this does, and

@@ -27,4 +27,5 @@
 #define pic_dither_close tj_pic_dither_close
 #define pic_dither_open tj_pic_dither_open
 #define pic_dither_row tj_pic_dither_row
+#define pic_dither_sharp tj_pic_dither_sharp
 #define pic_jpeg_rows tj_pic_jpeg_rows

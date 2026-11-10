@@ -72,6 +72,44 @@ short sting_resolve(const char *name, u32 *ip)
 	return (short)sting_call(tpl->fn[T_RESOLVE], a, 7);
 }
 
+/* a value from STinG's configuration (DEFAULT.CFG: NAMESERVER and the
+   like); NULL when it has none (STinG answers "0" then) */
+const char *sting_getvstr(const char *var)
+{
+	short a[2];
+	const char *v;
+	put_long(a, (u32)var);
+	v = (const char *)sting_call(tpl->fn[T_GETVSTR], a, 2);
+	return v == 0 || (v[0] == '0' && v[1] == 0) ? 0 : v;
+}
+
+/* a UDP connection to ip:port (a nameserver's 53): its handle, or < 0 */
+short sting_udp_open(u32 ip, u16 port)
+{
+	short a[3];
+	put_long(a, ip);
+	a[2] = port;
+	return (short)sting_call(tpl->fn[T_UDP_OPEN], a, 3);
+}
+
+/* one datagram; its answers are read as a TCP connection's are, with
+   sting_count and sting_read */
+short sting_udp_send(short cn, const char *buf, short len)
+{
+	short a[4];
+	a[0] = cn;
+	put_long(a + 1, (u32)buf);
+	a[3] = len;
+	return (short)sting_call(tpl->fn[T_UDP_SEND], a, 4);
+}
+
+void sting_udp_close(short cn)
+{
+	short a[1];
+	a[0] = cn;
+	sting_call(tpl->fn[T_UDP_CLOSE], a, 1);
+}
+
 short sting_open(u32 ip, u16 port)
 {
 	return sting_open_buf(ip, port, 4096);

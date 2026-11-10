@@ -12,6 +12,10 @@
 int  pf_open(const char *path, int mode);
 long pf_write(int h, const void *buf, long n);
 void pf_close(int h);
+long pf_size(const char *path);
+int  pf_remove(const char *path);
+int  pf_rename(const char *from, const char *to);
+long pf_seek(int h, long off);
 typedef struct {
 	short year, mon, day, hour, min, sec;
 } PFTIME;

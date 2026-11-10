@@ -53,6 +53,7 @@ static const char *const names[12] = {
 #define CAUGHT(i) ((i) >= 2 && (i) <= 11 && entry[i] != 0)
 
 static int installed;
+static int term_set;		/* MiNT: crash_term put on the process's own etv_term (Setexc 0x102) */
 static const char *app = "the program", *app_version = "";
 static char path[220];
 static char note[80];
@@ -491,7 +492,25 @@ void crash_install(const char *workdir, const char *name, const char *version)
 	long *bp = (long *)_BasePage;
 	int n;
 	char *mem;
-	if (installed || _is_acc || get_cookie(0x4D694E54L) || get_cookie(0x4D616758L))	/* MiNT, MagX */
+	if (installed || term_set || _is_acc)
+		return;
+	if (get_cookie(0x4D694E54L)) {		/* MiNT: it catches crashes itself, but not the end of a process
+						   killed by a signal for programs that put a handler on etv_term */
+		/* etv_term is the process's own there, set by Setexc(0x102) and by nothing else: a write to $408
+		   (what crash_install does on TOS) is never called, even at a plain Pterm (rig, FreeMiNT 1.17).
+		   crash_term goes on it, so that a handler a program puts on the vector after this, with
+		   Setexc(0x102) too, finds it as the one before it, and chains to it as on TOS: crash_term
+		   restores nothing here (installed stays 0) and goes on to the vector it found, if there was
+		   one. A SIGKILL calls no etv_term at all; SIGTERM, SIGBUS and Pterm do */
+		long old = Setexc(0x102, -1L);
+		if (old != (long)crash_term) {
+			crash_old_term = old;
+			Setexc(0x102, (long)crash_term);
+			term_set = 1;
+		}
+		return;
+	}
+	if (get_cookie(0x4D616758L))		/* MagX */
 		return;
 	if (!rep) {
 		mem = (char *)Malloc(CRASH_STACK + REP_SIZE);
@@ -554,6 +573,12 @@ void crash_install(const char *workdir, const char *name, const char *version)
 
 void crash_remove(void)
 {
+	if (term_set) {		/* MiNT: ours off the vector if it is the one on it (a program's own over it stays) */
+		if (Setexc(0x102, -1L) == (long)crash_term)
+			Setexc(0x102, crash_old_term);
+		term_set = 0;
+		return;
+	}
 	Supexec(crash_restore);
 }
 

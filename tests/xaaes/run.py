@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """run.py WORK EMUTOS.IMG [PRG] [--copy FILE ...] [--display :97] [--wait S]
           [--steps "..."] [--size MB] [--setenv NAME=VALUE ...] [--cnf LINE ...]
-          [--ext2 DIR] [--start PATH]
+          [--ext2 DIR] [--start PATH] [--mem-prot]
 
 An Atari GEM program in Hatari under FreeMiNT 1.17.0 with XaAES, an AES
 that iconifies windows, multitasks and does drag and drop, on a Falcon
@@ -38,7 +38,7 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
               click X Y, rclick X Y, dclick X Y
               drag X1 Y1 X2 Y2  press at X1 Y1, move to X2 Y2, let go
               key 0x1c          a key by its scan code, or a character
-              ctrl n            Control with a key (a capital adds Shift)
+              ctrl n            Control with a key, a letter by its scan code (a capital adds Shift)
               until TEXT [S]    wait (120 s) for TEXT in hatari.log, a line
                                 the program says through NatFeats; the
                                 run fails when it doesn't come
@@ -53,6 +53,9 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
             read back into WORK/ext2 and listed, names as they are, in
             WORK/ext2.ls (Hatari runs 8 s more at the end, for MiNT to write
             its cache out)
+--mem-prot  FreeMiNT's memory protection on (MEM_PROT=YES in mint.ini, Hatari --mmu on), for a program that
+            touches its own memory from an interrupt or while another process runs (PRGFLAGS: private by
+            default, bits 4-5; 0x10 is global). The default is off, as before
 --start P   what XAAES.CNF starts instead of C:\\PRG, e.g. "d:\\eweb.prg"
             for a release folder given as --ext2 (PRG may then be left out;
             given, it is copied to C: all the same)
@@ -60,6 +63,13 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
 Prints the screenshots' names at the end; exits 1 when a step failed.
 """
 import argparse, os, shutil, signal, subprocess, sys, time
+
+# ST scan codes of the keys a "ctrl X" step names (US layout)
+STSCAN = {c: 0x10 + i for i, c in enumerate("qwertyuiop")}
+STSCAN.update({c: 0x1e + i for i, c in enumerate("asdfghjkl")})
+STSCAN.update({c: 0x2c + i for i, c in enumerate("zxcvbnm")})
+STSCAN.update({",": 0x33, ".": 0x34})
+STSCAN = {k: "0x%02x" % v for k, v in STSCAN.items()}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -105,6 +115,16 @@ def main():
     ap.add_argument("--cnf", action="append", default=[], metavar="LINE")
     ap.add_argument("--ext2", metavar="DIR")
     ap.add_argument("--start", metavar="PATH")
+    ap.add_argument("--machine", default="falcon", choices=["falcon", "tt"],
+                    help="falcon: VGA, 14 MB, the IDE disk (default); tt: a TT030 at 32 MHz with 4 MB + 16 MB TT RAM on "
+                         "its high resolution monitor (1280x960 mono), the same IDE disk")
+    ap.add_argument("--mem-prot", action="store_true",
+                    help="MEM_PROT=YES in mint.ini and Hatari's --mmu on: FreeMiNT's memory protection, which a program "
+                         "that touches its own memory from an interrupt, or while another process runs, may not survive "
+                         "(EPlay halted the Falcon: PRGFLAGS 7 was private memory, 0x17 global). Not the default: the "
+                         "MMU makes Hatari slow (the steps' waits may need to be longer)")
+    ap.add_argument("--dsp", default="none", choices=["none", "dummy", "emu"],
+                    help="Hatari's --dsp (default none; emu for a program that plays through the DSP)")
     a = ap.parse_args()
     if not a.prg and not a.start:
         ap.error("a PRG, or --start")
@@ -136,6 +156,14 @@ def run(a):
         (shutil.copytree if os.path.isdir(f) else shutil.copy)(f, dst)
     mintdir = os.path.join(hd, "mint")
     ver = [d for d in os.listdir(mintdir) if d[0].isdigit()][0]
+    if a.mem_prot:
+        ini = os.path.join(mintdir, ver, "mint.ini")
+        with open(ini) as f:
+            t = f.read()
+        if "MEM_PROT=NO" not in t:
+            sys.exit("run.py: no MEM_PROT=NO in %s" % ini)
+        with open(ini, "w") as f:
+            f.write(t.replace("MEM_PROT=NO", "MEM_PROT=YES"))
     first = "c:\\" + name
     if a.start:
         first = a.start
@@ -167,8 +195,13 @@ def run(a):
     t0 = time.time()
     h = subprocess.Popen(["stdbuf", "-oL", "-eL", "hatari", "-w", "--statusbar", "no", "--borders", "no",
                           "--zoom", "1", "--confirm-quit", "no", "--tos", a.tos,
-                          "--machine", "falcon", "--monitor", "vga", "--dsp", "none", "--memsize", "14",
-                          "--ide-master", img, *(["--ide-slave", img2] if img2 else []), "--fast-boot", "no", "--natfeats", "yes", "--conout", "2",
+                          *(["--machine", "falcon", "--monitor", "vga", "--dsp", a.dsp, "--memsize", "14",
+                             *(["--mmu", "on"] if a.mem_prot else []),
+                             "--ide-master", img, *(["--ide-slave", img2] if img2 else [])] if a.machine == "falcon" else
+                            ["--machine", "tt", "--cpuclock", "32", "--fpu", "68882", "--memsize", "4", "--ttram", "16",
+                             "--addr24", "off", "--monitor", "mono", *(["--mmu", "on"] if a.mem_prot else []),
+                             "--ide-master", img, *(["--ide-slave", img2] if img2 else [])]),
+                          "--fast-boot", "no", "--natfeats", "yes", "--conout", "2",
                           "--sound", "off", "--cmd-fifo", fifo, "--screenshot-dir", shots],
                          env=env, stdout=log, stderr=subprocess.STDOUT, cwd=work)
     stop = {"now": False, "shell": False}
@@ -263,7 +296,13 @@ def run(a):
                     cmd("hatari-event keypress %s" % p[1])
                 elif p[0] == "ctrl":
                     cmd("hatari-event keydown 29")
-                    cmd("hatari-event keypress %s" % p[1])
+                    if len(p[1]) == 1 and p[1].isupper():
+                        cmd("hatari-event keydown 42")
+                    # a letter goes by its scan code: the character reaches a program
+                    # as the plain letter, not as Control+letter (EPlay, 7 Nov 2026)
+                    cmd("hatari-event keypress %s" % STSCAN.get(p[1].lower(), p[1]))
+                    if len(p[1]) == 1 and p[1].isupper():
+                        cmd("hatari-event keyup 42")
                     cmd("hatari-event keyup 29")
                 elif p[0] == "until":
                     timeout = 120.0
@@ -304,7 +343,7 @@ def run(a):
                 h.kill()
                 h.wait()
         if xvfb:
-            xvfb.terminate()
+            machines.xvfb_stop(xvfb)
         log.close()
         out = os.path.join(work, "out")
         try:

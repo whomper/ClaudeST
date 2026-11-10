@@ -95,7 +95,7 @@ class Rig:
         os.makedirs(os.path.dirname(self.work), exist_ok=True)
         xa = os.path.join(HERE, "..", "xaaes", "run.py")
         self.h = subprocess.Popen([sys.executable, xa, self.work, os.path.abspath(a.tos), PRG,
-                                   "--display", a.display], env=self.env,
+                                   "--display", a.display] + (["--mem-prot"] if a.mem_prot else []), env=self.env,
                                   stdout=open(os.path.join(os.path.dirname(self.work), "xaaes-run.log"), "w"),
                                   stderr=subprocess.STDOUT)
         self.shots = os.path.join(self.work, "shots")
@@ -252,6 +252,7 @@ def main():
     ap.add_argument("--work", default=os.path.join(HERE, "build", "work"))
     ap.add_argument("--modes", default="high,med,low,falcon")
     ap.add_argument("--xaaes", action="store_true")
+    ap.add_argument("--mem-prot", action="store_true", help="with --xaaes: FreeMiNT's memory protection on (../xaaes/run.py)")
     ap.add_argument("--display", default=":96")
     a = ap.parse_args()
     if not os.path.exists(PRG):
