@@ -5705,7 +5705,7 @@ static void handle_msg(short *msg)
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
 		case C_ANSWER: copy_answer(); break;
-		case C_QUIT:
+		case C_QUIT: quit = 1; break;	/* lost with Close window in 2.2 (Erez, 11 Nov 2026) */
 		}
 		menu_tnormal(mb.tree, msg[3], 1);
 		break;
