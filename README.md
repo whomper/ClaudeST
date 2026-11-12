@@ -41,7 +41,7 @@ network (Ethernet or WiFi); a claude.ai account or an Anthropic API key.
 Under TOS, put `FOLDR100.PRG` first in `AUTO`; with STinG, set `STING.CPX`'s Delay to 10 on a Falcon
 or TT, 25 to 50 on an ST. [Installing](docs/GUIDE.md#installing) has every step and why.
 
-## AERA-Gateway
+## The Gateway
 
 An 8 MHz 68000 can't do modern HTTPS, so the AERA apps reach the internet through
 [AERA-Gateway](https://github.com/whomper/AERA-Gateway#readme), a small set of services on a Raspberry Pi or
