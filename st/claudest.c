@@ -1165,7 +1165,9 @@ static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
 			short bx = x + rx;
 			if (d2 > ro2 || d2 <= ri2)
 				continue;
-			if (pct > 0 && cw_angle(x, -y) * 10 < lim)
+			/* a whole ring needs no angle: under 64 pixels every point's
+			   is below 360 (tests: the same masks as the angle gives) */
+			if (pct >= 100 || (pct > 0 && cw_angle(x, -y) * 10 < lim))
 				rf[bx >> 4] |= 0x8000 >> (bx & 15);
 			else if (!outline || ((x + dy) & 1)) {	/* outline: a dotted grey */
 				rt[bx >> 4] |= 0x8000 >> (bx & 15);
