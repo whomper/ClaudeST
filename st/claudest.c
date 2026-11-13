@@ -6071,6 +6071,13 @@ int main(void)
 		return 1;
 	}
 	set_window_name();
+	/* the slider as the empty pane has it, set while the window is shut:
+	   the AES draws it with the frame, not again a turn later (an 8 MHz
+	   ST; Erez, 13 Nov 2026: the start made faster) */
+	wind_set(win, WF_VSLSIZE, 1000, 0, 0, 0);
+	wind_set(win, WF_VSLIDE, 0, 0, 0, 0);
+	last_slider_size = 1000;
+	last_slider_pos = 0;
 	wind_open(win, dx, dy, dw, dh);
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
 	font_apply();		/* the text font saved in CLAUDEST.INF */
