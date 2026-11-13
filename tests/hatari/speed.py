@@ -134,6 +134,10 @@ def main():
         # arrow blanked the list and its bar, then drew it all again)
         bx, by, bw, bh = [int(v) for v in
                           [l for l in r.console().splitlines() if l.startswith("LISTBAR ")][-1].split()[1:]]
+        # LISTBAR is in the screen's pixels, the clicks and pictures in the
+        # window's: Hatari shows each of medium resolution's 200 lines twice
+        if a.machine.endswith(":med"):
+            by, bh = by * 2, bh * 2
         r.act("the list a row down (Tab, 15 times)", speed.LINE, lambda: r.key(*["Tab"] * 15))
         r.act("the list a row up (Shift+Tab, 15 times)", speed.LINE, lambda: r.key(*["shift+Tab"] * 15))
         r.act("the list a row down (its bar's arrow, 5 clicks)", speed.LINE,
