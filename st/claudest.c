@@ -1076,9 +1076,9 @@ static short cw_angle(short x, short y)
 	if (!ax && !ay)
 		return 0;
 	if (ax <= ay)
-		a = divu16(45 * MULU16(ax, ay) + 16 * MULU16(ax, ay - ax), ay * ay);
+		a = divu16(MULU16(45 * ax, ay) + (MULU16(ax, ay - ax) << 4), MULU16(ay, ay));
 	else
-		a = 90 - divu16(45 * MULU16(ay, ax) + 16 * MULU16(ay, ax - ay), ax * ax);
+		a = 90 - divu16(MULU16(45 * ay, ax) + (MULU16(ay, ax - ay) << 4), MULU16(ax, ax));
 	if (x >= 0)
 		return y >= 0 ? a : 180 - a;
 	return y < 0 ? 180 + a : 360 - a;
@@ -1137,8 +1137,10 @@ static short ring_next;
 static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
 		 short fc, short tc, short outline, short opaque)
 {
-	long ri = rx - thick;
-	long ro2 = (long)rx * rx + rx, ri2 = ri > 0 ? ri * ri - ri : -1;
+	/* every sum fits 16 bits (rx, ry under 64: x*x + y*y under 8,192),
+	   so the 68000 works them in its own registers; x*x by running sums */
+	short ri = rx - thick;
+	short ro2 = rx * rx + rx, ri2 = ri > 0 ? ri * ri - ri : -1, lim = pct * 36;
 	short dy, x, w = 2 * rx + 1, h = 2 * ry + 1, track = 0, k;
 	if (rx < 1 || ry < 1 || w > MK_W * 16 || h > MK_H)
 		return;
@@ -1156,15 +1158,14 @@ static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
 	memset(mk_track, 0, sizeof(mk_track));
 	for (dy = -ry; dy <= ry; dy++) {
 		short y = (long)dy * rx / ry;	/* in the units of x */
-		long y2 = (long)y * y;
+		short d2 = rx * rx + y * y;	/* x*x + y*y, x from -rx */
 		unsigned short *rf = mk_fill + (dy + ry) * MK_W;
 		unsigned short *rt = mk_track + (dy + ry) * MK_W;
-		for (x = -rx; x <= rx; x++) {
-			long d2 = (long)x * x + y2;
+		for (x = -rx; x <= rx; d2 += 2 * x + 1, x++) {
 			short bx = x + rx;
 			if (d2 > ro2 || d2 <= ri2)
 				continue;
-			if (pct > 0 && cw_angle(x, -y) * 10 < pct * 36)
+			if (pct > 0 && cw_angle(x, -y) * 10 < lim)
 				rf[bx >> 4] |= 0x8000 >> (bx & 15);
 			else if (!outline || ((x + dy) & 1)) {	/* outline: a dotted grey */
 				rt[bx >> 4] |= 0x8000 >> (bx & 15);
