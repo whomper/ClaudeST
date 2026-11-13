@@ -1054,18 +1054,31 @@ static short inl_fx(void)
 	return ncolors >= 4 ? 0 : 8;
 }
 
-/* degrees clockwise from 12 o'clock to the point (x, y), y pointing up;
- * a close integer approximation of atan2, good to about a degree */
-static short cw_angle(long x, long y)
+/* n / d on the 68000's own divide, for a quotient under 65,536 (a long
+ * divide is a library call: ~2 ms a pixel of the usage ring on an ST) */
+static inline unsigned short divu16(unsigned long n, unsigned short d)
 {
-	long ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+	__asm__("divu.w %2,%0" : "=d"(n) : "0"(n), "dm"(d));
+	return (unsigned short)n;
+}
+
+/* a*b on the 68000's own 16-bit multiply */
+#define MULU16(a, b) ((unsigned long)(unsigned short)(a) * (unsigned short)(b))
+
+/* degrees clockwise from 12 o'clock to the point (x, y), y pointing up;
+ * a close integer approximation of atan2, good to about a degree. For
+ * the ring's points (|x|, |y| under 64): every product and quotient fits
+ * the 68000's 16-bit multiply and divide */
+static short cw_angle(short x, short y)
+{
+	unsigned short ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
 	short a;
 	if (!ax && !ay)
 		return 0;
 	if (ax <= ay)
-		a = (short)((45L * ax * ay + 16L * ax * (ay - ax)) / (ay * ay));
+		a = divu16(45 * MULU16(ax, ay) + 16 * MULU16(ax, ay - ax), ay * ay);
 	else
-		a = 90 - (short)((45L * ay * ax + 16L * ay * (ax - ay)) / (ax * ax));
+		a = 90 - divu16(45 * MULU16(ay, ax) + 16 * MULU16(ay, ax - ay), ax * ax);
 	if (x >= 0)
 		return y >= 0 ? a : 180 - a;
 	return y < 0 ? 180 + a : 360 - a;
@@ -1110,26 +1123,48 @@ static void blit_mask(unsigned short *m, short w, short h, short x, short y,
  * looks grey, for screens with too few colours for a real grey. It is worked out off screen
  * and copied over in one go; `opaque` also repaints the background of its
  * box white, so it replaces an older ring without first being erased. */
+/* the shapes ring() worked out last, kept: the status line's ring and dot
+ * and the list's dots come back the same at every redraw, and working one
+ * out is ~130 ms on an 8 MHz ST (the start's first redraw; Erez, 13 Nov
+ * 2026: the start made faster) */
+enum { RING_KEEP = 4 };
+static struct {
+	short rx, ry, thick, pct, outline, track;	/* rx 0: empty */
+	unsigned short fill[MK_W * MK_H], trk[MK_W * MK_H];
+} ring_kept[RING_KEEP];
+static short ring_next;
+
 static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
 		 short fc, short tc, short outline, short opaque)
 {
 	long ri = rx - thick;
 	long ro2 = (long)rx * rx + rx, ri2 = ri > 0 ? ri * ri - ri : -1;
-	short dy, x, w = 2 * rx + 1, h = 2 * ry + 1, track = 0;
+	short dy, x, w = 2 * rx + 1, h = 2 * ry + 1, track = 0, k;
 	if (rx < 1 || ry < 1 || w > MK_W * 16 || h > MK_H)
 		return;
+	for (k = 0; k < RING_KEEP; k++)
+		if (ring_kept[k].rx == rx && ring_kept[k].ry == ry && ring_kept[k].thick == thick &&
+		    ring_kept[k].pct == pct && ring_kept[k].outline == outline)
+			break;
+	if (k < RING_KEEP) {
+		track = ring_kept[k].track;
+		memcpy(mk_fill, ring_kept[k].fill, h * MK_W * 2);
+		memcpy(mk_track, ring_kept[k].trk, h * MK_W * 2);
+		goto drawn;
+	}
 	memset(mk_fill, 0, sizeof(mk_fill));
 	memset(mk_track, 0, sizeof(mk_track));
 	for (dy = -ry; dy <= ry; dy++) {
-		long y = (long)dy * rx / ry;	/* in the units of x */
+		short y = (long)dy * rx / ry;	/* in the units of x */
+		long y2 = (long)y * y;
 		unsigned short *rf = mk_fill + (dy + ry) * MK_W;
 		unsigned short *rt = mk_track + (dy + ry) * MK_W;
 		for (x = -rx; x <= rx; x++) {
-			long d2 = (long)x * x + y * y;
+			long d2 = (long)x * x + y2;
 			short bx = x + rx;
 			if (d2 > ro2 || d2 <= ri2)
 				continue;
-			if (pct > 0 && cw_angle(x, -y) * 10L < pct * 36L)
+			if (pct > 0 && cw_angle(x, -y) * 10 < pct * 36)
 				rf[bx >> 4] |= 0x8000 >> (bx & 15);
 			else if (!outline || ((x + dy) & 1)) {	/* outline: a dotted grey */
 				rt[bx >> 4] |= 0x8000 >> (bx & 15);
@@ -1137,6 +1172,17 @@ static void ring(short cx, short cy, short rx, short ry, short thick, short pct,
 			}
 		}
 	}
+	k = ring_next;
+	ring_next = (ring_next + 1) % RING_KEEP;
+	ring_kept[k].rx = rx;
+	ring_kept[k].ry = ry;
+	ring_kept[k].thick = thick;
+	ring_kept[k].pct = pct;
+	ring_kept[k].outline = outline;
+	ring_kept[k].track = track;
+	memcpy(ring_kept[k].fill, mk_fill, h * MK_W * 2);
+	memcpy(ring_kept[k].trk, mk_track, h * MK_W * 2);
+drawn:
 	if (opaque && track) {
 		blit_mask(mk_track, w, h, cx - rx, cy - ry, 1, tc);
 		blit_mask(mk_fill, w, h, cx - rx, cy - ry, 2, fc);
