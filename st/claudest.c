@@ -1610,6 +1610,8 @@ static short model_chip(char *out)
 	return strlen(out);
 }
 
+static void text_font_as(short id, short w, short h);
+
 static void draw_title(void)
 {
 	short n = strlen(chat_title), maxc = pw / cw - 2, xr = px + pw;
@@ -1623,7 +1625,7 @@ static void draw_title(void)
 	 * characters, or the chip goes */
 	vst_font(vh, 1);
 	vst_height(vh, big ? 6 : 4, &scw, &sch);
-	text_font(vh, 1, scw, sch);
+	text_font_as(1, scw, sch);
 	chip_x0 = chip_x1 = 0;
 	if (cl && maxc - ((cl + 1) * scw + cw) / cw < 16)
 		cl = 0;
@@ -4040,6 +4042,23 @@ static void probe_hebrew(short id)
 	probed_why = heb_why;
 }
 
+/* common's text_font, only when the font is another: each call checks the
+ * system font's form again and turns the CPU's text and fills off until a
+ * first line has been drawn by the VDI and compared, and every redraw sets
+ * the window's font (an 8 MHz ST: the sidebar's fills went to the VDI,
+ * ~70 ms of each whole redraw; Erez, 13 Nov 2026: the start made faster) */
+static short tf_id = -1, tf_w, tf_h;
+
+static void text_font_as(short id, short w, short h)
+{
+	if (id == tf_id && w == tf_w && h == tf_h)
+		return;
+	tf_id = id;
+	tf_w = w;
+	tf_h = h;
+	text_font(vh, id, w, h);
+}
+
 /* set the font; cw/ch become its cell size. 0 if it isn't there */
 static short set_font(short id, short pt)
 {
@@ -4057,7 +4076,7 @@ static short set_font(short id, short pt)
 	cw = w;
 	ch = h;
 	vst_alignment(vh, 0, 5);
-	text_font(vh, id, w, h);
+	text_font_as(id, w, h);
 	cur_font_id = id;
 	cur_font_pt = pt;
 	probe_hebrew(id);
