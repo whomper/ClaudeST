@@ -1405,6 +1405,20 @@ static void draw_status(short full)
 	vswr_mode(vh, 2);
 }
 
+/* the navigation's highlight as it was last drawn whole (a bit a row; -1
+ * not known): a list that ends with the same one draws only the list
+ * (Erez, 13 Nov 2026: the start made faster) */
+static short nav_shown = -1;
+
+static short nav_mask(void)
+{
+	short i, m = 0;
+	for (i = 0; i < NNAV; i++)
+		if (nav_active(i))
+			m |= 1 << i;
+	return m;
+}
+
 static void draw_sidebar(void)
 {
 	if (sb_hidden)
@@ -1427,6 +1441,9 @@ static void draw_sidebar(void)
 	}
 
 	/* navigation */
+	if (row_visible(nav_y, nav_y + NNAV * row_h))
+		nav_shown = row_visible(nav_y, nav_y) && row_visible(nav_y + NNAV * row_h - 1, nav_y + NNAV * row_h - 1)
+			    ? nav_mask() : -1;
 	for (i = 0; i < NNAV; i++) {
 		y = nav_y + i * row_h;
 		if (!row_visible(y, y + row_h))
@@ -2412,8 +2429,9 @@ static void handle_line(char *s)
 	case 'W':			/* show the picker */
 		show_picker();
 		break;
-	case 'E':			/* end of list: its title and rows, drawn once */
-		dirty |= D_SIDEBAR;
+	case 'E':			/* end of list: its title and rows, drawn once;
+					   the navigation too if its highlight moved */
+		dirty |= nav_shown == nav_mask() ? D_LIST : D_SIDEBAR;
 		break;
 	case 'C':			/* C <id> : current chat (for highlight) */
 		/* just started, the pane is empty: don't highlight the chat
