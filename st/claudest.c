@@ -5803,6 +5803,11 @@ static void handle_msg(short *msg)
 			a.w = msg[6];
 			a.h = msg[7];
 			icon_window(&a);
+		} else if (msg[3] == win && (dirty & D_ALL) == D_ALL) {
+			/* the whole window is to be drawn this turn (flush_dirty,
+			   below): the area with it, once. The start drew its window
+			   twice, for the AES's redraw and for D_ALL (an 8 MHz ST:
+			   ~260 ms; Erez, 13 Nov 2026: the start made faster) */
 		} else if (msg[3] == win) {
 			short saved = text_dirty_row;
 			text_dirty_row = 0;
