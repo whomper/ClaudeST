@@ -35,7 +35,17 @@ of its own:
   the directory has none (asked again a day on), 502 when it doesn't
   answer.
 
-    GET /version   ->  "radiogate 1.2, ffmpeg 6.1"
+    GET /search?q=<words>&tag=<genre>&country=<code>&language=<name>&sort=votes|clicks|name&n=<1-100>
+                                                   (radiogate 1.3)
+
+  answered by radio-browser.info's stations that match (Erez, 9 Nov 2026:
+  Find station, through the Gateway): text/plain, UTF-8, one station a
+  line, "name<TAB>country code<TAB>codec<TAB>kbit/s<TAB>its URL", the
+  broken ones left out, most votes first by default; any codec (what
+  isn't MP3 is converted on /stream); 502 when the directory doesn't
+  answer.
+
+    GET /version   ->  "radiogate 1.3, ffmpeg 6.1"
 
 What the station sends:
   - MP3 (audio/mpeg): passed on as it comes, over HTTP or HTTPS, its ICY
@@ -81,7 +91,7 @@ for d in (HERE, os.path.join(HERE, "..", "gateway")):
         break
 import aeragate  # noqa: E402
 
-VERSION = "1.2"
+VERSION = "1.3"
 METAINT = 8192                      # the Atari's: a title block every 8 KB of MP3
 HEAD_MAX = 16384                    # a station's answer head, at most
 LIST_MAX = 65536                    # a station list or an HLS playlist, at most
@@ -440,6 +450,9 @@ class Handler(BaseHTTPRequestHandler):
             q = dict(parse_qsl(u.query, keep_blank_values=True))
             self.logo(q.get("station", ""), q.get("name", ""))
             return
+        if u.path == "/search":
+            self.search(dict(parse_qsl(u.query, keep_blank_values=True)))
+            return
         if u.path == "/art":
             self.art(dict(parse_qsl(u.query, keep_blank_values=True)).get("url", ""))
             return
@@ -590,6 +603,62 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(jpg)
         except OSError:
             pass
+
+    def search(self, q):
+        """GET /search: radio-browser.info's stations as lines of text"""
+        import json
+        order = {"votes": ("votes", "true"), "clicks": ("clickcount", "true"),
+                 "name": ("name", "false")}.get(q.get("sort", "votes"), ("votes", "true"))
+        try:
+            n = max(1, min(100, int(q.get("n", "50"))))
+        except ValueError:
+            n = 50
+        args = [("hidebroken", "true"), ("order", order[0]), ("reverse", order[1]), ("limit", str(n))]
+        for k, rb in (("q", "name"), ("tag", "tag"), ("country", "countrycode"), ("language", "language")):
+            v = q.get(k, "").strip()
+            if len(v) > 100:
+                self.reply(400, "too long a search")
+                return
+            if v:
+                args.append((rb, v))
+        path = "/json/stations/search?" + "&".join("%s=%s" % (k, quote(v, safe="")) for k, v in args)
+        found = None
+        for api in Config.rb_api:
+            try:
+                _, data = fetch(api + path, 4 << 20)
+                found = json.loads(data.decode("utf-8", "replace"))
+                break
+            except (Refused, ValueError):
+                continue
+        if not isinstance(found, list):
+            self.reply(502, "the station directory doesn't answer")
+            return
+
+        def field(v):
+            return re.sub(r"[\t\r\n]+", " ", str(v if v is not None else "")).strip()
+        lines = []
+        for st in found:
+            if not isinstance(st, dict):
+                continue
+            url = field(st.get("url_resolved") or st.get("url"))
+            if not url.startswith(("http://", "https://")) or len(url) > URL_MAX:
+                continue
+            try:
+                kbps = int(st.get("bitrate") or 0)
+            except (TypeError, ValueError):
+                kbps = 0
+            lines.append("%s\t%s\t%s\t%d\t%s\n" % (field(st.get("name"))[:80], field(st.get("countrycode"))[:2],
+                                                    field(st.get("codec"))[:8], kbps, url))
+        body = "".join(lines).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            pass
+        aeragate.say("radiogate: %s searched, %d stations" % (self.client_address[0], len(lines)))
 
     def find_logo(self, station, name):
         """the logo's JPEG, b"" when the directory has none, None (a reply

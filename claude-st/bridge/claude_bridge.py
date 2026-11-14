@@ -5,14 +5,14 @@
 
 Runs on any modern computer and connects an Atari ST/STE/TT/Falcon running
 CLAUDEST.PRG to Claude. The Atari can't do modern TLS, so the bridge does
-the HTTPS work and talks a small line protocol (see ../PROTOCOL.md) to
-the Atari over a serial cable, a TCP socket (WiFi modems, emulators) or a
-pair of files/FIFOs (Hatari's --rs232-in/--rs232-out).
+the HTTPS work and talks a small line protocol (see ClaudeST's PROTOCOL.md)
+to the Atari over TCP: ClaudeST through STinG, or an emulator through
+FAKESTNG. (The serial cable went with ClaudeST 2.3, Erez 9 Nov 2026.)
 
 Examples:
-  CLAUDE_SESSION_KEY=sk-ant-sid01-... ./claude_bridge.py --serial /dev/ttyUSB0
+  CLAUDE_SESSION_KEY=sk-ant-sid01-... ./claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20
   ANTHROPIC_API_KEY=... ./claude_bridge.py --backend api --tcp 0.0.0.0:2323
-  ./claude_bridge.py --backend demo --pipe st_out.fifo st_in.fifo
+  ./claude_bridge.py --backend demo --tcp 127.0.0.1:2323
 """
 import argparse
 import hashlib
@@ -71,46 +71,9 @@ class Link:
         return line.rstrip(b"\r")
 
 
-def find_serial_port():
-    """Pick a serial port for --serial auto: a USB adapter first (by its
-    stable /dev/serial/by-id name), then the Raspberry Pi's own UART."""
-    import glob
-    for pattern in ("/dev/serial/by-id/*", "/dev/ttyUSB*", "/dev/ttyACM*",
-                    "/dev/serial0", "/dev/ttyAMA0"):
-        found = sorted(glob.glob(pattern))
-        if found:
-            return found[0]
-    sys.exit("--serial auto: no serial port found. Is the USB serial adapter plugged in?")
-
-
-class SerialLink(Link):
-    def __init__(self, dev, baud, rtscts):
-        super().__init__()
-        import serial
-        self.error = serial.SerialException
-        if dev == "auto":
-            dev = find_serial_port()
-        log.info("serial port %s at %d baud", dev, baud)
-        self.port = serial.Serial(dev, baud, rtscts=rtscts, timeout=1)
-
-    # an unplugged adapter ends the session; systemd restarts the bridge
-    def _read(self):
-        try:
-            return self.port.read(256)
-        except (self.error, OSError):
-            return None
-
-    def write(self, data):
-        try:
-            self.port.write(data)
-            self.port.flush()
-        except (self.error, OSError) as e:
-            raise EOFError from e
-
-
 class TcpLink(Link):
-    """Serves one Atari at a time over TCP: ClaudeST through STinG, a WiFi
-    modem in transparent mode, or an emulator. Only addresses in `allow`
+    """Serves one Atari at a time over TCP: ClaudeST through STinG, or an
+    emulator through FAKESTNG. Only addresses in `allow`
     may connect; with no `allow`, only private (home network) addresses
     may, so a port forward can't expose the account. A new connection from the Atari replaces the
     old one, so a rebooted Atari never waits on a stale socket."""
@@ -175,29 +138,6 @@ class TcpLink(Link):
         except OSError:
             self.conn.close()
             self.conn = None
-
-
-class PipeLink(Link):
-    """Read what the Atari sends from one file, write to another. With
-    Hatari: hatari --rs232-out <in_path> --rs232-in <out_path>."""
-
-    def __init__(self, in_path, out_path):
-        super().__init__()
-        for p in (in_path, out_path):
-            if not os.path.exists(p):
-                os.mkfifo(p)
-        # open the write side first so Hatari's reader doesn't block us
-        self.out = os.open(out_path, os.O_RDWR)
-        self.inp = os.open(in_path, os.O_RDWR)
-
-    def _read(self):
-        import select
-        if not select.select([self.inp], [], [], 5)[0]:
-            return b""
-        return os.read(self.inp, 1024)
-
-    def write(self, data):
-        os.write(self.out, data)
 
 
 # ---------------------------------------------------------------------------
@@ -868,8 +808,8 @@ def make_backend(args):
         log.error("CLAUDE_SESSION_KEY is not set")
 
         def no_key():
-            raise RuntimeError("No claude.ai session key is set on the gateway. "
-                               "Set CLAUDE_SESSION_KEY (on a Pi: sudo ./install.sh --set-key).")
+            raise RuntimeError("No claude.ai session key is set on the Gateway. "
+                               "Set it there with: sudo aera-gateway set-key")
         return backends.LazyBackend(no_key, "claude.ai (no key)")
     return backends.LazyBackend(lambda: backends.ClaudeAiBackend(
         key, org_id=args.org, artifact_scan=args.artifact_scan, state_dir=args.store),
@@ -879,14 +819,9 @@ def make_backend(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backend", choices=["claudeai", "api", "demo"], default="claudeai")
-    link = ap.add_mutually_exclusive_group()
-    link.add_argument("--serial", metavar="DEVICE", help="serial port, e.g. /dev/ttyUSB0 or COM3, or \"auto\"")
-    link.add_argument("--tcp", metavar="HOST:PORT", help="listen for the Atari on a TCP port (STinG, WiFi modem)")
-    link.add_argument("--pipe", nargs=2, metavar=("FROM_ST", "TO_ST"), help="files/FIFOs (Hatari)")
+    ap.add_argument("--tcp", metavar="HOST:PORT", help="listen for the Atari on a TCP port (STinG)")
     ap.add_argument("--allow", action="append", metavar="IP",
                     help="with --tcp: only accept this Atari address (repeatable; without it, any private address)")
-    ap.add_argument("--baud", type=int, default=19200)
-    ap.add_argument("--rtscts", action="store_true", help="hardware flow control")
     ap.add_argument("--org", help="claude.ai organization uuid (default: first chat org)")
     ap.add_argument("--model", default="claude-opus-5-5", help="model for --backend api")
     ap.add_argument("--store", default="~/.claude-st", help="history dir for --backend api")
@@ -952,8 +887,8 @@ def main():
             print("session fields: %s; session_context fields: %s" % (
                 sorted(info), sorted(info.get("session_context") or {})))
         return
-    if not (args.probe is not None or args.serial or args.tcp or args.pipe):
-        ap.error("one of --serial, --tcp or --pipe is required")
+    if not (args.probe is not None or args.tcp):
+        ap.error("--tcp HOST:PORT is required (ClaudeST reaches the bridge through STinG)")
     backend = make_backend(args)
     if args.probe is not None:
         if args.backend != "claudeai":
@@ -961,12 +896,7 @@ def main():
         for kind, count in sorted(backend.probe(args.artifact_scan, args.probe).items()):
             print("%6d  %s" % (count, kind))
         return
-    if args.serial:
-        link = SerialLink(args.serial, args.baud, args.rtscts)
-    elif args.tcp:
-        link = TcpLink(args.tcp, args.allow)
-    else:
-        link = PipeLink(*args.pipe)
+    link = TcpLink(args.tcp, args.allow)
     log.info("ClaudeST bridge ready (%s backend)", backend.name)
     try:
         Session(link, backend).run()

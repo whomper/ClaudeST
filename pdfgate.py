@@ -21,7 +21,9 @@ back the converted PDF, the same file EConvert would have written
   and then by 200 with the converted PDF (Content-Length), or by an error
   with one line "pdfgate: why". The options are all optional (name: the
   PDF's own name, as the result records it; "in.pdf"); anything else is
-  refused (400).
+  refused (400). pages is none, mono, colour or colouronly (EPDF 2.8,
+  Erez, 10 Nov 2026: only the pages with colour get /Colour, the others
+  keep their /Mono; needs EPDF 2.8's aerapdf or later).
 
     GET /version   ->  "aerapdf EPDF-COMMIT"   (which converter answers)
 
@@ -82,7 +84,7 @@ class Config:
 
 # the options EConvert has, each as aerapdf's flag; values checked
 OPTIONS = {
-    "pages": ("--pages", ("none", "mono", "colour")),
+    "pages": ("--pages", ("none", "mono", "colour", "colouronly")),
     "photos": ("--photos", ("indexed", "jpeg")),
     "pictures": ("--pictures", ("page", "screen")),
     "page_width": ("--page-width", (160, 4096)),

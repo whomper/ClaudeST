@@ -12,6 +12,7 @@ says how they are.
   sudo ./aera-gateway install pdf                           EConvert's and EPDF's converter (pdfgate)
   sudo ./aera-gateway install translate                     translation for the apps (translategate)
   sudo ./aera-gateway install radio                         EPlay's web radio (radiogate)
+  sudo ./aera-gateway install dash                          the dashboard, http://GATEWAY:8888/ (dashgate)
   sudo ./aera-gateway install claude --network --atari ATARI_IP
                                                             ClaudeST's bridge (claude-st)
   sudo ./aera-gateway install all --allow ATARI_IP --mail IMAP SMTP[:587] [POP3] [--browser]
@@ -49,7 +50,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "1.37"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.46"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -57,7 +58,7 @@ UNITS = "/etc/systemd/system"
 OLD_BIN = "/usr/local/bin"                  # where the apps' own install.sh put them
 FILES = ("aeragate.py", "emailgate.py", "ecalgate.py", "eftpgate.py", "webgate.py", "pdfgate.py",
          "translategate.py", "translatelangs.py", "translateclient.py", "translate-phrases.tsv", "translate-languages.tsv",
-         "radiogate.py")
+         "radiogate.py", "dashgate.py")
 EXT = "webgate-ext"                         # webgate's browser extension, a folder next to them
 HOME_NETS = ("192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8")
 
@@ -357,6 +358,18 @@ class Gateway:
             out += ["--bind", ns.bind]
         for a in ns.allow or []:
             out += ["--allow", a]
+        return out
+
+    @staticmethod
+    def kept(ns, *dests):
+        """the program's own settings among dests that aren't its defaults
+        (set by hand on the unit's line, which the installer has no option
+        for): written back as they were, so that an update keeps them"""
+        out = []
+        for d in dests:
+            v = getattr(ns, d, None)
+            if v is not None and v != ns.default.get(d):
+                out += ["--" + d.replace("_", "-"), str(v)]
         return out
 
     def ports(self, ns):
@@ -1190,6 +1203,8 @@ class Pdf(Gateway):
 
     def args(self, ns):
         out = ["--port", str(ns.port)] + super().args(ns)
+        out += self.kept(ns, "aerapdf", "fonts", "source", "max_mb", "time", "memory_mb", "jobs", "tmp",
+                         "translator")
         out += ["-v"] if ns.verbose else []
         return out + ns.extra
 
@@ -1259,6 +1274,7 @@ class Translate(Gateway):
         out = ["--port", str(ns.port)] + super().args(ns)
         if ns.engine != ns.default["engine"]:
             out += ["--engine", ns.engine]
+        out += self.kept(ns, "models", "state", "workers", "time")
         out += ["--local", self.LOCAL]          # for webgate and pdfgate (translateclient)
         out += ["-v"] if ns.verbose else []
         return out + [w for i, w in enumerate(ns.extra)
@@ -1438,6 +1454,7 @@ class Radio(Gateway):
     def args(self, ns):
         out = ["--port", str(ns.port)] + super().args(ns)
         out += ["--allow-local"] if ns.allow_local else []
+        out += self.kept(ns, "cafile", "ffmpeg", "jobs", "memory_mb", "timeout")
         out += ["-v"] if ns.verbose else []
         return out + ns.extra
 
@@ -1461,7 +1478,55 @@ class Radio(Gateway):
             "Check it from any browser on your network: http://%s:%s/version" % (ip, ns.port)])
 
 
-GATEWAYS = [MAIL, Dav(), Ftp(), Web(), Pdf(), Translate(), Radio()]
+class Dash(Gateway):
+    """dashgate: the Gateway's dashboard, for a browser on the home network
+    (Erez, 10 Nov 2026): what runs, the connections, the settings. The
+    gateways tell it through aeragate on its socket, in its RuntimeDirectory."""
+    key, name, script = "dash", "dashgate", "dashgate.py"
+    title = "The Gateway's dashboard, for a browser on the home network"
+    removed = "dashgate removed."
+
+    def options(self, ap):
+        ap.add_argument("--allow", action="append", metavar="IP",
+                        help="only the computer at this address may see it (more: repeat, or IP1,IP2; "
+                             "'any' for the whole home network again)")
+        ap.add_argument("--remove", action="store_true", help=argparse.SUPPRESS)
+        ap.add_argument("--port", type=int, help="the port on the Gateway (8888 is the default)")
+        ap.add_argument("-v", "--verbose", action="store_true", default=None, help="log every request")
+        ap.add_argument("--no-verbose", dest="verbose", action="store_false")
+
+    def apply(self, ns, o):
+        super().apply(ns, o)
+        for k in ("port", "verbose"):
+            if getattr(o, k) is not None:
+                setattr(ns, k, getattr(o, k))
+
+    def args(self, ns):
+        out = ["--port", str(ns.port)] + super().args(ns)
+        out += self.kept(ns, "socket")
+        out += ["-v"] if ns.verbose else []
+        return out + ns.extra
+
+    def ports(self, ns):
+        return [str(ns.port)]
+
+    def unit(self, ns, keep):
+        # its socket, for the gateways: /run/aera-dash, gone when it stops
+        return super().unit(ns, keep).replace(
+            "Restart=always", "RuntimeDirectory=aera-dash\nRuntimeDirectoryMode=0755\nRestart=always", 1)
+
+    def describe(self, ns):
+        return "the dashboard"
+
+    def tell(self, ns, ip):
+        return "\n".join([
+            "",
+            "dashgate is running. The Gateway's dashboard, from a browser on your Mac or PC:",
+            "   http://%s:%s/" % (ip, ns.port)])
+
+
+DASH = Dash()
+GATEWAYS = [MAIL, Dav(), Ftp(), Web(), Pdf(), Translate(), Radio(), DASH]
 
 
 def put_files(pi, src):
@@ -1473,6 +1538,7 @@ def put_files(pi, src):
     pi.makedirs(new)
     for f in FILES:
         pi.copy(os.path.join(src, f), "%s/%s" % (new, f), 0o755 if f.endswith(".py") and f != "aeragate.py" else 0o644)
+    pi.write("%s/VERSION" % new, VERSION + "\n")          # (what the dashboard shows)
     for f in sorted(glob.glob(os.path.join(src, EXT, "*"))):
         pi.copy(f, "%s/%s/%s" % (new, EXT, os.path.basename(f)), 0o644)
     had = pi.exists(OPT)
@@ -1583,7 +1649,7 @@ class Claude:
     DEFAULT_CONF = """\
 # ClaudeST gateway settings. After editing: sudo systemctl restart claude-st
 # Bridge options, see: claude_bridge.py --help
-CLAUDE_ST_ARGS=--backend claudeai --serial auto --baud 19200
+CLAUDE_ST_ARGS=--backend claudeai --tcp 0.0.0.0:2323
 # claude.ai "sessionKey" cookie (for --backend claudeai). Change it with:
 #   sudo gateway/aera-gateway set-key   (in the AERA-Gateway folder)
 CLAUDE_SESSION_KEY=
@@ -1608,9 +1674,9 @@ CLAUDE_SESSION_KEY=
         ap.add_argument("--atari", metavar="ATARI_IP",
                         help="the Atari's address (several: IP1,IP2; any address on the home network: any)")
         ap.add_argument("--listen-port", dest="tcp_port", help="the port for the Atari (2323 is the default)")
-        ap.add_argument("--serial", "--port", dest="port", metavar="DEVICE",
-                        help="a serial cable on this device instead (auto finds a USB adapter)")
-        ap.add_argument("--baud", help="the serial line's speed (19200 is the default)")
+        # (the serial cable went with ClaudeST 2.3, Erez 9 Nov 2026: refused, saying so)
+        ap.add_argument("--serial", "--port", dest="port", help=argparse.SUPPRESS)
+        ap.add_argument("--baud", help=argparse.SUPPRESS)
         ap.add_argument("--set-key", action="store_true", help="paste a new claude.ai session key")
         ap.add_argument("--uninstall", "--remove", action="store_true", dest="remove", help=argparse.SUPPRESS)
 
@@ -1626,6 +1692,14 @@ CLAUDE_SESSION_KEY=
         pi.write(self.CONF, "".join(line + "\n" for line in lines) + "%s=%s\n" % (name, value), 0o640,
                  "root:claude-st")
 
+    SERIAL_GONE = ("ClaudeST's serial cable isn't supported any more (ClaudeST 2.3, the Gateway %s): "
+                   "ClaudeST reaches the Gateway through STinG. To move to the network: "
+                   "sudo aera-gateway install claude --network --atari ATARI_IP")
+
+    def on_cable(self, pi):
+        """is it set up for the serial cable (before ClaudeST 2.3)?"""
+        return self.installed(pi) and "--serial" in self.get_var(pi, "CLAUDE_ST_ARGS")
+
     def settings(self, pi, o):
         """what to set up: the options given, and for the rest what the
         settings file says now (or the defaults)"""
@@ -1635,29 +1709,28 @@ CLAUDE_SESSION_KEY=
             m = re.match(pattern, args)
             return m.group(1) if m else ""
         cur_backend = found(r".*--backend ([a-z]*)")
-        cur_port = found(r".*--serial ([^ ]*)")
-        cur_baud = found(r".*--baud ([0-9]*)")
         cur_tcp = found(r".*--tcp [^ ]*:([0-9]*)")
         cur_atari = ",".join(re.findall(r"--allow ([^ ]*)", args))
         if not cur_atari and cur_tcp:
             cur_atari = "any"
-        mode = o.mode or ("serial" if o.port or o.baud else None) or \
-            ("tcp" if o.atari or o.tcp_port else None) or ("tcp" if cur_tcp else "serial")
+        if o.port or o.baud:
+            raise Usage(self.SERIAL_GONE % VERSION)
+        if not cur_tcp and not (o.mode or o.atari or o.tcp_port) and self.on_cable(pi):
+            # (an install without --network keeps the cable it has: the update's words)
+            raise Failed(self.SERIAL_GONE % VERSION)
         s = argparse.Namespace(
-            backend=o.backend or cur_backend or "claudeai", mode=mode,
-            port=o.port or cur_port or "auto", baud=o.baud or cur_baud or "19200",
+            backend=o.backend or cur_backend or "claudeai", mode="tcp",
             tcp_port=o.tcp_port or cur_tcp or "2323", atari=o.atari or cur_atari)
         if s.backend not in ("claudeai", "api", "demo"):
             raise Usage("backend must be claudeai, api or demo")
-        if s.mode == "tcp":
-            if not s.atari:
-                s.atari = pi.ask("The Atari's IP address (several: IP1,IP2; or 'any'): ")
-            if not s.atari:
-                raise Usage("Network mode needs the Atari's IP address, e.g. --atari 192.168.1.20 (or --atari any)")
-            if s.atari != "any":
-                for ip in s.atari.replace(",", " ").split():
-                    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", ip):
-                        raise Usage("--atari wants IP addresses or 'any', not %s" % ip)
+        if not s.atari:
+            s.atari = pi.ask("The Atari's IP address (several: IP1,IP2; or 'any'): ")
+        if not s.atari:
+            raise Usage("ClaudeST needs the Atari's IP address, e.g. --atari 192.168.1.20 (or --atari any)")
+        if s.atari != "any":
+            for ip in s.atari.replace(",", " ").split():
+                if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", ip):
+                    raise Usage("--atari wants IP addresses or 'any', not %s" % ip)
         return s
 
     def source(self, o):
@@ -1707,7 +1780,6 @@ CLAUDE_SESSION_KEY=
         if not pi.ok("id", "claude-st"):
             pi.run("useradd", "--system", "--home-dir", "/var/lib/claude-st", "--shell", "/usr/sbin/nologin",
                    "claude-st")
-        pi.run("usermod", "-aG", "dialout", "claude-st")
 
         heading("Copying the bridge to %s" % self.PREFIX)
         pi.makedirs(self.PREFIX + "/bridge")
@@ -1723,7 +1795,7 @@ CLAUDE_SESSION_KEY=
         if not os.access(venv + "/bin/python", os.X_OK):
             pi.run("python3", "-m", "venv", venv)
         pi.run(venv + "/bin/pip", "install", "-q", "--upgrade", "pip")
-        pi.run(venv + "/bin/pip", "install", "-q", "pyserial", "requests", "anthropic")
+        pi.run(venv + "/bin/pip", "install", "-q", "requests", "anthropic")
         if not pi.run(venv + "/bin/pip", "install", "-q", "curl_cffi", check=False).returncode == 0:
             say("Note: curl_cffi isn't available for this Pi; using plain requests instead.")
 
@@ -1731,15 +1803,12 @@ CLAUDE_SESSION_KEY=
         pi.makedirs(self.CONF_DIR)
         if not pi.exists(self.CONF):
             pi.write(self.CONF, self.DEFAULT_CONF, 0o640, "root:claude-st")
-        if s.mode == "tcp":
-            allow = "" if s.atari == "any" else "".join(" --allow " + ip for ip in s.atari.replace(",", " ").split())
-            self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --tcp 0.0.0.0:%s%s" % (s.backend, s.tcp_port, allow))
-            if pi.have("ufw") and "Status: active" in pi.out("ufw", "status"):
-                who = HOME_NETS if s.atari == "any" else s.atari.replace(",", " ").split()
-                firewall(pi, [s.tcp_port], list(who))
-                say("Firewall (ufw): allowed %s to port %s" % (s.atari, s.tcp_port))
-        else:
-            self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --serial %s --baud %s" % (s.backend, s.port, s.baud))
+        allow = "" if s.atari == "any" else "".join(" --allow " + ip for ip in s.atari.replace(",", " ").split())
+        self.set_var(pi, "CLAUDE_ST_ARGS", "--backend %s --tcp 0.0.0.0:%s%s" % (s.backend, s.tcp_port, allow))
+        if pi.have("ufw") and "Status: active" in pi.out("ufw", "status"):
+            who = HOME_NETS if s.atari == "any" else s.atari.replace(",", " ").split()
+            firewall(pi, [s.tcp_port], list(who))
+            say("Firewall (ufw): allowed %s to port %s" % (s.atari, s.tcp_port))
 
         if s.backend == "claudeai" and not self.get_var(pi, "CLAUDE_SESSION_KEY"):
             say("claude.ai needs your browser's sessionKey cookie (ClaudeST's README says where to find it).")
@@ -1757,20 +1826,10 @@ CLAUDE_SESSION_KEY=
         pi.run("systemctl", "enable", "claude-st", out="hide")
         pi.run("systemctl", "restart", "claude-st")
 
-        if s.mode != "tcp":
-            heading("Serial ports on this Pi")
-            if pi.run("ls", "-l", "/dev/serial/by-id/", check=False, errors=False).returncode:
-                say("(no USB serial adapters plugged in)")
-            if pi.exists("/dev/serial0"):
-                say("The Raspberry Pi's UART: /dev/serial0 (needs an RS-232 level shifter, see ClaudeST's README)")
-
         heading("Done")
-        if s.mode == "tcp":
-            say("Backend: %s   network: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
-                "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "GATEWAY_IP",
-                                                                                         s.tcp_port))
-        else:
-            say("Backend: %s   serial port: %s   baud: %s" % (s.backend, s.port, s.baud))
+        say("Backend: %s   network: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
+            "In ClaudeST on the Atari, Options > Settings > Network:  %s, port %s" % (pi.ip() or "GATEWAY_IP",
+                                                                                     s.tcp_port))
         say("Status:  systemctl status claude-st", "Log:     journalctl -u claude-st -f")
 
     def set_key(self, pi):
@@ -1805,7 +1864,7 @@ NAMES = {"email": "mail", "emailgate": "mail", "cal": "dav", "ecal": "dav", "eco
          "claudest": "claude", "claude-st": "claude", "eweb": "web", "webgate": "web",
          "epdf": "pdf", "econvert": "pdf", "pdfgate": "pdf",
          "translation": "translate", "translategate": "translate",
-         "eplay": "radio", "radiogate": "radio"}
+         "eplay": "radio", "radiogate": "radio", "dashboard": "dash", "dashgate": "dash"}
 
 
 def service(name):
@@ -1857,7 +1916,12 @@ def update(pi, o, src=HERE):
     for g in todo:
         heading("Updating %s (%s)" % (g.key, g.name))
         install_gateway(pi, g, settings_for(g, []), src)
-    if CLAUDE.installed(pi):
+    if CLAUDE.on_cable(pi):
+        # (its bridge left as it is, on its cable: it goes on with the ClaudeST
+        # before 2.3; said on the output, so a script's update shows it too)
+        heading("claude (claude-st): left as it is")
+        say(Claude.SERIAL_GONE % VERSION)
+    elif CLAUDE.installed(pi):
         heading("Updating claude (claude-st)")
         args = ["--from", o.source] if o.source else []
         CLAUDE.install(pi, settings_for(CLAUDE, args))
@@ -1886,12 +1950,14 @@ def install_all(pi, o, src=HERE):
             continue
         if svc is CLAUDE:
             argv = ["--from", o.source] if o.source else []
-            serial = svc.installed(pi) and "--serial" in CLAUDE.get_var(pi, "CLAUDE_ST_ARGS")
-            if not serial and (allow or not svc.installed(pi)):      # a serial cable stays as it is
+            if CLAUDE.on_cable(pi):
+                skipped.append("claude (left on its serial cable: %s)" % (Claude.SERIAL_GONE % VERSION))
+                continue
+            if allow or not svc.installed(pi):
                 argv += ["--network", "--atari", allow or "any"]
         else:
             argv = (o.mail or []) if svc is MAIL else []
-            argv += ["--allow", allow] if allow else []
+            argv += ["--allow", allow] if allow and svc is not DASH else []    # (the Mac or PC isn't an Atari)
             argv += ["--browser"] if svc.key == "web" and o.browser else []
         heading("%s (%s)" % (svc.key, svc.name))
         try:

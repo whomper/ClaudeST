@@ -160,6 +160,12 @@ class Gate(unittest.TestCase):
         self.assertEqual(body, b"%PDF-converted --progress --fonts " + self.dir.encode() +
                          b" --pages mono --page-width 1280 --normal-pages")
 
+    def test_colour_only(self):
+        """pages=colouronly (EPDF 2.8) goes to aerapdf as it came"""
+        status, _, body = final(post(self.port, "?pages=colouronly", PDF))
+        self.assertEqual(status, 200)
+        self.assertIn(b" --pages colouronly", body)
+
     def test_options_checked(self):
         for q in ("?pages=all", "?page_width=99999", "?page_width=12a", "?color=1",
                   "?pages=mono&pages=none", "?double=2", "?picture_width=8",

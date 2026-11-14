@@ -1012,22 +1012,36 @@ class ClaudeAiBackend(Backend):
         self._code_tail = tail
         if not (isinstance(page, dict) and page.get("has_more")) or not events or not tail:
             return events
-        # which end is this? Nothing after it: the newest page
-        newer = self._code_events(session_id, after=tail, cap=1)     # one page
-        if not newer:
+        # which end is this? Older events before it: not the start, so the
+        # newest page (claude.ai's, with no cursor). Asking for newer ones
+        # instead misjudged a session still running: its new events made
+        # the newest page look like the oldest, and the bridge read on from
+        # where an earlier read had stopped, out of time (Erez, 9 Nov 2026)
+        seen = set(map(event_id, events))
+        first = page.get("first_id") or event_id(events[0])
+        older = []
+        if first:
+            back = self._code("get", path, limit=200, before_id=first)
+            older = [e for e in self._data(back) if event_id(e) not in seen]
+        if older:
             self._code_tail = tail
-            seen = set(map(event_id, events))
-            first = page.get("first_id") or event_id(events[0])
-            while first and len(code_messages(events)) < want and time.time() < deadline:
-                page = self._code("get", path, limit=200, before_id=first)
-                older = [e for e in self._data(page) if event_id(e) not in seen]
-                if not older:       # the start, or a server without before_id
-                    break
+            page = back
+            while True:
                 seen.update(map(event_id, older))
                 events = older + events
                 first = (isinstance(page, dict) and page.get("first_id")) or event_id(older[0])
-                if not page.get("has_more"):
+                if (not first or not (isinstance(page, dict) and page.get("has_more"))
+                        or len(code_messages(events)) >= want or time.time() >= deadline):
                     break
+                page = self._code("get", path, limit=200, before_id=first)
+                older = [e for e in self._data(page) if event_id(e) not in seen]
+                if not older:
+                    break
+            return events
+        # nothing before it: the oldest page (or a server without before_id)
+        newer = self._code_events(session_id, after=tail, cap=1)     # one page
+        if not newer:       # and nothing after it either: all there is
+            self._code_tail = tail
             return events
         # the oldest page: the newest end, if the server sorts on request
         latest = self._code_newest(session_id, path, events + newer, want, deadline)

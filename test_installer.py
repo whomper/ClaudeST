@@ -867,6 +867,30 @@ class ClaudeTest(Base):
             fh.write("[Service]\nExecStart=/opt/claude-st/venv/bin/python ...\n")
         self.conf = ag.Claude.CONF
 
+    def test_update_keeps_hand_set_options(self):
+        """settings set by hand on the unit's line (no installer option for
+        them) are kept by an update: pdf's, translate's and radio's"""
+        if os.path.isdir(os.path.join(ag.Pdf.PDF_SRC, "epdf")):
+            self.assertEqual(self.run_ag("install", "pdf"), 0, self.err)
+        self.assertEqual(self.run_ag("install", "translate", "--engine", "stand-in"), 0, self.err)
+        self.assertEqual(self.run_ag("install", "radio"), 0, self.err)
+        hand = {"pdfgate": " --time 900 --jobs 2 --max-mb 128",
+                "translategate": " --workers 3 --time 90",
+                "radiogate": " --timeout 30 --jobs 3 --memory-mb 384"}
+        for name, more in list(hand.items()):
+            text = self.unit(name)
+            if text is None:
+                del hand[name]
+                continue
+            line = self.execstart(name)
+            self.pi.write(ag.unit_path(name), text.replace(line, line + more))
+        self.assertEqual(self.run_ag("update"), 0, self.err)
+        for name, more in hand.items():
+            for flag, value in zip(more.split()[::2], more.split()[1::2]):
+                self.assertIn("%s %s" % (flag, value), self.execstart(name), name)
+        # and a plain install writes none of them
+        self.assertNotIn("--timeout", self.execstart("radiogate").replace("--timeout 30", ""))
+
     def test_radio(self):
         self.pi.ufw = True
         self.assertEqual(self.run_ag("install", "eplay", "--allow", "192.168.1.50"), 0, self.err)
@@ -886,6 +910,27 @@ class ClaudeTest(Base):
         self.assertEqual(self.run_ag("remove", "radio"), 0, self.err)
         self.assertIsNone(self.unit("radiogate"))
 
+    def test_dash(self):
+        self.pi.ufw = True
+        self.assertEqual(self.run_ag("install", "dashboard"), 0, self.err)
+        self.assertEqual(self.execstart("dashgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/dashgate.py "
+                                                     "--port 8888")
+        unit = self.unit("dashgate")
+        for want in ("User=dashgate", "RuntimeDirectory=aera-dash", "RuntimeDirectoryMode=0755",
+                     "ProtectSystem=strict", "NoNewPrivileges=yes"):
+            self.assertIn(want, unit)
+        self.assertNotIn("CAP_NET_BIND_SERVICE", unit)
+        self.assertEqual(self.pi.rules, [(n, "8888") for n in ag.HOME_NETS])
+        self.assertIn(":8888/", self.out)
+        self.assertEqual(self.pi.read("/opt/aera-gateway/VERSION"), ag.VERSION + "\n")
+        # settings kept, one changed
+        self.assertEqual(self.run_ag("install", "dash", "--allow", "192.168.1.60"), 0, self.err)
+        self.assertEqual(self.run_ag("install", "dash", "-v"), 0, self.err)
+        self.assertEqual(self.execstart("dashgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/dashgate.py "
+                                                     "--port 8888 --allow 192.168.1.60 -v")
+        self.assertEqual(self.run_ag("remove", "dash"), 0, self.err)
+        self.assertIsNone(self.unit("dashgate"))
+
     def test_install_all(self):
         rc = self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src,
                          "--mail", "imap.mail.me.com", "smtp.mail.me.com:587")
@@ -894,7 +939,10 @@ class ClaudeTest(Base):
             self.assertIn("--allow 192.168.1.50", self.execstart(name), name)
         self.assertIn("imap.mail.me.com smtp.mail.me.com:587", self.execstart("emailgate"))
         self.assertIn("--tcp 0.0.0.0:2323 --allow 192.168.1.50", self.pi.read(self.conf))
-        self.assertIn("Installed: mail, dav, ftp, web, %stranslate, radio, claude" %
+        # the dashboard: for the Mac or PC, so the home network, not the Atari's --allow
+        self.assertEqual(self.execstart("dashgate"), "ExecStart=/usr/bin/python3 /opt/aera-gateway/dashgate.py "
+                                                     "--port 8888")
+        self.assertIn("Installed: mail, dav, ftp, web, %stranslate, radio, dash, claude" %
                       ("pdf, " if os.path.isdir(os.path.join(ag.Pdf.PDF_SRC, "epdf")) else ""), self.out)
         # again, without --mail or --allow: everything kept as it is
         self.assertEqual(self.run_ag("install", "all", "--from", self.src), 0, self.err)
@@ -906,15 +954,48 @@ class ClaudeTest(Base):
         # install all leaves translate out on a Pi too small for its engine, and installs the others
         self.pi.write("/proc/meminfo", "MemTotal:        1948304 kB\n")
         self.assertEqual(self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src), 0, self.err)
-        self.assertIn("Installed: dav, ftp, web, %sradio, claude" %
+        self.assertIn("Installed: dav, ftp, web, %sradio, dash, claude" %
                       ("pdf, " if os.path.isdir(os.path.join(ag.Pdf.PDF_SRC, "epdf")) else ""), self.out)
         self.assertIn("translate (its engine needs a Pi with 4 GB of memory or more; this one has 1902 MB)", self.out)
         self.assertIsNone(self.unit("translategate"))
 
-    def test_install_all_keeps_a_serial_cable(self):
-        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--serial", "/dev/ttyUSB0"), 0)
-        self.assertEqual(self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src), 0, self.err)
+    def on_cable(self):
+        """a Gateway set up for ClaudeST's serial cable, before ClaudeST 2.3"""
+        self.pi.write(self.conf, "CLAUDE_ST_ARGS=--backend claudeai --serial /dev/ttyUSB0 --baud 19200\n"
+                      "CLAUDE_SESSION_KEY=sk-old\n", 0o640)
+        self.pi.write(ag.unit_path("claude-st"), "[Service]\nExecStart=/opt/claude-st/venv/bin/python old\n")
+        self.pi.write("/opt/claude-st/bridge/claude_bridge.py", "# the old bridge, with its serial link\n")
+
+    def test_a_serial_cable_left_as_it_is(self):
+        """the serial cable went with ClaudeST 2.3 (Erez, 9 Nov 2026): a
+        Gateway on one keeps its old bridge, working with the old ClaudeST,
+        and is told once how to move; nothing fails"""
+        self.on_cable()
+        self.assertEqual(self.run_ag("update"), 0, self.err)
+        self.assertIn("serial cable isn't supported any more", self.out)
+        self.assertIn("sudo aera-gateway install claude --network --atari ATARI_IP", self.out)
+        self.assertEqual(self.pi.read("/opt/claude-st/bridge/claude_bridge.py"),
+                         "# the old bridge, with its serial link\n")
         self.assertIn("--serial /dev/ttyUSB0", self.pi.read(self.conf))
+        self.assertEqual(self.run_ag("install", "all", "--allow", "192.168.1.50", "--from", self.src), 0, self.err)
+        self.assertIn("claude (left on its serial cable", self.out)
+        self.assertIn("--serial /dev/ttyUSB0", self.pi.read(self.conf))
+        # install without --network: the same words, nothing changed
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src), 1)
+        self.assertIn("serial cable isn't supported any more", self.err)
+        # and to the network: the new bridge, the key kept
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--network", "--atari",
+                                     "192.168.1.20"), 0, self.err)
+        self.assertIn("CLAUDE_ST_ARGS=--backend claudeai --tcp 0.0.0.0:2323 --allow 192.168.1.20\n",
+                      self.pi.read(self.conf))
+        self.assertIn("CLAUDE_SESSION_KEY=sk-old\n", self.pi.read(self.conf))
+        self.assertEqual(self.pi.read("/opt/claude-st/bridge/claude_bridge.py"), "# claude_bridge.py\n")
+
+    def test_serial_refused(self):
+        for argv in (["--serial", "/dev/ttyUSB0"], ["--port", "auto"], ["--baud", "9600"]):
+            self.assertEqual(self.run_ag("install", "claude", "--from", self.src, *argv), 2, argv)
+            self.assertIn("serial cable isn't supported any more", self.err)
+        self.assertFalse(any(c[0] == "apt-get" for c in self.pi.cmds))
 
     def test_install_all_without_mail_and_a_failure(self):
         self.pi.busy.add("2121")             # ftp's port is taken
@@ -933,14 +1014,14 @@ class ClaudeTest(Base):
         self.assertEqual(rc, 0, self.err)
         # as pi/install.sh left it: the defaults, CLAUDE_ST_ARGS moved to the end
         self.assertEqual(self.pi.read(self.conf), ag.Claude.DEFAULT_CONF.replace(
-            "CLAUDE_ST_ARGS=--backend claudeai --serial auto --baud 19200\n", "") +
+            "CLAUDE_ST_ARGS=--backend claudeai --tcp 0.0.0.0:2323\n", "") +
             "CLAUDE_ST_ARGS=--backend demo --tcp 0.0.0.0:2323 --allow 192.168.1.20\n")
         self.assertEqual(os.stat(self.pi.path(self.conf)).st_mode & 0o777, 0o640)
         self.assertIn(("chown", "root:claude-st", self.conf), self.pi.cmds)
         self.assertEqual(sorted(os.listdir(self.pi.path("/opt/claude-st/bridge"))),
                          ["atari_text.py", "backends.py", "claude_bridge.py", "requirements.txt"])
         self.assertEqual(self.unit("claude-st"), "[Service]\nExecStart=/opt/claude-st/venv/bin/python ...\n")
-        self.assertIn(("usermod", "-aG", "dialout", "claude-st"), self.pi.cmds)
+        self.assertNotIn(("usermod", "-aG", "dialout", "claude-st"), self.pi.cmds)
         self.assertIn(("useradd", "--system", "--home-dir", "/var/lib/claude-st", "--shell", "/usr/sbin/nologin",
                        "claude-st"), self.pi.cmds)
         self.assertIn("Options > Settings > Network:  192.168.1.10, port 2323", self.out)
@@ -975,14 +1056,14 @@ class ClaudeTest(Base):
         self.assertEqual(self.run_ag("install", "claude", "--tag", "v2.1"), 2)
         self.assertIn("comes with AERA-Gateway now", self.err)
 
-    def test_serial_and_key(self):
+    def test_key(self):
         self.pi.answers = ["sk-ant-sid01-test"]
-        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--port", "/dev/ttyUSB0",
-                                     "--baud", "9600"), 0, self.err)
-        self.assertIn("CLAUDE_ST_ARGS=--backend claudeai --serial /dev/ttyUSB0 --baud 9600\n", self.pi.read(self.conf))
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--atari", "192.168.1.20"), 0, self.err)
+        self.assertIn("CLAUDE_ST_ARGS=--backend claudeai --tcp 0.0.0.0:2323 --allow 192.168.1.20\n",
+                      self.pi.read(self.conf))
         self.assertIn("CLAUDE_SESSION_KEY=sk-ant-sid01-test\n", self.pi.read(self.conf))
         self.assertNotIn("sk-ant", self.out + self.err)
-        self.assertIn("(no USB serial adapters plugged in)", self.out)
+        self.assertNotIn(("usermod", "-aG", "dialout", "claude-st"), self.pi.cmds)     # no serial port to open
         self.pi.answers = ["sk-ant-sid01-new"]
         self.assertEqual(self.run_ag("set-key"), 0)
         self.assertEqual(self.pi.read(self.conf).count("CLAUDE_SESSION_KEY="), 1)
@@ -994,14 +1075,15 @@ class ClaudeTest(Base):
     def test_bad_settings(self):
         self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--network"), 2)
         self.assertIn("needs the Atari's IP address", self.err)
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src), 2)       # nothing typed either
         self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--atari", "atari.local"), 2)
         self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--backend", "gpt"), 2)
-        self.assertEqual(self.run_ag("install", "claude", "--from", self.root), 1)
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.root, "--atari", "any"), 1)
         self.assertIn("isn't a ClaudeST copy", self.err)
         self.assertFalse(any(c[0] == "apt-get" for c in self.pi.cmds))
 
     def test_uninstall_keeps_settings(self):
-        self.run_ag("install", "claude", "--from", self.src, "--backend", "demo")
+        self.run_ag("install", "claude", "--from", self.src, "--backend", "demo", "--atari", "any")
         self.assertEqual(self.run_ag("install", "claude", "--uninstall"), 0)
         self.assertFalse(self.pi.exists("/opt/claude-st"))
         self.assertIsNone(self.unit("claude-st"))

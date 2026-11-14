@@ -64,6 +64,24 @@ class Markdown(unittest.TestCase):
         self.assertIn("docs <https://example.com>", joined)
 
 
+class Links(unittest.TestCase):
+    def test_tcp_only(self):
+        """ClaudeST 2.3 reaches the bridge through STinG only (Erez, 9 Nov
+        2026): the serial cable's --serial, --baud and --pipe are gone,
+        and the bridge says it needs --tcp"""
+        import contextlib
+        import io
+        import claude_bridge
+        self.assertFalse(hasattr(claude_bridge, "SerialLink"))
+        self.assertFalse(hasattr(claude_bridge, "PipeLink"))
+        for argv in (["--serial", "/dev/ttyUSB0"], ["--pipe", "a", "b"], ["--backend", "demo"]):
+            err = io.StringIO()
+            with unittest.mock.patch.object(sys, "argv", ["claude_bridge.py"] + argv), \
+                    contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+                claude_bridge.main()
+            self.assertIn("--tcp" if argv == ["--backend", "demo"] else "unrecognized", err.getvalue(), argv)
+
+
 class Protocol(unittest.TestCase):
     def setUp(self):
         self.link = FakeLink()
@@ -1217,11 +1235,12 @@ class CodeSessions(unittest.TestCase):
         sent = [c for c in calls if c[0] == "post"][0][2]["json"]["events"][0]
         self.assertEqual(sent["message"], {"role": "user", "content": "and the tests?"})
 
-    def long_session(self, newest_first, n=5000, uuids=False, desc=False):
+    def long_session(self, newest_first, n=5000, uuids=False, desc=False, live=False):
         """A backend whose session has N events, served newest page first
         (before_id goes back) or oldest page first (after_id only). UUIDS:
         as claude.ai's, the events carry their id as the message's "uuid",
-        not as "id"; DESC: the server honours order=desc"""
+        not as "id"; DESC: the server honours order=desc; LIVE: the session
+        still runs, and an event is added after each read"""
         from backends import ClaudeAiBackend
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)
         events = [{"id": "e%d" % i, "data": {"type": "user" if i % 2 == 0 else "assistant", "message": {
@@ -1250,18 +1269,23 @@ class CodeSessions(unittest.TestCase):
                 raise RuntimeError("claude.ai's Code sessions were not found (HTTP 400).")
             if params.get("after_id"):
                 lo = ids.index(params["after_id"]) + 1
-                hi = min(lo + limit, n)
+                hi = min(lo + limit, len(ids))
             elif params.get("before_id") and newest_first:
                 hi = ids.index(params["before_id"])
                 lo = max(hi - limit, 0)
             elif newest_first:
-                lo, hi = n - limit, n
+                lo, hi = len(ids) - limit, len(ids)
             else:
                 lo, hi = 0, limit
             page = events[lo:hi]
-            more = lo > 0 if newest_first and not params.get("after_id") else hi < n
-            return {"data": page, "has_more": more,
-                    "first_id": ids[lo] if page else None, "last_id": ids[hi - 1] if page else None}
+            more = lo > 0 if newest_first and not params.get("after_id") else hi < len(ids)
+            got = {"data": page, "has_more": more,
+                   "first_id": ids[lo] if page else None, "last_id": ids[hi - 1] if page else None}
+            if live:            # the session goes on meanwhile
+                i = len(ids)
+                events.append({"id": "e%d" % i, "data": {"type": "system", "subtype": "status"}})
+                ids.append("e%d" % i)
+            return got
         be._code = code
         be._memory = lambda: {}
         return be, gets
@@ -1273,8 +1297,24 @@ class CodeSessions(unittest.TestCase):
             self.assertEqual(msgs[-1], ("A", "a4999"), newest_first)
             self.assertGreaterEqual(len(msgs), 40)
             self.assertEqual(be._code_last, {"session_l": "e4999"})
-            if newest_first:      # the newest page and the probe after it: no walk
+            if newest_first:      # the newest page and the probe before it: no walk
                 self.assertEqual(len(gets), 2)
+
+    def test_a_long_session_still_running_shows_its_latest_messages(self):
+        """Erez, 9 Nov 2026: a long session that was still running opened
+        somewhere in its middle, with "too long to read to its end", and
+        each open read on. Its new events made the newest page look like
+        the oldest; whether events come before the page tells the ends
+        apart, and new ones can't change that. (Misjudged, it read on from
+        the place an earlier read had remembered, and ran out of time.)"""
+        be, gets = self.long_session(True, n=20000, live=True)
+        be._marks().set("session_l", "e100")     # an earlier read got this far
+        self.clocked(be)
+        title, msgs = be.get_code_session("session_l")
+        self.assertFalse(be.code_partial)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertGreaterEqual(len(msgs), 40)
+        self.assertLess(len(gets), 5)           # the newest page and a few back: no walk
 
     def test_a_long_session_whose_events_carry_uuids(self):
         """claude.ai's events have no "id", only the message's "uuid": 1.54
