@@ -384,6 +384,46 @@ class Tests(unittest.TestCase):
         self.assertIn("502", status)
         g.stop()
 
+    def test_search(self):
+        """/search: radio-browser.info's stations (a stand-in here) as lines
+        of text, the criteria passed on, the bad ones left out, the
+        directory down (502)"""
+        import json
+        st = Station({})
+        base = "http://127.0.0.1:%d" % st.port
+        asked = []
+
+        class Routes(dict):
+            def __getitem__(self, p):
+                asked.append(p)
+                body = json.dumps([
+                    {"name": "Jazz\tFM", "countrycode": "DE", "codec": "MP3", "bitrate": 128,
+                     "url_resolved": "http://jazz.example/live"},
+                    {"name": "No address", "countrycode": "FR", "codec": "AAC", "bitrate": 64, "url": ""},
+                    {"name": "Ogg Jazz", "countrycode": "NL", "codec": "OGG", "bitrate": "x",
+                     "url": "https://ogg.example/s"}])
+                return ("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n", body.encode(), 0, "")
+        st.routes = Routes()
+        radiogate.Config.rb_api = ["http://127.0.0.1:1", base]
+        g = Gate()
+        status, heads, body = g.ask("", path="/search?q=jazz&tag=smooth%20jazz&country=DE&language=german&sort=clicks&n=20",
+                                    meta=False)
+        self.assertIn("200", status)
+        self.assertTrue(heads.get("content-type", "").startswith("text/plain"))
+        lines = body.decode("utf-8").splitlines()
+        self.assertEqual(lines, ["Jazz FM\tDE\tMP3\t128\thttp://jazz.example/live",
+                                 "Ogg Jazz\tNL\tOGG\t0\thttps://ogg.example/s"])
+        p = asked[-1]
+        for want in ("name=jazz", "tag=smooth%20jazz", "countrycode=DE", "language=german", "order=clickcount",
+                     "reverse=true", "limit=20", "hidebroken=true"):
+            self.assertIn(want, p)
+        status, _, _ = g.ask("", path="/search?q=" + "x" * 101, meta=False)
+        self.assertIn("400", status)
+        radiogate.Config.rb_api = ["http://127.0.0.1:1"]
+        status, _, _ = g.ask("", path="/search?q=jazz", meta=False)
+        self.assertIn("502", status)
+        g.stop()
+
     def test_icy_in_out(self):
         """the metadata taken out at every cut, and put back"""
         audio = bytes(range(256)) * 40

@@ -17,7 +17,7 @@ Atari (EConvert, --a PDF, plain HTTP-->      Pi  pdfgate   (converted on the Pi,
 Atari (EMail,    --text, plain HTTP-->       Pi  translategate (a local engine, nothing onwards)
        EWeb, EPDF)
 Atari (EPlay)    --plain HTTP-->             Pi  radiogate --HTTP(S)--> any web radio station
-Atari (ClaudeST) --STinG or a serial cable-> Pi  claude-st --HTTPS--> claude.ai
+Atari (ClaudeST) --STinG-->                Pi  claude-st --HTTPS--> claude.ai
 ```
 
 One program, `aera-gateway`, sets them all up, brings them up to date and
@@ -34,7 +34,8 @@ of them.
 | `pdf`    | EConvert and EPDF   | `pdfgate.py` and aerapdf   | 8380                                     |
 | `translate` | EMail, EWeb, EPDF | `translategate.py`        | 8480                                     |
 | `radio`  | EPlay               | `radiogate.py`             | 8580                                     |
-| `claude` | ClaudeST            | ClaudeST's bridge          | 2323 (or a serial cable)                 |
+| `claude` | ClaudeST            | ClaudeST's bridge          | 2323                                     |
+| `dash`   | a browser at home   | `dashgate.py`              | 8888                                     |
 
 What each one speaks (requests, answers, refusals, limits) is in
 [docs/SERVICES.md](../docs/SERVICES.md).
@@ -63,8 +64,17 @@ sudo aera-gateway install mail imap.gmail.com smtp.gmail.com pop.gmail.com --all
 sudo aera-gateway install dav --allow ATARI_IP
 sudo aera-gateway install ftp --allow ATARI_IP
 sudo aera-gateway install web --allow ATARI_IP
+sudo aera-gateway install pdf --allow ATARI_IP
+sudo aera-gateway install translate --allow ATARI_IP     (English and German; --languages en,de,he for more)
+sudo aera-gateway install radio --allow ATARI_IP
 sudo aera-gateway install claude --network --atari ATARI_IP
+sudo aera-gateway install dash                           (the dashboard, for the home network)
 ```
+
+`install pdf` builds EPDF's converter (a few minutes), `install translate`
+downloads the engine and its languages (about 290 MB; it needs a 64-bit
+system and 4 GB), and `install radio` adds ffmpeg. Before `update-pi.sh`
+has run once, `aera-gateway` is `~/AERA-Gateway/gateway/aera-gateway`.
 
 `install all --allow ATARI_IP --mail IMAP SMTP[:587] [POP3] [--browser]`
 does them all in turn: mail only with `--mail`, those already installed
@@ -76,10 +86,30 @@ for their tests. Each gateway runs as a service of its own (`emailgate`,
 with no access to the rest of the Pi, starts now and at every boot, and
 `install` prints what to type into the Atari program.
 
+In each Atari program, the Gateway's address (not its name: plain TOS
+with STinG can't always look names up on the home network) and its port:
+
+| Atari program      | Where                                  | What                                          |
+|--------------------|----------------------------------------|-----------------------------------------------|
+| EMail              | Options > Accounts                     | server `GATEWAY_IP`; IMAP 143 (or POP3 110), SMTP 587 |
+| ECal, EContact     | Settings > Connection                  | Gateway `GATEWAY_IP`, port 8180               |
+| EFTP               | Options > Settings > Secure            | Gateway `GATEWAY_IP`, port 2121               |
+| EWeb               | Settings > Secure                      | Gateway `GATEWAY_IP`, port 8280               |
+| EConvert, EPDF     | Gateway mode: Through the Gateway      | `GATEWAY_IP`, port 8380                       |
+| EMail, EWeb, EPDF  | Settings: Translate                    | Gateway `GATEWAY_IP`, port 8480               |
+| EPlay              | Settings: Gateway                      | `GATEWAY_IP`, port 8580                       |
+| ClaudeST           | Options > Settings > Network           | `GATEWAY_IP`, port 2323                       |
+
+On a Falcon or TT, EMail, ECal, EContact, EFTP and EWeb can make the
+secure connections themselves (their Falcon mode); the Gateway is still
+needed for SFTP, and for EWeb's smaller pictures, pens, compiled scripts,
+translation and snapshots.
+
 Afterwards:
 
 ```
-~/AERA-Gateway/update-pi.sh               the latest release, every gateway on the Pi updated, settings kept
+~/AERA-Gateway/update-pi.sh               the latest release, every service installed updated, settings kept
+                                          (it adds none: a new one is install SERVICE)
 aera-gateway status                       what runs, on which ports, with which settings
 sudo aera-gateway install dav --allow-local     change a setting; the others stay
 sudo aera-gateway remove ftp
@@ -416,7 +446,8 @@ always gets MP3, with the songs' titles in it. HLS in fragmented MP4
 isn't taken. EPlay can also ask for a song's cover (`/art`) and, for a
 station that names no picture, its logo from radio-browser.info, a public
 directory of stations (`/logo`): both come as 64x64 JPEGs. For a logo, the
-Gateway sends that directory the station's address and name.
+Gateway sends that directory the station's address and name. EPlay's
+Find station searches that directory through the Gateway (`/search`).
 `install radio` installs ffmpeg if it isn't there; `install all`
 includes it.
 
@@ -431,6 +462,21 @@ a low priority; a station on the home network needs `--allow-local`. The
 log says which Atari listened to which station's host, for how long and
 how much, never the station's path or the titles.
 
+## dash: the dashboard
+
+```
+sudo aera-gateway install dash
+```
+
+From a browser on your Mac or PC: `http://GATEWAY_IP:8888/`. One page,
+read-only: each service running or not, its connections today and since
+it started, the Ataris that came and where they went, the settings (never
+a password or a key) and the Pi's memory, disk, load and temperature. It
+refreshes itself. The gateways tell it who connected through aeragate;
+the counts start again when it starts. The home network may see it, or
+only the computers named with `--allow`. `install all` includes it, for
+the home network. Details: [docs/SERVICES.md](../docs/SERVICES.md#dash-the-dashboard).
+
 ## claude: ClaudeST's bridge
 
 The bridge comes with AERA-Gateway, in `gateway/claude-st/` (it moved
@@ -440,10 +486,14 @@ copy you name with `--from`:
 
 ```
 sudo aera-gateway install claude --network --atari 192.168.1.20
-sudo aera-gateway install claude --serial /dev/ttyUSB0 --baud 9600
 sudo aera-gateway install claude --backend api
 sudo aera-gateway set-key        paste a new claude.ai session key
 ```
+
+ClaudeST reaches it through STinG. The serial cable went with
+ClaudeST 2.3 (Erez, 9 Nov 2026): a Gateway set up for it keeps its old
+bridge, on its cable, for the ClaudeST it has, and `update` says how to
+move to the network (the command above; ClaudeST 2.3 or later on the Atari).
 
 Its settings stay in `/etc/claude-st/claude-st.env` and its chats in
 `/var/lib/claude-st`; `remove claude` keeps both. ClaudeST's README says

@@ -14,7 +14,10 @@ Atari. What they promise is the same, and lives here once:
   - TLS 1.2 or newer, with the server's certificate and name checked
     against the Pi's root certificates, or a --cafile;
   - the log says who connected where, never what went through;
-  - bytes passed both ways until one side closes or both fall silent.
+  - bytes passed both ways until one side closes or both fall silent;
+  - the dashboard (dashgate) told who connected, and where to: one small
+    datagram to its socket, nothing when it isn't there (the same as the
+    log says, never what went through).
 
 Standard Python 3 only. The gateways find it next to themselves.
 """
@@ -26,7 +29,7 @@ import ssl
 import sys
 import threading
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 # the home network: the private ranges, link-local, and the Pi itself
 HOME = [ipaddress.ip_network(n) for n in
@@ -36,6 +39,12 @@ THIS_HOST = ipaddress.ip_network("0.0.0.0/8")       # 0.0.0.0 reaches the Pi its
 
 _DEFAULT_TIMEOUT = getattr(socket, "_GLOBAL_DEFAULT_TIMEOUT", object())
 _LOG = threading.Lock()
+
+# the dashboard's socket (dashgate): it knows which gateway sends by the
+# sender's user, which the kernel gives it
+DASH_SOCKET = "/run/aera-dash/events.sock"
+_dash = {"sock": None, "last": ""}
+_here = threading.local()
 
 
 def _ip(addr):
@@ -63,11 +72,30 @@ def leads_home(addr):
 
 def client_ok(addr, allow):
     """May addr use the gateway? allow: the Ataris' addresses (--allow);
-    empty lets in anyone on the home network."""
+    empty lets in anyone on the home network. (The dashboard hears of it.)"""
     if allow:
         ip = _ip(addr)
-        return addr in allow or (ip is not None and str(ip) in allow)
-    return is_private(addr)
+        ok = addr in allow or (ip is not None and str(ip) in allow)
+    else:
+        ok = is_private(addr)
+    who = str(_ip(addr) or addr)
+    _here.client = _dash["last"] = who
+    tell_dash("c %s %s" % (who, "ok" if ok else "no"))
+    return ok
+
+
+def tell_dash(line):
+    """one line to the dashboard, if it listens; never waits, never fails"""
+    if not DASH_SOCKET:
+        return
+    try:
+        if _dash["sock"] is None:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            s.setblocking(False)
+            _dash["sock"] = s
+        _dash["sock"].sendto(line.encode("utf-8", "replace")[:512], DASH_SOCKET)
+    except (OSError, AttributeError):
+        pass
 
 
 class HomeNetwork(OSError):
@@ -79,6 +107,7 @@ def lookup(host, port, allow_local=True):
     """host's addresses, each checked, for dial(): socket.gaierror when
     there are none, HomeNetwork when one leads home and allow_local isn't
     set."""
+    tell_dash("t %s %s" % (getattr(_here, "client", "") or _dash["last"] or "-", host))
     addrs = []
     for family, _, _, _, sa in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
         if (family, sa) not in addrs:
