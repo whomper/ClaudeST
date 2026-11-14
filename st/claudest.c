@@ -41,6 +41,7 @@
 #include "arrowed.h"
 #include "theme.h"
 #include "tooltip.h"
+#include "dlgbuild.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -102,6 +103,10 @@ static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
 #define HEB_ISO   1
 #define HEB_DOS   2
 static short hebfont;
+/* Write a log (Options and Settings, LOG= in CLAUDEST.INF): CLAUDEST.LOG
+   at the quit, only when on; off until the user ticks it (the guidelines,
+   6.5: no log without its switch; Erez, 14 Nov 2026) */
+static short log_on;
 /* how the current font gets Hebrew: */
 #define HM_MAP     0			/* where hebfont says (system and bitmap fonts) */
 #define HM_UNICODE 1			/* a vector font's own, found by Unicode (NVDI 5) */
@@ -332,6 +337,8 @@ static void quit_step(const char *what)
 {
 	char path[160];
 	long fh;
+	if (!log_on)
+		return;
 	strlcpy_(path, home_dir, sizeof(path));
 	strlcpy_(path + strlen(path), "CLAUDEST.LOG", sizeof(path) - strlen(path));
 	fh = what ? Fopen(path, 1) : -1;
@@ -356,7 +363,7 @@ static char *put_num(char *p, u16 v);
 /* the commands of the menu bar */
 enum {
 	C_NONE, C_ABOUT, C_NEW, C_FIND, C_REF, C_QUIT, C_CUT, C_COPY, C_PASTE, C_ANSWER,
-	C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH, C_SIDEBAR
+	C_ACCT, C_FONT, C_HELP, C_KEYS, C_SET, C_ATTACH, C_SIDEBAR, C_LOG
 };
 
 /* the menu bar, built by the AERA programs' shared builder
@@ -392,12 +399,14 @@ static const MBAR_ITEM m_chat[] = {
 	{ "Hide chat list", "\x01^S", C_SIDEBAR },
 	{ 0, 0, 0 }
 };
-/* dialog items first, ticks after (Erez, 10 Nov 2026: D6, D13); since
-   2.3 there are no ticks, so no line */
+/* dialog items first, a line, then the ticks (Erez, 10 Nov 2026: D6,
+   D13; the guidelines, 3.1: Write a log last) */
 static const MBAR_ITEM m_opts[] = {
 	{ "Settings...", "^,", C_SET },
 	{ "Account...", "F8", C_ACCT },
 	{ "Font...", 0, C_FONT },
+	{ "-", 0, 0 },
+	{ "Write a log", 0, C_LOG },
 	{ 0, 0, 0 }
 };
 static const MBAR_ITEM m_help[] = {
@@ -410,6 +419,14 @@ static const MBAR_TITLE bar[] = {
 	{ " Options ", m_opts }, { " Help ", m_help }, { 0, 0 }
 };
 static MBAR mb;
+
+/* Write a log's tick in Options, as log_on has it */
+static void log_menu(void)
+{
+	short o = mbar_object(&mb, C_LOG);
+	if (o >= 0)
+		menu_icheck(mb.tree, o, log_on);
+}
 
 static void set_status(const char *s)
 {
@@ -2854,6 +2871,8 @@ static short inf_setting(const char *l)
 	} else if (inf_key(l, "HEBFONT", &v)) {
 		u16 n = inf_num(&v);
 		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
+	} else if (inf_key(l, "LOG", &v)) {
+		log_on = inf_num(&v) != 0;
 	} else if (inf_key(l, "DIALOGS3D", &v))
 		;	/* no setting any more (the guidelines, 5.6; a tester, Erez
 			   27 Oct 2026): read without it, and not kept */
@@ -3030,6 +3049,7 @@ static void save_config(void)
 		    "FONT", v);
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
+	p = inf_put_num(p, "write CLAUDEST.LOG at the quit: 1 on, 0 off (Options > Write a log)", "LOG", log_on);
 	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
 	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
@@ -5204,19 +5224,21 @@ static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
 /* what Settings shows, for its paint, and where */
 static char sd_f[2][24];
 static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
-static short sd_nh, sd_focus;
+static short sd_nh, sd_focus, sd_log;
 /* the stops Tab visits, in the order they were added (D25): the two
-   fields, the radio group (one stop), Cancel, OK */
-enum { SD_ADDR, SD_PORT, SD_HEB, SD_CANCEL, SD_OK, SD_STOPS };
+   fields, the radio group (one stop), the log's tick, Cancel, OK */
+enum { SD_ADDR, SD_PORT, SD_HEB, SD_LOG, SD_CANCEL, SD_OK, SD_STOPS };
+static const char sd_log_words[] = "Write a log (CLAUDEST.LOG)";
+static short sd_tick, sd_tick_shown;	/* the tick box's object; its state as drawn */
 static short sd_ring, sd_ring_at = -1;	/* the focus ring wanted; where it is drawn */
-static short sd_lh, sd_ly[3], sd_fx[2], sd_fy[2];
+static short sd_lh, sd_ly[4], sd_fx[2], sd_fy[2];
 static short sd_hb_w, sd_hb_x[3], sd_obj[3];
 static unsigned short sd_shown[3];	/* the choices' states as drawn */
 
 static void sd_place(void)
 {
 	short cx = dlg_x + 20 * cw, i;		/* where the controls start */
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < 4; i++)
 		sd_ly[i] = dlg_y + ch + sd_lh * (i + 1) + sd_lh / 2;
 	for (i = 0; i < 2; i++) {
 		sd_fx[i] = cx;
@@ -5231,6 +5253,12 @@ static void sd_place(void)
 	own_begin_named("Settings");
 	for (i = 0; i < 3; i++)
 		sd_obj[i] = own_add(sd_hb_x[i], sd_ly[2] - 3, sd_hb_w, ch + 6, RBUTTON, hb_label[i]);
+	/* the family's tick box (dlgbuild's bitmaps, the guidelines' 5.6), its
+	   words 3 characters on, drawn with the labels */
+	db_tick_bits(ch);
+	sd_tick = own_add(dlg_x + 2 * cw, sd_ly[3] + (ch - db_tick_on.bi_hl) / 2, 16, db_tick_on.bi_hl, 0, 0);
+	own_t[sd_tick].ob_type = G_IMAGE;
+	own_t[sd_tick].ob_flags = 0;
 	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
 	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
 }
@@ -5241,6 +5269,7 @@ static void sd_states(void)
 	short i;
 	for (i = 0; i < 3; i++)
 		own_t[sd_obj[i]].ob_state = sd_nh == i ? SELECTED : 0;
+	own_t[sd_tick].ob_spec = (long)(sd_log ? &db_tick_on : &db_tick_off);
 }
 
 /* the parts that change: the choices, the fields */
@@ -5252,6 +5281,11 @@ static void sd_ring_box(short k, short *b)
 		b[1] = sd_ly[2] - 3;
 		b[2] = sd_hb_x[2] + sd_hb_w - 1;
 		b[3] = sd_ly[2] + ch + 2;
+	} else if (k == SD_LOG) {	/* the box and its words */
+		b[0] = dlg_x + 2 * cw;
+		b[1] = sd_ly[3] - 1;
+		b[2] = dlg_x + (5 + (short)sizeof(sd_log_words) - 1) * cw - 1;
+		b[3] = sd_ly[3] + ch;
 	} else {
 		b[0] = k == SD_OK ? ok_x : cancel_x;
 		b[1] = btn_y;
@@ -5281,6 +5315,12 @@ static void sd_live(void)
 			own_draw(sd_obj[i]);
 			sd_shown[i] = own_t[sd_obj[i]].ob_state;
 		}
+	if (sd_log != sd_tick_shown) {	/* the tick box: its bitmap over its ground */
+		own_clear(own_ax[sd_tick], own_ay[sd_tick], own_ax[sd_tick] + 15,
+			  own_ay[sd_tick] + db_tick_on.bi_hl - 1);
+		own_draw(sd_tick);
+		sd_tick_shown = sd_log;
+	}
 	/* the focus ring: a thin frame 2 pixels outside the control with the
 	   focus, once a key was used, gone after a click (CONTROLS 5, D25);
 	   a field shows its cursor instead */
@@ -5333,9 +5373,11 @@ static void sd_paint(short framed)
 	own_frame(framed);	/* the choices too */
 	for (i = 0; i < 3; i++)
 		sd_shown[i] = own_t[sd_obj[i]].ob_state;
+	sd_tick_shown = sd_log;
 	text(dlg_x + 2 * cw, sd_ly[0], "Gateway address", 15, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[1], "Gateway port", 12, 0, 1);
 	text(dlg_x + 2 * cw, sd_ly[2], "Hebrew in fonts", 15, 0, 1);
+	text(dlg_x + 5 * cw, sd_ly[3], sd_log_words, sizeof(sd_log_words) - 1, 0, 1);
 	if (!framed)
 		sd_live();	/* over the screen the loop draws these next */
 }
@@ -5355,6 +5397,7 @@ static void settings_dialog(void)
 		sd_start[i] = 0;
 	}
 	sd_nh = hebfont;
+	sd_log = log_on;
 	sd_focus = SD_ADDR;
 	sd_ring = 0;
 	sd_ring_at = -1;
@@ -5365,7 +5408,7 @@ static void settings_dialog(void)
 	dlg_w = 52 * cw;
 	if (dlg_w > ww - 2 * cw)
 		dlg_w = ww - 2 * cw;
-	dlg_h = ch + sd_lh * 5 + btn_h + ch;
+	dlg_h = ch + sd_lh * 6 + btn_h + ch;
 	if (dlg_h > wh - 4)
 		dlg_h = wh - 4;
 	dlg_x = wx + (ww - dlg_w) / 2;
@@ -5416,7 +5459,9 @@ static void settings_dialog(void)
 				else if (fwd && fo < SD_STOPS - 1)
 					sd_focus++;
 			} else if (!field) {
-				if (as == ' ' && fo >= SD_CANCEL)
+				if (as == ' ' && fo == SD_LOG)
+					sd_log = !sd_log;
+				else if (as == ' ' && fo >= SD_CANCEL)
 					res = fo == SD_OK;
 				else if (as == 0x1b)
 					res = 0;
@@ -5442,6 +5487,11 @@ static void settings_dialog(void)
 			for (i = 0; i < 3; i++)
 				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[2] - 3 && my < sd_ly[2] + ch + 3)
 					sd_nh = i;
+			if (mx >= dlg_x + 2 * cw && mx < dlg_x + (5 + (short)sizeof(sd_log_words) - 1) * cw &&
+			    my >= sd_ly[3] - 2 && my < sd_ly[3] + ch + 2) {	/* the tick's box or its words */
+				sd_log = !sd_log;
+				wait_release();
+			}
 			{
 				short b = own_press(mx, my);
 				if (b >= 0)
@@ -5475,6 +5525,10 @@ static void settings_dialog(void)
 		if (ip)
 			tcp_ip = ip;
 		tcp_port = port;
+		if (sd_log != log_on) {	/* Options' tick in step */
+			log_on = sd_log;
+			log_menu();
+		}
 		if (sd_nh != hebfont) {	/* the window's Hebrew, drawn anew */
 			hebfont = sd_nh;
 			on_resize();
@@ -5786,6 +5840,7 @@ static void handle_msg(short *msg)
 		case C_HELP: help(); break;
 		case C_KEYS: keys_dialog(); break;
 		case C_SET: settings_dialog(); break;
+		case C_LOG: log_on = !log_on; log_menu(); save_config(); break;
 		case C_ATTACH: choose_attach(); break;
 		case C_CUT: reply_clip(CLIP_CUT); break;
 		case C_COPY: reply_clip(CLIP_COPY); break;
@@ -6049,6 +6104,7 @@ int main(void)
 		appl_exit();
 		return 1;
 	}
+	log_menu();
 	menu_bar(mb.tree, 1);
 	graf_mouse(ARROW, 0);
 

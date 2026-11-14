@@ -573,7 +573,9 @@ sets the Gateway address.
 
 **Options ▸ Settings…** (`Ctrl+,`) sets the Gateway's address and port
 (ClaudeST reaches it through STinG), and where your fonts keep the Hebrew letters
-(*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)). Tab
+(*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)), and
+whether ClaudeST writes `CLAUDEST.LOG` as it quits (*Write a log*, off until
+you tick it; also the last item in Options). Tab
 moves between the two fields, `Esc` empties the one with the cursor,
 `Clr/Home` goes to its start (`Shift+Clr/Home` to its end), Return is OK and `Undo` cancels. The dialogs and alerts have
 the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in 16
@@ -595,6 +597,7 @@ ignored and left out the next time ClaudeST saves.
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
 | `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
 | `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `LOG=0` | Options ▸ Write a log, or Settings: 1 writes `CLAUDEST.LOG` as ClaudeST quits; 0, the default, writes nothing |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
@@ -613,7 +616,7 @@ The window always opens full screen with a new chat.
 | Atari: `CLAUDEST.INF` | ClaudeST's settings |
 | Atari: `CLAUDEST.FNT` | Which GDOS fonts are fixed-width, so the font selector needn't measure them again |
 | Atari: `CRASH.LOG` | What happened, if ClaudeST ever crashed (next to `CLAUDEST.PRG`) |
-| Atari: `CLAUDEST.LOG` | The steps of the last quit, written one by one: if the Atari bombs as ClaudeST quits, the last line is how far it got (next to `CLAUDEST.PRG`; send it with `CRASH.LOG`) |
+| Atari: `CLAUDEST.LOG` | Only with **Options ▸ Write a log** ticked: the steps of the last quit, written one by one: if the Atari bombs as ClaudeST quits, the last line is how far it got (next to `CLAUDEST.PRG`; send it with `CRASH.LOG`) |
 
 The open conversation lives only in the Atari's memory while ClaudeST
 runs.
