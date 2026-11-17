@@ -511,7 +511,7 @@ dialogs keep the system font.
   Atari font (TOS, EmuTOS) at the Atari character set's, Israeli system
   fonts and many GDOS fonts where ISO-8859-8 or DOS 862 put them. If
   Hebrew shows as other symbols, choose where your font keeps them in
-  **Options ▸ Settings**, under *Hebrew in fonts*: Atari, ISO 8859 or
+  **Options ▸ Settings**, on its Look page: Atari, ISO 8859 or
   DOS 862. A vector font (Speedo, TrueType, Type 1) is asked through
   NVDI 5 for its Hebrew letters by Unicode, as FreeMono and Liberation
   Mono have them; the Type line then says so. A vector font without
@@ -571,13 +571,22 @@ sets the Gateway address.
 
 ## Settings (CLAUDEST.INF)
 
-**Options ▸ Settings…** (`Ctrl+,`) sets the Gateway's address and port
-(ClaudeST reaches it through STinG), and where your fonts keep the Hebrew letters
-(*Hebrew in fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)), and
-whether ClaudeST writes `CLAUDEST.LOG` as it quits (*Write a log*, off until
-you tick it; also the last item in Options). Tab
-moves between the two fields, `Esc` empties the one with the cursor,
-`Clr/Home` goes to its start (`Shift+Clr/Home` to its end), Return is OK and `Undo` cancels. The dialogs and alerts have
+**Options ▸ Settings…** (`Ctrl+,`) is the family's Settings dialog: its pages
+are listed at the left, and it opens on **Secure**.
+
+- **Look:** where your fonts keep the Hebrew letters (*Hebrew letters in the
+  fonts*: Atari, ISO 8859 or DOS 862; see [Font](#font)).
+- **Secure:** *Through the Gateway*, its address and port (ClaudeST reaches it
+  through STinG). An address that isn't one, or a port outside 1 to 65535, is
+  refused with an alert that says what to type.
+- **Advanced:** *Write a log (CLAUDEST.LOG)*, the steps of each quit, off until
+  you tick it (also the last item in Options).
+
+Tab and `Shift+Tab` go through the fields, the controls and the list of pages;
+`Up` and `Down` in the list change the page; `Space` ticks the tick and the
+arrows choose among Atari, ISO 8859 and DOS 862. `Esc` empties the field with
+the cursor, `Clr/Home` goes to its start (`Shift+Clr/Home` to its end), Return is
+OK and `Undo` cancels. The dialogs and alerts have
 the AES's 3D look where it has one (TOS 4, MagiC, XaAES, EmuTOS in 16
 colours or more), as every other program's there; there is no setting
 for it.
@@ -596,7 +605,7 @@ ignored and left out the next time ClaudeST saves.
 |------|--------|
 | `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
 | `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
-| `HEBFONT=0` | Options ▸ Settings, *Hebrew in fonts*: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
+| `HEBFONT=0` | Options ▸ Settings, Look: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `LOG=0` | Options ▸ Write a log, or Settings: 1 writes `CLAUDEST.LOG` as ClaudeST quits; 0, the default, writes nothing |
 | `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |

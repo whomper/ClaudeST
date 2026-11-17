@@ -88,8 +88,9 @@ e=$(mark); count "$d" "$e" "Attach 40 KB" Fopen=1 Fread\<=4 Fcreate=0
 ctrl 0x33 3; key 0x1c 3
 f=$(mark); count "$e" "$f" "Settings OK, unchanged" any=0
 
-# Settings again: Tab to the Write a log tick, Space, OK: written once
-ctrl 0x33 3; for t in $(seq ${LOGTABS:-3}); do key 0x0f 0.4; done; key 0x39 0.6; key 0x1c 3
+# Settings again (it opens on Secure, in the address): Tab, Tab to the list
+# of pages, Down to Advanced, Tab to its Write a log tick, Space, OK: written once
+ctrl 0x33 3; key 0x0f 0.5; key 0x0f 0.5; key 0x50 1.5; key 0x0f 0.5; key 0x39 0.6; key 0x1c 3
 g=$(mark); count "$f" "$g" "Settings OK, log ticked" Fcreate=1 Frename=1
 grep -q "^LOG=1" "$W/drive/CLAUDEST.INF" 2>/dev/null || grep -q "^LOG=1" "$W/drive/claudest.inf" ||
   { echo "FAIL CLAUDEST.INF doesn't say LOG=1"; fail=1; }

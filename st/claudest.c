@@ -42,6 +42,7 @@
 #include "theme.h"
 #include "tooltip.h"
 #include "dlgbuild.h"
+#include "settings.h"
 #include "notify.h"
 /* fontsel.h brings st/ui.h's names for the shared blocks' drawing calls;
    claudest.c's own fill(), frame() and so on take other arguments */
@@ -401,11 +402,11 @@ static const MBAR_ITEM m_chat[] = {
 	{ "Hide chat list", "\x01^S", C_SIDEBAR },
 	{ 0, 0, 0 }
 };
-/* dialog items first, a line, then the ticks (Erez, 10 Nov 2026: D6,
-   D13; the guidelines, 3.1: Write a log last) */
+/* the account item, Settings, Font, a line, then the ticks (D6, D13;
+   Erez, 10 Nov 2026; the guidelines, 3.1: Write a log last) */
 static const MBAR_ITEM m_opts[] = {
-	{ "Settings...", "^,", C_SET },
 	{ "Account...", "F8", C_ACCT },
+	{ "Settings...", "^,", C_SET },
 	{ "Font...", 0, C_FONT },
 	{ "-", 0, 0 },
 	{ "Write a log", 0, C_LOG },
@@ -5252,317 +5253,113 @@ static void move_cursor(short d)
 		redraw_item_row(lcur);
 }
 
-/* Options > Settings... (^,), as in the other AERA programs: the
- * Gateway's address and port, and where fonts keep the Hebrew letters.
- * Tab moves between the two fields, Return is OK, Undo Cancel; Esc
- * empties the field with the cursor (the guidelines, 3.5). The choices
- * are the AES's radio buttons, the rest its buttons (5.6). */
+/* Options > Settings... (^,): the family's dialog (common/ui/settings.c;
+ * the guidelines, 6.1): the list of pages at the left, Cancel and OK at
+ * the bottom right, the keyboard's reach (D25). Pages in the family's
+ * order: Look (where fonts keep the Hebrew letters), Secure (the
+ * Gateway's address and port, 7.3's words), Advanced (the log). It opens
+ * on Secure, the page the guide's set-up step names. */
 /* where the system and bitmap fonts keep the Hebrew letters (the Font
    dialog's own sample row before the family's dialog) */
 static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
-/* what Settings shows, for its paint, and where */
-static char sd_f[2][24];
-static short sd_len[2], sd_cur[2], sd_start[2], sd_cols[2] = { 17, 7 };
-static short sd_nh, sd_focus, sd_log;
-/* the stops Tab visits, in the order they were added (D25): the two
-   fields, the radio group (one stop), the log's tick, Cancel, OK */
-enum { SD_ADDR, SD_PORT, SD_HEB, SD_LOG, SD_CANCEL, SD_OK, SD_STOPS };
-static const char sd_log_words[] = "Write a log (CLAUDEST.LOG)";
-static short sd_tick, sd_tick_shown;	/* the tick box's object; its state as drawn */
-static short sd_ring, sd_ring_at = -1;	/* the focus ring wanted; where it is drawn */
-static short sd_lh, sd_ly[4], sd_fx[2], sd_fy[2];
-static short sd_hb_w, sd_hb_x[3], sd_obj[3];
-static unsigned short sd_shown[3];	/* the choices' states as drawn */
+static char sd_addr[16], sd_port[6];
+static short sd_nh, sd_log;
+static short sd_addr_obj, sd_port_obj;
 
-static void sd_place(void)
+static void sd_look(SETTINGS *s, short x, short y, void *user)
 {
-	short cx = dlg_x + 20 * cw, i;		/* where the controls start */
-	for (i = 0; i < 4; i++)
-		sd_ly[i] = dlg_y + ch + sd_lh * (i + 1) + sd_lh / 2;
-	for (i = 0; i < 2; i++) {
-		sd_fx[i] = cx;
-		sd_fy[i] = sd_ly[i] - 3;
-	}
-	sd_hb_w = 9 * cw;
-	for (i = 0; i < 3; i++)
-		sd_hb_x[i] = cx + i * (sd_hb_w + cw);
-	btn_y = dlg_y + dlg_h - btn_h - ch;
-	ok_x = dlg_x + dlg_w - 2 * cw - btn_w;
-	cancel_x = ok_x - btn_w - 2 * cw;
-	own_begin_named("Settings");
-	for (i = 0; i < 3; i++)
-		sd_obj[i] = own_add(sd_hb_x[i], sd_ly[2] - 3, sd_hb_w, ch + 6, RBUTTON, hb_label[i]);
-	/* the family's tick box (dlgbuild's bitmaps, the guidelines' 5.6), its
-	   words 3 characters on, drawn with the labels */
-	db_tick_bits(ch);
-	sd_tick = own_add(dlg_x + 2 * cw, sd_ly[3] + (ch - db_tick_on.bi_hl) / 2, 16, db_tick_on.bi_hl, 0, 0);
-	own_t[sd_tick].ob_type = G_IMAGE;
-	own_t[sd_tick].ob_flags = 0;
-	own_add(cancel_x, btn_y, btn_w, btn_h, EXIT, "Cancel");
-	own_add(ok_x, btn_y, btn_w, btn_h, EXIT | DEFAULT, "OK");
+	(void)y; (void)user;
+	set_text(s, x, set_y(s, 0), "Hebrew letters in the fonts:");
+	set_radio(s, x, set_y(s, 1), 9, hb_label, 3, &sd_nh);
+	set_text(s, x, set_y(s, 3), "Where a font keeps them: the Atari's");
+	set_text(s, x, set_y(s, 4), "places, ISO 8859-8 or DOS code page 862.");
 }
 
-/* the choices' states, as chosen now */
-static void sd_states(void)
+static void sd_secure(SETTINGS *s, short x, short y, void *user)
 {
-	short i;
-	for (i = 0; i < 3; i++)
-		own_t[sd_obj[i]].ob_state = sd_nh == i ? SELECTED : 0;
-	own_t[sd_tick].ob_spec = (long)(sd_log ? &db_tick_on : &db_tick_off);
+	(void)y; (void)user;
+	set_text(s, x, set_y(s, 0), "Through the Gateway:");
+	set_text(s, x + 3, set_y(s, 1), "Address");
+	sd_addr_obj = set_field(s, x + 12, set_y(s, 1), sd_addr, 15, 'X');
+	set_text(s, x + 3, set_y(s, 2), "Port");
+	sd_port_obj = set_field(s, x + 12, set_y(s, 2), sd_port, 5, '9');
+	set_text(s, x + 3, set_y(s, 4), "The Gateway's IP address, and its");
+	set_text(s, x + 3, set_y(s, 5), "port (2323 unless changed there).");
 }
 
-/* the parts that change: the choices, the fields */
-/* the ring's box round stop k (SD_HEB and on) */
-static void sd_ring_box(short k, short *b)
+static void sd_advanced(SETTINGS *s, short x, short y, void *user)
 {
-	if (k == SD_HEB) {
-		b[0] = sd_hb_x[0];
-		b[1] = sd_ly[2] - 3;
-		b[2] = sd_hb_x[2] + sd_hb_w - 1;
-		b[3] = sd_ly[2] + ch + 2;
-	} else if (k == SD_LOG) {	/* the box and its words */
-		b[0] = dlg_x + 2 * cw;
-		b[1] = sd_ly[3] - 1;
-		b[2] = dlg_x + (5 + (short)sizeof(sd_log_words) - 1) * cw - 1;
-		b[3] = sd_ly[3] + ch;
-	} else {
-		b[0] = k == SD_OK ? ok_x : cancel_x;
-		b[1] = btn_y;
-		b[2] = b[0] + btn_w - 1;
-		b[3] = btn_y + btn_h - 1;
-	}
-	{
-		/* 2 pixels between it and the control as drawn: the AES's 3D
-		   look draws buttons 3 pixels bigger all round */
-		short k = dlg_3d_ok() ? 6 : 3;
-		b[0] -= k;
-		b[1] -= k;
-		b[2] += k;
-		b[3] += k;
-	}
+	(void)y; (void)user;
+	set_tick(s, x, set_y(s, 0), "Write a log (CLAUDEST.LOG)", &sd_log);
+	set_text(s, x + 3, set_y(s, 1), "The steps of each quit, beside");
+	set_text(s, x + 3, set_y(s, 2), "CLAUDEST.PRG.");
 }
 
-static void sd_live(void)
+/* OK: an address that reads as one and a port from 1 to 65535, or the
+   page again with an alert that says what to type (D30) */
+static int sd_check(SETTINGS *s, void *user)
 {
-	short i;
-	/* the choices the AES draws again: those chosen or let go since (an
-	   ST draws one in ~20 ms; all of them each pass made Settings slow
-	   to open) */
-	sd_states();
-	for (i = 0; i < 3; i++)
-		if (own_t[sd_obj[i]].ob_state != sd_shown[i]) {
-			own_draw(sd_obj[i]);
-			sd_shown[i] = own_t[sd_obj[i]].ob_state;
-		}
-	if (sd_log != sd_tick_shown) {	/* the tick box: its bitmap over its ground */
-		own_clear(own_ax[sd_tick], own_ay[sd_tick], own_ax[sd_tick] + 15,
-			  own_ay[sd_tick] + db_tick_on.bi_hl - 1);
-		own_draw(sd_tick);
-		sd_tick_shown = sd_log;
+	u32 ip;
+	long port = 0;
+	const char *q = sd_port;
+	(void)user;
+	if (!parse_ip(sd_addr, &ip, 0) || !ip) {
+		alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.10.][ OK ]");
+		set_show(s, 1);
+		set_focus(s, sd_addr_obj);
+		return 0;
 	}
-	/* the focus ring: a thin frame 2 pixels outside the control with the
-	   focus, once a key was used, gone after a click (CONTROLS 5, D25);
-	   a field shows its cursor instead */
-	{
-		short want = sd_ring && sd_focus >= SD_HEB ? sd_focus : -1;
-		if (want != sd_ring_at) {
-			short b[4];
-			text_clip(vh, own_c);	/* the dialog's: a field's drawing may have narrowed it */
-			if (sd_ring_at >= 0) {		/* the old one: the box's ground again */
-				sd_ring_box(sd_ring_at, b);
-				own_clear(b[0], b[1], b[2], b[1]);
-				own_clear(b[0], b[3], b[2], b[3]);
-				own_clear(b[0], b[1], b[0], b[3]);
-				own_clear(b[2], b[1], b[2], b[3]);
-			}
-			if (want >= 0) {
-				sd_ring_box(want, b);
-				line(b[0], b[1], b[2], b[1], 1);
-				line(b[2], b[1], b[2], b[3], 1);
-				line(b[2], b[3], b[0], b[3], 1);
-				line(b[0], b[3], b[0], b[1], 1);
-			}
-			sd_ring_at = want;
-		}
+	while (*q >= '0' && *q <= '9' && port < 100000L)
+		port = port * 10 + (*q++ - '0');
+	if (*q || port < 1 || port > 65535L) {
+		alert(1, "[1][The port is a number|from 1 to 65535: 2323|unless you changed it|on the Gateway.][ OK ]");
+		set_show(s, 1);
+		set_focus(s, sd_port_obj);
+		return 0;
 	}
-	/* the fields: the one with the cursor is edited */
-	for (i = 0; i < 2; i++) {
-		fld_x = sd_fx[i];
-		fld_y = sd_fy[i];
-		fld_cols = sd_cols[i];
-		fld_w = sd_cols[i] * cw;
-		line(fld_x, fld_y, fld_x + fld_w - 1, fld_y, 1);
-		line(fld_x + fld_w - 1, fld_y, fld_x + fld_w - 1, fld_y + ch + 5, 1);
-		line(fld_x + fld_w - 1, fld_y + ch + 5, fld_x, fld_y + ch + 5, 1);
-		line(fld_x, fld_y + ch + 5, fld_x, fld_y, 1);
-		if (i == sd_focus)
-			dlg_field(sd_f[i], sd_len[i], sd_cur[i], &sd_start[i]);
-		else {
-			fill(fld_x + 1, fld_y + 1, fld_x + fld_w - 2, fld_y + ch + 4, 0);
-			text(fld_x + cw / 2, fld_y + 3, sd_f[i], sd_len[i] < sd_cols[i] - 1 ? sd_len[i] : sd_cols[i] - 1, 0, 1);
-		}
-	}
+	return 1;
 }
 
-static void sd_paint(short framed)
+static void settings_uncovered(short x, short y, short w, short h)
 {
-	short i;
-	sd_states();
-	sd_ring_at = -1;	/* drawn again with the rest */
-	own_frame(framed);	/* the choices too */
-	for (i = 0; i < 3; i++)
-		sd_shown[i] = own_t[sd_obj[i]].ob_state;
-	sd_tick_shown = sd_log;
-	text(dlg_x + 2 * cw, sd_ly[0], "Gateway address", 15, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[1], "Gateway port", 12, 0, 1);
-	text(dlg_x + 2 * cw, sd_ly[2], "Hebrew in fonts", 15, 0, 1);
-	text(dlg_x + 5 * cw, sd_ly[3], sd_log_words, sizeof(sd_log_words) - 1, 0, 1);
-	if (!framed)
-		sd_live();	/* over the screen the loop draws these next */
+	redraw(D_ALL, x, y, w, h);
 }
 
-static void settings_dialog(void)
+static void settings_open(void)
 {
-	char (*f)[24] = sd_f;
-	short res = -1, m[8], i;
-	AEVENT e;
+	static const SET_PAGE pages[] = {
+		{ "Look", sd_look }, { "Secure", sd_secure }, { "Advanced", sd_advanced }
+	};
+	SET_DEF d;
+	short ok;
 
-	f[0][0] = 0;
+	sd_addr[0] = 0;
 	if (tcp_ip)
-		ip_to_str(tcp_ip, f[0]);
-	*put_num(f[1], tcp_port) = 0;
-	for (i = 0; i < 2; i++) {
-		sd_len[i] = sd_cur[i] = strlen(f[i]);
-		sd_start[i] = 0;
-	}
+		ip_to_str(tcp_ip, sd_addr);
+	*put_num(sd_port, tcp_port) = 0;
 	sd_nh = hebfont;
 	sd_log = log_on;
-	sd_focus = SD_ADDR;
-	sd_ring = 0;
-	sd_ring_at = -1;
-
-	sd_lh = ch + (dlg_3d_ok() ? 12 : 8);	/* raised choices don't touch */
-	btn_w = 10 * cw;
-	btn_h = ch + 6;
-	dlg_w = 52 * cw;
-	if (dlg_w > ww - 2 * cw)
-		dlg_w = ww - 2 * cw;
-	dlg_h = ch + sd_lh * 6 + btn_h + ch;
-	if (dlg_h > wh - 4)
-		dlg_h = wh - 4;
-	dlg_x = wx + (ww - dlg_w) / 2;
-	dlg_y = wy + (wh - dlg_h) / 2;
-
-	own_open("Settings", ch, sd_place, sd_paint);
-	if (own_win)
-		graf_mouse(M_OFF, 0);		/* as over the screen: the loop draws first */
-
-	for (;;) {
-		if (own_cut())
-			sd_live();
-		graf_mouse(M_ON, 0);
-		if (res >= 0)
-			break;
-		wait_release();
-		dlg_evnt(MU_KEYBD | MU_BUTTON, 0x101, 3, 0, 0, m, &e);
-		own_moved();
-		graf_mouse(M_OFF, 0);
-		if (e.which & MU_KEYBD) {
-			u8 sc = e.kreturn >> 8, as = e.kreturn & 0xff;
-			short fo = sd_focus, field = fo <= SD_PORT;
-			short back = sc == 0x48 || (sc == 0x4b && !field);	/* Up; Left off a field */
-			short fwd = sc == 0x50 || (sc == 0x4d && !field);	/* Down; Right off a field */
-			/* the keyboard's reach (CONTROLS 5, D25): Tab and Shift+Tab
-			   through the stops; Up and Down between the fields and
-			   from stop to stop; the arrows choose in the radio group,
-			   no wrapping; Space works a button; Return is OK, Esc
-			   empties a field and is Cancel elsewhere */
-			if (sc == 0x0f || back || fwd || (as == ' ' && !field))
-				sd_ring = 1;	/* the ring, from the first such key on */
-			if (as == 0x0d)
-				res = 1;
-			else if (dlg_cancel_key(e.kreturn, 1))	/* Undo, the closer */
-				res = 0;
-			else if (sc == 0x0f)		/* Tab, Shift+Tab */
-				sd_focus = (sd_focus + (key_shift(e.kstate, e.kreturn) ? SD_STOPS - 1 : 1)) % SD_STOPS;
-			else if (fo == SD_HEB && (back || fwd)) {
-				if (back && sd_nh > 0)
-					sd_nh--;
-				else if (fwd && sd_nh < 2)
-					sd_nh++;
-			} else if (back || fwd) {
-				if (field && !(back ? fo > SD_ADDR : fo < SD_PORT))
-					;		/* Up and Down stay among the fields */
-				else if (back && fo > 0)
-					sd_focus--;
-				else if (fwd && fo < SD_STOPS - 1)
-					sd_focus++;
-			} else if (!field) {
-				if (as == ' ' && fo == SD_LOG)
-					sd_log = !sd_log;
-				else if (as == ' ' && fo >= SD_CANCEL)
-					res = fo == SD_OK;
-				else if (as == 0x1b)
-					res = 0;
-			} else if (as == 0x1b)		/* Esc: empty it */
-				sd_len[fo] = sd_cur[fo] = sd_start[fo] = 0;
-			else if (sc == 0x47)		/* Clr/Home: its start, with Shift its end */
-				sd_cur[fo] = key_shift(e.kstate, e.kreturn) ? sd_len[fo] : 0;
-			else if (clip_key(e.kreturn))
-				field_clip(clip_key(e.kreturn), f[fo], &sd_len[fo], &sd_cur[fo],
-					   (fo ? 5 : 15));
-			else if (sc != 0x44)		/* no Hebrew in an address */
-				edit_key(f[fo], &sd_len[fo], &sd_cur[fo], fo ? 5 : 15, e.kstate, e.kreturn);
-			if (field)
-				f[fo][sd_len[fo]] = 0;
-		}
-		if (e.which & MU_BUTTON) {
-			short mx = e.mx, my = e.my;
-			sd_ring = 0;		/* a click takes the ring away */
-			for (i = 0; i < 2; i++) {
-				if (mx >= sd_fx[i] && mx < sd_fx[i] + sd_cols[i] * cw && my >= sd_fy[i] && my < sd_fy[i] + ch + 6)
-					sd_focus = i;
-			}
-			for (i = 0; i < 3; i++)
-				if (mx >= sd_hb_x[i] && mx < sd_hb_x[i] + sd_hb_w && my >= sd_ly[2] - 3 && my < sd_ly[2] + ch + 3)
-					sd_nh = i;
-			if (mx >= dlg_x + 2 * cw && mx < dlg_x + (5 + (short)sizeof(sd_log_words) - 1) * cw &&
-			    my >= sd_ly[3] - 2 && my < sd_ly[3] + ch + 2) {	/* the tick's box or its words */
-				sd_log = !sd_log;
-				wait_release();
-			}
-			{
-				short b = own_press(mx, my);
-				if (b >= 0)
-					res = own_ax[b] == ok_x;
-			}
-		}
-		/* an address that doesn't read as one: back to it */
-		if (res == 1) {
-			u32 ip;
-			if (!parse_ip(f[0], &ip, 0) || !ip) {
-				res = -1;
-				sd_focus = 0;
-				alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.10.][ OK ]");
-			}
-		}
-	}
-	own_close();
-	if (res != 1)
+	memset(&d, 0, sizeof(d));
+	d.title = "Settings";
+	d.pages = pages;
+	d.npages = 3;
+	d.height = 16;
+	d.first = 1;
+	d.check = sd_check;
+	settings_uncover = settings_uncovered;
+	ok = settings_dialog(&d);
+	if (!ok)
 		return;
 	{
 		u32 ip = 0;
 		u16 port = 0;
-		const char *q = f[1];
+		const char *q = sd_port;
 		short changed;
-		parse_ip(f[0], &ip, 0);
+		parse_ip(sd_addr, &ip, 0);
 		while (*q >= '0' && *q <= '9')
 			port = port * 10 + (*q++ - '0');
-		if (!port)
-			port = 2323;
 		changed = ip != tcp_ip || port != tcp_port;
-		if (ip)
-			tcp_ip = ip;
+		tcp_ip = ip;
 		tcp_port = port;
 		if (sd_log != log_on) {	/* Options' tick in step */
 			log_on = sd_log;
@@ -5636,7 +5433,7 @@ static void handle_key(short kstate, short kr)
 	case 0x44: toggle_hebrew(); return;				/* F10 */
 	}
 	if (key_ctrl(kstate, kr) && scan == 0x33) {	/* ^, (0x0c, kstate 0 if typed while busy) */
-		settings_dialog();
+		settings_open();
 		return;
 	}
 	if (scan == 0x53 && shift) {		/* Shift+Delete clears the reply line */
@@ -5878,7 +5675,7 @@ static void handle_msg(short *msg)
 		case C_FONT: font_menu(); break;
 		case C_HELP: help(); break;
 		case C_KEYS: keys_dialog(); break;
-		case C_SET: settings_dialog(); break;
+		case C_SET: settings_open(); break;
 		case C_LOG: log_on = !log_on; log_menu(); save_config(); break;
 		case C_ATTACH: choose_attach(); break;
 		case C_CUT: reply_clip(CLIP_CUT); break;
