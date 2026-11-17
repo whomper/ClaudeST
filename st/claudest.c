@@ -100,18 +100,15 @@ static char font_name[33];
 static short cur_font_id = 1, cur_font_pt;	/* the font set now (set_font) */
 static short set_font(short id, short pt);
 static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
-/* where the font keeps its Hebrew letters (for system and bitmap fonts):
- * the Atari character set, or where ISO-8859-8 or DOS 862 put them */
-#define HEB_ATARI 0
-#define HEB_ISO   1
-#define HEB_DOS   2
-static short hebfont;
+/* Hebrew in the system and bitmap fonts is the Atari character set's:
+   the "Hebrew in fonts" setting went in 2.11 (Erez, 17 Nov 2026; HEBFONT=
+   read once and dropped) */
 /* Write a log (Options and Settings, LOG= in CLAUDEST.INF): CLAUDEST.LOG
    at the quit, only when on; off until the user ticks it (the guidelines,
    6.5: no log without its switch; Erez, 14 Nov 2026) */
 static short log_on;
 /* how the current font gets Hebrew: */
-#define HM_MAP     0			/* where hebfont says (system and bitmap fonts) */
+#define HM_MAP     0			/* the Atari character set's (system and bitmap fonts) */
 #define HM_UNICODE 1			/* a vector font's own, found by Unicode (NVDI 5) */
 #define HM_SYSTEM  2			/* a vector font without them: the system font's */
 static short heb_mode;
@@ -868,15 +865,7 @@ static void line(short x1, short y1, short x2, short y2, short color)
 	v_pline(vh, 2, p);
 }
 
-/* The Atari character set has the Hebrew letters at 0xC2-0xDC in this
- * order (as offsets from alef in Unicode, and in ISO-8859-8 and DOS 862,
- * which keep Unicode's order). */
-static const unsigned char heb_order[27] = {
-	/* alef..nun (0xC2-0xCF) */ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 16,
-	/* samekh..tav (0xD0-0xD7) */ 17, 18, 20, 22, 23, 24, 25, 26,
-	/* final nun, kaf, mem, pe, tsadi (0xD8-0xDC) */ 15, 10, 13, 19, 21
-};
-
+/* the Atari character set's Hebrew letters: 0xC2-0xDC */
 static short is_heb(unsigned char c)
 {
 	return c >= 0xC2 && c <= 0xDC;
@@ -889,18 +878,6 @@ static short has_heb(const char *s, short n)
 		if (is_heb((unsigned char)s[i]))
 			return 1;
 	return 0;
-}
-
-/* move Hebrew letters to where an ISO-8859-8 or DOS 862 font has them */
-static void heb_font_map(char *s, short n, short where)
-{
-	short i;
-	unsigned char base = where == HEB_ISO ? 0xE0 : 0x80;
-	if (where != HEB_ISO && where != HEB_DOS)
-		return;
-	for (i = 0; i < n; i++)
-		if (is_heb((unsigned char)s[i]))
-			s[i] = (char)(base + heb_order[(unsigned char)s[i] - 0xC2]);
 }
 
 /* Hebrew in a vector font: its own letters by index (NVDI's map mode 0),
@@ -929,7 +906,6 @@ static void heb_runs(short x, short y, const char *s, short n)
 			vst_height(vh, keep_ch >= 16 ? 13 : 6, &dw, &dh);
 			for (k = i; k < j; k++) {
 				c[0] = s[k];
-				heb_font_map(c, 1, hebfont);
 				v_gtext_n(vh, x + k * keep_cw + (keep_cw - dw) / 2,
 					  y + (keep_ch - dh) / 2, c, 1);
 			}
@@ -948,20 +924,14 @@ static void heb_runs(short x, short y, const char *s, short n)
 static void text(short x, short y, const char *s, short n, short fx, short color)
 {
 	short fast = color == 1 && text_fx_fast(fx, 1), bold = fx & 1;
-	char m[128];
 	vst_effects(vh, fx & ~1);
 	vst_color(vh, color);
-	if (n > 0 && (heb_mode != HM_MAP || hebfont != HEB_ATARI) && has_heb(s, n)) {
-		if (n > (short)sizeof(m))
-			n = sizeof(m);
-		if (heb_mode != HM_MAP) {
-			vst_effects(vh, fx);	/* a vector font's, in its own cells */
-			heb_runs(x, y, s, n);
-			return;
-		}
-		memcpy(m, s, n);
-		heb_font_map(m, n, hebfont);
-		s = m;
+	if (n > 0 && heb_mode != HM_MAP && has_heb(s, n)) {
+		if (n > 128)
+			n = 128;
+		vst_effects(vh, fx);	/* a vector font's, in its own cells */
+		heb_runs(x, y, s, n);
+		return;
 	}
 	text_n(vh, x, y, s, n);
 	if (fast)
@@ -982,7 +952,7 @@ static void text_white(short x, short y, const char *s, short n, short fx, short
 	short st = text_plain_state();
 
 	if (fx || color != 1 || st < 0 || n <= 0 || (x & 7) ||
-	    ((heb_mode != HM_MAP || hebfont != HEB_ATARI) && has_heb(s, n))) {
+	    (heb_mode != HM_MAP && has_heb(s, n))) {
 		text(x, y, s, n, fx, color);
 		return;
 	}
@@ -2766,8 +2736,7 @@ static void parse_config_line(const char *l)
 				v[k] = v[k] * 10 + (*l++ - '0');
 		}
 		font_id = v[0] > 0 ? v[0] : 1;
-		font_pt = v[1];
-		hebfont = v[2] <= HEB_DOS ? v[2] : HEB_ATARI;
+		font_pt = v[1];		/* v[2], the Hebrew setting: gone in 2.11 */
 	}
 	else if (!memcmp(l, "model ", 6)) {
 		/* model <id> [<effort>] */
@@ -2881,8 +2850,7 @@ static short inf_setting(const char *l)
 			}
 		}
 	} else if (inf_key(l, "HEBFONT", &v)) {
-		u16 n = inf_num(&v);
-		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
+		inf_old = 1;	/* the setting went in 2.11: read once, not written */
 	} else if (inf_key(l, "LOG", &v)) {
 		log_on = inf_num(&v) != 0;
 	} else if (inf_key(l, "NATFEATS", &v)) {
@@ -3093,8 +3061,6 @@ static short config_text(void)
 	}
 	p = inf_put(p, "text font: its name (System font, or a GDOS font's), size in points (system font: 0, 8 small, 16 large)",
 		    "FONT", v);
-	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
-			"HEBFONT", hebfont);
 	p = inf_put_num(p, "write CLAUDEST.LOG at the quit: 1 on, 0 off (Options > Write a log)", "LOG", log_on);
 	p = inf_put_num(p, "the chat list's width in pixels, 0 = ClaudeST's choice (drag its edge)", "PANES", sb_user);
 	if (place_w) {
@@ -5293,24 +5259,12 @@ static void move_cursor(short d)
 /* Options > Settings... (^,): the family's dialog (common/ui/settings.c;
  * the guidelines, 6.1): the list of pages at the left, Cancel and OK at
  * the bottom right, the keyboard's reach (D25). Pages in the family's
- * order: Look (where fonts keep the Hebrew letters), Secure (the
- * Gateway's address and port, 7.3's words), Advanced (the log). It opens
- * on Secure, the page the guide's set-up step names. */
-/* where the system and bitmap fonts keep the Hebrew letters (the Font
-   dialog's own sample row before the family's dialog) */
-static const char *const hb_label[3] = { "Atari", "ISO 8859", "DOS 862" };
+ * order: Secure (the Gateway's address and port, 7.3's words), Advanced
+ * (the log); it opens on Secure, the page the guide's set-up step names.
+ * (Look, with "Hebrew in fonts", went in 2.11: Erez, 17 Nov 2026) */
 static char sd_addr[16], sd_port[6];
-static short sd_nh, sd_log;
+static short sd_log;
 static short sd_addr_obj, sd_port_obj;
-
-static void sd_look(SETTINGS *s, short x, short y, void *user)
-{
-	(void)y; (void)user;
-	set_text(s, x, set_y(s, 0), "Hebrew letters in the fonts:");
-	set_radio(s, x, set_y(s, 1), 9, hb_label, 3, &sd_nh);
-	set_text(s, x, set_y(s, 3), "Where a font keeps them: the Atari's");
-	set_text(s, x, set_y(s, 4), "places, ISO 8859-8 or DOS code page 862.");
-}
 
 static void sd_secure(SETTINGS *s, short x, short y, void *user)
 {
@@ -5342,7 +5296,7 @@ static int sd_check(SETTINGS *s, void *user)
 	(void)user;
 	if (!parse_ip(sd_addr, &ip, 0) || !ip) {
 		alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.10.][ OK ]");
-		set_show(s, 1);
+		set_show(s, 0);
 		set_focus(s, sd_addr_obj);
 		return 0;
 	}
@@ -5350,7 +5304,7 @@ static int sd_check(SETTINGS *s, void *user)
 		port = port * 10 + (*q++ - '0');
 	if (*q || port < 1 || port > 65535L) {
 		alert(1, "[1][The port is a number|from 1 to 65535: 2323|unless you changed it|on the Gateway.][ OK ]");
-		set_show(s, 1);
+		set_show(s, 0);
 		set_focus(s, sd_port_obj);
 		return 0;
 	}
@@ -5365,7 +5319,7 @@ static void settings_uncovered(short x, short y, short w, short h)
 static void settings_open(void)
 {
 	static const SET_PAGE pages[] = {
-		{ "Look", sd_look }, { "Secure", sd_secure }, { "Advanced", sd_advanced }
+		{ "Secure", sd_secure }, { "Advanced", sd_advanced }
 	};
 	SET_DEF d;
 	short ok;
@@ -5374,14 +5328,13 @@ static void settings_open(void)
 	if (tcp_ip)
 		ip_to_str(tcp_ip, sd_addr);
 	*put_num(sd_port, tcp_port) = 0;
-	sd_nh = hebfont;
 	sd_log = log_on;
 	memset(&d, 0, sizeof(d));
 	d.title = "Settings";
 	d.pages = pages;
-	d.npages = 3;
+	d.npages = 2;
 	d.height = 16;
-	d.first = 1;
+	d.first = 0;
 	d.check = sd_check;
 	settings_uncover = settings_uncovered;
 	ok = settings_dialog(&d);
@@ -5401,10 +5354,6 @@ static void settings_open(void)
 		if (sd_log != log_on) {	/* Options' tick in step */
 			log_on = sd_log;
 			log_menu();
-		}
-		if (sd_nh != hebfont) {	/* the window's Hebrew, drawn anew */
-			hebfont = sd_nh;
-			on_resize();
 		}
 		if (changed)
 			use_address();	/* connects again, saves */

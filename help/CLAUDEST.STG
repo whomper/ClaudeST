@@ -425,9 +425,8 @@
     sizes each has. The first time, each font is measured ("Looking for
     fixed-width fonts") and the answers kept in CLAUDEST.FNT. Delete
     that file to measure them all again.
-  - @{B}Hebrew letters:@{b} fonts keep them in different places. Choose
-    where yours keeps them in Options > Settings, Look:
-    Atari, ISO 8859 or DOS 862. A vector font is asked through NVDI 5
+  - @{B}Hebrew letters:@{b} the system font and bitmap fonts are drawn
+    with the Atari character set's Hebrew. A vector font is asked through NVDI 5
     for its own Hebrew letters; without them, they are drawn in the
     system font.
 
@@ -482,8 +481,6 @@
   @{B}Options > Settings...@{b} (Control+,) is the family's Settings
   dialog: its pages are listed at the left, and it opens on Secure.
 
-    Look      where your fonts keep the Hebrew letters (Atari,
-              ISO 8859 or DOS 862)
     Secure    Through the Gateway: its address and port (ClaudeST
               reaches it through STinG); an address that isn't one,
               or a port outside 1 to 65535, is refused with an alert
@@ -505,8 +502,6 @@
     PORT=2323               the Gateway's port
     FONT=System font,8      Options > Font: the font's name (System
                             font, or a GDOS font's) and size
-    HEBFONT=0               Settings, Look: where the font
-                            keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862)
     LOG=0                   Options > Write a log: 1 writes CLAUDEST.LOG
                             as ClaudeST quits (0, the default: nothing)
     PANES=240               the chat list's width, by dragging the divider
@@ -561,8 +556,8 @@
     shows your usage.
 
   @{B}Hebrew shows as other symbols@{b}
-    Your font keeps its Hebrew letters elsewhere: choose ISO 8859 or
-    DOS 862 on the Look page of Options > Settings, see
+    Your font keeps its Hebrew letters away from the Atari character
+    set's places: choose another font, or the system font, see
     @{"Font" link "Font"}.
 
   @{B}Something else fails@{b}

@@ -6,6 +6,8 @@ boots on one machine:
 
   1. SIDEBAR=200, the key before 2.11: read once; the INF is written at
      the start with PANES=200 and without SIDEBAR=.
+  1b. HEBFONT=2, a setting gone in 2.11 (Erez, 17 Nov 2026): read once;
+     the INF is written at the start without it.
   2. WINDOW= off the screen: the window opens on the whole desk, the same
      picture as a start with no WINDOW=; a quit without a move writes
      nothing.
@@ -109,6 +111,12 @@ def main():
     k = keys_of(before[0])
     check(k.get("PANES") == "200" and "SIDEBAR" not in k, "SIDEBAR=200 read once: written at the start as PANES=200",
           "PANES=%s SIDEBAR=%s" % (k.get("PANES"), k.get("SIDEBAR")))
+
+    # 1b. the Hebrew setting, gone
+    _, before, _, _ = boot(work, "1b-hebfont", a.machine, prg, BASE + "HEBFONT=2\r\n", nothing)
+    k = keys_of(before[0])
+    check("HEBFONT" not in k and k.get("PORT") == "2323", "HEBFONT=2 read once: the INF written at the start without it",
+          "HEBFONT=%s" % k.get("HEBFONT"))
 
     # 2. off the screen, against no WINDOW= at all
     plain, _, _, _ = boot(work, "2a-none", a.machine, prg, BASE, nothing)
