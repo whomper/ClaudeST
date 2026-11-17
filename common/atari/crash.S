@@ -9,6 +9,8 @@
 | record of them at $380, which the program reads at its next start.
 | Its stack (crash_stack_top) is taken by crash_install, so a desk
 | accessory, which never installs the catcher, doesn't pay for it.
+| Built for the ColdFire (__mcoldfire__), ColdFire instructions only, and
+| the frame it returns through is a ColdFire's.
 
 	.text
 	.globl	crash_e2, crash_e3, crash_e4, crash_e5, crash_e6, crash_e7, crash_e8, crash_e11
@@ -33,7 +35,11 @@ crash_old_11:
 	.long	0
 crash_e11:
 	move.l	%d0,-(%sp)
+#ifdef __mcoldfire__
+	move.l	8(%sp),%d0		| the PC (4(sp) of a ColdFire's frame)
+#else
 	move.l	6(%sp),%d0		| the PC (2(sp) of the frame)
+#endif
 	cmp.l	crash_text_lo,%d0
 	blo.s	1f
 	cmp.l	crash_text_hi,%d0
@@ -69,6 +75,42 @@ crash_e\n:
 common:
 	tst.w	crash_busy
 	bne.s	chain_quick
+#ifdef __mcoldfire__
+| (the ColdFire's: movem only to and from (sp), no dbra, and a frame of
+| its own: the format and vector, SR, then the PC)
+	lea	-60(%sp),%sp
+	movem.l	%d0-%d7/%a0-%a6,(%sp)
+	move.l	60(%sp),-(%sp)		| crash_take(frame, vector)
+	pea	68(%sp)
+	jsr	crash_take
+	addq.l	#8,%sp
+	tst.l	%d0
+	beq.s	chain			| supervisor mode or a frame we don't know
+	lea	crash_regs,%a1		| the program's: its registers for the report
+	moveq	#14,%d1
+2:	move.l	(%sp)+,(%a1)+
+	subq.l	#1,%d1
+	bpl.s	2b
+	move.l	%usp,%a0
+	move.l	%a0,crash_usp
+	addq.l	#4,%sp			| the vector number
+	add.l	%d0,%sp			| drop the frame
+	move.l	#crash_landing,-(%sp)	| PC
+	move.w	crash_newsr,%d1
+	move.w	%d1,-(%sp)		| SR
+	move.w	crash_fvec,%d1		| the vector * 4, in bits 2-9 as the frame has it
+	ext.l	%d1
+	add.l	#0x4000,%d1		| format 4: the stack in line
+	move.w	%d1,-(%sp)
+	move.l	crash_stack_top,%a0
+	move.l	%a0,%usp
+	rte
+
+| on to the handler before ours with everything as it was
+chain:
+	movem.l	(%sp),%d0-%d7/%a0-%a6
+	lea	60(%sp),%sp
+#else
 	movem.l	%d0-%d7/%a0-%a6,-(%sp)
 	move.l	60(%sp),-(%sp)		| crash_take(frame, vector)
 	pea	68(%sp)
@@ -96,6 +138,7 @@ common:
 | on to the handler before ours with everything as it was
 chain:
 	movem.l	(%sp)+,%d0-%d7/%a0-%a6
+#endif
 chain_quick:			| a fault while one is handled: the old way
 	move.l	%d0,-(%sp)
 	move.l	4(%sp),%d0
@@ -114,9 +157,17 @@ chain_quick:			| a fault while one is handled: the old way
 crash_old_term:
 	.long	0
 crash_term:
+#ifdef __mcoldfire__
+	lea	-24(%sp),%sp
+	movem.l	%d0-%d2/%a0-%a2,(%sp)
+	jsr	crash_restore
+	movem.l	(%sp),%d0-%d2/%a0-%a2
+	lea	24(%sp),%sp
+#else
 	movem.l	%d0-%d2/%a0-%a2,-(%sp)
 	jsr	crash_restore
 	movem.l	(%sp)+,%d0-%d2/%a0-%a2
+#endif
 	tst.l	crash_old_term		| MiNT: the process may have had none
 	beq.s	1f
 	move.l	crash_old_term,-(%sp)

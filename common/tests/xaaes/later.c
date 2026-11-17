@@ -9,6 +9,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 int main(void)
 {
 	static char t[200], tail[2];

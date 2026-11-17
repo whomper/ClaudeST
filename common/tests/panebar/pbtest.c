@@ -16,6 +16,8 @@
 #include "dialog.h"
 #include "panebar.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static short win, wx, wy, ww, wh, said;
 static PANEBAR bar[3];
 static GRECT corner;

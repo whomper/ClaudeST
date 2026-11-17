@@ -57,6 +57,14 @@ void text_plain(short h, short x, short y, const char *s, long n);
    vro_cpyfm as before. The caller hides the mouse and holds
    wind_update, as for the VDI */
 void scr_rows(short h, const short *p);
+
+/* p (vro_cpyfm's eight) from a buffer of the screen's layout (src: its
+   first row, sbpl bytes a row, splanes planes) to the same x on the
+   screen, by the CPU a row at a time with all its planes (scr_rows's
+   way: no picture seen half moved, plane by plane); 1 when done, 0 where
+   it can't be (MiNT, MagiC, one plane, another layout, the box off the
+   screen): then vro_cpyfm as before. The mouse hidden by the caller */
+int scr_put(const unsigned char *src, long sbpl, short splanes, const short *p);
 /* rows of n bytes (even) moved, or set to v, every row in one loop (the
    counts in registers): the About box's buffer and screen; no rows,
    nothing */

@@ -78,6 +78,13 @@ def main():
         else:
             put(m, XA + rel)
     shutil.copy(os.path.join(BUILD, "OPNWK.PRG"), os.path.join(base, "auto", "opnwk.prg"))
+    # (run.py --machine ct60: the 68040's kernel and XaAES module, kept
+    # beside the base, swapped in for the 68030's there)
+    ct60 = os.path.join(BUILD, "ct60")
+    os.makedirs(ct60, exist_ok=True)
+    for m, d in (("auto/mint040.prg", "MINT040.PRG"), (XA + "xaaes040.km", "xaaes.km")):
+        with z.open(m) as s, open(os.path.join(ct60, d), "wb") as f:
+            shutil.copyfileobj(s, f)
     shutil.copy(os.path.join(HERE, "cnf", "mint.cnf"), os.path.join(base, "mint/1-17-0/mint.cnf"))
     shutil.copy(os.path.join(HERE, "cnf", "mint.ini"), os.path.join(base, "mint/1-17-0/mint.ini"))
     shutil.copy(os.path.join(HERE, "cnf", "xaaes.cnf"), os.path.join(base, XA + "xaaes.cnf"))

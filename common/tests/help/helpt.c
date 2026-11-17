@@ -10,6 +10,8 @@
 #include "gem.h"
 #include "help.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 int main(void)
 {
 	char b[40];

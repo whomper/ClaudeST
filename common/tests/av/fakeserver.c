@@ -35,6 +35,8 @@
 #include "gem.h"
 #include "clip.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static char script[2048], texts[8][300];
 static short ntext, protokoll_from = -1;
 static short icon_h, icon_was[4];	/* the window "iconified", and where it was */

@@ -30,6 +30,13 @@ static void bytes_copy(u8 **d, const u8 **s, size_t n)
 {
 	u8 *dp = *d;
 	const u8 *sp = *s;
+#ifdef __mcoldfire__
+	/* (a ColdFire has no dbra: a long count; GCC calls it __mc68000__ too) */
+	__asm__ volatile("1:\tmove.b (%0)+,(%1)+\n\t"
+			 "subq.l #1,%2\n\t"
+			 "bne.s 1b"
+			 : "+a"(sp), "+a"(dp), "+d"(n) : : "memory", "cc");
+#else
 	while (n) {
 		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
 		n -= k;
@@ -38,6 +45,7 @@ static void bytes_copy(u8 **d, const u8 **s, size_t n)
 				 "dbra %2,1b"
 				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
 	}
+#endif
 	*d = dp;
 	*s = sp;
 }
@@ -97,6 +105,10 @@ void *memmove(void *d, const void *s, size_t n)
 				 "bne.s 1b"
 				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
 	}
+#ifdef __mcoldfire__
+	while (n--)
+		*--dp = *--sp;
+#else
 	while (n) {
 		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
 		n -= k;
@@ -105,6 +117,7 @@ void *memmove(void *d, const void *s, size_t n)
 				 "dbra %2,1b"
 				 : "+a"(sp), "+a"(dp), "+d"(k) : : "memory", "cc");
 	}
+#endif
 	return d;
 }
 
@@ -148,6 +161,12 @@ void *memchr(const void *s, int c, size_t n)
 {
 	const u8 *p = s;
 	u32 ch = (u8)c;
+#ifdef __mcoldfire__
+	for (; n; n--, p++)
+		if (*p == ch)
+			return (void *)p;
+	return 0;
+#else
 	while (n) {
 		unsigned short k = n > 32768 ? 32768 : (unsigned short)n;
 		u32 hit;
@@ -161,6 +180,7 @@ void *memchr(const void *s, int c, size_t n)
 			return (void *)(p - 1);
 	}
 	return 0;
+#endif
 }
 
 size_t strlen(const char *s)

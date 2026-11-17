@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include "tos.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static unsigned long seed = 1;
 
 static unsigned rnd(void)

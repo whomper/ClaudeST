@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include "gemui.h"
 #include "aboutbox.h"
+#include "aboutpen.h"
 #include "alert.h"
 #include "dialog.h"
 #include "crash.h"
@@ -29,6 +30,21 @@ static short dx, dy, dw, dh;
 static unsigned char *cpu_base;		/* 0: the VDI draws */
 static long cpu_bpl;
 static short cpu_planes, cpu_clip[4];
+static int std_pens;		/* 1 the VDI's pens have TOS's values in the planes (4 or 8 of
+				   them, the probes'): the colour icon put in by the CPU */
+
+/* a VDI pen's value in the planes as TOS gives it, 4 or 8 planes (pen 1
+   every plane set; in 256 colours pens 16 to 254 their own, 255 is 15) */
+static short pen_value(short pen)
+{
+	static const unsigned char v16[16] = { 0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13 };
+
+	if (pen == 1)
+		return (short)((1 << planes) - 1);
+	if (pen < 16)
+		return v16[pen];
+	return pen == 255 ? 15 : pen;
+}
 
 /* x1..x2 by y1..y2 (inclusive) set (pen 1) or cleared, in the buffer: one
    multiply for the first row, then a line on (a multiply a row made it
@@ -116,6 +132,19 @@ static void rect_fill(short x1, short y1, short x2, short y2, short color)
 	r.w = x2 - x1 + 1;
 	r.h = y2 - y1 + 1;
 	fill(&r, color);
+}
+
+/* a ground (pen 0) the CPU didn't make white: the VDI's fill, also in the
+   buffer (a 68030's is faster than cpu_rect's) */
+static void ground(short x1, short y1, short x2, short y2)
+{
+	GRECT r;
+
+	r.x = x1;
+	r.y = y1;
+	r.w = x2 - x1 + 1;
+	r.h = y2 - y1 + 1;
+	fill(&r, 0);
 }
 
 /* clip to the screen, never off: a box clamped to the desk has its
@@ -210,7 +239,7 @@ static void box(short x, short y, short w, short h)
 		/* the same pixels, the sides in fewer passes (cpu_sides) */
 		rect_fill(x + 3, y + h, x + w - 1, y + h + 2, 1);	/* the shadow's foot */
 		if (!off_white)
-			rect_fill(x, y, x + w - 1, y + h - 1, 0);
+			ground(x, y, x + w - 1, y + h - 1);
 		cpu_sides(x, y, w, h);
 		line(x, y, x + w - 1, y);
 		line(x + w - 1, y + h - 1, x, y + h - 1);
@@ -304,6 +333,117 @@ made:
 	vrt_cpyfm(vdi_h, 2, pxy, &src, &dst, colors);	/* transparent */
 }
 
+/* the icon of pens below put in the box's buffer by the CPU (cpu_base, the
+ * pens TOS's values: std_pens), at twice its width (the About box's): a row
+ * of it eight pixels at a time, their values' bits turned into the eight
+ * planes' bytes in one go (Hacker's Delight's 8 x 8 transpose), each byte
+ * doubled to a word, and the words put in over the ground at the icon's
+ * place (a pixel of the icon's pen 0 is the ground's), the row twice for sy
+ * 2. NVDI's vrt_cpyfm a pen took a stock Falcon in 256 colours 50 ms of the
+ * box's 225 (49 pens: EPDF's gemprof.py, 16 Nov 2026). 0 when it can't */
+#define ICON_G 5		/* the groups a row of 64 pixels can touch */
+
+/* a byte's bits doubled: b7 to bits 15 and 14 ... */
+static unsigned short twice(unsigned short b)
+{
+	b = (unsigned short)((b | (b << 4)) & 0x0F0F);
+	b = (unsigned short)((b | (b << 2)) & 0x3333);
+	b = (unsigned short)((b | (b << 1)) & 0x5555);
+	return (unsigned short)(b | (b << 1));
+}
+
+static int cpu_icon(const unsigned char *px, const unsigned char *map, const short *pens,
+		    short x, short y, short sx, short sy)
+{
+	unsigned short wd[ICON_G * 8], m[ICON_G];
+	unsigned char val[ICON_W * ICON_H];	/* each pixel's value, worked out first: the
+						   row loop small enough for a 68030's cache */
+	short vc[256];			/* each icon pen's value, -1 not worked out yet */
+	short np = cpu_planes, g0 = x >> 4, sh = x & 15, ng, r, c, k, q, g;
+	long step = cpu_bpl >> 1;
+
+	if (!cpu_base || std_pens <= 0 || (np != 4 && np != 8) || sx != 2 || sy < 1 || sy > 2 ||
+	    x < cpu_clip[0] || y < cpu_clip[1] || x + 2 * ICON_W - 1 > cpu_clip[2] || y + ICON_H * sy - 1 > cpu_clip[3])
+		return 0;
+	ng = sh ? 5 : 4;
+	memset(vc, 0xff, sizeof(vc));
+	for (c = 0; c < ICON_W * ICON_H; c++) {
+		unsigned char s = px[c];
+		short v = 0;
+
+		if (s && (v = vc[s]) < 0)
+			v = vc[s] = pen_value(map ? map[s] : pens ? pens[s] : s);
+		val[c] = (unsigned char)v;
+	}
+	for (r = 0; r < ICON_H; r++) {
+		const unsigned char *pr = px + r * ICON_W, *pv = val + r * ICON_W;
+		unsigned short *row = (unsigned short *)(cpu_base + (long)(y + r * sy) * cpu_bpl) + g0 * np;
+
+		memset(wd, 0, sizeof(wd));
+		memset(m, 0, sizeof(m));
+		for (g = 0; g < 4; g++, pr += 8, pv += 8) {
+			/* the eight pixels' values, the first the high byte of hx */
+			unsigned long hx, hy, t;
+			unsigned short op = 0, pl[8];
+
+			for (c = 0; c < 8; c++)
+				if (pr[c])
+					op |= (unsigned short)(0x80 >> c);
+			if (!op)
+				continue;
+			hx = ((unsigned long)pv[0] << 24) | ((unsigned long)pv[1] << 16) | ((unsigned short)pv[2] << 8) | pv[3];
+			hy = ((unsigned long)pv[4] << 24) | ((unsigned long)pv[5] << 16) | ((unsigned short)pv[6] << 8) | pv[7];
+			t = (hx ^ (hx >> 7)) & 0x00AA00AAUL;
+			hx = hx ^ t ^ (t << 7);
+			t = (hy ^ (hy >> 7)) & 0x00AA00AAUL;
+			hy = hy ^ t ^ (t << 7);
+			t = (hx ^ (hx >> 14)) & 0x0000CCCCUL;
+			hx = hx ^ t ^ (t << 14);
+			t = (hy ^ (hy >> 14)) & 0x0000CCCCUL;
+			hy = hy ^ t ^ (t << 14);
+			t = (hx & 0xF0F0F0F0UL) | ((hy >> 4) & 0x0F0F0F0FUL);
+			hy = ((hx << 4) & 0xF0F0F0F0UL) | (hy & 0x0F0F0F0FUL);
+			/* t's bytes the bits 7..4 of the eight values, hy's 3..0 */
+			pl[7] = (unsigned short)(t >> 24), pl[6] = (unsigned short)((t >> 16) & 0xFF);
+			pl[5] = (unsigned short)((t >> 8) & 0xFF), pl[4] = (unsigned short)(t & 0xFF);
+			pl[3] = (unsigned short)(hy >> 24), pl[2] = (unsigned short)((hy >> 16) & 0xFF);
+			pl[1] = (unsigned short)((hy >> 8) & 0xFF), pl[0] = (unsigned short)(hy & 0xFF);
+			/* the group's words at the icon's own place: g at sh bits on */
+			{
+				unsigned short mm = twice(op), *o = wd + g * np;
+
+				m[g] |= (unsigned short)(mm >> sh);
+				if (sh)
+					m[g + 1] |= (unsigned short)(mm << (16 - sh));
+				for (q = 0; q < np; q++) {
+					unsigned short w;
+
+					if (!pl[q])
+						continue;
+					w = twice(pl[q]);
+					o[q] |= (unsigned short)(w >> sh);
+					if (sh)
+						o[np + q] |= (unsigned short)(w << (16 - sh));
+				}
+			}
+		}
+		for (k = 0; k < sy; k++, row += step) {
+			unsigned short *d = row;
+			const unsigned short *o = wd;
+
+			for (g = 0; g < ng; g++, d += np, o += np) {
+				unsigned short keep = (unsigned short)~m[g];
+
+				if (keep == 0xFFFF)
+					continue;
+				for (q = 0; q < np; q++)
+					d[q] = (unsigned short)((d[q] & keep) | o[q]);
+			}
+		}
+	}
+	return 1;
+}
+
 /* an icon of pens (32x32, a byte a pixel) scaled by sx, sy: one 1-plane
  * mask a pen it has, each blitted once, transparent, in that pen (map[]
  * or pens[] turning its pens into the screen's). As runs of VDI fills it
@@ -313,31 +453,70 @@ static void icon_pens(const unsigned char *px, const unsigned char *map, const s
 		      short x, short y, short sx, short sy)
 {
 	unsigned char slot[256];
-	short pen_of[64], n = 0, r, c, k, yy, i, wpl = 2 * sx, words = wpl * ICON_H * sy;
+	short pen_of[64], n = 0, r, c, i, wpl = 2 * sx, words = wpl * ICON_H * sy;
 	short w = ICON_W * sx, h = ICON_H * sy, pxy[8], colors[2];
-	unsigned short *masks;
+	short c0[64], c1[64], r0[64], r1[64];		/* each pen's box in the icon's pixels */
+	unsigned short *masks, *mbase[64], *mrow[64];
 	MFDB src, dst;
+	/* the pens the icon has, and each one's box: one pass over the pixels (no division or
+	   multiply in it: on a stock Falcon 1,000 pixels of either took 20 ms, the box's opening 150) */
+	if (sx < 1 || sx > 2 || sy < 1 || sy > 2 || cpu_icon(px, map, pens, x, y, sx, sy))
+		return;
 	memset(slot, 0xff, sizeof(slot));
-	for (i = 0; i < ICON_W * ICON_H; i++)
-		if (px[i] && slot[px[i]] == 0xff && n < 64) {
-			slot[px[i]] = (unsigned char)n;
-			pen_of[n++] = px[i];
+	for (r = 0; r < ICON_H; r++) {
+		const unsigned char *pr = px + r * ICON_W;
+		for (c = 0; c < ICON_W; c++) {
+			unsigned char s = pr[c];
+			short sl;
+			if (!s)
+				continue;
+			sl = slot[s];
+			if (sl == 0xff) {
+				if (n >= 64)
+					continue;
+				slot[s] = (unsigned char)n;
+				pen_of[n] = s;
+				c0[n] = c1[n] = c;
+				r0[n] = r1[n] = r;
+				n++;
+				continue;
+			}
+			if (c < c0[sl])
+				c0[sl] = c;
+			if (c > c1[sl])
+				c1[sl] = c;
+			r1[sl] = r;
 		}
+	}
 	if (!n || !(masks = calloc((size_t)n * words, 2)))
 		return;
-	for (r = 0; r < ICON_H; r++)
-		for (c = 0; c < ICON_W; c++) {
-			unsigned char s = px[r * ICON_W + c];
-			unsigned short *m;
-			if (!s || slot[s] == 0xff)
-				continue;
-			m = masks + slot[s] * words;
-			for (k = 0; k < sx; k++) {
-				short bx = c * sx + k;
-				for (yy = 0; yy < sy; yy++)
-					m[(r * sy + yy) * wpl + (bx >> 4)] |= 0x8000 >> (bx & 15);
+	for (i = 0; i < n; i++)
+		mbase[i] = masks + (long)i * words;
+	{
+		/* a pixel is sx bits in one word, shifted by its place, in each of the sy rows it makes
+		   (sx and sy are 1 or 2: the About box's 2 x 1 or 2 x 2, the iconified window's 1 x 1) */
+		unsigned short unit = (unsigned short)(0xFFFFu << (16 - sx));
+		short lg = sx == 1 ? 0 : 1;
+		for (r = 0; r < ICON_H; r++) {
+			const unsigned char *pr = px + r * ICON_W;
+			short ro = (short)(r * sy * wpl);
+			for (i = 0; i < n; i++)
+				mrow[i] = mbase[i] + ro;
+			for (c = 0; c < ICON_W; c++) {
+				unsigned char s = pr[c];
+				unsigned short *m, bits;
+				short sl, bx;
+				if (!s || (sl = slot[s]) == 0xff)
+					continue;
+				bx = (short)(c << lg);
+				bits = (unsigned short)(unit >> (bx & 15));
+				m = mrow[sl] + (bx >> 4);
+				*m |= bits;
+				if (sy > 1)
+					m[wpl] |= bits;
 			}
 		}
+	}
 	memset(&src, 0, sizeof(src));
 	memset(&dst, 0, sizeof(dst));
 	src.fd_addr = st_ram((long)words * 2);
@@ -345,16 +524,18 @@ static void icon_pens(const unsigned char *px, const unsigned char *map, const s
 	src.fd_h = h;
 	src.fd_wdwidth = wpl;
 	src.fd_nplanes = 1;
-	pxy[0] = 0;
-	pxy[1] = 0;
-	pxy[2] = w - 1;
-	pxy[3] = h - 1;
-	pxy[4] = x;
-	pxy[5] = y;
-	pxy[6] = x + w - 1;
-	pxy[7] = y + h - 1;
 	for (i = 0; src.fd_addr && i < n; i++) {
-		memcpy(src.fd_addr, masks + i * words, (size_t)words * 2);
+		/* only the part of the icon this pen is in: a blit is as long as
+		   its area (NVDI took a stock Falcon some 5 ms a pen over the whole icon) */
+		pxy[0] = c0[i] * sx;
+		pxy[1] = r0[i] * sy;
+		pxy[2] = (c1[i] + 1) * sx - 1;
+		pxy[3] = (r1[i] + 1) * sy - 1;
+		pxy[4] = x + pxy[0];
+		pxy[5] = y + pxy[1];
+		pxy[6] = x + pxy[2];
+		pxy[7] = y + pxy[3];
+		memcpy(src.fd_addr, mbase[i], (size_t)words * 2);
 		colors[0] = map ? map[pen_of[i]] : pens ? pens[pen_of[i]] : pen_of[i];
 		colors[1] = 0;
 		vrt_cpyfm(vdi_h, 2, pxy, &src, &dst, colors);	/* transparent */
@@ -385,23 +566,6 @@ static void icon256_draw(const unsigned char *px, const unsigned char *map, shor
    palette is TOS's, else the nearest (an app's theme may have taken pens
    16 and up: EMail's). Nothing is lent, so nothing else on the screen
    changes colour while the box is open. */
-/* the nearest of n colours c[] to want (a pen's rgb, 0 to 1000 a channel):
-   its pen, pens[i] where the colours are a list, else i */
-static short nearest_pen(const short (*c)[3], const short *pens, short n, const short *want)
-{
-	long best = -1;
-	short i, pen = 0;
-	for (i = 0; i < n; i++) {
-		long d = 0, e;
-		short k;
-		for (k = 0; k < 3; k++)
-			e = c[i][k] - want[k], d += e * e;
-		if (best < 0 || d < best)
-			best = d, pen = pens ? pens[i] : i;
-	}
-	return pen;
-}
-
 /* A few of the icon's pens changed (an app's theme.c takes pens 16 to 21):
    each takes the nearest of the 16 system pens and the icon's own pens that
    kept their colour (16 + about 20 vq_color calls). When many changed
@@ -409,11 +573,48 @@ static short nearest_pen(const short (*c)[3], const short *pens, short n, const 
    not 256 times a colour). */
 #define FEW 8
 
+/* what map256 was worked out from, to keep it for the next opening while
+   those pens have their colours (the icon's own pens and those chosen for
+   it): a stock Falcon in 256 colours under NVDI took 35 ms for the map, the
+   whole palette asked; this some 3 */
+#define SEEN 64
+static const short (*map_for)[4];
+static short map_n, map_pen[SEEN], map_rgb[SEEN][3];
+
+static void map_see(short pen, const short *rgb)
+{
+	short i;
+
+	for (i = 0; i < map_n; i++)
+		if (map_pen[i] == pen)
+			return;
+	if (map_n >= SEEN) {
+		map_for = 0;		/* (too many to check: worked out again next time) */
+		return;
+	}
+	map_pen[map_n] = pen;
+	map_rgb[map_n][0] = rgb[0], map_rgb[map_n][1] = rgb[1], map_rgb[map_n][2] = rgb[2];
+	map_n++;
+}
+
 static void icon256_pens(const short (*rgb)[4], unsigned char *map)
 {
 	short i, n, nmiss = 0, have[32][3], cpen[48], cc[48][3], nc = 0;
 	short (*pal)[3] = 0;
 	char ok[32];
+	if (map_for == rgb) {
+		short now[3];
+
+		for (i = 0; i < map_n; i++) {
+			vq_color(vdi_h, map_pen[i], now);
+			if (now[0] != map_rgb[i][0] || now[1] != map_rgb[i][1] || now[2] != map_rgb[i][2])
+				break;
+		}
+		if (i == map_n)
+			return;		/* as it was */
+	}
+	map_for = 0;
+	map_n = 0;
 	for (n = 0; n < 32 && rgb[n][0]; n++) {
 		vq_color(vdi_h, rgb[n][0], have[n]);
 		ok[n] = abs(have[n][0] - rgb[n][1]) + abs(have[n][1] - rgb[n][2]) + abs(have[n][2] - rgb[n][3]) <= 24;
@@ -436,11 +637,26 @@ static void icon256_pens(const short (*rgb)[4], unsigned char *map)
 		short pen = rgb[i][0];
 		if (!ok[i]) {
 			if (pal)
-				pen = nearest_pen((const short (*)[3])pal, 0, 256, &rgb[i][1]);
+				pen = about_nearest_pen((const short (*)[3])pal, 0, 256, &rgb[i][1]);
 			else if (nc)
-				pen = nearest_pen((const short (*)[3])cc, cpen, nc, &rgb[i][1]);
+				pen = about_nearest_pen((const short (*)[3])cc, cpen, nc, &rgb[i][1]);
 		}
 		map[rgb[i][0]] = (unsigned char)pen;
+	}
+	/* what the map came from: the icon's pens, and the pens chosen with
+	   their colours (from the palette asked, else asked now) */
+	map_for = rgb;
+	for (i = 0; i < n && map_for; i++)
+		map_see(rgb[i][0], have[i]);
+	for (i = 0; i < n && map_for; i++) {
+		short pen = map[rgb[i][0]], c[3];
+
+		if (pal)
+			map_see(pen, pal[pen]);
+		else {
+			vq_color(vdi_h, pen, c);
+			map_see(pen, c);
+		}
 	}
 	free(pal);
 }
@@ -545,7 +761,7 @@ static void button(short x, short y, short w, short h, const char *label)
 {
 	short n = (short)strlen(label);
 	if (!off_white)		/* the box's and the button's grounds: 40 ms of an ST's About box */
-		rect_fill(x, y, x + w - 1, y + h - 1, 0);
+		ground(x, y, x + w - 1, y + h - 1);
 	line(x, y, x + w - 1, y);
 	line(x + w - 1, y, x + w - 1, y + h - 1);
 	line(x + w - 1, y + h - 1, x, y + h - 1);
@@ -700,8 +916,34 @@ static long xb_setscreen(void *log)
 }
 
 static int off_ok;		/* 1 the logical screen moves the VDI's drawing, -1 it doesn't */
-static int white_ok;		/* 1 pen 0 is every plane clear: the box's ground made by the CPU */
+static int white_ok;		/* 1 pen 0 is every plane clear */
 static int black_ok;		/* 1 pen 1 is every plane set: the frame's lines by the CPU */
+static int ground_cpu;		/* the box's ground made by the CPU (not on a 68030) */
+static long cpu_kind = -1;	/* the _CPU cookie, -1 not asked yet */
+
+/* the value the VDI's pen has in the buffer: its top left pixel filled
+   with it (the box's frame, drawn over anyway), read from each plane */
+static short probe(unsigned char *buf, unsigned char *base, unsigned char *scr, short pen)
+{
+	const unsigned short *w = (const unsigned short *)(buf + (long)(dx >> 4) * planes * 2);
+	unsigned short bit = (unsigned short)(0x8000u >> (dx & 15));
+	short q, v = 0;
+	GRECT px;
+
+	px.x = dx;
+	px.y = dy;
+	px.w = 1;
+	px.h = 1;
+	xb_setscreen(base);
+	clip_on(&px);
+	fill(&px, pen);
+	clip_off();
+	xb_setscreen(scr);
+	for (q = 0; q < planes && q < 15; q++)
+		if (w[q] & bit)
+			v = (short)(v | (1 << q));
+	return v;
+}
 
 /* the screen's bytes a line, as the VDI has them (Line-A's v_lin_wr) */
 static long screen_bpl(void)
@@ -732,12 +974,40 @@ static struct {
 
 extern short _is_acc;		/* crt0.S: started as a desk accessory */
 
+/* GUARD bytes of our own each side of the buffer the VDI blits from: NVDI's
+   shifted copy reads a long from the word before a line's first, and under
+   MiNT's memory protection the page before a block may be another
+   process's or the kernel's (EPlay, 15 Nov 2026: MEMORY VIOLATION on a
+   CT60 with FreeMiNT, XaAES and NVDI). buf_free takes what draw_off gave */
+#define GUARD 16
+
 static void buf_free(void *p)
 {
+	p = (unsigned char *)p - GUARD;
 	if (_is_acc)
 		free(p);
 	else
 		Mfree(p);
+}
+
+/* the box's rows' edge words in planes g (2 to 8), from the screen's
+   under them, a row at a time: a function of its own, its pointers in
+   registers (inside draw_off, -Os kept them on the stack: 2 ms of ST
+   medium's box) */
+static void __attribute__((noinline)) edge_rows(unsigned short *dl, const unsigned short *ul, unsigned short *dr,
+						const unsigned short *ur, long ds, long us, short nw, short lw, short g,
+						unsigned short lkeep, unsigned short rk0, unsigned short rk1)
+{
+	short k, i;
+
+	for (k = nw; k > 0; k--, dl += ds, ul += us, dr += ds, ur += us) {
+		for (i = 0; i < lw; i++)
+			dl[i] = (unsigned short)(ul[i] & lkeep);
+		for (i = 0; i < g; i++) {
+			dr[i] = (unsigned short)(ur[i] & rk0);
+			dr[g + i] = (unsigned short)(ur[g + i] & rk1);
+		}
+	}
 }
 
 static int draw_off(void (*draw)(int framed))
@@ -761,20 +1031,21 @@ static int draw_off(void (*draw)(int framed))
 		/* an accessory takes no GEMDOS memory once it runs (the
 		   guidelines, 2.2): its heap's, in ST RAM (the blitter's), or
 		   the box drawn on the screen */
-		buf = malloc(size);
-		if (buf && (unsigned long)buf + size > 0x01000000UL) {
+		buf = malloc(size + 2 * GUARD);
+		if (buf && (unsigned long)buf + size + 2 * GUARD > 0x01000000UL) {
 			free(buf);
 			buf = 0;
 		}
 	} else {
-		buf = Mxalloc(size, 0);		/* ST RAM, where the blitter reaches */
+		buf = Mxalloc(size + 2 * GUARD, 0);	/* ST RAM, where the blitter reaches */
 		if ((long)buf == -32 || !buf)	/* no Mxalloc: Malloc's is ST RAM */
-			buf = Malloc(size);
+			buf = Malloc(size + 2 * GUARD);
 		if ((long)buf <= 0)
 			buf = 0;
 	}
 	if (!buf)
 		return 0;
+	buf += GUARD;
 	ob.under = malloc(ob.n * ob.rows);
 	if (!ob.under) {
 		buf_free(buf);
@@ -816,42 +1087,36 @@ static int draw_off(void (*draw)(int framed))
 			return 0;
 		}
 	}
-	if (!white_ok && get_cookie(0x5F435055L) >= 20)	/* '_CPU' */
-		white_ok = -1;		/* a 68030's VDI fills the grounds faster than its
-					   CPU clears the rows: a stock Falcon's About box
-					   took 160 ms with it, 145 without */
+	if (cpu_kind < 0)
+		cpu_kind = get_cookie(0x5F435055L);	/* '_CPU', once (a Supexec: 2 ms of an ST's box) */
+	if (!white_ok && cpu_kind >= 20 && !get_cookie(0x4E564449L))	/* 'NVDI' */
+		white_ok = -1;		/* a 68030's TOS VDI draws the box faster than its CPU:
+					   a stock Falcon's About box took 160 ms with the CPU's
+					   ground, 145 without (and the CPU's frame, text and
+					   icon 135 against 130 in 16 colours, 16 Nov 2026).
+					   Under NVDI the probes are made: its fills stay, the
+					   rest is the CPU's */
 	if (!white_ok) {
 		/* is pen 0 every plane clear? the box's top left pixel filled
-		   with it in the buffer, its bit looked at in each plane's word
-		   (overwritten below anyway) */
-		const unsigned short *w = (const unsigned short *)(buf + (long)(dx >> 4) * planes * 2);
-		unsigned short bit = (unsigned short)(0x8000u >> (dx & 15));
-		short q;
-		GRECT px;
-		px.x = dx;
-		px.y = dy;
-		px.w = 1;
-		px.h = 1;
-		xb_setscreen(base);
-		clip_on(&px);
-		fill(&px, 0);
-		clip_off();
-		xb_setscreen(scr);
-		white_ok = 1;
-		for (q = 0; q < planes && q < 16; q++)
-			if (w[q] & bit)
-				white_ok = -1;
-		/* and pen 1 every plane set (the frame's lines by the CPU) */
-		xb_setscreen(base);
-		clip_on(&px);
-		fill(&px, 1);
-		clip_off();
-		xb_setscreen(scr);
-		black_ok = 1;
-		for (q = 0; q < planes && q < 16; q++)
-			if (!(w[q] & bit))
-				black_ok = -1;
+		   with it in the buffer, its value read from the planes' words
+		   (overwritten below anyway); pen 1 every plane set (the
+		   frame's lines by the CPU); and the pens' values TOS's (the
+		   icon by the CPU) */
+		short q, all = (short)((1 << (planes < 16 ? planes : 15)) - 1);
+
+		white_ok = probe(buf, base, scr, 0) == 0 ? 1 : -1;
+		black_ok = probe(buf, base, scr, 1) == all ? 1 : -1;
+		std_pens = (planes == 4 || planes == 8) && white_ok > 0 && black_ok > 0 ? 1 : -1;
+		for (q = 0; q < 4 && std_pens > 0; q++) {
+			static const short pen[4] = { 2, 15, 16, 255 };
+
+			if (pen[q] < 16 || planes == 8)
+				if (probe(buf, base, scr, pen[q]) != pen_value(pen[q]))
+					std_pens = -1;
+		}
 	}
+	/* (under NVDI on a 68030 too, the grounds stay the VDI's fills) */
+	ground_cpu = white_ok > 0 && cpu_kind < 20;
 	{
 		/* where the box leaves the screen showing: the shadow's rows
 		   in whole, and the words at its edges, a word at a time (a
@@ -865,7 +1130,7 @@ static int draw_off(void (*draw)(int framed))
 		long ds = ob.bpl >> 1, us = ob.n >> 1;
 		short x1 = (short)(x0 + (short)(ob.n / (planes * 2)) * 16);
 		unsigned short lkeep = (unsigned short)~(0xFFFFu >> (dx & 15)), rkeep[2];
-		int white = white_ok > 0 && rw >= lw;
+		int white = ground_cpu && rw >= lw;
 		for (i = 0; i < 2; i++) {
 			short gx = (short)(x1 - 32 + 16 * i);		/* the group's first pixel */
 			short in = (short)(dx + dw - gx);		/* the box's pixels in it */
@@ -892,14 +1157,7 @@ static int draw_off(void (*draw)(int framed))
 					dr[1] = (unsigned short)(ur[1] & rk1);
 				}
 			} else {
-				for (k = nw; k > 0; k--, dl += ds, ul += us, dr += ds, ur += us) {
-					for (i = 0; i < lw; i++)
-						dl[i] = (unsigned short)(ul[i] & lkeep);
-					for (i = 0; i < g; i++) {
-						dr[i] = (unsigned short)(ur[i] & rk0);
-						dr[g + i] = (unsigned short)(ur[g + i] & rk1);
-					}
-				}
+				edge_rows(dl, ul, dr, ur, ds, us, nw, lw, g, lkeep, rk0, rk1);
 			}
 			r = nw;
 			scr_set_rows((unsigned char *)(d + lw), ds * 2, nw, (short)((rw - lw) * 2), 0);

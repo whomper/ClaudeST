@@ -5,7 +5,8 @@
 | input has the bits, as the C loop does, in fewer instructions and
 | small enough for the 68030's 256-byte instruction cache (the C loop's
 | literal and match paths took ~330 bytes on lines that evict each
-| other: EUpdate, 1 Nov 2026, "saving takes forever"). 68000 code only.
+| other: EUpdate, 1 Nov 2026, "saving takes forever"). 68000 code, and
+| for the ColdFire (__mcoldfire__) ColdFire code.
 |
 | int inflate_fast(IFAST *f)
 |   f: op 0, step 4, in 8, iend 12, bits 16, nbits 20, fast 24,
@@ -16,6 +17,166 @@
 | couldn't read; 2: a distance before the buffer's start (damaged).
 | op, in, bits and nbits written back.
 
+#ifdef __mcoldfire__
+| The ColdFire's (the FireBee, -mcpu=5475): the same loop in long
+| arithmetic (a ColdFire has no word and, lsr, addq or subq, no dbra, an
+| index register only as a long) with mvz for the tables' words; the same
+| answers, byte for byte (tests/coldfire's test_inflate)
+	.text
+	.globl	inflate_fast
+inflate_fast:
+	lea	-44(%sp),%sp
+	movem.l	%d2-%d7/%a2-%a6,(%sp)
+	move.l	48(%sp),%a6
+	move.l	%a6,-(%sp)		| f, at (sp)
+	move.l	(%a6),%a2		| op
+	move.l	4(%a6),%a3		| step
+	move.l	8(%a6),%a0		| in
+	move.l	12(%a6),%a1		| iend
+	move.l	16(%a6),%d2		| bits
+	move.l	20(%a6),%d3		| nbits
+	move.l	24(%a6),%a4		| fast
+	move.l	28(%a6),%a5		| dfast
+	moveq	#0,%d6			| the answer
+	cmp.l	%a3,%a2
+	bcc	.Ldone
+
+	.balignw 16,0x4e71		| (nops: the 68000's zeros are ori.b, which
+.Lloop:				| a ColdFire hasn't)
+	moveq	#24,%d0
+	cmp.l	%d0,%d3
+	bgt.s	.Lhave
+.Lfill:
+	cmp.l	%a1,%a0
+	bcc.s	.Lfilled
+	mvz.b	(%a0)+,%d0
+	lsl.l	%d3,%d0
+	or.l	%d0,%d2
+	addq.l	#8,%d3
+	moveq	#24,%d0
+	cmp.l	%d0,%d3
+	ble.s	.Lfill
+	bra.s	.Lhave
+.Lfilled:
+	moveq	#10,%d0
+	cmp.l	%d0,%d3
+	blt	.Ldone
+.Lhave:
+	move.l	%d2,%d0
+	and.l	#1023,%d0
+	mvz.w	(%a4,%d0.l*2),%d0	| (sym << 4) | len
+	beq	.Ldone			| a longer code
+	moveq	#15,%d1
+	and.l	%d0,%d1			| its length
+	lsr.l	#4,%d0
+	cmp.l	#256,%d0
+	bcc.s	.Lmatch
+	lsr.l	%d1,%d2			| a literal
+	sub.l	%d1,%d3
+	move.b	%d0,(%a2)+
+	cmp.l	%a3,%a2
+	bcs.s	.Lloop
+	bra	.Ldone
+
+| a match: its length
+.Lmatch:
+	sub.l	#257,%d0		| 256 (the block's end) is -1: the entry
+	lea	.Lltab(%pc),%a6		| before the table, as the 68000's
+	move.l	(%a6,%d0.l*4),%d4	| base << 16 | extra bits (63: the C's)
+	mvz.w	%d4,%d7			| x
+	clr.w	%d4
+	swap	%d4			| base
+	move.l	%d1,%d0
+	add.l	%d7,%d0
+	cmp.l	%d0,%d3
+	blt	.Ldone			| too few bits: nothing taken
+	lsr.l	%d1,%d2
+	sub.l	%d0,%d3
+	moveq	#1,%d5
+	lsl.l	%d7,%d5
+	subq.l	#1,%d5
+	and.l	%d2,%d5
+	lsr.l	%d7,%d2
+	add.l	%d5,%d4			| the length
+
+| its distance
+	moveq	#24,%d0
+	cmp.l	%d0,%d3
+	bgt.s	.Ldhave
+.Ldfill:
+	cmp.l	%a1,%a0
+	bcc.s	.Ldfilled
+	mvz.b	(%a0)+,%d0
+	lsl.l	%d3,%d0
+	or.l	%d0,%d2
+	addq.l	#8,%d3
+	moveq	#24,%d0
+	cmp.l	%d0,%d3
+	ble.s	.Ldfill
+	bra.s	.Ldhave
+.Ldfilled:
+	moveq	#10,%d0
+	cmp.l	%d0,%d3
+	blt.s	.Lpend
+.Ldhave:
+	move.l	%d2,%d0
+	and.l	#1023,%d0
+	mvz.w	(%a5,%d0.l*2),%d0
+	beq.s	.Lpend
+	moveq	#15,%d1
+	and.l	%d0,%d1
+	lsr.l	#4,%d0			| 30 and 31 (damaged): 63 bits, the C's
+	lea	.Ldtab(%pc),%a6
+	move.l	(%a6,%d0.l*4),%d5	| base << 16 | extra bits
+	mvz.w	%d5,%d7			| x
+	clr.w	%d5
+	swap	%d5			| base
+	move.l	%d1,%d0
+	add.l	%d7,%d0
+	cmp.l	%d0,%d3
+	blt.s	.Lpend
+	lsr.l	%d1,%d2
+	sub.l	%d0,%d3
+	moveq	#1,%d1
+	lsl.l	%d7,%d1
+	subq.l	#1,%d1
+	and.l	%d2,%d1
+	lsr.l	%d7,%d2
+	add.l	%d1,%d5			| the distance
+	move.l	(%sp),%a6
+	move.l	%a2,%d0
+	sub.l	32(%a6),%d0		| what there is behind op
+	cmp.l	%d5,%d0
+	bcs.s	.Lbad
+	move.l	%a2,%a6
+	sub.l	%d5,%a6
+.Lcp:
+	move.b	(%a6)+,(%a2)+		| a byte at a time: it may overlap itself
+	subq.l	#1,%d4
+	bne.s	.Lcp
+	cmp.l	%a3,%a2
+	bcs	.Lloop
+	bra.s	.Ldone
+
+.Lpend:
+	moveq	#1,%d6			| the length taken, the distance not
+	move.l	(%sp),%a6
+	move.l	%d4,36(%a6)
+	bra.s	.Ldone
+.Lbad:
+	moveq	#2,%d6
+.Ldone:
+	move.l	(%sp)+,%a6
+	move.l	%a2,(%a6)
+	move.l	%a0,8(%a6)
+	move.l	%d2,16(%a6)
+	move.l	%d3,20(%a6)
+	move.l	%d6,%d0
+	movem.l	(%sp),%d2-%d7/%a2-%a6
+	lea	44(%sp),%sp
+	rts
+
+#else
 	.text
 	.globl	inflate_fast
 inflate_fast:
@@ -173,6 +334,8 @@ inflate_fast:
 	move.l	%d6,%d0
 	movem.l	(%sp)+,%d2-%d7/%a2-%a6
 	rts
+
+#endif
 
 	.even
 	.long	0x0000003f		| 256, the block's end: the C's

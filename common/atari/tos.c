@@ -250,6 +250,9 @@ long nf_probe(void);
 long nf_call2(long id, long arg);
 static long nf_id = -1;
 
+/* nf.S finds the illegal-instruction vector itself (VBR + 0x10 on a 68010
+   or later: a Vampire V4SA's Atari core keeps VBR away from 0, 15 Nov
+   2026) */
 static void sup_nf_probe(void)
 {
 	nf_id = nf_probe();

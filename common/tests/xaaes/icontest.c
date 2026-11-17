@@ -14,6 +14,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static short vh, win = -1, iconified;
 static char line[160];
 

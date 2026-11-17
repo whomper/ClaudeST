@@ -40,6 +40,7 @@
 long get_cookie(long id);
 
 static int lock, alive;			/* alive: the program left at its commands, + 1 */
+static int held;			/* 1 from a Dsp_Lock we took to its Dsp_Unlock */
 /* a Supexec's work */
 static const unsigned long *io_w;
 static unsigned short *io_s;
@@ -303,6 +304,7 @@ static int begin_prog(int prog, const DSPPROG *pg)
 	lock = (int) trap14_w(104);		/* Dsp_Lock */
 	if (lock == -1)
 		return 0;			/* another program has it */
+	held = lock == 0;
 	pic_dsp_failed = 0;
 	if (alive == prog + 1) {
 		alive = 0;
@@ -340,8 +342,24 @@ static void end(int clean)
 {
 	if (!clean || pic_dsp_failed)
 		alive = 0;
-	if (lock == 0)
+	if (held) {
+		held = 0;
 		trap14_w(105);			/* Dsp_Unlock */
+	}
+}
+
+/* for a program's terminate or crash handler: the DSP given back if a
+   picture's decode holds it (a crash in the middle of one left it locked
+   for every program after: EPlay's tester, 15 Nov 2026); nothing
+   otherwise. The DSP's program is forgotten, so the next picture loads it
+   again */
+void pic_dsp_give_back(void)
+{
+	if (held) {
+		held = 0;
+		alive = 0;
+		trap14_w(105);			/* Dsp_Unlock */
+	}
 }
 
 const PIC_DSP dspjpeg_port = { begin, end, put, put16, putpx, get16, get24 };

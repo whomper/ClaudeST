@@ -26,6 +26,8 @@ static const THEME_ROLE base[P_BASE] = {
 
 static short saved[THEME_MAX][3];
 static short nset;		/* pens 16 up set by theme_init, to be put back */
+static short set4, saved4[3];	/* 4 colours: pen 2 turned to the accent, and what it was */
+static int on4;			/* theme_init was asked for colour on 4 colours */
 
 static const THEME_ROLE *role(short i, const THEME_ROLE *extra)
 {
@@ -38,6 +40,19 @@ void theme_exit(void)
 	for (i = 0; i < nset; i++)
 		vs_color(vdi_h, (short)(FIRST_PEN + i), saved[i]);
 	nset = 0;
+	if (set4)
+		vs_color(vdi_h, 2, saved4);
+	set4 = on4 = 0;
+}
+
+void theme_accent4(short role, const short rgb[3])
+{
+	if (!on4 || set4 || role < 0 || role >= THEME_MAX)
+		return;
+	vq_color(vdi_h, 2, saved4);
+	vs_color(vdi_h, 2, (short *)rgb);
+	set4 = 1;
+	pen[role] = 2;
 }
 
 void theme_init(int colour_on, const THEME_ROLE *extra, short n)
@@ -52,6 +67,7 @@ void theme_init(int colour_on, const THEME_ROLE *extra, short n)
 	colour = colour_on && planes >= 4;
 	for (i = 0; i < THEME_MAX; i++)
 		pen[i] = i == P_PANEL ? 0 : 1;		/* black and white */
+	on4 = colour_on && planes == 2;
 	if (!colour)
 		return;
 	if (planes >= 8) {

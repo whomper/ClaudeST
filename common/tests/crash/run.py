@@ -178,5 +178,15 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
           tag + " CRASH.LOG has TOS's record")
     check("CRASHT previous none" in con, tag + " not counted as the program's (it wasn't in its code)")
     check(re.search(r"hooks now .* VBL AERT \$[0-9A-F]{6};", rep) is not None, tag + " the hooks named (VBL AERT)")
+    # a fault in the program's own code at interrupt time (a VBL routine
+    # of its): never landed (no GEMDOS while the main program may be in
+    # it: a tester's CT60, the partition damaged, 16 Nov 2026); TOS's
+    # bombs and record, as for one outside the program
+    d, con, rep = run(machine, "q", reset=True)
+    tag = "%s bus error at interrupt time in the program:" % machine
+    check("CRASHT previous" in con, tag + " the program ran again after a reset")
+    check(not os.path.exists(os.path.join(d, "CLEANUP.TXT")), tag + " not landed (no crash_cleanup)")
+    check("found TOS's record of a crash before this run" in rep and "bus error, 2 bombs at" in rep,
+          tag + " CRASH.LOG has TOS's record")
 print("%d failed" % failed)
 sys.exit(1 if failed else 0)

@@ -25,6 +25,19 @@
 #include "jsamplecomp.h"
 
 
+/* AERA: the progress monitor every 8 MCUs or blocks of an iMCU row too: a
+   whole row of a big photo is 75-250 ms of a stock Falcon's 68030 (EPDF's
+   rovl.py, 14 Nov 2026), and the monitors the family gives (pic.c's
+   lj_progress, EPDF's cv_progress) only poll. Every 16 left a progressive
+   photo 70 ms between them; every 8, 45-50 (Erez, 15 Nov 2026: yes, for
+   +80-90 ms on a 9 s page) */
+#define AERA_TICK(cinfo, n) \
+  do { \
+    if (((n) & 7) == 7 && (cinfo)->progress != NULL) \
+      (*(cinfo)->progress->progress_monitor) ((j_common_ptr)(cinfo)); \
+  } while (0)
+
+
 /* Forward declarations */
 METHODDEF(int) decompress_onepass(j_decompress_ptr cinfo,
                                   _JSAMPIMAGE output_buf);
@@ -111,6 +124,7 @@ decompress_onepass(j_decompress_ptr cinfo, _JSAMPIMAGE output_buf)
         coef->MCU_ctr = MCU_col_num;
         return JPEG_SUSPENDED;
       }
+      AERA_TICK(cinfo, MCU_col_num);
 
       /* Only perform the IDCT on blocks that are contained within the desired
        * cropping region.
@@ -239,6 +253,7 @@ consume_data(j_decompress_ptr cinfo)
         coef->MCU_ctr = MCU_col_num;
         return JPEG_SUSPENDED;
       }
+      AERA_TICK(cinfo, MCU_col_num);
     }
     /* Completed an MCU row, but perhaps not an iMCU row */
     coef->MCU_ctr = 0;
@@ -311,6 +326,7 @@ decompress_data(j_decompress_ptr cinfo, _JSAMPIMAGE output_buf)
       output_col = 0;
       for (block_num = cinfo->master->first_MCU_col[ci];
            block_num <= cinfo->master->last_MCU_col[ci]; block_num++) {
+        AERA_TICK(cinfo, block_num);
         (*inverse_DCT) (cinfo, compptr, (JCOEFPTR)buffer_ptr, output_ptr,
                         output_col);
         buffer_ptr++;
@@ -582,6 +598,7 @@ decompress_smooth_data(j_decompress_ptr cinfo, _JSAMPIMAGE output_buf)
       last_block_column = compptr->width_in_blocks - 1;
       for (block_num = cinfo->master->first_MCU_col[ci];
            block_num <= cinfo->master->last_MCU_col[ci]; block_num++) {
+        AERA_TICK(cinfo, block_num);
         /* Fetch current DCT block into workspace so we can modify it. */
         jcopy_block_row(buffer_ptr, (JBLOCKROW)workspace, (JDIMENSION)1);
         /* Update DC values */

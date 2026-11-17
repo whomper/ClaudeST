@@ -211,7 +211,15 @@ long dlg_fast_count(void);
    (the AES would give a button still down as another press).
    dlg_touch_up waits for it now, for a loop that acts on the release
    (5.8: the row drawn on the press, the rest on the release): PRESS_IN,
-   PRESS_OUT or PRESS_DRAG (click.h), or -1 when no row is held */
+   PRESS_OUT or PRESS_DRAG (click.h), or -1 when no row is held.
+   A loop that does anything before it calls dlg_do again, even a short
+   redraw, loses a quick double click on an ST: the next dlg_do's
+   dlg_touch_up reads the second press as the first one's release. So call
+   dlg_touch_up() (or _idle) right after a row's press comes back, before
+   any drawing, then draw the changed rows only (the old and the new
+   chosen, a button that became enabled) and the rest after the release
+   (EMail's Move dialog, 2.16; EFTP's time-zone list, 2.4: the double was
+   never seen) */
 #ifdef DLG_CLICK
 #define DLG_CLICKS 1
 void dlg_touch(OBJECT *tree, short *next, short x, short y);

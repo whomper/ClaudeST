@@ -12,8 +12,10 @@
  *        obj is a G_FTEXT or G_FBOXTEXT whose template is as wide as it
  *        shows; text (cap + 1 bytes) is the app's and holds the whole
  *        text from then on: the field shows f.view. mask '*' shows a
- *        password as stars (lf_mask to show it in clear), never copied
- *        out (4.4).
+ *        password as stars (lf_mask to show it in clear). A mask also
+ *        sets f.secret: a password is never copied or cut out, even while
+ *        the eye shows it in clear (4.4; C12). A field that is not a
+ *        password but must not be copied sets f.secret itself.
  *   lf_of(tree, obj)        the long field on obj, or 0
  *   lf_forget(tree)         the dialog is gone: its fields are let go
  *
@@ -41,6 +43,9 @@ typedef struct {
 	short show;			/* the characters the field shows */
 	short cur, off;			/* the cursor in text; the first shown */
 	char mask;			/* shown as this; 0: as it is */
+	char secret;			/* a password: never copied or cut out, shown or not (4.4) */
+	char clear;			/* the eye is crossed out: a password shown in clear */
+	short eye;			/* the object of its eye button (db_pass), 0 none */
 	char view[LF_VIEW + 1];		/* what the field's TEDINFO shows */
 } LFIELD;
 
@@ -55,6 +60,14 @@ void lf_forget(OBJECT *tree);
 void lf_enter(LFIELD *f, short *idx);
 int lf_key(LFIELD *f, short key, short ch, short kstate, short *idx);
 void lf_mask(LFIELD *f, char mask, short *idx, int has_cursor);
+/* the eye next to a password (db_pass makes both): lf_eye_image gives the image (a BITBLK, open or
+   crossed out as the field shows its text) for a G_IMAGE TOUCHEXIT object, 0 when the four eyes a
+   dialog may have are taken; lf_eye_set names the object. dlg_do calls lf_eye_click for every
+   TOUCHEXIT it ends on: 1 when obj was an eye (the password shown in clear or as stars, the eye
+   drawn again, the cursor where it was) and the dialog goes on */
+void *lf_eye_image(LFIELD *f);
+void lf_eye_set(LFIELD *f, short obj);
+int lf_eye_click(OBJECT *tree, short obj, short *idx, short edit);
 #endif
 
 #endif

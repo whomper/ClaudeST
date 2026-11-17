@@ -11,6 +11,7 @@
 #define PF_APPEND 2
 int  pf_open(const char *path, int mode);
 long pf_write(int h, const void *buf, long n);
+long pf_read(int h, void *buf, long n);
 void pf_close(int h);
 long pf_seek(int h, long off);
 long pf_size(const char *path);

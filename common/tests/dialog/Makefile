@@ -6,11 +6,11 @@ CFLAGS := -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recove
           -Istub -I../../ui -I../../atari
 B      := build
 
-$(B)/test_dialog: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h | $(B)
-	cc $(CFLAGS) -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c
+$(B)/test_dialog: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h ../../ui/eye.c | $(B)
+	cc $(CFLAGS) -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c ../../ui/eye.c
 # and with -DDLG_CLICK: one click asked for, the double click timed (click.c's stood in for)
-$(B)/test_dialog_click: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h | $(B)
-	cc $(CFLAGS) -DDLG_CLICK -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c
+$(B)/test_dialog_click: test_dialog.c ../../ui/dialog.c ../../ui/dialog.h ../../ui/field.c ../../ui/field.h ../../ui/eye.c | $(B)
+	cc $(CFLAGS) -DDLG_CLICK -o $@ test_dialog.c ../../ui/dialog.c ../../ui/field.c ../../ui/eye.c
 $(B):
 	mkdir -p $@
 test: $(B)/test_dialog $(B)/test_dialog_click

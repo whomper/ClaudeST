@@ -65,9 +65,27 @@ const char *tls_ovl_version(void)
 	return ov ? ov->version : "";
 }
 
+/* the overlay's file: tls_ovl_path, or on a ColdFire (the FireBee: the
+   _CF_ cookie) tlsfb.ovl in its folder, TLS.OVL's ColdFire build. The
+   programs are 68000 code that FireTOS runs; TLS.OVL's 68030 code can't
+   run there (a tester ran EMail with EWeb's TLSFB.OVL renamed, and it
+   worked: Erez, 15 Nov 2026, "yes to TLSFB.OVL") */
+static void ovl_path(char *path, int n)
+{
+	char *s;
+	str_copy(path, tls_ovl_path, n);
+	if (!get_cookie(0x5F43465FL))		/* '_CF_' */
+		return;
+	for (s = path + strlen(path); s > path && s[-1] != '\\' && s[-1] != '/'; s--)
+		;
+	if ((long)(s - path) + 10 < n)
+		strcpy(s, "tlsfb.ovl");
+}
+
 int tls_ovl_load(char *err, int errlen)
 {
 	const TLS_OVL *o;
+	char path[200];
 	long taken;
 	unsigned long t0;
 	char msg[80];
@@ -85,11 +103,14 @@ int tls_ovl_load(char *err, int errlen)
 	}
 	t0 = pf_ms();
 	loading = 1;
-	image = ovl_load(tls_ovl_path, &taken, err, errlen);
+	ovl_path(path, sizeof(path));
+	image = ovl_load(path, &taken, err, errlen);
 	loading = 0;
 	if (!image) {
-		if (pf_size(tls_ovl_path) < 0)
-			str_copy(err, "TLS.OVL is missing: copy it from the program's release, "
+		if (pf_size(path) < 0)
+			str_copy(err, path[0] && strstr(path, "tlsfb") ?
+				 "TLSFB.OVL is missing: copy it from the program's release, beside CACERT.PEM" :
+				 "TLS.OVL is missing: copy it from the program's release, "
 				 "beside CACERT.PEM", errlen);
 		return 0;
 	}

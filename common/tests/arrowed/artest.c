@@ -15,6 +15,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 int main(void)
 {
 	short win, msg[8], pos = 0, busy = 0, mx, my, mb, ks, x, y, w, h;

@@ -838,14 +838,23 @@ static void sup_magic(void)
 	os_magic = *(const unsigned long *)(os + 0x2c);
 }
 
+/* EmuTOS, by the magic its OS header carries ('ETOS'): looked at once */
+static int is_emutos(void)
+{
+	static short e = -1;
+	if (e < 0) {
+		Supexec(sup_magic);
+		e = os_magic == 0x45544F53L;
+	}
+	return e;
+}
+
 static int arrow_echoes(void)
 {
 	static short k = -1;
-	if (k < 0) {
-		Supexec(sup_magic);
-		k = global[0] < 0x0400 && os_magic != 0x45544F53L	/* 'ETOS' */
+	if (k < 0)
+		k = global[0] < 0x0400 && !is_emutos()
 		    && !get_cookie(0x4D616758L) && !get_cookie(0x4D694E54L);	/* MagX, MiNT */
-	}
 	return k;
 }
 
@@ -864,7 +873,10 @@ static int arrow_echoes(void)
    every shortcut test is right with no change in the app. The ones that
    waited before it in the list were taken by someone else (a form_do)
    and go. appl_exit puts the bit back if it was off. Not under MagiC or
-   MiNT, whose AES takes the keys as they are typed. */
+   MiNT, whose AES takes the keys as they are typed, and not under EmuTOS:
+   ECal's speed rig lost its mouse there with the bit set (10 Nov 2026; the
+   same build on Erez's TOS 4.04 with NVDI is the same with it and without),
+   so EmuTOS keeps the keys as it gives them. */
 static unsigned char kq_old;
 static short kq_state = -1;		/* -1 not looked at, 0 off, 1 on */
 static short kq_last;			/* the BIOS buffer's write place when the list was last brought up to date */
@@ -881,13 +893,21 @@ static void sup_kq_on(void)
 	unsigned char v;
 	__asm__ volatile("move.b 0x484.w,%0" : "=d"(v));
 	kq_old = v;
+#ifdef __mcoldfire__	/* (no or.b or and.b to memory on a ColdFire) */
+	__asm__ volatile("move.b 0x484.w,%%d0\n\tor.l #8,%%d0\n\tmove.b %%d0,0x484.w" : : : "d0", "cc", "memory");
+#else
 	__asm__ volatile("or.b #8,0x484.w" : : : "cc", "memory");
+#endif
 }
 
 static void sup_kq_off(void)
 {
 	if (!(kq_old & 8))
+#ifdef __mcoldfire__
+		__asm__ volatile("move.b 0x484.w,%%d0\n\tand.l #0xf7,%%d0\n\tmove.b %%d0,0x484.w" : : : "d0", "cc", "memory");
+#else
 		__asm__ volatile("and.b #0xf7,0x484.w" : : : "cc", "memory");
+#endif
 }
 
 static void kq_off(void)
@@ -903,7 +923,7 @@ static void kq_init(void)
 {
 	kq_state = 0;
 	kq_n = 0;
-	if (global[0] < 0x0400 && !get_cookie(0x4D616758L) && !get_cookie(0x4D694E54L)) {	/* MagX, MiNT */
+	if (global[0] < 0x0400 && !is_emutos() && !get_cookie(0x4D616758L) && !get_cookie(0x4D694E54L)) {	/* MagX, MiNT */
 		kq_io = Iorec(1);
 		if (kq_io && kq_io->ibufsiz >= 8) {
 			Supexec(sup_kq_on);

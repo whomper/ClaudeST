@@ -10,6 +10,10 @@
 |
 | The stack is 48 KB; an app that needs less memory sets STACK_SIZE
 | (EFTP: -DSTACK_SIZE=24576 for a 1 MB ST).
+|
+| Built for the ColdFire (-mcpu=5475, the FireBee: __mcoldfire__) it takes
+| only ColdFire instructions; the 68000 and 68030 builds are as before,
+| byte for byte. tests/coldfire runs it under qemu-m68k -cpu cfv4e.
 
 #ifndef STACK_SIZE
 #define STACK_SIZE 49152
@@ -42,7 +46,12 @@ _start:
 accessory:
 	move.l	%a0,_BasePage
 	lea	_stack_top,%sp
+#ifdef __mcoldfire__
+	moveq	#1,%d0			| (no move.w #,abs.l on a ColdFire)
+	move.w	%d0,_is_acc
+#else
 	move.w	#1,_is_acc
+#endif
 	jsr	main
 hang:					| an accessory never ends
 	bra.s	hang

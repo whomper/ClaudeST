@@ -17,6 +17,12 @@
 #include "dspec.h"
 #include "plat.h"
 #include "../dsp/ec_prog.h"
+#include "../src/trail.h"
+#ifdef TLS_TRAIL
+#include <stdio.h>
+void conn_log(const char *who, const char *dir, const char *text, long n);
+static unsigned long tr_a, tr_b, tr_c, tr_d, tr_first;	/* HZ200 at the job's steps */
+#endif
 
 #pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed hardware addresses */
 
@@ -45,6 +51,7 @@ static unsigned long turn_at;		/* _hz_200 at the last turn */
 static int turns_on;			/* the program loaded, the job's commands going */
 unsigned short dspec_turns;
 unsigned long dspec_turn_ms;
+extern unsigned long tls_turn_ms;	/* tls.c: when the last turn came back (0: not known) */
 
 /* a turn for GEM: back to user mode on the same stack, pf_idle, and
    supervisor mode again. Super(ssp) from supervisor mode leaves the user
@@ -97,6 +104,10 @@ static void put(unsigned long w)
 	unsigned long t0;
 	if (ecdsp_failed)
 		return;
+#ifdef TLS_TRAIL
+	if (turns_on && !tr_first)
+		tr_first = HZ200;
+#endif
 	turn();
 	if (!(HISR & 2)) {
 		t0 = HZ200;
@@ -137,6 +148,7 @@ static unsigned long get(void)
 static int run(void (*fn)(void *), void *ctx)
 {
 	int i;
+	unsigned long ago = tls_turn_ms ? pf_ms() - tls_turn_ms : 1000, hz_end;
 	int lock = (int)trap14_w(104);		/* Dsp_Lock */
 	if (lock == -1)
 		return 0;			/* another program has it */
@@ -150,16 +162,30 @@ static int run(void (*fn)(void *), void *ctx)
 	   so the job (about 1 KB of stack) runs on this program's stack, not
 	   on whatever system stack Supexec is given */
 	run_ssp = trap1_wl(0x20, 0L);
-	turn_at = HZ200;
+	/* the 8 steps of a turn are counted from the last turn of whatever
+	   kind (tls.c's stamp), not from here: the job's first turn comes
+	   when 40 ms have passed since it, 0 steps from now if they have */
+	turn_at = HZ200 - (ago >= 40 ? 8 : ago / 5);
+#ifdef TLS_TRAIL
+	tr_a = HZ200;
+	tr_first = 0;
+#endif
 	dspec_turns = 0;
 	dspec_turn_ms = 0;
 	for (i = 0; i < 512; i++)		/* the bootstrap loads 512 words and starts them */
 		put(dsp_ec_prog[i]);
+#ifdef TLS_TRAIL
+	tr_b = HZ200;
+#endif
 	if (!ecdsp_failed) {
 		turns_on = 1;
 		fn(ctx);
 		turns_on = 0;
 	}
+	hz_end = HZ200;
+#ifdef TLS_TRAIL
+	tr_d = hz_end;
+#endif
 	/* back to user mode on this stack: after a turn, the user stack
 	   pointer TOS keeps is the turn's, deeper in the calls */
 	__asm__ volatile(
@@ -174,6 +200,18 @@ static int run(void (*fn)(void *), void *ctx)
 		: "d0", "d1", "d2", "a0", "a1", "a2", "a4", "memory", "cc");
 	if (lock == 0)
 		trap14_w(105);			/* Dsp_Unlock */
+	/* the last turn, as far back as the steps say (5 ms each at the
+	   nominal 200 Hz: where a driver runs the counter faster this is
+	   later than it was, a turn sooner) */
+	tls_turn_ms = pf_ms() - (hz_end - turn_at) * 5;
+#ifdef TLS_TRAIL
+	{
+		char m[100];
+		int n = snprintf(m, sizeof(m), "ec steps: ago %lu ms, load %lu, to first put %lu, fn %lu (ticks)", ago,
+				 tr_b - tr_a, tr_first ? tr_first - tr_b : 0UL, tr_d - tr_b);
+		conn_log("TRAIL", " -- ", m, n);
+	}
+#endif
 	return 1;
 }
 

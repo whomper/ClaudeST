@@ -44,6 +44,7 @@ void __wrap_free(void *p)
 	__real_free(p);
 }
 
+long pf_read(int h, void *buf, long n) { (void)h; (void)buf; (void)n; return -1; }
 int pf_open(const char *path, int mode)
 {
 	opens++;
@@ -196,8 +197,8 @@ static void cap_run(const char *label, long (*hook)(int))
 			conn_log("HTTP", " -- ", line, 90);
 		conn_log_hold(0);
 	}
-	snprintf(msg, sizeof(msg), "%s: held job under the cap: 1 open (%d)", label, opens);
-	check(opens == 1, msg);
+	snprintf(msg, sizeof(msg), "%s: a job's 120 lines, each on the disk at once: 120 opens (%d)", label, opens);
+	check(opens == 120, msg);
 
 	/* a held job over the cap: written in one piece, and the old log rolls */
 	conn_log_max = 20000;
@@ -212,14 +213,17 @@ static void cap_run(const char *label, long (*hook)(int))
 		for (i = 0; i < 120; i++)
 			conn_log("HTTP", " -- ", line, 90);
 		conn_log_hold(0);
-		snprintf(msg, sizeof(msg), "%s: held job pushing the log over: 2 opens, the 13 KB kept whole (was %ld, now %ld)", label, was, fsize("build/t/EMAIL.LOG"));
-		check(was + 13000 > 20000 ? (opens == 2 && fsize("build/t/EMAIL.LOG") > 12000 && fsize("build/t/EMAIL.OLD") == was) : opens == 1, msg);
+		snprintf(msg, sizeof(msg), "%s: a job pushing the log over: it rolls, both under the cap (was %ld, now %ld)", label, was, fsize("build/t/EMAIL.LOG"));
+		check(opens >= 120 && fsize("build/t/EMAIL.LOG") <= 20000 && fsize("build/t/EMAIL.OLD") > 0 && fsize("build/t/EMAIL.OLD") <= 20000, msg);
 	}
 
 	/* conn_log_max 0: no cap */
 	conn_log_max = 0;
-	conn_log_append("crash report\r\n", 14);
-	check(fsize("build/t/EMAIL.LOG") > 12000, "conn_log_max 0: no cap, no look");
+	{
+		long was = fsize("build/t/EMAIL.LOG");
+		conn_log_append("crash report\r\n", 14);
+		check(fsize("build/t/EMAIL.LOG") == was + 14, "conn_log_max 0: no cap, no look");
+	}
 	conn_log_max = 2000;
 }
 
@@ -274,18 +278,18 @@ int main(void)
 	strcpy(conn_logfile, "build/t/LOG.TXT");
 
 	n = job();
-	snprintf(msg, sizeof(msg), "held in 16 KB: 1 open for the job (%d), 16 KB from the heap (%d)", n, big_mallocs);
-	check(n == 1 && big_mallocs == 1 && logged > 12000, msg);
+	snprintf(msg, sizeof(msg), "a job's lines written at once (Erez, 15 Nov 2026): 120 opens (%d), no 16 KB taken (%d)", n, big_mallocs);
+	check(n == 120 && big_mallocs <= 1 && logged > 12000, msg);
 
 	conn_log_hold_bytes = 0;
 	n = job();
-	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 0: the 4 KB buffer, 4 opens (%d), one 4 KB block (%d)", n, big_mallocs);
-	check(n == 4 && big_mallocs == 1 && logged > 12000, msg);
+	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 0: the same, 120 opens (%d)", n);
+	check(n == 120 && logged > 12000, msg);
 
 	conn_log_hold_bytes = 32768;
 	n = job();
-	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 32 KB: 1 open (%d)", n);
-	check(n == 1 && big_mallocs == 1, msg);
+	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 32 KB: still 120 opens (%d)", n);
+	check(n == 120, msg);
 
 	conn_log_hold_bytes = 16384;
 	opens = 0;

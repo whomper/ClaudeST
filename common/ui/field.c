@@ -109,6 +109,7 @@ int lf_edit(LFIELD *f, short key, short ch, short kstate)
 #ifndef LF_HOST
 
 #define NREG 16
+void lf_eye_forget(OBJECT *tree) __attribute__((weak));
 static LFIELD *reg[NREG];
 
 void lf_init(LFIELD *f, OBJECT *tree, short obj, char *text, short cap, char mask)
@@ -123,6 +124,9 @@ void lf_init(LFIELD *f, OBJECT *tree, short obj, char *text, short cap, char mas
 	if (f->show > LF_VIEW)
 		f->show = LF_VIEW;
 	f->mask = mask;
+	f->secret = mask != 0;
+	f->clear = 0;
+	f->eye = 0;
 	f->off = 0;
 	text[cap] = 0;
 	lf_end(f);
@@ -150,6 +154,8 @@ LFIELD *lf_of(OBJECT *tree, short obj)
 void lf_forget(OBJECT *tree)
 {
 	short i;
+	if (lf_eye_forget)
+		lf_eye_forget(tree);	/* eye.c, where an app has it: the eyes of these fields */
 	for (i = 0; i < NREG; i++)
 		if (reg[i] && reg[i]->tree == (void *)tree)
 			reg[i] = 0;
@@ -186,17 +192,17 @@ void lf_enter(LFIELD *f, short *idx)
 	place(f, idx);
 }
 
-/* ^C ^X ^V on the whole text; a password is never copied out */
+/* ^C ^X ^V on the whole text; a password is never copied out, shown in clear or not (f->secret, not f->mask) */
 static int clip(LFIELD *f, short key)
 {
 	char buf[256], *p;
 	switch (clip_key(key)) {
 	case CLIP_COPY:
-		if (!f->mask)
+		if (!f->secret)
 			clip_put(f->text, (long)strlen(f->text));
 		return 1;
 	case CLIP_CUT:
-		if (!f->mask && clip_put(f->text, (long)strlen(f->text))) {
+		if (!f->secret && clip_put(f->text, (long)strlen(f->text))) {
 			f->text[0] = 0;
 			lf_view(f);
 		}

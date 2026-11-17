@@ -55,7 +55,13 @@ extern int colour;	/* colours are on (else black and white) */
    (a changed option, a changed screen mode). The app puts its own caches right after (bold_forget) */
 void theme_init(int colour_on, const THEME_ROLE *extra, short n);
 
-/* the palette back as it was (256 colours); harmless when nothing was set */
+/* 4 colours (ST medium, planes == 2) with colour on: pen 2 (TOS's red) turned to rgb (VDI 0-1000) while the
+   app runs and the role given that pen, for the one accent an app keeps there (EMail's links and unread counts:
+   0, 0, 930); everything else stays black and white and `colour` stays 0. Call it after theme_init, with a
+   role of the app's own; it does nothing on any other screen or with colour off. theme_exit puts pen 2 back */
+void theme_accent4(short role, const short rgb[3]);
+
+/* the palette back as it was (256 colours; pen 2 with theme_accent4); harmless when nothing was set */
 void theme_exit(void);
 
 #endif

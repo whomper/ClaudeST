@@ -21,7 +21,7 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.
 B       := build
 
 all: $(B)/ICONTEST.PRG $(B)/OPNWK.PRG $(B)/LATER.PRG $(B)/EXT2TEST.PRG $(B)/LFNTEST.PRG $(B)/TERMTEST.PRG $(B)/INTTEST.PRG $(B)/INTTESTG.PRG
-base: $(B)/OPNWK.PRG
+base: $(B)/OPNWK.PRG $(B)/0MMU040.PRG $(B)/ZCPU060.PRG
 	python3 fetch.py
 $(B)/%.PRG: $(B)/%.elf ../../tools/elf2tos.py
 	python3 ../../tools/elf2tos.py $< $@
@@ -42,6 +42,14 @@ $(B)/INTTEST.PRG: $(B)/INTTEST.elf ../../tools/elf2tos.py
 	PRGFLAGS=7 python3 ../../tools/elf2tos.py $< $@
 $(B)/INTTESTG.PRG: $(B)/INTTEST.elf ../../tools/elf2tos.py
 	PRGFLAGS=0x17 python3 ../../tools/elf2tos.py $< $@
+# run.py --machine ct60's two AUTO programs, 68040 code alone (no crt0):
+# the MMU on with page tables before MiNT, _CPU 60 after it
+$(B)/0MMU040.elf: mmu040.S ../../atari/link.ld | $(B)
+	$(CC) -m68040 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.ld -Wl,--build-id=none \
+	    -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments -o $@ $<
+$(B)/ZCPU060.elf: cpu060.S ../../atari/link.ld | $(B)
+	$(CC) -m68040 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.ld -Wl,--build-id=none \
+	    -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments -o $@ $<
 $(B)/OPNWK.elf: $(B)/crt0.o $(B)/opnwk.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/opnwk.o: opnwk.c | $(B)

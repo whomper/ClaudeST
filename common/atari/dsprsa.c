@@ -15,6 +15,7 @@
 #include "dsprsa.h"
 #include "plat.h"
 #include "../dsp/rsa_prog.h"
+#include "../src/trail.h"
 
 #pragma GCC diagnostic ignored "-Warray-bounds"	/* fixed hardware addresses */
 
@@ -116,16 +117,20 @@ static void sup_take(void)
 
 unsigned short dsprsa_turns;
 unsigned long dsprsa_turn_ms;
+extern unsigned long tls_turn_ms;	/* tls.c: when the last turn came back (0: not known) */
 
 static void sup_run(void)
 {
 	unsigned long t0, turn;
 	dsprsa_turns = 0;
 	dsprsa_turn_ms = 0;
+	TRAIL("rsa send");
 	Supexec(sup_send);
+	TRAIL("rsa sent");
 	if (io_fail)
 		return;
-	t0 = turn = pf_ms();
+	t0 = pf_ms();
+	turn = tls_turn_ms;		/* the 40 ms are counted from the last turn, not from here */
 	for (;;) {
 		Supexec(sup_ready);
 		if (io_ready)
@@ -137,12 +142,14 @@ static void sup_run(void)
 		if (pf_idle && pf_ms() - turn >= 40) {
 			unsigned long t1 = pf_ms();
 			pf_idle();
-			turn = pf_ms();
+			turn = tls_turn_ms = pf_ms();
 			dsprsa_turns++;
 			dsprsa_turn_ms += turn - t1;
 		}
 	}
+	TRAIL("rsa ready");
 	Supexec(sup_take);
+	TRAIL("rsa taken");
 }
 
 /* ---------------- numbers ---------------- */
@@ -229,6 +236,7 @@ int dsp_rsa_public(unsigned char *x, size_t xlen, const unsigned char *n, size_t
 	ebits++;				/* bits in e */
 	eal = (ev << (24 - ebits + 1)) & 0xffffffUL;
 
+	TRAIL("rsa prep");
 	to_digits(nd, N, n, nlen);
 	/* -n^-1 mod 2^23: Newton's iteration doubles the good bits */
 	n0 = nd[0];
@@ -269,6 +277,7 @@ int dsp_rsa_public(unsigned char *x, size_t xlen, const unsigned char *n, size_t
 	io_n = i;
 	io_out = N;
 
+	TRAIL("rsa digits");
 	lock = (int)trap14_w(104);		/* Dsp_Lock */
 	if (lock == -1)
 		return 0;			/* another program has it */
@@ -276,6 +285,7 @@ int dsp_rsa_public(unsigned char *x, size_t xlen, const unsigned char *n, size_t
 	   changes it with interrupts off. Writing the chip directly raced the
 	   system's own use of it (floppy, key click) on a real Falcon */
 	dsp_reset();
+	TRAIL("rsa reset");
 	sup_run();
 	if (lock == 0)
 		trap14_w(105);			/* Dsp_Unlock */

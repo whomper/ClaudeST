@@ -22,6 +22,8 @@
 #include "dialog.h"
 #include "panebar.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 short vdi_h, cw, ch, scr_w, scr_h, desk_x, desk_y, desk_w, desk_h, planes;
 
 static MFDB scr, mem;

@@ -25,6 +25,7 @@ jmp_buf script_out;
 short ref_tab[SMAXTAB + 1];		/* page k's tab object, from 1, filled in by the test */
 short ref_ok, ref_cancel;
 short cell_w = 8, cell_h = 16;		/* the system font's cell: 8x16 (VGA, mono), 8x8 (medium) */
+short gl_hchar = 16;			/* the AES's cell height: field.c's eye (the apps have their own) */
 short ap_count = 1;			/* 1 TOS; -1 a multitasking AES */
 short pre_key;				/* a key typed before the dialog came */
 

@@ -7,6 +7,8 @@
  * then draws nothing usable. */
 #include "tos.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static short contrl[12], intin[16], ptsin[16], intout[64], ptsout[16];
 static void *pb[5] = { contrl, intin, ptsin, intout, ptsout };
 

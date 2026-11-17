@@ -22,6 +22,7 @@
 #include "../src/util.h"
 #include "../src/ecdsp.h"
 #include "../atari/dspec.h"
+#include "../src/trail.h"
 
 static int have_dsp, checked, trusted;
 static unsigned long test_ms;		/* the self-test's, left out of the first job's time */
@@ -84,7 +85,13 @@ static int run(void (*fn)(void *), void *ctx)
 		ecdsp_note = note;
 		ecdsp_failed = 0;
 	}
-	return trusted && dspec_port.run(fn, ctx);
+	{
+		int r;
+		TRAIL("ec in");
+		r = trusted && dspec_port.run(fn, ctx);
+		TRAIL("ec out");
+		return r;
+	}
 }
 
 /* use: a Direct connection, with the DSP ticked; TLS.OVL's entry */

@@ -16,10 +16,22 @@
  *   const long cpu_need = 20;	(_CPU's least: 20 a 68020, 30 a 68030)
  *   const char cpu_alert[] = "[3][EUpdate needs a 68020 or|better: a Falcon or a TT.][ Quit ]";
  *   int app_main(void);		(what its main() was)
+ *
+ * and, where it has an edition of its own for the FireBee, also
+ *
+ *   const char cpu_cf_alert[] = "[3][EWEB.PRG is for the Falcon and|the TT. On the FireBee, run|EWEBFB.PRG.][ Quit ]";
+ *
+ * shown, and the program gone, wherever the jar has _CF_ (FireTOS on a
+ * ColdFire): its _CPU of 60 passes cpu_need, and the 68030 code that
+ * follows dies at its first 64-bit mulu.l (EWeb, 15 Nov 2026, on the
+ * FireBee stand-in: exception 61). A program without it (EUpdate) goes
+ * on as before. It is weak: nothing defines it, its address is 0, and
+ * elf2tos.py gives a weak symbol nothing defines no fixup.
  */
 
 extern const long cpu_need;
 extern const char cpu_alert[];
+extern const char cpu_cf_alert[] __attribute__((weak));
 int app_main(void);
 
 /* XBIOS 38, Supexec: f in supervisor mode, its d0 back */
@@ -34,20 +46,38 @@ static long supexec(long (*f)(void))
 	return r;
 }
 
-/* _CPU from the cookie jar (_p_cookies at 0x5A0), 0 where there is none:
-   TOS 1.x has no jar, and only a 68000 */
-static long cpu_cookie(void)
+/* a cookie from the jar (_p_cookies at 0x5A0); 0 and *found 0 where it
+   isn't there: TOS 1.x has no jar, and only a 68000 */
+static long jar_get(long id, int *found)
 {
 	unsigned long at = 0x5A0;
 	long *jar;
 	__asm__("" : "+r"(at));		/* an address, not an object GCC knows */
 	jar = *(long **)at;
+	*found = 0;
 	if (!jar)
 		return 0;
 	for (; jar[0]; jar += 2)
-		if (jar[0] == 0x5F435055L)	/* _CPU */
+		if (jar[0] == id) {
+			*found = 1;
 			return jar[1];
+		}
 	return 0;
+}
+
+/* _CPU, 0 where there is none */
+static long cpu_cookie(void)
+{
+	int found;
+	return jar_get(0x5F435055L, &found);	/* _CPU */
+}
+
+/* 1 where the jar has _CF_, whatever its value */
+static long cf_cookie(void)
+{
+	int found;
+	jar_get(0x5F43465FL, &found);		/* _CF_ */
+	return found;
 }
 
 /* the AES, its arrays and trap #2, for the three calls the alert needs */
@@ -71,10 +101,15 @@ static short aes(short op, short nin, short nout, short nain)
 
 int main(void)
 {
-	if (supexec(cpu_cookie) < cpu_need) {
+	const char *say = 0;
+	if (supexec(cpu_cookie) < cpu_need)
+		say = cpu_alert;
+	else if (cpu_cf_alert && supexec(cf_cookie))
+		say = cpu_cf_alert;
+	if (say) {
 		if (aes(10, 0, 1, 0) >= 0) {	/* appl_init */
 			intin[0] = 1;
-			addrin[0] = (void *)cpu_alert;
+			addrin[0] = (void *)say;
 			aes(52, 1, 1, 1);	/* form_alert */
 			aes(19, 0, 1, 0);	/* appl_exit */
 		}

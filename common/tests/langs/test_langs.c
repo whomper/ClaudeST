@@ -35,6 +35,7 @@ static long fed;
 static int refuse_open;
 static long timeout_seen[40];
 
+long pf_read(int h, void *buf, long n) { (void)h; (void)buf; (void)n; return -1; }
 int pf_open(const char *path, int mode) { return 7; }
 long pf_write(int h, const void *buf, long n) { return n; }
 void pf_close(int h) { }

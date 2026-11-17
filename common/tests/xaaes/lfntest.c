@@ -16,6 +16,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static char line[400];
 
 static void say(const char *a, const char *b)

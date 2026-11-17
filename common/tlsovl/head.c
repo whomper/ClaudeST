@@ -23,6 +23,15 @@ const char *falcon_dsp_state(void);
 void falcon_dsp_ec_use(int use);	/* ui/dsp_ec.c */
 const char *falcon_dsp_ec_state(void);
 
+#ifdef __mcoldfire__
+/* the ColdFire's TLS.OVL (the FireBee, which has no DSP): BearSSL's own
+   curves and RSA, the DSP's entries answering that there is none */
+void falcon_dsp_use(int use) { (void)use; }
+const char *falcon_dsp_state(void) { return "no DSP (a ColdFire)"; }
+void falcon_dsp_ec_use(int use) { (void)use; }
+const char *falcon_dsp_ec_state(void) { return "no DSP (a ColdFire)"; }
+#endif
+
 extern int mem_unaligned_ok;		/* libc.c */
 
 static const TLS_HOST *H;
@@ -43,7 +52,7 @@ static int init(const TLS_HOST *h)
 	if (!h || h->size < HOST_NEEDS)
 		return 0;
 	H = h;
-	mem_unaligned_ok = 1;		/* a 68020 or later: the program checked */
+	mem_unaligned_ok = 1;		/* a 68020 or later, or a ColdFire: the program checked */
 	return 1;
 }
 

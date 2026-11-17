@@ -25,6 +25,10 @@
  *      which TOS records; the run after the next reset finds the record
  *      and, since it wasn't in the program, doesn't count it as its own
  *      (crash_previous)
+ *   q  a bus error in the program's own code at interrupt time (a VBL
+ *      routine of its, IPL 4): never landed, as the main program may be
+ *      inside GEMDOS (a tester's CT60, 16 Nov 2026: the partition damaged
+ *      after each crash); on to TOS, its bombs and its record, as 's'
  *   p  no crash: STinG's way into supervisor mode. Code outside the
  *      program, with a handler of its own on vector 8 put there before
  *      the catcher, runs "or.w #0,sr" in user mode and catches the
@@ -38,6 +42,8 @@
 #include <stdio.h>
 #include "tos.h"
 #include "crash.h"
+
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
 
 static char kind;
 
@@ -206,6 +212,17 @@ static void xbra_hook(void)		/* supervisor mode */
 {
 	*(long *)(xbra_block + 4) = *v70;
 	*v70 = (long)(xbra_block + 6);
+}
+
+/* q: a VBL routine in this program's code that puts the vector back and
+   faults (TOS's bombs come at interrupt time) */
+long q_old70;
+extern void q_vbl(void);
+__asm__(".text\n.globl q_vbl\nq_vbl:\n\tmove.l q_old70,0x70.w\n\ttst.l 0xFFFFFA40\n\trte\n");
+static void q_hook(void)
+{
+	q_old70 = *v70;
+	*v70 = (long)q_vbl;
 }
 
 static void xbra_unhook(void)
@@ -413,6 +430,16 @@ int main(void)
 		put("C:\\STAGE1.TXT", "s\r\n", 3);
 		if (f)
 			Supexec(f);
+		break;
+	}
+	case 'q': {
+		put("C:\\STAGE1.TXT", "q\r\n", 3);
+		Supexec(q_hook);
+		{
+			volatile long n;
+			for (n = 0; n < 2000000; n++)	/* the VBL comes meanwhile */
+				;
+		}
 		break;
 	}
 	case 'p': {

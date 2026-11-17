@@ -21,6 +21,8 @@
 #define FP_PATH AF_PATH
 #else
 #include "filepick.h"
+
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
 #endif
 
 short vdi_h, cw, ch, scr_w, scr_h, desk_x, desk_y, desk_w, desk_h, planes, gl_wchar, gl_hchar, ap_id;

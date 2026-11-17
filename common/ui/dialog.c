@@ -35,6 +35,7 @@ extern int dlg_fast_on;
 /* the fields that hold more than they show (field.c), in an app that
    has field.c; weak, so an app without it needn't build it */
 LFIELD *lf_of(OBJECT *tree, short obj) __attribute__((weak));
+int lf_eye_click(OBJECT *tree, short obj, short *idx, short edit) __attribute__((weak));
 void lf_enter(LFIELD *f, short *idx) __attribute__((weak));
 int lf_key(LFIELD *f, short key, short ch, short kstate, short *idx) __attribute__((weak));
 /* the Hebrew keyboard (hebkey.c), in an app that has it: a key types what key_char
@@ -1655,6 +1656,10 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				next = 0;
 			} else {
 				cont = form_button(tree, next, e.breturn, &next);
+				if (!cont && lf_eye_click && lf_eye_click(tree, next, &idx, edit)) {
+					cont = 1;	/* a password's eye: the stars or the text, the dialog goes on */
+					next = 0;
+				}
 #ifdef DLG_CLICK
 				if (!cont)
 					dlg_touch(tree, &next, e.mx, e.my);

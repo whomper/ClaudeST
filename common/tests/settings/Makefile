@@ -6,7 +6,7 @@
 CFLAGS := -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all \
           -Istub -I../../ui -I../../atari
 B      := build
-SRC    := test_settings.c aes_stub.c ../../ui/settings.c ../../ui/dlgbuild.c ../../ui/dialog.c ../../ui/field.c
+SRC    := test_settings.c aes_stub.c ../../ui/settings.c ../../ui/dlgbuild.c ../../ui/dialog.c ../../ui/field.c ../../ui/eye.c
 HDR    := aes_stub.h ../../ui/settings.h ../../ui/dlgbuild.h ../../ui/dialog.h ../../ui/field.h
 
 $(B)/test_settings: $(SRC) $(HDR) | $(B)
@@ -34,7 +34,7 @@ TCFLAGS := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic
 TLDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.ld \
             -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 T       := $(B)/atari
-LIB     := fontsel mbar dialog alert popup click text bidi clip field dlgbuild settings gem libc tos
+LIB     := fontsel mbar dialog alert popup click text bidi clip field eye dlgbuild settings gem libc tos
 OBJS    := $(T)/crt0.o $(T)/nf.o $(T)/setdemo.o $(T)/draw.o $(addprefix $(T)/,$(addsuffix .o,$(LIB)))
 
 prg: $(T)/SETDEMO.PRG

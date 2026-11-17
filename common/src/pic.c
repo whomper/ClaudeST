@@ -1351,6 +1351,18 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 		src.fill = dj->fill;
 		src.fu = dj->fu;
 	}
+	if (pic_poll != NULL && !pic_poll()) {
+		/* (the headers read and the buffers had: a turn before the DSP's
+		   program loads, 65 ms of a stock Falcon in one piece before) */
+		free(band);
+		free(bpx);
+		free(bal);
+		free(src.buf);
+		if (shrink)
+			dsp_shrink_free(&shr);
+		*why = PIC_STOPPED;
+		return 0;
+	}
 	if ((tmp = malloc(sizeof *tmp)) == NULL || !pic_dsp->begin(PIC_DSP_JPEG)) {
 		int had = tmp != NULL;
 		free(tmp);
@@ -1368,8 +1380,13 @@ static int decode_dsp(DSPJ *dj, PIC *p, SCALER *sc, int *why)
 	if (dj->on != NULL)
 		*dj->on = 1;
 	pic_dsp_failed = 0;
-	if (pic_poll != NULL)
-		pic_poll();	/* (its program loaded, 30 to 45 ms of a stock Falcon: a turn; a stop is seen at the rows) */
+	/* (its program loaded, 30 to 45 ms of a stock Falcon: a turn; a stop
+	   there is taken at once, not left to the rows: a poll that said stop
+	   once needn't say it again, tests/pic's slices) */
+	if (pic_poll != NULL && !pic_poll()) {
+		*why = PIC_STOPPED;
+		goto out;
+	}
 
 	/* the setup: the variables (jpeg.a56's V_M to V_TB) */
 	memset(w, 0, sizeof w);
@@ -2174,6 +2191,7 @@ static int decode_lj(const unsigned char *d, long n, PIC *p, SCALER *sc, int *wh
 	j->src.bytes_in_buffer = (size_t) n;
 	j->ci.src = &j->src;
 	jpeg_read_header(&j->ci, TRUE);
+	lj_progress((j_common_ptr) &j->ci);	/* (the headers read, before the decoder's setup: a turn, 55 ms of a stock Falcon in one piece to the DSP's first) */
 	/* CMYK (Adobe's, inverted) is made RGB below; the rest by libjpeg */
 	j->ci.out_color_space = j->ci.jpeg_color_space == JCS_CMYK || j->ci.jpeg_color_space == JCS_YCCK ?
 				JCS_CMYK : JCS_RGB;
@@ -2317,10 +2335,12 @@ const char *pic_dsp_state(void)
 }
 #endif
 
+#ifndef PIC_OVL_BUILD		/* (PIC.OVL's says DSP or 68030: below) */
 const char *pic_dither_state(void)
 {
 	return "68000";
 }
+#endif
 
 /* TJpgDec (third_party/tjpgd), for the family's programs on a 68000:
    small, and quick at 1/8 (no IDCT); the kinds it won't take from their
@@ -3378,7 +3398,7 @@ static int dither_whole(const PIC *p, PIC_PAL *pal, unsigned char *out)
 }
 #define dither_many dither_whole
 
-#ifdef PIC_LIBJPEG
+#if defined(PIC_LIBJPEG) || defined(PIC_OVL_BUILD)
 /* ---------------------------------------------------------------- the dither on the DSP */
 
 /* dsp/dither.a56 does dither_many's work to the bit: the 68030 sends the
@@ -3591,11 +3611,39 @@ static int dither_on_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 		dd_state = -1;		/* it stopped answering: the 68030 from now on */
 	return r > 0;
 }
+
+#ifdef PIC_OVL_BUILD
+/* PIC.OVL's (common/picovl): the DSP's dither alone, 1 done; 0: the
+   caller does it on the 68030 (no DSP, busy, a palette of 2, the check
+   failed, or it stopped answering) */
+int pic_dither_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
+{
+	return pal->n != 2 && dither_on_dsp(p, pal, out);
+}
+
+/* the check made now (dither_on_dsp's first time), in a turn of its own:
+   1 the DSP will dither, 0 not */
+int pic_dither_dsp_prepare(PIC_PAL *pal)
+{
+	int r;
+	if (pic_dsp == NULL || !pic_dsp_dither || pal->n == 2 || dd_state < 0)
+		return 0;
+	if (dd_state == 0) {
+		r = dd_check(pal);
+		if (r <= 0) {
+			dd_state = r < 0 ? 0 : -1;
+			return 0;
+		}
+		dd_state = 1;
+	}
+	return 1;
+}
+#endif
 #endif
 
 int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out)
 {
-#ifdef PIC_LIBJPEG
+#if defined(PIC_LIBJPEG) || defined(PIC_OVL_BUILD)
 	if (pal->n != 2 && dither_on_dsp(p, pal, out))
 		return 1;
 #endif

@@ -18,6 +18,18 @@
    2.2). The caller flushes the CPU's caches before running any of it */
 void *ovl_load(const char *path, long *taken, char *err, int errlen);
 
+/* ovl_load into a block the caller holds (mem, size bytes): set aside
+   before memory was split, for an overlay too big for what is left later
+   (EPDF's RENDER.OVL, 643 KB, on a 4 MB Falcon). Refused, as ovl_load is
+   when malloc is, before anything is read, when its text, data and BSS
+   are more than size; the block is never freed here, even when the file
+   turns out damaged */
+void *ovl_load_into(const char *path, void *mem, long size, long *taken, char *err, int errlen);
+
+/* the bytes ovl_load would take for path (text, data and BSS), from its
+   header; -1 when it is missing or isn't one */
+long ovl_need(const char *path);
+
 /* ovl_load, and the bytes after the fixups' end handed to tail as they
    are read, in pieces (base: the image, relocated), then once with n 0
    at the file's end; tail returns 0 when they are wrong (the file is

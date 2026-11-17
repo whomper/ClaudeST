@@ -18,6 +18,7 @@ static int turns, fails;
 static const char *feed;
 static long fed, feed_len;
 
+long pf_read(int h, void *buf, long n) { (void)h; (void)buf; (void)n; return -1; }
 int pf_open(const char *path, int mode) { return -1; }
 long pf_write(int h, const void *buf, long n) { return n; }
 void pf_close(int h) { }

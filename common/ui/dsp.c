@@ -19,6 +19,7 @@
 #include "../src/conn.h"
 #include "../src/plat.h"
 #include "dsprsa.h"
+#include "../src/trail.h"
 
 static const unsigned char st_n[128] = {
 	0x98,0x6e,0x86,0xcb,0x0a,0xb8,0xab,0x67,0xa2,0x6b,0x7f,0x62,0xb1,0x85,0x2f,0x27,
@@ -76,7 +77,9 @@ static int accel(unsigned char *x, size_t xlen, const unsigned char *n, size_t n
 	if (!trusted)
 		return 0;
 	t0 = pf_ms();
+	TRAIL("rsa in");
 	ok = dsp_rsa_public(x, xlen, n, nlen, e, elen);
+	TRAIL("rsa out");
 	t0 = pf_ms() - t0;
 	/* the time split: the job's own and its turns for GEM (only a real
 	   Falcon's log can tell them apart: Hatari's DSP isn't the chip) */
