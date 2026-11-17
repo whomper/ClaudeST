@@ -110,17 +110,12 @@ static int sf_setup(short height)
 
 void text_font(short h, short id, short w, short hgt)
 {
-	static short last_id = -1, last_w, last_h;
-
+	/* the whole setup every call, as before 24e2257: keeping it for the
+	   same font cost EContact's card 5-10 ms on Falcon-4:16 (17 Nov 2026;
+	   neither keying it on Logbase nor retrying a compare brought it
+	   back, while doing it every call did). An app that sets one font
+	   each redraw calls it once instead (ClaudeST 2.8's way) */
 	(void)h;
-	/* the same font again (an app that sets it each redraw): keep what
-	   was found, the CPU path's first-draw check (sf) too; asked again it
-	   cost each redraw's first fills the CPU path (ClaudeST, 13 Nov 2026) */
-	if (id == last_id && w == last_w && hgt == last_h)
-		return;
-	last_id = id;
-	last_w = w;
-	last_h = hgt;
 	fast = id == 1 && !get_cookie(0x4E564449L);	/* 'NVDI' */
 	/* TOS 4.04's VDI bolds a line and then clips it, so a column left
 	   of the clip, not drawn, smears into the clip's first; TOS 1.04's
