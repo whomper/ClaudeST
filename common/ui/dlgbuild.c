@@ -11,6 +11,11 @@
 #include "dlgbuild.h"
 #include "dialog.h"
 
+/* field.c's, in an app that has it: weak, as in dialog.c, so an app
+   without field.c links dlg_do without it (db_pass's reference made it
+   strong, and the link failed: EContact's sync, 17 Nov 2026) */
+LFIELD *lf_of(OBJECT *tree, short obj) __attribute__((weak));
+
 /* a field's template and valid characters: every field's are the same
    characters, so one string of each serves all, from its end (3 KB less
    than a pair a field, EMail 2.12) */

@@ -480,6 +480,9 @@ static const char *const rlab[] = { "Auto", "FDI", "DSP", "Both" };
 static const char *const rlab2[] = { "On", "Off" };
 static const char *const rpop[] = { "One", "Two", "Three" };
 static const char *const rbig[] = { "a", "b", "c", "d", "e", "f" };
+/* EWeb's Scripts (Erez, 17 Nov 2026): three of 13, and four asked for 13 */
+static const char *const rwide[] = { "Off", "Chosen sites", "Every site" };
+static short r_wide_sel, o_wide, o_wide4, wide_x[4], wide_w[2];
 static short r_big_sel;
 
 /* choice 2 (DSP) applies while the tick is off: a choice that follows another setting */
@@ -522,6 +525,17 @@ static void page_r2(SETTINGS *s, short x, short y, void *user)
 	before = set_db(s)->nobj;
 	o_big = set_radio(s, x, set_y(s, 2), 9, rbig, 6, &r_big_sel);
 	r_big_n = (short)(set_db(s)->nobj - before);
+	o_wide = set_radio(s, x, set_y(s, 3), 13, rwide, 3, &r_wide_sel);
+	o_wide4 = set_radio(s, x, set_y(s, 4), 13, rbig, 4, &r_big_sel);
+	{
+		OBJECT *t = set_tree(s);
+		short k;
+		for (k = 0; k < 3; k++)
+			wide_x[k] = t[o_wide + k].ob_x;
+		wide_w[0] = t[o_wide].ob_width;
+		wide_w[1] = t[o_wide4].ob_width;
+		wide_x[3] = t[o_wide4 + 1].ob_x - t[o_wide4].ob_x;
+	}
 }
 
 static const SET_PAGE pages_r[] = { { "Radios", page_r1 }, { "Plain", page_r2 } };
@@ -654,6 +668,13 @@ static void test_radios(void)
 		static const STEP s[] = { CANCELB, END };
 		run(&d, s);
 		checkf(r_big_n == 4, "set_radio with six choices makes four buttons (%d)", r_big_n);
+		/* (in characters: the stub's tree is in characters until placed; the low byte) */
+		checkf((wide_w[0] & 0xff) == 13 && ((wide_x[1] - wide_x[0]) & 0xff) == 14 &&
+		       ((wide_x[2] - wide_x[1]) & 0xff) == 14,
+		       "three radios of 13: 13 wide, 14 apart (%d, %d, %d)", wide_w[0] & 0xff,
+		       (wide_x[1] - wide_x[0]) & 0xff, (wide_x[2] - wide_x[1]) & 0xff);
+		checkf((wide_w[1] & 0xff) == 9 && (wide_x[3] & 0xff) == 10,
+		       "four asked for 13: 9 wide, 10 apart, as before (%d, %d)", wide_w[1] & 0xff, wide_x[3] & 0xff);
 	}
 }
 

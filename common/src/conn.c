@@ -27,21 +27,26 @@ int conn_tls_retry;
    works, 2.0 s on atari-home.de on a stock Falcon (EWeb, 14 Nov 2026) */
 #define NHOSTS 32
 char conn_hosts_path[200];
-static char ecdsa_hosts[NHOSTS][64], aes_hosts[NHOSTS][64];
+/* taken at the first handshake, not in BSS: 4 KB a 68000 program that
+   never does TLS kept for nothing (EContact on a 1 MB ST lost 6 of its
+   350 contacts at first boot to them, 17 Nov 2026); 0 if memory was short */
+static char (*ecdsa_hosts)[64], (*aes_hosts)[64];
 static int next_ecdsa, next_aes, hosts_read;
 
-static int listed(char list[NHOSTS][64], const char *host)
+static int listed(char (*list)[64], const char *host)
 {
 	int i;
+	if (!list)
+		return 0;
 	for (i = 0; i < NHOSTS; i++)
 		if (!strcmp(list[i], host))
 			return 1;
 	return 0;
 }
 
-static int add_host(char list[NHOSTS][64], int *next, const char *host)
+static int add_host(char (*list)[64], int *next, const char *host)
 {
-	if (!host[0] || listed(list, host))
+	if (!list || !host[0] || listed(list, host))
 		return 0;
 	str_copy(list[*next], host, 64);
 	*next = (*next + 1) % NHOSTS;
@@ -82,6 +87,8 @@ static void hosts_read_once(void)
 	if (hosts_read)
 		return;
 	hosts_read = 1;
+	if ((ecdsa_hosts = calloc(2 * NHOSTS, 64)) != 0)
+		aes_hosts = ecdsa_hosts + NHOSTS;
 	if (!hosts_path()[0] || (h = pf_open(hosts_path(), PF_READ)) < 0)
 		return;
 	f = malloc(HOSTS_MAX + 1);
@@ -109,7 +116,7 @@ static void hosts_save(void)
 {
 	char *b, *q;
 	int i, h;
-	if (!hosts_path()[0] || !(b = malloc(HOSTS_MAX + 1)))
+	if (!ecdsa_hosts || !hosts_path()[0] || !(b = malloc(HOSTS_MAX + 1)))
 		return;
 	q = b;
 	for (i = 0; i < NHOSTS; i++) {
@@ -125,7 +132,7 @@ static void hosts_save(void)
 	free(b);
 }
 
-static void note_host(char list[NHOSTS][64], int *next, const char *host)
+static void note_host(char (*list)[64], int *next, const char *host)
 {
 	if (add_host(list, next, host))
 		hosts_save();
