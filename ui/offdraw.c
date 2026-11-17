@@ -15,6 +15,12 @@ extern short _is_acc;		/* crt0.S: started as a desk accessory */
 
 static int ok;			/* 1 the VDI follows the logical screen, -1 it doesn't, 0 not tried */
 static unsigned char *buf;	/* OFF_ROWS lines, in ST RAM */
+/* GUARD bytes of our own each side of a raster the VDI blits from: NVDI's
+   shifted copy reads a long from the word before a line's first, and under
+   MiNT's memory protection the page before a block may be another
+   process's or the kernel's (EPlay, 15 Nov 2026: MEMORY VIOLATION on a
+   CT60 with FreeMiNT, XaAES and NVDI) */
+#define GUARD 16
 static long buf_bpl;		/* the line length it was taken for */
 static struct {
 	unsigned char *scr;	/* the logical screen as it was */
@@ -81,28 +87,29 @@ int off_begin(short vh, short x, short y, short w, short h)
 		long size = bpl * OFF_ROWS;
 		if (buf) {
 			if (_is_acc)
-				free(buf);
+				free(buf - GUARD);
 			else
-				Mfree(buf);
+				Mfree(buf - GUARD);
 			buf = 0;
 		}
 		if (_is_acc) {
 			/* an accessory takes no GEMDOS memory once it runs: its
 			   heap's, in ST RAM, or none */
-			buf = malloc(size);
-			if (buf && (unsigned long)buf + size > 0x01000000UL) {
+			buf = malloc(size + 2 * GUARD);
+			if (buf && (unsigned long)buf + size + 2 * GUARD > 0x01000000UL) {
 				free(buf);
 				buf = 0;
 			}
 		} else {
-			buf = Mxalloc(size, 0);		/* ST RAM, where the VDI draws */
+			buf = Mxalloc(size + 2 * GUARD, 0);	/* ST RAM, where the VDI draws */
 			if ((long)buf == -32 || !buf)	/* no Mxalloc: Malloc's is ST RAM */
-				buf = Malloc(size);
+				buf = Malloc(size + 2 * GUARD);
 			if ((long)buf <= 0)
 				buf = 0;
 		}
 		if (!buf)
 			return 0;
+		buf += GUARD;
 		buf_bpl = bpl;
 	}
 	x0 = (short)(x & ~15);

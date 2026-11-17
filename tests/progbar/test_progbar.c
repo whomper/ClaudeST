@@ -4,8 +4,10 @@
  * The family's progress bar (ui/progbar.c, the guidelines 5.9) against a
  * stand-in VDI: the pens it picks in each kind of screen, and what it
  * draws, whole and in pieces.
- *   - 256 colours, EWeb's palette (a 6x6x6 cube and greys over pens 16
- *     and up): 16 steps of blue, dark to light, none the ground's;
+ *   - 256 colours, a 6x6x6 cube and greys over pens 16 and up: 5 to 16
+ *     steps of blue, dark to light, none the ground's;
+ *   - 256 colours, EWeb's own (6x6x5): blues only, no violet among them
+ *     (Erez, 16 Nov 2026);
  *   - 256 colours, a palette of other colours: still 16 pens, none the
  *     ground's;
  *   - 16 colours, TOS's and a TT's: pens 1 to 15 in order, less the
@@ -81,7 +83,8 @@ static void tos16(int tt)
 static int blue_hue(short p)
 {
 	long r = pal[p][0], g = pal[p][1], b = pal[p][2], mn = r < g ? r : g;
-	return b >= r && b >= g && b - mn >= 250 && 60 * (r - g) >= -45 * (b - mn) && 60 * (r - g) <= 10 * (b - mn);
+	return b >= r && b >= g && b - mn >= 250 && 60 * (r - g) >= -45 * (b - mn) && 60 * (r - g) <= 10 * (b - mn)
+	       && (r < g || r <= b / 8);	/* no violet: red over green only in a navy */
 }
 
 static long lum(short p)
@@ -147,7 +150,7 @@ int main(void)
 	int i, r, g, b, ok;
 	short ground;
 
-	/* 256 colours, EWeb's palette: TOS's 16, a cube, greys */
+	/* 256 colours, a 6x6x6 cube: TOS's 16, the cube, greys */
 	planes = 8;
 	tos16(0);
 	i = 16;
@@ -161,7 +164,8 @@ int main(void)
 		char what[40];
 		snprintf(what, sizeof what, "256, cube, ground %d", ground);
 		progbar_pens(0, ground);
-		check(progbar_npens() >= 8 && progbar_npens() <= PB_SHADES, "256: 8 to 16 steps");
+		/* (six: its equal reds and greens are violets, left out) */
+		check(progbar_npens() >= 5 && progbar_npens() <= PB_SHADES, "256: 5 to 16 steps");
 		ok = 1;
 		for (i = 0; i < progbar_npens(); i++) {
 			short p = progbar_pen(i);
@@ -175,6 +179,38 @@ int main(void)
 		check(lum(progbar_pen(progbar_npens() - 1)) > 600000L, "256: its right end light");
 		fills(608, what);
 	}
+	/* 256 colours, EWeb's own (src/gfx/pagecol.c): 6 reds and greens, 5
+	   blues, then greys. Its equal reds and greens (#333380, #6666bf,
+	   #9999ff) were violets between the blues, the bar's steps blue and
+	   purple in turn (Erez, 16 Nov 2026) */
+	{
+		static const short grey[23] = { 13, 26, 38, 64, 77, 89, 115, 128, 140, 166, 179, 191,
+						212, 220, 226, 231, 235, 238, 241, 244, 247, 250, 253 };
+		tos16(0);
+		for (i = 0; i < 180; i++)
+			set(16 + i, (int) (i / 30 * 51 * 1000L / 255), (int) (i / 5 % 6 * 51 * 1000L / 255),
+			    (int) (i % 5 * 255 / 4 * 1000L / 255));
+		for (i = 0; i < 23; i++)
+			set(196 + i, (int) (grey[i] * 1000L / 255), (int) (grey[i] * 1000L / 255), (int) (grey[i] * 1000L / 255));
+		for (i = 219; i < 256; i++)
+			set(i, 0, 0, 0);
+		for (ground = 0; ground <= 8; ground += 8) {
+			char what[40];
+			snprintf(what, sizeof what, "256, EWeb's, ground %d", ground);
+			progbar_pens(0, ground);
+			ok = progbar_npens() >= 5 && progbar_npens() <= PB_SHADES;
+			for (i = 0; i < progbar_npens(); i++) {
+				short p = progbar_pen(i);
+				ok &= p != ground && blue_hue(p);
+				if (i)
+					ok &= lum(p) > lum(progbar_pen(i - 1));
+			}
+			check(ok, "256, EWeb's: 5 or more blues, no violet, dark to light");
+			check(lum(progbar_pen(0)) < 150000L, "256, EWeb's: its left end dark");
+			check(lum(progbar_pen(progbar_npens() - 1)) > 600000L, "256, EWeb's: its right end light");
+			fills(608, what);
+		}
+	}
 	/* 256 colours, few blues and none light (as TOS 4's): only blues,
 	   dark to light, never a grey for the light end */
 	for (i = 16; i < 256; i++)
@@ -185,7 +221,7 @@ int main(void)
 	set(43, 0, 267, 533);
 	set(44, 0, 0, 467);		/* the same blue again */
 	progbar_pens(0, 8);
-	ok = progbar_npens() >= 3 && progbar_npens() <= 7;
+	ok = progbar_npens() >= 2 && progbar_npens() <= 7;	/* 42 is a violet */
 	for (i = 0; i < progbar_npens(); i++) {
 		short p = progbar_pen(i);
 		ok &= blue_hue(p);

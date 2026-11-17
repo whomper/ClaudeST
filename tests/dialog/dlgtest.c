@@ -14,6 +14,8 @@
 #include "alert.h"
 #include "dialog.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 enum { ROOT, TITLE, FIELD, OK, CANCEL, NOBJ };
 static OBJECT tree[NOBJ];
 static TEDINFO ted;

@@ -19,6 +19,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 volatile long vbl_count;		/* global: the handler below names it */
 void vbl_h(void);
 __asm__(".text\n\t.globl vbl_h\nvbl_h:\n\taddq.l #1,vbl_count\n\trts\n");

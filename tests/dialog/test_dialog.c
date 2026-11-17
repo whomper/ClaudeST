@@ -101,6 +101,8 @@ static void setup(void)
 	win[0] = 200, win[1] = 100, win[2] = 320, win[3] = 160;
 }
 
+short gl_hchar = 16;		/* field.c's eye: the 16 row picture */
+
 /* ---------------- the stand-in AES ---------------- */
 
 void fake_bconout(short dev, short c)
@@ -740,6 +742,32 @@ static void test_long_fields(void)
 	check(clip_puts == 0 && !strcmp(f.view, "********************"), "... ^C and ^X take nothing out of it, stars shown");
 	lf_forget(tree);
 	check(!lf_of(tree, F1), "lf_forget: the dialog's fields let go");
+
+	/* the eye (C11, C12): a click on it shows the password in clear, another hides it; shown or not, nothing is copied out */
+	setup();
+	ted[0].te_ptmplt = tmpl;
+	big[0] = 0;
+	clip_puts = 0;
+	lf_init(&f, tree, F1, big, 99, '*');
+	check(f.secret && !f.clear, "lf_init with a mask: a secret, the eye closed");
+	check(lf_eye_image(&f) != 0, "lf_eye_image: an eye to give");
+	lf_eye_set(&f, ROW);
+	{
+		static const STEP p[] = { KEY(K('a')), KEY(K('b')), KEY(K('c')), CLICK(ROW), KEY(0x2e03), KEY(0x2d18),
+					  KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, p);
+	}
+	check(r == OK && !strcmp(big, "abc"), "typed abc, the eye clicked: the dialog went on to OK, ^X took nothing out");
+	check(f.clear && f.mask == 0 && !strcmp(f.view, "abc"), "... the password shown in clear");
+	check(clip_puts == 0 && f.secret, "... never copied out while shown (4.4)");
+	{
+		static const STEP p[] = { CLICK(ROW), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, p);
+	}
+	check(r == OK && !f.clear && f.mask == '*' && !strcmp(f.view, "***"), "the eye again: the stars back");
+	check(!lf_eye_click(tree, ROW + 1, &i, 0) && !lf_eye_click(tree, 0, &i, 0), "lf_eye_click: other objects are not its");
+	lf_forget(tree);
+	check(!lf_of(tree, F1) && !lf_eye_click(tree, ROW, &i, 0), "lf_forget: the eyes let go with the fields");
 }
 
 /* dlg_3d: the AES's 3D flags (0x0200 indicator, 0x0400 background, 0x0600

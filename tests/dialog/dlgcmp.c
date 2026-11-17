@@ -24,6 +24,8 @@
 #include "text.h"
 #include "dialog.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 extern unsigned long dlg_fast_t[4];
 extern unsigned long dlg_fast_kt[9];
 extern long dlg_fast_kn[9];

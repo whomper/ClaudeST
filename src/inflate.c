@@ -292,9 +292,10 @@ static int codes(ST *s, const HUFF *lc, const HUFF *dc)
 			ROOM(len);
 		{
 			/* the copy may overlap itself: byte by byte (on the 68000
-			   a dbra loop, 22 cycles a byte, where GCC's took 46) */
+			   a dbra loop, 22 cycles a byte, where GCC's took 46; a
+			   ColdFire, which GCC also calls __mc68000__, has no dbra) */
 			const char *q = w - dist;
-#ifdef __mc68000__
+#if defined(__mc68000__) && !defined(__mcoldfire__)
 			{
 				short k = (short) (len - 1);
 				__asm__ volatile ("1:\tmove.b (%1)+,(%0)+\n\tdbra %2,1b"
@@ -580,7 +581,7 @@ static int z_need(INFLATE *z, int n)
 	return 1;
 }
 
-static long z_take(INFLATE *z, int n)
+static long z_take_slow(INFLATE *z, int n)
 {
 	long v;
 	if (!n)
@@ -592,6 +593,30 @@ static long z_take(INFLATE *z, int n)
 	z->nbits -= n;
 	return v;
 }
+
+/* n bits: inline where the bits read ahead hold them, as they mostly do,
+   so that the call's register saves on the stack don't come between
+   z->bits and z->nbits. (EPlay 1.45, 17 Nov 2026: a VGZ's start under
+   NVDI 50 ms slower when the heap put the state's bits in the 68030's
+   data-cache line of z_take's own stack frame: every call evicted the
+   other, 13,668 hits of 13,970 down to 180.) A 68000 has no data cache:
+   its builds keep the call, and their 500 bytes. */
+#if defined(__mc68000__) && !defined(__mc68010__) && !defined(__mc68020__) && !defined(__mc68030__) \
+    && !defined(__mc68040__) && !defined(__mc68060__) && !defined(__mcoldfire__)
+#define z_take z_take_slow
+#else
+static inline __attribute__((always_inline)) long z_take(INFLATE *z, int n)
+{
+	unsigned long b = z->bits;
+	int nb = z->nbits;
+	if (n && nb >= n) {
+		z->bits = b >> n;
+		z->nbits = nb - n;
+		return (long)(b & ((1UL << n) - 1));
+	}
+	return z_take_slow(z, n);
+}
+#endif
 
 static int z_decode(INFLATE *z, const HUFF *h)
 {

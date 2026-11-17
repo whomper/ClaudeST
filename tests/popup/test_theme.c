@@ -89,6 +89,24 @@ int main(void)
 		check(ok && colour == 0 && nset == 0, "mono / 4 colours: the panel is pen 0, the rest pen 1, no palette touched");
 	}
 
+	/* 4 colours with an accent role: pen 2 turned to its rgb4 while the app runs, put back at exit */
+	{
+		static const short blue[3] = { 0, 0, 930 };
+		THEME_ROLE acc[1] = { { { 0, 0, 0 }, { 0, 0, 0 }, 0, 0 } };
+		planes = 2;
+		palette[2][0] = 1000, palette[2][1] = 0, palette[2][2] = 0;
+		nset = nget = 0;
+		theme_init(1, acc, 1);
+		theme_accent4(P_BASE, blue);
+		check(colour == 0 && pen[P_BASE] == 2 && pen[P_SEL] == 1 && pen[P_PANEL] == 0, "4 colours: the accent role is pen 2, the rest black and white");
+		check(palette[2][0] == 0 && palette[2][1] == 0 && palette[2][2] == 930, "4 colours: pen 2 is turned blue while the app runs");
+		theme_exit();
+		check(palette[2][0] == 1000 && palette[2][1] == 0 && palette[2][2] == 0, "4 colours: pen 2 put back at exit");
+		theme_init(0, acc, 1);
+		theme_accent4(P_BASE, blue);
+		check(pen[P_BASE] == 1 && palette[2][2] == 0, "4 colours, colour off: no accent, pen 2 untouched");
+	}
+
 	/* colour off by the app's option, even on 256 colours */
 	planes = 8;
 	nset = nget = 0;

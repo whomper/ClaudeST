@@ -91,14 +91,58 @@ static const char *name_of(const char *path)
 	return s;
 }
 
+/* the header's sizes: text, data, BSS and symbols, from an open file;
+   0 when it isn't one */
+static int header(int h, long *tsize, long *dsize, long *bsize, long *ssize)
+{
+	unsigned char hdr[28];
+
+	if (pf_read(h, hdr, sizeof(hdr)) != (long)sizeof(hdr) || hdr[0] != 0x60 || hdr[1] != 0x1A)
+		return 0;
+	*tsize = (long)be32(hdr + 2);
+	*dsize = (long)be32(hdr + 6);
+	*bsize = (long)be32(hdr + 10);
+	*ssize = (long)be32(hdr + 14);
+	return !(*tsize < 64 || *dsize < 0 || *bsize < 0 || *ssize < 0 || *tsize + *dsize + *bsize > MOST ||
+		 (*tsize | *dsize) & 1);
+}
+
+long ovl_need(const char *path)
+{
+	long tsize, dsize, bsize, ssize;
+	int h, ok;
+
+	if ((h = pf_open(path, PF_READ)) < 0)
+		return -1;
+	ok = header(h, &tsize, &dsize, &bsize, &ssize);
+	pf_close(h);
+	return ok ? tsize + dsize + bsize : -1;
+}
+
+/* the one loader: into the block given (mem, size), else into one from
+   malloc */
+static void *load(const char *path, void *mem, long size, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud,
+		  int *later);
+
 void *ovl_load(const char *path, long *taken, char *err, int errlen)
 {
-	return ovl_load_tail(path, taken, err, errlen, 0, 0, 0);
+	return load(path, 0, 0, taken, err, errlen, 0, 0, 0);
 }
 
 void *ovl_load_tail(const char *path, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud, int *later)
 {
-	unsigned char hdr[28], fx[512];
+	return load(path, 0, 0, taken, err, errlen, tail, ud, later);
+}
+
+void *ovl_load_into(const char *path, void *mem, long size, long *taken, char *err, int errlen)
+{
+	return load(path, mem, size, taken, err, errlen, 0, 0, 0);
+}
+
+static void *load(const char *path, void *mem, long size, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud,
+		  int *later)
+{
+	unsigned char fx[512];
 	unsigned char *m = 0;
 	long tsize, dsize, bsize, ssize, done, n;
 	OVL_FIX f;
@@ -112,16 +156,9 @@ void *ovl_load_tail(const char *path, long *taken, char *err, int errlen, OVL_TA
 		snprintf(err, errlen, "%s is missing", name);
 		return 0;
 	}
-	if (pf_read(h, hdr, sizeof(hdr)) != (long)sizeof(hdr) || hdr[0] != 0x60 || hdr[1] != 0x1A)
+	if (!header(h, &tsize, &dsize, &bsize, &ssize))
 		goto bad;
-	tsize = (long)be32(hdr + 2);
-	dsize = (long)be32(hdr + 6);
-	bsize = (long)be32(hdr + 10);
-	ssize = (long)be32(hdr + 14);
-	if (tsize < 64 || dsize < 0 || bsize < 0 || ssize < 0 || tsize + dsize + bsize > MOST ||
-	    (tsize | dsize) & 1)
-		goto bad;
-	if (!(m = malloc(tsize + dsize + bsize))) {
+	if (!(m = mem ? (tsize + dsize + bsize <= size ? mem : 0) : malloc(tsize + dsize + bsize))) {
 		pf_close(h);
 		snprintf(err, errlen, "no memory for %s (%ld KB)", name, (tsize + dsize + bsize + 1023) / 1024);
 		if (later)
@@ -135,7 +172,7 @@ void *ovl_load_tail(const char *path, long *taken, char *err, int errlen, OVL_TA
 		if (pf_read(h, m + done, n) != n)
 			goto bad;
 	}
-	if (ssize && pf_seek(h, (long)sizeof(hdr) + tsize + dsize + ssize) != (long)sizeof(hdr) + tsize + dsize + ssize)
+	if (ssize && pf_seek(h, 28L + tsize + dsize + ssize) != 28L + tsize + dsize + ssize)
 		goto bad;
 	ovl_fix_start(&f, m, tsize + dsize);
 	while (r == 1) {
@@ -160,7 +197,8 @@ void *ovl_load_tail(const char *path, long *taken, char *err, int errlen, OVL_TA
 	return m;
 bad:
 	pf_close(h);
-	free(m);
+	if (!mem)
+		free(m);
 	snprintf(err, errlen, "%s is damaged: copy it again from the release", name);
 	return 0;
 }
@@ -171,11 +209,34 @@ bad:
 static long flush_super(void)
 {
 	long *jar = *(long **)0x5a0, cpu = 0;
+#ifdef __mcoldfire__
+	/* a ColdFire (the FireBee's MCF5474: 512 sets of 4 ways, each cache):
+	   each line pushed and invalidated in both caches, as EmuTOS does */
+	{
+		unsigned long set, way;
+		(void)jar;
+		(void)cpu;
+		for (set = 0; set < 512; set++)
+			for (way = 0; way < 4; way++)
+				__asm__ volatile("cpushl %%bc,(%0)" : : "a"(set << 4 | way) : "memory");
+		return 0;
+	}
+#endif
 	for (; jar && jar[0]; jar += 2)
-		if (jar[0] == 0x5F435055L) {	/* _CPU: 0, 10, 20, 30, 40, 60 */
+		if (jar[0] == 0x5F43465FL) {	/* _CF_: a 68000 program on a FireBee */
+			/* FireTOS says _CPU 60, but a ColdFire has neither cpusha
+			   nor a CACR to read: its own push of each line, as the
+			   ColdFire build above (cpushl %bc,(%a0) as words). TLSFB.OVL
+			   is loaded so (Erez, 15 Nov 2026) */
+			unsigned long set, way;
+			for (set = 0; set < 512; set++)
+				for (way = 0; way < 4; way++) {
+					register unsigned long a __asm__("a0") = set << 4 | way;
+					__asm__ volatile(".short 0xf4e8" : : "a"(a) : "memory");
+				}
+			return 0;
+		} else if (jar[0] == 0x5F435055L)	/* _CPU: 0, 10, 20, 30, 40, 60 */
 			cpu = jar[1];
-			break;
-		}
 	if (cpu >= 40)
 		__asm__ volatile(".short 0xf4f8" ::: "memory");		/* cpusha bc */
 	if (cpu >= 60)
@@ -194,6 +255,15 @@ static long flush_super(void)
 void ovl_flush(void)
 {
 	/* Supexec (XBIOS 38) */
+#ifdef __mcoldfire__
+	__asm__ volatile("move.l %0,-(%%sp)\n\t"
+			 "moveq #38,%%d0\n\t"
+			 "move.w %%d0,-(%%sp)\n\t"
+			 "trap #14\n\t"
+			 "addq.l #6,%%sp"
+			 :: "r"(flush_super) : "d0", "d1", "d2", "a0", "a1", "a2", "memory", "cc");
+	return;
+#endif
 	__asm__ volatile("move.l %0,-(%%sp)\n\t"
 			 "move.w #38,-(%%sp)\n\t"
 			 "trap #14\n\t"

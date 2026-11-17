@@ -12,6 +12,8 @@
 #include <string.h>
 #include "tos.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 #pragma GCC diagnostic ignored "-Warray-bounds"	/* a fixed hardware address */
 static void sup_fastclk(void)
 {

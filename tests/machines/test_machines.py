@@ -8,7 +8,9 @@ fetched.
     python3 common/tests/machines/test_machines.py
 """
 import os
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -86,6 +88,39 @@ with tempfile.TemporaryDirectory() as d:
     check("the Falcon: no CLOCK.PRG (it has a clock)", not os.path.exists(os.path.join(auto, "CLOCK.PRG")))
     check("the Falcon: BOOTC.PRG with a real TOS (a 1 MB Falcon boots from A:), none with EmuTOS",
           os.path.exists(os.path.join(auto, "BOOTC.PRG")) == machines.Machine("Falcon", os.path.join(d, "f16x")).real)
+
+    # the FireBee stand-in: EmuTOS even with Erez's TOS 4.04 there (it runs no 68060)
+    with open(os.path.join(tos, "tos404.img"), "wb") as f:
+        f.write(struct.pack(">HH", 0x602E, 0x404) + bytes(60))
+    emu = os.path.join(d, "etos.img")
+    open(emu, "wb").write(bytes(64))
+    machines.emutos = lambda: emu         # nothing fetched
+    hd = os.path.join(d, "fb")
+    m = machines.Machine("FireBee:256", hd)
+    a = m.args()
+    check("FireBee: a Falcon with a 68060, its FPU, no DSP, 14 MB + 128 MB TT RAM, VGA",
+          a[a.index("--machine") + 1] == "falcon" and a[a.index("--cpulevel") + 1] == "6" and
+          a[a.index("--fpu") + 1] == "internal" and a[a.index("--dsp") + 1] == "none" and
+          a[a.index("--memsize") + 1] == "14" and a[a.index("--ttram") + 1] == "128" and
+          a[a.index("--monitor") + 1] == "vga")
+    check("FireBee: EmuTOS, a stand-in, in describe()", not m.real and a[a.index("--tos") + 1] == emu and
+          m.describe() == "FireBee:256, EmuTOS 1.4, a stand-in (a 68060 Falcon with FireTOS's cookies), "
+          "not a FireBee")
+    nv = open(os.path.join(hd + ".home", ".config", "hatari", "hatari.nvram"), "rb").read()
+    check("FireBee:256: the Falcon's NVRAM mode 001b", struct.unpack(">H", nv[14:16])[0] == 0x1B)
+    prg = open(os.path.join(hd, "AUTO", "FBSTAND.PRG"), "rb").read()
+    check("FireBee: C:\\AUTO\\FBSTAND.PRG, its BSS the new jar's 128 entries, no BOOTC or CLOCK",
+          prg[:2] == b"\x60\x1a" and struct.unpack(">I", prg[2:6])[0] == len(machines.FBSTAND) and
+          struct.unpack(">I", prg[10:14])[0] == 1024 and prg[28:28 + len(machines.FBSTAND)] == machines.FBSTAND and
+          sorted(os.listdir(os.path.join(hd, "AUTO"))) == ["FBSTAND.PRG"])
+    if shutil.which("m68k-linux-gnu-as"):
+        s_, o, b = (os.path.join(d, "fbstand" + x) for x in (".s", ".o", ".bin"))
+        open(s_, "w").write(machines.FBSTAND_S)
+        subprocess.run(["m68k-linux-gnu-as", "-m68000", "-o", o, s_], check=True)
+        subprocess.run(["m68k-linux-gnu-objcopy", "-O", "binary", "-j", ".text", o, b], check=True)
+        check("FBSTAND's bytes are FBSTAND_S assembled", open(b, "rb").read() == machines.FBSTAND)
+    else:
+        print("(no m68k-linux-gnu-as: FBSTAND's bytes not checked against its source)")
 
     hd = os.path.join(d, "own")
     os.makedirs(hd)

@@ -74,6 +74,11 @@ $(B)/test_pic_dsp: $(SRC_LJ) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_pr
 $(B)/test_pic_tjdsp: $(SRC) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/tjpgd.o $(B)/hatari.a | $(B)
 	cc $(CFLAGS) $(SAN) $(INC) -DPIC_TJPGD_DSP -DWITH_DSP_SIM -I$(HAT) -I$(HAT)/stub -o $@ $(SRC) dsp_sim.c \
 		$(B)/tjpgd.o $(B)/hatari.a
+# PIC.OVL's build (common/picovl): the same with -DPIC_OVL_BUILD, its
+# entries (pic_dither_dsp_prepare, pic_dither_dsp) against the 68030's
+$(B)/test_pic_ovldsp: $(SRC) dsp_sim.c ../../dsp/jpeg_prog.h ../../dsp/dither_prog.h $(HDR) $(B)/tjpgd.o $(B)/hatari.a | $(B)
+	cc $(CFLAGS) $(SAN) $(INC) -DPIC_TJPGD_DSP -DPIC_OVL_BUILD -DWITH_DSP_SIM -I$(HAT) -I$(HAT)/stub -o $@ $(SRC) dsp_sim.c \
+		$(B)/tjpgd.o $(B)/hatari.a
 $(B):
 	mkdir -p $@
 # aerapens (../../tools/pens), the Pi gateway's pens, against the Atari's
@@ -95,9 +100,10 @@ fuzzpens: $(B)/fuzz/aerapens
 # the seeds again on any build (each must run clean): make pensseeds
 pensseeds: $(B)/fuzz/aerapens
 	$(B)/fuzz/aerapens -runs=0 fuzz/pens
-testdsp: $(B)/test_pic_dsp $(B)/test_pic_tjdsp
+testdsp: $(B)/test_pic_dsp $(B)/test_pic_tjdsp $(B)/test_pic_ovldsp
 	python3 run.py $(B)/test_pic_dsp
 	python3 run.py $(B)/test_pic_tjdsp
+	python3 run.py $(B)/test_pic_ovldsp
 test: $(B)/test_pic $(B)/test_pic_lj
 	python3 run.py $(B)/test_pic
 	python3 run.py $(B)/test_pic_lj

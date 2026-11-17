@@ -14,6 +14,8 @@
 #include "gem.h"
 #include "notify.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static void say(const char *s)
 {
 	nf_debug(s);

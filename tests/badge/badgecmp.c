@@ -16,6 +16,8 @@
 #include "gem.h"
 #include "badge.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static short vdi_h, scr_w, scr_h, planes, cw, ch, text_h;
 static MFDB scr, mem;
 static unsigned char *buf_a, *buf_b;

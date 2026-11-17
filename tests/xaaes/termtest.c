@@ -29,6 +29,8 @@
 #include "gem.h"
 #include "crash.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static void say(const char *a)
 {
 	static char line[80];

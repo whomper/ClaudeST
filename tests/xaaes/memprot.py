@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""memprot.py WORK [EMUTOS.IMG] [--display :105]: FreeMiNT's memory protection (run.py --mem-prot) and the program flags.
+"""memprot.py WORK [EMUTOS.IMG] [--display :105] [--machine falcon|tt|ct60]: FreeMiNT's memory protection (run.py --mem-prot) and the program flags.
 
 INTTEST.PRG (PRGFLAGS 7: memory protection bits 4-5 = 0, private) and INTTESTG.PRG (0x17: global) put a routine on
 the vertical blank queue whose code and counter are in the program's own memory. Without protection both count.
@@ -28,6 +28,10 @@ def main():
     if "--display" in sys.argv:
         display = sys.argv[sys.argv.index("--display") + 1]
         a.remove(display)
+    machine = []
+    if "--machine" in sys.argv:          # (run.py's: falcon, tt or ct60)
+        machine = ["--machine", sys.argv[sys.argv.index("--machine") + 1]]
+        a.remove(machine[1])
     if not a:
         sys.exit(__doc__)
     work = os.path.abspath(a[0])
@@ -38,7 +42,8 @@ def main():
     for prg, prot, counts in CASES:
         w = os.path.join(work, "%s-%s" % (prg, "prot" if prot else "noprot"))
         subprocess.run([sys.executable, os.path.join(HERE, "run.py"), w, img, os.path.join(HERE, "build", prg + ".PRG"),
-                        "--display", display, "--steps", "until INT start 150; wait 12"] + (["--mem-prot"] if prot else []),
+                        "--display", display, "--steps", "until INT start 150; wait 12"] + (["--mem-prot"] if prot else []) +
+                       machine,
                        capture_output=True, text=True)
         log = open(os.path.join(w, "hatari.log"), errors="replace").read()
         for n in ("hd", "hd.img"):

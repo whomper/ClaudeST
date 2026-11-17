@@ -17,6 +17,8 @@
 #include "text.h"
 #include "offdraw.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 short vdi_h, cw, ch, scr_w, scr_h, planes;
 static MFDB scr, mem;
 static unsigned char *buf_a, *buf_b;

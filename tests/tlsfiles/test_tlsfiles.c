@@ -35,6 +35,7 @@
 
 static int failed;
 static int opens, looks, reads, read_ats, idles;
+static int update_readonly;	/* PF_UPDATE opened read-only, as EUpdate's plat did */
 static char watch[300];		/* the file counted; others pass */
 
 static void check(int ok, const char *what)
@@ -52,7 +53,7 @@ int pf_open(const char *path, int mode)
 {
 	/* PF_UPDATE write-only, as the apps' plat opens it (TOS mode 1) */
 	int fl = mode == PF_READ ? O_RDONLY : mode == PF_WRITE ? O_WRONLY | O_CREAT | O_TRUNC
-		: mode == PF_APPEND ? O_WRONLY | O_CREAT | O_APPEND : O_WRONLY;
+		: mode == PF_APPEND ? O_WRONLY | O_CREAT | O_APPEND : update_readonly ? O_RDONLY : O_WRONLY;
 	if (is_watched(path))
 		opens++;
 	return open(path, fl, 0644);
@@ -261,6 +262,15 @@ static int roots(const char *dir)
 	check(opens == 2, "ROOTS.DAT opened twice: read once, then its date written in place");
 	n = load(pem, pem, err);
 	check(n == n0 && opens == 0, "and then found by the new date");
+
+	printf("== CACERT.PEM's date changed, and PF_UPDATE can't write (EUpdate's plat)\n");
+	update_readonly = 1;
+	the_stamp = 3000;
+	n = load(pem, tls_roots_cache, err);
+	check(n == n0, "the same anchors, by the checksum");
+	n = load(pem, pem, err);
+	check(n == n0 && opens == 0, "the next session found by the new date: the cache written whole");
+	update_readonly = 0;
 
 	printf("== an accessory: CACERT.PEM through tls_read_at\n");
 	unlink(tls_roots_cache);

@@ -196,6 +196,18 @@ short db_long(DLGB *b, short x, short y, char *text, short len, short cap, char 
 	return obj;
 }
 
+short db_pass(DLGB *b, short x, short y, char *text, short len, short cap)
+{
+	short obj = db_long(b, x, y, text, len, cap, '*'), e;
+	LFIELD *f = lf_of(b->tree, obj);
+	void *img;
+	if (!f || !(img = lf_eye_image(f)))
+		return obj;		/* no long field or no eye to spare: the stars alone */
+	e = db_add(b, G_IMAGE, TOUCHEXIT, 0, (long)img, x + len + 1, y, 2, 1);
+	lf_eye_set(f, e);
+	return obj;
+}
+
 short db_button(DLGB *b, short x, short y, short w, const char *label, short flags)
 {
 	return db_add(b, G_BUTTON, SELECTABLE | flags, 0, (long)label, x, y, w, 1);

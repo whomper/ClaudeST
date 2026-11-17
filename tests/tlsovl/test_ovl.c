@@ -312,6 +312,69 @@ static void tails(void)
 	ovl_flush();		/* (nothing here: the Atari's caches) */
 }
 
+/* ovl_load_into: the same image in a block the caller holds (relocated
+   to it), refused when the block is too small (nothing read, the block
+   untouched), the block never freed (a damaged file); ovl_need the sizes */
+static void into(const char *path)
+{
+	long n, taken, need, t, d, b, i;
+	unsigned char *file = slurp(path, &n), *img, *blk;
+	char err[120];
+	void *p;
+
+	if (!file) {
+		check(0, "TLS.OVL read");
+		return;
+	}
+	t = be32(file + 2), d = be32(file + 6), b = be32(file + 10);
+	need = ovl_need(path);
+	check(need == t + d + b, "ovl_need: text, data and BSS");
+	check(ovl_need("build/none.ovl") == -1, "ovl_need: a missing file -1");
+	img = ovl_load(path, &taken, err, sizeof(err));
+	blk = malloc((size_t)need + 64);
+	memset(blk, 0xA5, (size_t)need + 64);
+	p = ovl_load_into(path, blk, need + 64, &taken, err, sizeof(err));
+	check(p == blk && taken == need, p ? "loaded into the block given, at its start" : err);
+	{
+		/* the same image, but for the fixups' longs (where it landed):
+		   the fixups from the file, as real() finds them */
+		unsigned char *fixed = calloc((size_t)(t + d), 1), *fx = file + 28 + t + d + be32(file + 14);
+		long at = (long)be32(fx);
+
+		if (at)
+			for (fixed[at] = 1, fx += 4; *fx; fx++)
+				if ((at += *fx == 1 ? 254 : *fx), *fx != 1)
+					fixed[at] = 1;
+		for (i = 0; p && img && i < t + d; i++) {
+			if (fixed[i]) {
+				if (be32(img + i) - (uint32_t)(uintptr_t)img != be32(blk + i) - (uint32_t)(uintptr_t)blk)
+					break;
+				i += 3;
+			} else if (img[i] != blk[i])
+				break;
+		}
+		free(fixed);
+	}
+	check(p && i >= t + d, "the same image as ovl_load's, relocated to the block");
+	for (i = 0; p && i < b && !blk[t + d + i]; i++)
+		;
+	check(p && i == b, "its BSS zeroed");
+	check(p && blk[need] == 0xA5, "nothing written past text, data and BSS");
+	memset(blk, 0xA5, (size_t)need + 64);
+	p = ovl_load_into(path, blk, need - 2, &taken, err, sizeof(err));
+	check(!p && taken == 0 && strstr(err, "no memory for"), "a block too small: refused as ovl_load is");
+	for (i = 0; i < need + 64 && blk[i] == 0xA5; i++)
+		;
+	check(i == need + 64, "the block too small untouched");
+	p = ovl_load_into("build/short.ovl", blk, need + 64, &taken, err, sizeof(err));
+	check(!p && strstr(err, "damaged"), "a damaged file into a block: refused");
+	blk[0] = 1;			/* (still the caller's: ASan says if it was freed) */
+	check(1, "the block kept by its caller");
+	free(blk);
+	free(img);
+	free(file);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -321,6 +384,7 @@ int main(int argc, char **argv)
 	real(argv[1]);
 	made();
 	damaged(argv[1]);
+	into(argv[1]);
 	tails();
 	printf("%s\n", fails ? "FAILED" : "all passed");
 	return fails != 0;

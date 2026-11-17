@@ -9,22 +9,78 @@
 | leaves room for a return address (EHypView found that the earlier copy
 | missed it, so nf_debug() never printed).
 
+#ifdef __mcoldfire__
+| The ColdFire (the FireBee): no emulator, so no NatFeats; and NatFeats'
+| opcodes are no illegal instructions there (0x7300 is mvs.b %d0,%d1 on a
+| V4e), so nothing is tried and no vector touched: none found, and a call
+| does nothing
 	.text
+	.globl	nf_probe, nf_call2, nf_find, nf_vec
+nf_probe:
+nf_find:
+nf_call2:
+	moveq	#0,%d0
+	rts
+	.data
+	.weak	nf_on
+nf_vec:
+	.long	0x10
+nf_on:
+	.long	0
+	.text
+#else
+	.text
+| nf_vec from the CPU: VBR + 0x10 on a 68010 or later (the _CPU cookie),
+| 0x10 on a 68000. In nf.S itself, so every caller of nf_probe and nf_find
+| is safe, also those that call them through their own Supexec (EWeb's
+| log_event). A Vampire V4SA's Atari core keeps VBR away from 0: the
+| handler put on 0x10 wasn't used, 0x7300 went to the system's own
+| handler, and EMail and EHypView were ended, EWeb, EPDF and EPlay hung
+| (15 Nov 2026). Uses d0, a0
+nf_none:
+	moveq	#0,%d0
+	rts
+
+nf_setvec:
+	move.l	0x5a0.w,%a0		| the cookie jar
+	move.l	%a0,%d0
+	beq.s	9f
+1:	move.l	(%a0)+,%d0
+	beq.s	9f
+	cmp.l	#0x5F435055,%d0		| '_CPU'
+	beq.s	2f
+	addq.l	#4,%a0
+	bra.s	1b
+2:	moveq	#10,%d0
+	cmp.l	(%a0),%d0
+	bgt.s	9f			| a 68000: no VBR
+	.dc.w	0x4e7a,0x0801		| movec %vbr,%d0 (as words: no .chip)
+	add.l	#0x10,%d0
+	move.l	%d0,nf_vec
+9:	rts
+
 	.globl	nf_probe
 nf_probe:
-	move.l	0x10.w,%a1		| illegal instruction vector
+	tst.l	nf_on			| only where the app's INF asked for them
+	beq.s	nf_none
+	bsr.s	nf_setvec
+	move.l	%a2,-(%sp)
+	movea.l	nf_vec,%a2		| the illegal instruction vector (VBR + 0x10)
+	move.l	(%a2),%a1
 	move.l	%sp,%a0
-	move.l	#1f,0x10.w
+	move.l	#1f,(%a2)
 	pea	nf_name
 	subq.l	#4,%sp			| NatFeats read the argument at 4(sp),
 	moveq	#0,%d0			| as in a C call: leave room for the
 	.dc.w	0x7300			| return address (nf_id)
 	addq.l	#8,%sp
-	move.l	%a1,0x10.w
+	move.l	%a1,(%a2)
+	movea.l	(%sp)+,%a2
 	rts
 1:	move.l	%a0,%sp			| no NatFeats: illegal instruction
 	moveq	#0,%d0
-	move.l	%a1,0x10.w
+	move.l	%a1,(%a2)
+	movea.l	(%sp)+,%a2
 	rts
 
 	.globl	nf_call2
@@ -42,18 +98,41 @@ nf_name:
 	.text
 	.globl	nf_find
 nf_find:
+	tst.l	nf_on
+	beq	nf_none
+	bsr	nf_setvec
 	move.l	4(%sp),%d1
-	move.l	0x10.w,%a1
+	move.l	%a2,-(%sp)
+	movea.l	nf_vec,%a2
+	move.l	(%a2),%a1
 	move.l	%sp,%a0
-	move.l	#2f,0x10.w
+	move.l	#2f,(%a2)
 	move.l	%d1,-(%sp)
 	subq.l	#4,%sp			| argument at 4(sp), as in a C call
 	moveq	#0,%d0
 	.dc.w	0x7300			| nf_id
 	addq.l	#8,%sp
-	move.l	%a1,0x10.w
+	move.l	%a1,(%a2)
+	movea.l	(%sp)+,%a2
 	rts
 2:	move.l	%a0,%sp
 	moveq	#0,%d0
-	move.l	%a1,0x10.w
+	move.l	%a1,(%a2)
+	movea.l	(%sp)+,%a2
 	rts
+
+| where the illegal-instruction vector is: 0x10, or VBR + 0x10 as
+| nf_setvec finds it
+	.data
+	.globl	nf_vec
+	.weak	nf_on			| a test program defines its own, set to 1
+nf_vec:
+	.long	0x10
+| NatFeats are looked for only when the app sets nf_on, from its INF's
+| NATFEATS=1, which only the test rigs write (Erez, 15 Nov 2026: "make it a
+| .INF setting so that it can be added in our testing but have no bearing
+| outside"): a real machine never runs the probe's illegal instruction
+nf_on:
+	.long	0
+	.text
+#endif

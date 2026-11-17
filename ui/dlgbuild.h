@@ -124,6 +124,9 @@ short db_field(DLGB *b, short x, short y, char *buf, short len, char kind);
    bytes, the app's), mask '*' shows stars. Unframed: db_framed puts the frame on. dlg_do and
    settings.c take its keys */
 short db_long(DLGB *b, short x, short y, char *text, short len, short cap, char mask);
+/* a password: db_long with mask '*', and the eye (field.h) 1 character after it, 2 wide, 1 high, which dlg_do turns:
+   the stars or the text, never copied either way (4.4). Returns the field's object, as db_long. Unframed, as db_long */
+short db_pass(DLGB *b, short x, short y, char *text, short len, short cap);
 /* a G_BUTTON, SELECTABLE | flags (EXIT, DEFAULT, TOUCHEXIT) */
 short db_button(DLGB *b, short x, short y, short w, const char *label, short flags);
 /* the title band: the first row, w characters wide, white words on black (G_BOXTEXT 0x1071), the

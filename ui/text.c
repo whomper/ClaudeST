@@ -110,7 +110,17 @@ static int sf_setup(short height)
 
 void text_font(short h, short id, short w, short hgt)
 {
+	static short last_id = -1, last_w, last_h;
+
 	(void)h;
+	/* the same font again (an app that sets it each redraw): keep what
+	   was found, the CPU path's first-draw check (sf) too; asked again it
+	   cost each redraw's first fills the CPU path (ClaudeST, 13 Nov 2026) */
+	if (id == last_id && w == last_w && hgt == last_h)
+		return;
+	last_id = id;
+	last_w = w;
+	last_h = hgt;
 	fast = id == 1 && !get_cookie(0x4E564449L);	/* 'NVDI' */
 	/* TOS 4.04's VDI bolds a line and then clips it, so a column left
 	   of the clip, not drawn, smears into the clip's first; TOS 1.04's
@@ -208,6 +218,30 @@ static void cells_st_high(unsigned char *d, const unsigned char *sp, short n)
 		d[320] = g[1024];	d[400] = g[1280];	d[480] = g[1536];	d[560] = g[1792];
 		d[640] = g[2048];	d[720] = g[2304];	d[800] = g[2560];	d[880] = g[2816];
 		d[960] = g[3072];	d[1040] = g[3328];	d[1120] = g[3584];	d[1200] = g[3840];
+	}
+}
+
+/* n whole cells of 8x8 on ST medium's screen (two planes, 160 bytes a
+   line) from d on, the first at pixel px: each glyph row one load and its
+   two planes' bytes stored at fixed places (the loop over rows with a
+   step, 700 cycles a cell, was most of a page scrolled: 124 of 170 ms).
+   Not inlined: in text_plain it moved the other screens' cell loops in a
+   68030's instruction cache, Falcon-4:16's text_plain 59 -> 72 ms */
+static __attribute__((noinline)) void cells_st_med(unsigned char *d, const unsigned char *sp, short n, short px)
+{
+	for (; n > 0; n--, px += 8) {
+		const unsigned char *g = glyph + *sp++;
+		unsigned char v;
+
+		v = g[0];	d[0] = v;	d[2] = v;
+		v = g[256];	d[160] = v;	d[162] = v;
+		v = g[512];	d[320] = v;	d[322] = v;
+		v = g[768];	d[480] = v;	d[482] = v;
+		v = g[1024];	d[640] = v;	d[642] = v;
+		v = g[1280];	d[800] = v;	d[802] = v;
+		v = g[1536];	d[960] = v;	d[962] = v;
+		v = g[1792];	d[1120] = v;	d[1122] = v;
+		d += (px & 8) ? 3 : 1;
 	}
 }
 
@@ -422,6 +456,8 @@ void text_plain(short h, short x, short y, const char *s, long n)
 					k = last - i + 1;
 					if (step == 2)
 						cells_st_high(d, sp, (short)k);
+					else if (step == 4 && sf_bpl == 160 && ch == 8 && nr == 8)
+						cells_st_med(d, sp, (short)k, px);
 					else
 						cells_planes(d, sp, (short)k, px, r0, nr, step);
 					sp += k;
@@ -447,6 +483,64 @@ void text_plain(short h, short x, short y, const char *s, long n)
  * window's scroll, inverting or clearing on an ST (EPDF's gemprof.py,
  * 1 Nov 2026: scr_rows 30 ms of a line scrolled, box_op 35 of Select all).
  */
+#ifdef __mcoldfire__
+/* (a ColdFire's: the same rows in C, as it has no dbra, no word-indexed
+   jump and no movem to or from (An)+; GCC calls it __mc68000__ too) */
+static void rows_xor(unsigned char *d, short rows, long line, short n)
+{
+	long skip = line - n;
+	for (; rows > 0; rows--) {
+		unsigned long *p = (unsigned long *)d;
+		short k;
+		for (k = (short)(n >> 2); k > 0; k--, p++)
+			*p = ~*p;
+		d = (unsigned char *)p;
+		if (n & 2) {
+			*(unsigned short *)d = (unsigned short)~*(unsigned short *)d;
+			d += 2;
+		}
+		d += skip;
+	}
+}
+
+static void rows_set(unsigned char *d, short rows, long line, short n, unsigned long v)
+{
+	long skip = line - n;
+	for (; rows > 0; rows--) {
+		unsigned long *p = (unsigned long *)d;
+		short k;
+		for (k = (short)(n >> 2); k > 0; k--)
+			*p++ = v;
+		d = (unsigned char *)p;
+		if (n & 2) {
+			*(unsigned short *)d = (unsigned short)v;
+			d += 2;
+		}
+		d += skip;
+	}
+}
+
+static void rows_copy_mid2(unsigned char *d, long dline, const unsigned char *s, long sline, short rows, short n)
+{
+	long skip = sline - n, dskip = dline - n;
+	for (; rows > 0; rows--) {
+		unsigned long *q = (unsigned long *)d;
+		const unsigned long *p = (const unsigned long *)s;
+		short k;
+		for (k = (short)(n >> 2); k > 0; k--)
+			*q++ = *p++;
+		d = (unsigned char *)q;
+		s = (const unsigned char *)p;
+		if (n & 2) {
+			*(unsigned short *)d = *(const unsigned short *)s;
+			d += 2;
+			s += 2;
+		}
+		s += skip;
+		d += dskip;
+	}
+}
+#else
 static void rows_xor(unsigned char *d, short rows, long line, short n)
 {
 	short longs = (short)(n >> 2), blk = (short)(longs >> 3), remj = (short)(-2 * (longs & 7)), tail = (short)(n & 2);
@@ -555,6 +649,8 @@ static void rows_copy_mid2(unsigned char *d, long dline, const unsigned char *s,
 			 : "d0", "d2", "d3", "d4", "d5", "d6", "d7", "a2", "memory", "cc");
 }
 
+#endif
+
 static void rows_copy_mid(unsigned char *d, const unsigned char *s, short rows, long line, short n)
 {
 	rows_copy_mid2(d, line, s, line, rows, n);
@@ -600,6 +696,100 @@ static inline void move_group(unsigned short *d, const unsigned short *s, unsign
 	}
 }
 
+/* The screen's layout for the planar copies (scr_rows, scr_put): from
+   Line-A, on single TOS only (under MiNT or MagiC another program may draw
+   meanwhile: the VDI's copy there), interleaved planes only (2, 4 or 8;
+   one plane can't show a plane half moved). 0 not looked at yet, 1 usable,
+   -1 not. Apart from text_plain's check: under NVDI too (Erez's Falcon
+   with NVDI showed the planes half moved; Hatari's NVDI doesn't) */
+static int pg;
+static short pg_planes, pg_w, pg_h;
+static long pg_bpl;
+
+static int planar_geom(void)
+{
+	if (!pg) {
+		const unsigned char *const *f;
+		const short *la = line_a(&f);
+
+		pg = -1;
+		pg_planes = la[0];	/* v_planes */
+		pg_bpl = la[1];		/* v_lin_wr */
+		pg_w = la[-6];		/* V_REZ_HZ */
+		pg_h = la[-2];		/* V_REZ_VT */
+		if (!get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L) &&	/* 'MiNT', 'MagX' */
+		    (pg_planes == 2 || pg_planes == 4 || pg_planes == 8) && pg_w > 0 && pg_h > 0 &&
+		    pg_bpl == (long)pg_w / 8 * pg_planes)
+			pg = 1;
+	}
+	return pg == 1;
+}
+
+/* rows rows of the box x1..x2 from s to d (each the first row's start,
+   sline and dline on to the next, negative going up), each 16-pixel
+   group with all its planes together: a picture that moves is never seen
+   with some of its planes moved and others not. TOS's copy (and the
+   BLiTTER) goes a plane at a time over the whole box, and a copy that
+   lasts a few frames showed the old picture in other colours: lines in
+   blue and yellow (Erez's Falcon, 256 colours, 14 Nov 2026; Hatari on
+   TOS 4.04 Falcon-4:256: 69 frames of 139 that changed while the week
+   view scrolled) */
+static void planar_rows(unsigned char *d, long dline, const unsigned char *s, long sline, short x1, short x2,
+			short rows, short np)
+{
+	short g0 = x1 >> 4, g1 = x2 >> 4, m0, m1, step = (short)(np * 2), mid, left, right;
+	unsigned short lmask = (unsigned short)(0xFFFFu >> (x1 & 15)), rmask = (unsigned short)(0xFFFFu << (15 - (x2 & 15)));
+	long l, m, rr;
+
+	if (g0 == g1) {
+		lmask &= rmask;
+		rmask = 0;
+	}
+	m0 = lmask == 0xFFFF ? g0 : g0 + 1;
+	m1 = g0 == g1 ? g0 - 1 : rmask == 0xFFFF ? g1 : g1 - 1;
+	if (lmask == 0xFFFF && g0 == g1)
+		m1 = g0;
+	l = (long)g0 * step;
+	m = (long)m0 * step;
+	rr = (long)g1 * step;
+	mid = (short)((m1 - m0 + 1) * step);
+	left = m0 > g0 || (g0 == g1 && lmask != 0xFFFF);
+	right = g1 != g0 && m1 < g1;
+	/* the cut groups at the edges a column each, the whole groups
+	   between in one loop over the rows (a call a row was 22 ms of a
+	   narrow pane's scroll on Falcon:16, against 6 for TOS's copy):
+	   each group's planes always together */
+	if (left) {
+		const unsigned char *ss = s;
+		unsigned char *dd = d;
+		short r;
+
+		for (r = rows; r > 0; r--, ss += sline, dd += dline)
+			move_group((unsigned short *)(dd + l), (const unsigned short *)(ss + l), lmask, np);
+	}
+	if (mid > 0)
+		rows_copy_mid2(d + m, dline, s + m, sline, rows, mid);
+	if (right)
+		for (; rows > 0; rows--, s += sline, d += dline)
+			move_group((unsigned short *)(d + rr), (const unsigned short *)(s + rr), rmask, np);
+}
+
+int scr_put(const unsigned char *src, long sbpl, short splanes, const short *p)
+{
+	short x1 = p[0], y1 = p[1], x2 = p[2], y2 = p[3], tx = p[4], ty = p[5];
+	unsigned char *base;
+
+	/* the box at the same x in the buffer and on the screen (the groups
+	   line up), all of it on the screen */
+	if (!planar_geom() || splanes != pg_planes || tx != x1 || p[6] != x2 || p[7] - ty != y2 - y1 || x1 < 0 ||
+	    x2 < x1 || x2 >= pg_w || y1 < 0 || y2 < y1 || ty < 0 || p[7] >= pg_h || sbpl < (long)(x2 / 16 + 1) * 2 * splanes)
+		return 0;
+	base = (unsigned char *)trap14_w(3);	/* Logbase */
+	planar_rows(base + (long)ty * pg_bpl, pg_bpl, src + (long)y1 * sbpl, sbpl, x1, x2, (short)(y2 - y1 + 1),
+		    pg_planes);
+	return 1;
+}
+
 void scr_rows(short h, const short *p)
 {
 	short x1 = p[0], y1 = p[1], x2 = p[2], y2 = p[3], ty = p[5], g0, g1, m0, m1, rows, r, step;
@@ -607,6 +797,27 @@ void scr_rows(short h, const short *p)
 	unsigned char *base;
 	long bpl;
 
+	/* each group's planes together where a plane at a time shows (above,
+	   planar_rows): a box the screen holds, at least 256 pixels wide, the
+	   rows moving up or down. A narrower one stays TOS's: its copy ends
+	   inside a frame (Falcon:16, EContact's 192-wide list: 6 ms, where
+	   the CPU took 13) */
+	if (x2 - x1 >= 255 && planar_geom() && p[4] == x1 && p[6] == x2 && p[7] - ty == y2 - y1 && x1 >= 0 && x2 >= x1 && x2 < pg_w &&
+	    y1 >= 0 && y2 >= y1 && y2 < pg_h && ty >= 0 && p[7] < pg_h &&
+	    !(clipping && (x1 < clip_now[0] || x2 > clip_now[2] || ty < clip_now[1] || p[7] > clip_now[3]))) {
+		short rows = (short)(y2 - y1 + 1);
+
+		base = (unsigned char *)trap14_w(3);	/* Logbase */
+		/* up the screen from the top row, down it from the last: no
+		   row written before it is read, and the beam meets one seam */
+		if (ty <= y1)
+			planar_rows(base + (long)ty * pg_bpl, pg_bpl, base + (long)y1 * pg_bpl, pg_bpl, x1, x2, rows,
+				    pg_planes);
+		else
+			planar_rows(base + (long)p[7] * pg_bpl, -pg_bpl, base + (long)y2 * pg_bpl, -pg_bpl, x1, x2, rows,
+				    pg_planes);
+		return;
+	}
 	/* by the CPU only on a 68000 and a box at least 384 pixels wide: a
 	   row has its overhead and two cut groups, so a narrow box is
 	   faster through TOS's copy (TOS 1.04 ST:mono, 192 wide: vro_cpyfm

@@ -229,7 +229,22 @@ char *cs_to_atari(const char *src, long n, int cs, long *outlen)
 				continue;
 			}
 			if (cs == CS_UTF8 && (c & 0xE0) == 0xC0 && q < e && (*q & 0xC0) == 0x80) {
-				u = ((unsigned long)(c & 0x1F) << 6) | (*q++ & 0x3F);
+				unsigned short v = (unsigned short)(((c & 0x1F) << 6) | (*q++ & 0x3F));
+				/* a Hebrew letter or Latin-1 straight from the tables, not
+				   through a call each (an 8 MHz ST: 36 microseconds a
+				   letter, 100 ms of a Hebrew letter's 470): the very
+				   answers uni_to_atari gives (tests/charset) */
+				if (!latin1_ready)
+					init_latin1();
+				if ((unsigned short)(v - 0x05D0) <= 0x05EA - 0x05D0 && heb_map[v - 0x05D0]) {
+					*p++ = (char)heb_map[v - 0x05D0];
+					continue;
+				}
+				if ((unsigned short)(v - 0xA0) <= 0xFF - 0xA0 && latin1_map[v - 0xA0]) {
+					*p++ = (char)latin1_map[v - 0xA0];
+					continue;
+				}
+				u = v;
 			} else {
 				i = q - 1 - s;
 				u = next_char(s, n, &i, cs);

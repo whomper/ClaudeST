@@ -12,6 +12,8 @@
 #include "gem.h"
 #include "bgwork.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static void step(void)
 {
 	u32 t = tos_ms();

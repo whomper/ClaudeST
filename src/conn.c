@@ -19,24 +19,116 @@ char conn_cacert[200];
 int conn_tls_retry;
 
 /* servers that only have ECDSA certificates, and servers that refused
-   ChaCha20 alone: later connections offer that at once */
-static char ecdsa_hosts[8][64], aes_hosts[8][64];
+   ChaCha20 alone: later connections offer that at once. Kept across
+   sessions in conn_hosts_path, or beside SIGS.DAT (hosts_path; a line
+   "ecdsa HOST" or "aes HOST" each, read at the first handshake, written
+   only when a host is added): without it every session's first
+   connection to such a host was refused twice before the hello that
+   works, 2.0 s on atari-home.de on a stock Falcon (EWeb, 14 Nov 2026) */
+#define NHOSTS 32
+char conn_hosts_path[200];
+static char ecdsa_hosts[NHOSTS][64], aes_hosts[NHOSTS][64];
+static int next_ecdsa, next_aes, hosts_read;
 
-static int listed(char list[8][64], const char *host)
+static int listed(char list[NHOSTS][64], const char *host)
 {
 	int i;
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < NHOSTS; i++)
 		if (!strcmp(list[i], host))
 			return 1;
 	return 0;
 }
 
-static void note_host(char list[8][64], int *next, const char *host)
+static int add_host(char list[NHOSTS][64], int *next, const char *host)
 {
-	if (listed(list, host))
-		return;
+	if (!host[0] || listed(list, host))
+		return 0;
 	str_copy(list[*next], host, 64);
-	*next = (*next + 1) % 8;
+	*next = (*next + 1) % NHOSTS;
+	return 1;
+}
+
+#define HOSTS_MAX (2L * NHOSTS * 72)	/* the file at its longest */
+
+/* conn_hosts_path, or else tlshosts.dat in SIGS.DAT's folder, where every
+   program with TLS keeps what TLS learns: no program has to name it (a
+   line added to EWeb's main.c moved what it links after and cost its
+   page rows 10-15 ms on a stock Falcon, 14 Nov 2026); "" if neither */
+static const char *hosts_path(void)
+{
+	static char p[200];
+	const char *s;
+	long n;
+	if (conn_hosts_path[0])
+		return conn_hosts_path;
+	if (!p[0] && tls_sigs_path[0]) {
+		for (s = tls_sigs_path + strlen(tls_sigs_path); s > tls_sigs_path && s[-1] != '\\' && s[-1] != '/'; s--)
+			;
+		n = (long)(s - tls_sigs_path);
+		if (n + 13 < (long)sizeof(p)) {
+			memcpy(p, tls_sigs_path, (size_t)n);
+			strcpy(p + n, "tlshosts.dat");
+		}
+	}
+	return p;
+}
+
+/* through pf_open/pf_read/pf_write only, which every program's plat has */
+static void hosts_read_once(void)
+{
+	char *f, *p, *e;
+	long len = 0, got;
+	int h;
+	if (hosts_read)
+		return;
+	hosts_read = 1;
+	if (!hosts_path()[0] || (h = pf_open(hosts_path(), PF_READ)) < 0)
+		return;
+	f = malloc(HOSTS_MAX + 1);
+	while (f && len < HOSTS_MAX && (got = pf_read(h, f + len, HOSTS_MAX - len)) > 0)
+		len += got;
+	pf_close(h);
+	if (!f)
+		return;
+	for (p = f; p < f + len; p = e + 1) {
+		e = memchr(p, '\n', (size_t)(f + len - p));
+		if (!e)
+			e = f + len;
+		*e = 0;
+		if (e > p && e[-1] == '\r')
+			e[-1] = 0;
+		if (!strncmp(p, "ecdsa ", 6))
+			add_host(ecdsa_hosts, &next_ecdsa, p + 6);
+		else if (!strncmp(p, "aes ", 4))
+			add_host(aes_hosts, &next_aes, p + 4);
+	}
+	free(f);
+}
+
+static void hosts_save(void)
+{
+	char *b, *q;
+	int i, h;
+	if (!hosts_path()[0] || !(b = malloc(HOSTS_MAX + 1)))
+		return;
+	q = b;
+	for (i = 0; i < NHOSTS; i++) {
+		if (ecdsa_hosts[i][0])
+			q += sprintf(q, "ecdsa %s\n", ecdsa_hosts[i]);
+		if (aes_hosts[i][0])
+			q += sprintf(q, "aes %s\n", aes_hosts[i]);
+	}
+	if ((h = pf_open(hosts_path(), PF_WRITE)) >= 0) {
+		pf_write(h, b, q - b);
+		pf_close(h);
+	}
+	free(b);
+}
+
+static void note_host(char list[NHOSTS][64], int *next, const char *host)
+{
+	if (add_host(list, next, host))
+		hosts_save();
 }
 
 static int log_hold;
@@ -74,7 +166,6 @@ static int tls_ready(const char *name, char *err, int errlen)
    certificate and for the session kept to resume */
 static int handshake(CONN *c, const char *host, char *err, int errlen)
 {
-	static int next_ecdsa, next_aes;
 	TLS *t;
 	int retry = 0;
 	char msg[200];
@@ -82,6 +173,7 @@ static int handshake(CONN *c, const char *host, char *err, int errlen)
 	conn_tls_retry = 0;
 	if (!tls_ready(c->name, err, errlen))
 		return 0;
+	hosts_read_once();
 	t0 = pf_ms();
 	/* RSA certificates first, as the DSP checks them fast, even where it
 	   does the elliptic curves too: a stock Falcon's DSP took 5.5 s for
@@ -179,7 +271,9 @@ long net_sendbuf = 4096;
 
 void conn_log_hold(int on)
 {
-	if (on && !job_hold && conn_logfile[0] && !logbig &&
+	/* (kept for the apps that call it; conn_log writes each line at
+	   once now, so nothing is held: the big buffer is never taken) */
+	if (0 && on && !job_hold && conn_logfile[0] && !logbig &&
 	    conn_log_hold_bytes > conn_log_small) {
 		char *b = malloc(conn_log_hold_bytes);
 		if (b) {
@@ -234,7 +328,8 @@ static void log_old_name(char *old)
 			dot = n;
 	}
 	memcpy(old, conn_logfile, dot);
-	strcpy(old + dot, ".OLD");
+	/* the log's own case (6.6: apps write lowercase names): "ecal.log" -> "ecal.old" */
+	strcpy(old + dot, dot + 1 < n && conn_logfile[dot + 1] >= 'a' && conn_logfile[dot + 1] <= 'z' ? ".old" : ".OLD");
 }
 
 static void log_write(const char *s, long n)
@@ -386,8 +481,12 @@ void conn_log(const char *who, const char *dir, const char *text, long n)
 		log_add(text, n);
 	}
 	log_add("\r\n", 2);
-	if (dir[1] == '!' || (dir[1] == '-' && !log_hold && !job_hold))
-		conn_log_flush();
+	/* every line on the disk at once (Erez, 15 Nov 2026: "apps should
+	   write log at once as otherwise it may be ineffective to trace
+	   errors"): a crash or a freeze leaves the log up to its last line.
+	   conn_log_hold no longer holds; the log costs a write a line, but
+	   only while Write a log is on */
+	conn_log_flush();
 }
 
 /* the receive buffer when conn_open is given 0: 16 KB, or less where

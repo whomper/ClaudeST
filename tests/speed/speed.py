@@ -121,12 +121,19 @@ class Rig:
         # fonts load for a minute behind one
         if auto and ready is None:
             ready = "AESSTART"
-        t_end = time.time() + (boot or (120 if self.nvdi else 45) * (2 if self.st else 1))
+        wait = boot or (120 if self.nvdi else 45) * (2 if self.st else 1)
+        t_end = time.time() + wait
         while time.time() < t_end:
             time.sleep(2)
             if ready is None or ready in self.console():
                 if self.still(most=10):
                     break
+        else:
+            # a wait that ends without what it waits for fails the run: the
+            # rows after it would time something else (EFTP's speed rig timed
+            # the wrong folder from 1.76 to 13 Nov 2026, EPlay found this one)
+            if ready is not None and ready not in self.console():
+                raise RuntimeError("the start: %r not seen in %d s" % (ready, wait))
         if auto:
             # the start is AESSTART and every stretch until the screen came to
             # rest: a program that opens its window after its first event
@@ -212,20 +219,25 @@ class Rig:
         time.sleep(1)
         self.click(title_x + 20, row_y)
 
-    def act(self, what, budget, do, job=False):
+    def act(self, what, budget, do, job=False, moving=False):
         """does it, waits until the Atari is still, and keeps the longest
         stretch that came meanwhile. job=True for an action that starts a
         sliced job (a long Copy, a load): its first stretch, the key's own,
         is held to budget, and the turns after it to a background slice's
         time (JOB_000 on a 68000, JOB_030 else), a second line in the
         table: what the user feels is the key answered at once and Esc
-        between turns (the hub, 31 Oct 2026, from EPDF's Copy)"""
+        between turns (the hub, 31 Oct 2026, from EPDF's Copy). A screen
+        that never comes to rest fails the run (its row would time whatever
+        came after it), unless moving=True: an action whose screen keeps
+        changing by design (a playing position, a throbber) and that its
+        caller checks some other way (EMail found it, 13 Nov 2026)"""
         start = os.path.getsize(self.log)
         self.in_act = True
         try:
             do()
             time.sleep(1)
-            self.still()
+            if not self.still() and not moving:
+                raise RuntimeError("%r: the screen didn't come to rest" % what)
         finally:
             self.in_act = False
             self.release()

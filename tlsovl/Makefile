@@ -12,7 +12,25 @@ CROSS   ?= m68k-linux-gnu-
 CC      := $(CROSS)gcc
 GCCINC  := $(shell $(CC) -print-file-name=include 2>/dev/null)
 C       := ..
+# CPU=5475: TLS.OVL for the ColdFire (the FireBee) in build-5475/, committed
+# as tlsfb.ovl (every app with TLS ships it: tls_ovl.c loads it on a FireBee): ColdFire
+# code throughout, no DSP (a FireBee has none: BearSSL's curves, rsa030 and
+# the i31 loop in ColdFire assembly), and ll64.c for the 64-bit arithmetic
+# the 68020 libgcc would give
+CPU     ?= 68030
+ifeq ($(CPU),5475)
+B       := build-5475
+OUT     := tlsfb.ovl
+MCPU    := -mcpu=5475
+LIBGCC  := $(B)/ll64.o
+DSPSRC  :=
+else
 B       := build
+OUT     := tls.ovl
+MCPU    := -m68030
+LIBGCC  := -lgcc
+DSPSRC  := $(C)/src/ecdsp.c $(C)/ui/dsp.c $(C)/ui/dsp_ec.c $(C)/atari/dsprsa.c $(C)/atari/dspec.c
+endif
 VERSION := $(shell cat VERSION)
 
 BSSL    := $(C)/third_party/bearssl
@@ -22,19 +40,21 @@ BSSLSRC := $(filter-out $(BSSL)/src/int/i31_montmul.c,$(wildcard $(BSSL)/src/*/*
 BSSLDEF := -DBR_USE_URANDOM=0 -DBR_USE_GETENTROPY=0 -DBR_USE_UNIX_TIME=0 \
            -DBR_USE_WIN32_TIME=0 -DBR_USE_WIN32_RAND=0 -DBR_RDRAND=0
 # BearSSL as the programs built it for Falcon mode
-BSSLCF  := -m68030 -O2 -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
+BSSLCF  := $(MCPU) -O2 -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
            -fno-tree-loop-distribute-patterns -fno-asynchronous-unwind-tables -w \
            -nostdinc -isystem $(GCCINC) -I$(C)/atari/include -I$(BSSL)/inc -I$(BSSL)/src $(BSSLDEF)
 # the rest small, as the programs' own code is
-CFLAGS  := -m68030 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
+CFLAGS  := $(MCPU) -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
            -fno-tree-loop-distribute-patterns -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
            -nostdinc -isystem $(GCCINC) -I$(C)/atari/include -Isrc -I$(C)/src -I$(C)/atari -I$(C)/ui \
            -I$(BSSL)/inc -DTLSOVL_BUILD -DTLS_030 -DLIBC_NO_HEAP -DTLSOVL_VERSION=\"$(VERSION)\"
-LDFLAGS := -m68030 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,ovl.ld \
+# a build that writes where its time goes into the program's log (src/trail.h):
+#   make B=build-trail TRAILFLAG=-DTLS_TRAIL
+CFLAGS  += $(TRAILFLAG)
+LDFLAGS := $(MCPU) -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,ovl.ld \
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-SRC     := head.c $(C)/src/tls.c $(C)/src/util.c $(C)/src/ecdsp.c $(C)/ui/dsp.c $(C)/ui/dsp_ec.c \
-           $(C)/atari/dsprsa.c $(C)/atari/dspec.c $(C)/atari/libc.c $(C)/src/rsa030.c
+SRC     := head.c $(C)/src/tls.c $(C)/src/util.c $(DSPSRC) $(C)/atari/libc.c $(C)/src/rsa030.c
 OBJS    := $(addprefix $(B)/,$(notdir $(SRC:.c=.o))) $(B)/mont030.o $(B)/i31_montmul_030.o $(B)/mont31_030.o
 BSSLOBJ := $(patsubst $(BSSL)/src/%.c,$(B)/bssl/%.o,$(BSSLSRC))
 HDRS    := $(wildcard src/*.h $(C)/src/*.h $(C)/atari/*.h $(C)/atari/include/*.h $(C)/dsp/*.h)
@@ -44,8 +64,8 @@ all: $(B)/tls.ovl
 $(B)/tls.ovl: $(B)/tlsovl.elf $(C)/tools/elf2tos.py
 	python3 $(C)/tools/elf2tos.py $< $@
 
-$(B)/tlsovl.elf: $(OBJS) $(B)/libbearssl.a ovl.ld
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(B)/libbearssl.a -lgcc
+$(B)/tlsovl.elf: $(OBJS) $(B)/libbearssl.a ovl.ld $(filter %.o,$(LIBGCC))
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(B)/libbearssl.a $(LIBGCC)
 
 $(B)/libbearssl.a: $(BSSLOBJ)
 	rm -f $@
@@ -58,9 +78,11 @@ $(B)/bssl/%.o: $(BSSL)/src/%.c
 $(B)/i31_montmul_030.o: i31_montmul_030.c | $(B)
 	$(CC) $(BSSLCF) -Wall -c -o $@ $<
 $(B)/mont31_030.o: mont31_030.S | $(B)
-	$(CC) -m68030 -c -o $@ $<
+	$(CC) $(MCPU) -c -o $@ $<
 $(B)/mont030.o: $(C)/atari/mont030.S | $(B)
-	$(CC) -m68030 -c -o $@ $<
+	$(CC) $(MCPU) -c -o $@ $<
+$(B)/ll64.o: $(C)/atari/ll64.c | $(B)
+	$(CC) $(BSSLCF) -c -o $@ $<
 $(B)/head.o: head.c $(HDRS) VERSION | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(B)/%.o: $(C)/src/%.c $(HDRS) | $(B)
@@ -74,13 +96,13 @@ $(B):
 	mkdir -p $@
 
 check: $(B)/tls.ovl
-	@cmp $(B)/tls.ovl tls.ovl && echo "TLS.OVL $(VERSION): the committed file is its sources' build"
+	@cmp $(B)/tls.ovl $(OUT) && echo "$(OUT) $(VERSION): the committed file is its sources' build"
 
 release: $(B)/tls.ovl
-	@if cmp -s $(B)/tls.ovl tls.ovl; then echo "TLS.OVL unchanged"; else \
-	  if [ -f tls.ovl ] && [ "$$(dd if=tls.ovl bs=1 skip=36 count=7 2>/dev/null | tr -d '\0')" = "$(VERSION)" ]; then \
+	@if cmp -s $(B)/tls.ovl $(OUT); then echo "TLS.OVL unchanged"; else \
+	  if [ -f $(OUT) ] && [ "$$(dd if=$(OUT) bs=1 skip=36 count=7 2>/dev/null | tr -d '\0')" = "$(VERSION)" ]; then \
 	    echo "raise VERSION first: TLS.OVL $(VERSION) is out already"; exit 1; fi; \
-	  cp $(B)/tls.ovl tls.ovl; echo "TLS.OVL $(VERSION) made: commit it with VERSION"; fi
+	  cp $(B)/tls.ovl $(OUT); echo "TLS.OVL $(VERSION) made: commit it with VERSION"; fi
 
 test:
 	$(MAKE) -C $(C)/tests/tlsovl test

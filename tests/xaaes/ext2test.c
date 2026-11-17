@@ -16,6 +16,8 @@
 #include "tos.h"
 #include "gem.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 #define Dpathconf(p, m)	trap1_wlw(0x124, (long)(p), (m))
 #define Sync()		trap1_w(0x150)	/* MiNT: the buffer cache to the disks */
 #define DP_CASE		6

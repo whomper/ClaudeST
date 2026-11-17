@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 # atari/libc.c's memcpy, memmove, memset and memchr (68000 code by hand)
-# against plain C, as 68000 and 68030 code under qemu-m68k: make test
+# against plain C, as 68000, 68030 and ColdFire code under qemu-m68k: make test
 CROSS  ?= m68k-linux-gnu-
 CC     := $(CROSS)gcc
 GCCINC := $(shell $(CC) -print-file-name=include 2>/dev/null)
@@ -16,11 +16,15 @@ $(B)/test_000: test_mem.c $(B)/mem.c
 	$(CC) -m68000 $(CF) $(LF) -o $@ test_mem.c -lgcc
 $(B)/test_030: test_mem.c $(B)/mem.c
 	$(CC) -m68030 -DM68020 $(CF) $(LF) -o $@ test_mem.c -lgcc
+# and as ColdFire code (the FireBee), its own loops (no dbra), no libgcc
+$(B)/test_cf: test_mem.c $(B)/mem.c
+	$(CC) -mcpu=5475 -DM68020 $(CF) $(LF) -o $@ test_mem.c
 $(B):
 	mkdir -p $@
-test: $(B)/test_000 $(B)/test_030
+test: $(B)/test_000 $(B)/test_030 $(B)/test_cf
 	qemu-m68k -cpu m68000 ./$(B)/test_000
 	qemu-m68k -cpu m68030 ./$(B)/test_030
+	qemu-m68k -cpu cfv4e ./$(B)/test_cf
 clean:
 	rm -rf $(B)
 .PHONY: test clean

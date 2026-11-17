@@ -33,6 +33,8 @@
 #include "gem.h"
 #include "text.h"
 
+long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
+
 static short vh, planes, cw, ch, sw, sh_;
 static MFDB scr, mem;
 static unsigned char *buf_a, *buf_b;

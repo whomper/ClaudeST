@@ -432,6 +432,23 @@ static int dsame(int argc, char **argv)
 				size_t np = (size_t) p->w * p->h;
 				unsigned char *x = malloc(np), *y = malloc(np);
 				pic_dsp_dither = 1;
+#ifdef PIC_OVL_BUILD
+				/* PIC.OVL's entries (common/picovl): its check, then the
+				   DSP's dither alone; a palette of 2 is the 68030's there */
+				{
+					/* (the DSP takes 1024 pixels or more, rows to 1280) */
+					int want = pals[k].n != 2 && (long) p->w * p->h >= 1024 && p->w <= 1280;
+					if (pic_dither_dsp_prepare(&pals[k]) != (pals[k].n != 2) ||
+					    pic_dither_dsp(p, &pals[k], x) != want) {
+						printf("FAIL %s %d colours: PIC.OVL's DSP dither %s\n", argv[a], pals[k].n,
+						       want ? "not had" : "had where it shouldn't");
+						differ++;
+					}
+					if (!want)
+						pic_dither(p, &pals[k], x);
+				}
+				if (0)
+#endif
 				pic_dither(p, &pals[k], x);
 				pic_dsp_dither = 0;
 				pic_dither(p, &pals[k], y);

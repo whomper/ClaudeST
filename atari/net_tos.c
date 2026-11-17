@@ -169,10 +169,17 @@ static int dns_query(const char *name, u32 *ip)
 		Fclose((short)fd);
 		return 0;
 	}
-	mask = 1UL << fd;
-	if (Fselect(4000, &mask, 0, 0) <= 0) {
-		Fclose((short)fd);
-		return 0;
+	/* up to 4 s, a tenth at a time: GEM goes on, Esc stops it */
+	for (n = 0;; n++) {
+		mask = 1UL << fd;
+		if (Fselect(100, &mask, 0, 0) > 0 && mask)
+			break;
+		if (n >= 39 || conn_stop) {
+			Fclose((short)fd);
+			return 0;
+		}
+		if (pf_idle)
+			pf_idle();
 	}
 	n = Fread((short)fd, sizeof(r), r);
 	Fclose((short)fd);
@@ -341,6 +348,54 @@ static int resolve(const char *host, u32 *ip)
 	return 0;
 }
 
+/* MiNTnet's connect, without waiting in the kernel: a blocking
+   Fconnect to a host that never answers held the program until MiNT gave
+   up (a tester's V4SA, 17 Nov 2026: a page's counter picture on a host
+   whose SYNs go nowhere; GEM stood still and Esc did nothing). Started
+   with O_NDELAY instead and waited for here, a tenth of a second at a
+   time, as net_open waits for STinG's: GEM goes on, Esc stops it, and it
+   gives up after CONNECT_WAIT. Where O_NDELAY isn't taken the Fconnect
+   blocks as before. 0, or a negative error */
+#define CONNECT_WAIT 20000	/* ms, as STinG's 20 tries of a second */
+#define MINT_STOPPED (-1000L)
+#define MINT_TIMEDOUT (-1001L)
+#define MINT_EINPROGRESS (-325L)
+#define MINT_EAGAIN (-326L)
+
+static long mint_connect(short fd, struct sockaddr_in_ *sa)
+{
+	long r, flags = Fcntl(fd, 0, F_GETFL);
+	unsigned long t0 = pf_ms();
+	short nb = flags >= 0 && Fcntl(fd, flags | O_NDELAY, F_SETFL) >= 0;
+	r = Fconnect(fd, sa, sizeof(*sa));
+	if (nb && (r == MINT_EINPROGRESS || r == MINT_EAGAIN)) {
+		for (;;) {
+			u32 mask = 1UL << fd;
+			if (Fselect(100, 0, &mask, 0) > 0 && mask) {
+				long e = 0, len = sizeof(e);
+				/* writable: connected, or refused (SO_ERROR says) */
+				r = Fgetsockopt(fd, SOL_SOCKET, SO_ERROR, &e, &len);
+				if (r >= 0)
+					r = e > 0 ? -e : e;
+				break;
+			}
+			if (conn_stop) {
+				r = MINT_STOPPED;
+				break;
+			}
+			if (pf_ms() - t0 >= CONNECT_WAIT) {
+				r = MINT_TIMEDOUT;
+				break;
+			}
+			if (pf_idle)
+				pf_idle();
+		}
+	}
+	if (nb && r >= 0)
+		Fcntl(fd, flags, F_SETFL);	/* reads and writes block as they did */
+	return r;
+}
+
 int net_open(const char *host, unsigned short port, char *err, int errlen)
 {
 	u32 ip;
@@ -375,10 +430,15 @@ int net_open(const char *host, unsigned short port, char *err, int errlen)
 		sa.family = 2;
 		sa.port = port;
 		sa.addr = ip;
-		r = Fconnect((short)fd, &sa, sizeof(sa));
+		r = mint_connect((short)fd, &sa);
 		if (r < 0) {
 			Fclose((short)fd);
-			snprintf(err, errlen, "can't connect to %s:%u (error %ld)", host, port, r);
+			if (r == MINT_STOPPED)
+				snprintf(err, errlen, "stopped");
+			else if (r == MINT_TIMEDOUT)
+				snprintf(err, errlen, "%s:%u: no answer in %d s", host, port, CONNECT_WAIT / 1000);
+			else
+				snprintf(err, errlen, "can't connect to %s:%u (error %ld)", host, port, r);
 			return -1;
 		}
 		conns[slot].mintnet = 1;

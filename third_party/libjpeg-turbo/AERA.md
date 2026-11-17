@@ -14,7 +14,7 @@ has its own error handler, which jumps back), no `jdatasrc.c` (pic.c reads
 from memory itself) and no `jidctflt.c`. `config/` holds the headers CMake
 makes, with the size of `size_t` the compiler's and no thread-local storage.
 
-Two changes in the library's own files; keep them if it is ever updated:
+Three changes in the library's own files; keep them if it is ever updated:
 
 - `src/jmorecfg.h` defines `DCT_FLOAT_SUPPORTED` only without
   `AERA_NO_FLOAT`, so the floating-point IDCT (and libgcc's software
@@ -23,6 +23,10 @@ Two changes in the library's own files; keep them if it is ever updated:
   machine's own 16-bit values (upstream swaps them to little-endian order
   everywhere, Android's), so pic.c can have libjpeg write a picture shown
   at its size straight into its pixels.
+- `src/jdcoefct.c` calls the progress monitor every 8 MCUs or blocks of
+  an iMCU row too (`AERA_TICK`): a whole row of a big photo was one call,
+  up to 245 ms of a stock Falcon (EPDF, 14 Nov 2026; every 8, not 16, Erez
+  15 Nov).
 
 Build flags: `-DPIC_LIBJPEG -DNO_GETENV -DNO_PUTENV -DAERA_NO_FLOAT
 -Icommon/third_party/libjpeg-turbo/src -Icommon/third_party/libjpeg-turbo/config`.
