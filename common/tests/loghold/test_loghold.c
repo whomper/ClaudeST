@@ -22,7 +22,8 @@
 #include "plat.h"
 #include "conn.h"
 
-static int opens, big_mallocs, fails, live, no_heap, clock_ok;
+static int opens, closes, writes, big_mallocs, fails, live, no_heap, clock_ok;
+static unsigned long now_ms = 5000;
 static long logged;
 void *__real_malloc(size_t n);
 void __real_free(void *p);
@@ -50,8 +51,8 @@ int pf_open(const char *path, int mode)
 	opens++;
 	return open(path, mode == PF_APPEND ? O_WRONLY | O_CREAT | O_APPEND : O_RDONLY, 0644);
 }
-long pf_write(int h, const void *buf, long n) { logged += n; return write(h, buf, n); }
-void pf_close(int h) { close(h); }
+long pf_write(int h, const void *buf, long n) { logged += n; writes++; return write(h, buf, n); }
+void pf_close(int h) { closes++; close(h); }
 long pf_seek(int h, long off) { return lseek(h, off, SEEK_SET); }
 static int looks;
 long pf_size(const char *path)
@@ -71,7 +72,7 @@ static long handle_size(int h)
 	return (long)n;
 }
 void pf_now(PFTIME *t) { memset(t, 0, sizeof(*t)); if (clock_ok) { t->year = 2026; t->mon = 11; t->day = 9; t->hour = 14; t->min = 5; t->sec = 31; } }
-unsigned long pf_ms(void) { return 0; }
+unsigned long pf_ms(void) { return now_ms; }
 void (*pf_idle)(void);
 int net_open(const char *host, unsigned short port, char *err, int errlen) { return -1; }
 long net_write(int h, const void *buf, long n) { return -1; }
@@ -102,7 +103,7 @@ static int job(void)
 	int i;
 	memset(line, 'x', 90);
 	line[90] = 0;
-	opens = big_mallocs = 0;
+	opens = writes = closes = big_mallocs = 0;
 	logged = 0;
 	conn_log_hold(1);
 	for (i = 0; i < 120; i++)
@@ -163,6 +164,7 @@ static void cap_run(const char *label, long (*hook)(int))
 	check(hook ? looks == 0 : looks == 1, msg);
 
 	before = opens;
+	writes = 0;
 	lines(70, 10);			/* 80 lines, 2080 bytes: over */
 	snprintf(msg, sizeof(msg), "%s: rolled over: .OLD holds the first lines, the new log the rest (%ld, %ld)", label, fsize("build/t/EMAIL.OLD"), fsize("build/t/EMAIL.LOG"));
 	b = slurp("build/t/EMAIL.OLD", &o);
@@ -172,8 +174,9 @@ static void cap_run(const char *label, long (*hook)(int))
 	b = slurp("build/t/EMAIL.LOG", &n);
 	check(b && strstr(b, "line 0079") && !strstr(b, "line 0000"), "the new log ends with the last line and has none of the first");
 	free(b);
-	snprintf(msg, sizeof(msg), "%s: 10 flushes and one roll-over: 11 opens (%d)", label, opens - before);
-	check(opens - before == 11, msg);
+	snprintf(msg, sizeof(msg), "%s: 10 lines and one roll-over: 10 writes (%d), one open, the roll-over's (%d)", label,
+		 writes, opens - before);
+	check(writes == 10 && opens - before == 1, msg);
 
 	/* the next roll-over replaces the .OLD */
 	lines(80, 160);
@@ -186,7 +189,7 @@ static void cap_run(const char *label, long (*hook)(int))
 
 	/* hold buffer unaffected: a held job of 120 milestones is one open, as before, while under the cap */
 	conn_log_max = 100000;
-	opens = 0;
+	opens = writes = 0;
 	{
 		char line[91];
 		int i;
@@ -197,8 +200,9 @@ static void cap_run(const char *label, long (*hook)(int))
 			conn_log("HTTP", " -- ", line, 90);
 		conn_log_hold(0);
 	}
-	snprintf(msg, sizeof(msg), "%s: a job's 120 lines, each on the disk at once: 120 opens (%d)", label, opens);
-	check(opens == 120, msg);
+	snprintf(msg, sizeof(msg), "%s: a job's 120 lines, each written at once: 120 writes (%d), no open (%d)", label,
+		 writes, opens);
+	check(writes == 120 && opens == 0, msg);
 
 	/* a held job over the cap: written in one piece, and the old log rolls */
 	conn_log_max = 20000;
@@ -214,7 +218,7 @@ static void cap_run(const char *label, long (*hook)(int))
 			conn_log("HTTP", " -- ", line, 90);
 		conn_log_hold(0);
 		snprintf(msg, sizeof(msg), "%s: a job pushing the log over: it rolls, both under the cap (was %ld, now %ld)", label, was, fsize("build/t/EMAIL.LOG"));
-		check(opens >= 120 && fsize("build/t/EMAIL.LOG") <= 20000 && fsize("build/t/EMAIL.OLD") > 0 && fsize("build/t/EMAIL.OLD") <= 20000, msg);
+		check(fsize("build/t/EMAIL.LOG") <= 20000 && fsize("build/t/EMAIL.OLD") > 0 && fsize("build/t/EMAIL.OLD") <= 20000, msg);
 	}
 
 	/* conn_log_max 0: no cap */
@@ -273,28 +277,64 @@ static void cap_tests(void)
 int main(void)
 {
 	int n;
-	char msg[100];
+	char msg[200];
 	fresh("build/t");
 	strcpy(conn_logfile, "build/t/LOG.TXT");
 
 	n = job();
-	snprintf(msg, sizeof(msg), "a job's lines written at once (Erez, 15 Nov 2026): 120 opens (%d), no 16 KB taken (%d)", n, big_mallocs);
-	check(n == 120 && big_mallocs <= 1 && logged > 12000, msg);
+	snprintf(msg, sizeof(msg), "a job's lines written at once (Erez, 15 Nov 2026): 120 writes (%d) to one open (%d), "
+		 "no 16 KB taken (%d)", writes, n, big_mallocs);
+	check(writes == 120 && n == 1 && big_mallocs <= 1 && logged > 12000, msg);
+	{
+		/* the middle way (Erez, 17 Nov 2026): the file kept open, closed
+		   in the event wait a second after a line at most */
+		long sz = fsize("build/t/LOG.TXT");
+		check(sz == logged, "every line in the file as it is written (the kept handle's writes)");
+		check(closes == 1, "  the job's end (conn_log_hold(0)): closed once");
+		closes = 0;
+		now_ms += 100;
+		conn_log("HTTP", " -- ", "a line", 6);
+		conn_log_idle();
+		check(closes == 0, "  the event wait under a second after the last close: still open");
+		now_ms += 1000;
+		conn_log_idle();
+		check(closes == 1, "  a second on: closed (the disk's FAT and directory written)");
+		conn_log_idle();
+		now_ms += 5000;
+		conn_log_idle();
+		check(closes == 1, "  nothing written since: not closed again");
+		opens = 0;
+		conn_log("HTTP", " !! ", "refused", 7);
+		check(opens == 1 && closes == 2, "  an error's line: opened and closed at once");
+		conn_log("HTTP", " -- ", "a line", 6);
+		conn_log_flush();
+		check(closes == 3, "  conn_log_flush (an app's save, the quit): closed");
+	}
 
 	conn_log_hold_bytes = 0;
 	n = job();
-	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 0: the same, 120 opens (%d)", n);
-	check(n == 120 && logged > 12000, msg);
+	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 0: the same, 120 writes (%d), one open (%d)", writes, n);
+	check(writes == 120 && n == 1 && logged > 12000, msg);
 
 	conn_log_hold_bytes = 32768;
 	n = job();
-	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 32 KB: still 120 opens (%d)", n);
-	check(n == 120, msg);
+	snprintf(msg, sizeof(msg), "conn_log_hold_bytes 32 KB: still 120 writes (%d)", writes);
+	check(writes == 120, msg);
 
 	conn_log_hold_bytes = 16384;
-	opens = 0;
+	conn_log_flush();
+	opens = writes = 0;
 	conn_log("HTTP", " -- ", "not held", 8);
-	check(opens == 1, "not held: a milestone written at once");
+	check(opens == 1 && writes == 1, "not held: a milestone written at once");
+	{
+		/* another name: the open file finished, the new one taken */
+		strcpy(conn_logfile, "build/t/OTHER.TXT");
+		closes = 0;
+		conn_log("HTTP", " -- ", "other", 5);
+		check(closes == 1 && fsize("build/t/OTHER.TXT") > 0, "another name given: the first file closed, the line in the new one");
+		conn_log_flush();
+		strcpy(conn_logfile, "build/t/LOG.TXT");
+	}
 
 	/* switched off: the buffer goes back, and nothing is taken again */
 	conn_logfile[0] = 0;
