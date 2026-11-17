@@ -191,7 +191,9 @@ def mint_row(work, row, machine, extra, prg):
     with open(os.path.join(files, "CLAUDEST.INF"), "w", newline="") as f:
         f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\nNATFEATS=1\r\nLOG=1\r\n")
     shutil.copy(prg, os.path.join(files, "CLAUDEST.PRG"))
-    tos = os.path.join(TOS, "tos306.img" if machine == "tt" else "tos404.img")
+    # the rig boots EmuTOS: FreeMiNT's C: is an IDE disk, which TOS 3.06 and
+    # 4.04 read only with a hard disk driver (they stop after the memory test)
+    tos = os.path.expanduser("~/.cache/aera/emutos-1.4/etos512us.img")
     cmd = [sys.executable, os.path.join(ROOT, "common", "tests", "xaaes", "run.py"), w, tos,
            os.path.join(files, "CLAUDEST.PRG"), "--copy", os.path.join(files, "CLAUDEST.INF"),
            "--machine", machine, "--nvdi", "--display", ":96",
@@ -211,9 +213,9 @@ def mint_row(work, row, machine, extra, prg):
     crashes = crash_logs(out)
     hlog = open(os.path.join(w, "hatari.log"), errors="replace").read() if os.path.exists(
         os.path.join(w, "hatari.log")) else ""
-    named = "MiNT 1.17 + XaAES, %s, %s, NVDI%s" % (
+    named = "MiNT 1.17 + XaAES, %s, EmuTOS 1.4 (the rig boots its IDE disk), NVDI%s" % (
         {"tt": "TT030", "ct60": "CT60 stand-in (68040)", "falcon": "Falcon"}[machine],
-        "TOS 3.06" if machine == "tt" else "TOS 4.04", ", an ext2 drive" if extra else "")
+        ", an ext2 drive" if extra else "")
     ok = code == 0 and not crashes and last == LAST_STEP and "AESSTART" in hlog
     note(row, named, ok, "started, Settings opened and cancelled, ^Q: quit's last step %r%s" %
          (last, "" if not crashes else "; CRASH.LOG"))

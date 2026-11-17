@@ -3030,9 +3030,9 @@ static short inf_sum_len = -1;
 
 static u32 text_sum(const char *t, short n)
 {
-	u32 h = 2166136261UL;	/* FNV-1a */
+	u32 h = 0x5A17C0DEUL;	/* rotated and xored: no multiply, cheap on a 68000 */
 	while (n-- > 0)
-		h = (h ^ (u8)*t++) * 16777619UL;
+		h = ((h << 5) | (h >> 27)) ^ (u8)*t++;
 	return h;
 }
 
