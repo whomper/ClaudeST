@@ -33,6 +33,11 @@ test:
 	$(MAKE) -C st test
 	$(MAKE) -C st
 	python3 common/tools/oddaccess.py st/claudest.elf
+	$(MAKE) -C st prof
+
+# the speed rig's timed build at the shipped layout: binary/prof/CLAUDEST.PRG
+prof:
+	$(MAKE) -C st prof
 
 icons:
 	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --rscnv icons/CLSTNV.RSC \
@@ -59,4 +64,4 @@ clean:
 	$(MAKE) -C st clean
 	rm -rf binary dist
 
-.PHONY: all help test icons dist clean
+.PHONY: prof all help test icons dist clean

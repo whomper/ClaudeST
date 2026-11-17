@@ -15,3 +15,5 @@ build/
 CRASH.LOG
 tests/**/work/
 *.log
+*.elf.map
+st/prof/

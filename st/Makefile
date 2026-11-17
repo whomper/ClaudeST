@@ -42,7 +42,26 @@ all: ../binary/CLAUDEST.PRG
 	python3 $(COMMON)/tools/elf2tos.py $< $@
 
 claudest.elf: $(OBJS) $(COMMON)/atari/link.ld
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) -lgcc
+	$(CC) $(LDFLAGS) -Wl,-Map,$@.map -o $@ $(OBJS) -lgcc
+
+# the speed rig's timed build (-DAES_PROFILE=20 in gem.c and claudest.c),
+# linked at the shipped build's places modulo 256 (common/tools/profpad.py;
+# the guidelines 1.2, the regression gate): ../binary/prof/CLAUDEST.PRG
+PROF_OBJS := $(patsubst gem.o,prof/gem.o,$(patsubst claudest.o,prof/claudest.o,$(OBJS)))
+prof/claudest.o: claudest.c $(HDRS)
+	mkdir -p prof
+	$(CC) $(CFLAGS) -DAES_PROFILE=20 -c -o $@ $<
+prof/gem.o: $(COMMON)/atari/gem.c $(HDRS)
+	mkdir -p prof
+	$(CC) $(CFLAGS) -DAES_PROFILE=20 -c -o $@ $<
+prof/claudest.elf: claudest.elf $(PROF_OBJS) $(COMMON)/tools/profpad.py $(COMMON)/atari/codepad.S
+	python3 $(COMMON)/tools/profpad.py --ship claudest.elf --out $@ --cpu=-m68000 --dir prof/pads \
+	    --exclude claudest.o --exclude prof/claudest.o --exclude gem.o --exclude prof/gem.o \
+	    -- $(CC) $(LDFLAGS) $(PROF_OBJS) -lgcc
+../binary/prof/CLAUDEST.PRG: prof/claudest.elf
+	mkdir -p ../binary/prof
+	python3 $(COMMON)/tools/elf2tos.py $< $@
+prof: ../binary/prof/CLAUDEST.PRG
 
 claudest.o: claudest.c $(HDRS)
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -64,10 +83,10 @@ crash_s.o: $(COMMON)/atari/crash.S
 	$(CC) -m68000 -c -o $@ $<
 
 clean:
-	rm -f *.o claudest.elf build.h ../binary/CLAUDEST.PRG
+	rm -rf *.o claudest.elf claudest.elf.map build.h ../binary/CLAUDEST.PRG prof ../binary/prof
 
 # host-side unit test for the right-to-left layout
 test: bidi_test.c $(COMMON)/src/bidi.c $(COMMON)/src/bidi.h
 	cc -O2 -Wall -I$(COMMON)/src -o /tmp/bidi_test bidi_test.c $(COMMON)/src/bidi.c && /tmp/bidi_test
 
-.PHONY: all clean test FORCE
+.PHONY: all clean test prof FORCE
