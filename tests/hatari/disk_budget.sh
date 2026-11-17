@@ -33,7 +33,7 @@ cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
 mkdir -p "$W/drive/AUTO"
 make -s -C "$ROOT/common/tools/fakesting"
 cp "$ROOT/common/tools/fakesting/FAKESTNG.PRG" "$W/drive/AUTO/"
-printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n' > "$W/drive/claudest.inf"
+printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\nNATFEATS=1\r\n' > "$W/drive/claudest.inf"
 head -c 40960 /dev/urandom > "$W/drive/BIG.TXT"
 mkfifo "$W/out" "$W/in"
 python3 "$HERE/disk_bridge.py" --backend demo --tcp 127.0.0.1:2323 > "$W/bridge.log" 2>&1 &

@@ -95,7 +95,7 @@ def main():
     # common's FAKESTNG.PRG stands in for STinG and tunnels the TCP
     # connection over the emulated serial port (machines.py's network())
     r.extra += r.m.network()
-    r.write("claudest.inf", "[OPTIONS]\nHOST=127.0.0.1\nPORT=2323\n")
+    r.write("claudest.inf", "[OPTIONS]\nHOST=127.0.0.1\nPORT=2323\nNATFEATS=1\n")
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "tests", "hatari", "speed_bridge.py"),
                                "--backend", "demo", "--tcp", "127.0.0.1:2323"],
                               stdout=open(os.path.join(work, "bridge.log"), "w"), stderr=subprocess.STDOUT)

@@ -23,7 +23,7 @@ cp "$ROOT/binary/CLAUDEST.PRG" "$W/drive/"
 mkdir -p "$W/drive/AUTO"
 make -s -C "$ROOT/common/tools/fakesting"
 cp "$ROOT/common/tools/fakesting/FAKESTNG.PRG" "$W/drive/AUTO/"
-printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n' > "$W/drive/claudest.inf"
+printf '[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\nNATFEATS=1\r\n' > "$W/drive/claudest.inf"
 mkfifo "$W/out" "$W/in"
 python3 "$HERE/long_field_bridge.py" --backend demo --tcp 127.0.0.1:2323 > "$W/bridge.log" 2>&1 &
 python3 "$ROOT/common/tools/fakesting/serial_bridge.py" "$W/out" "$W/in" > "$W/tunnel.log" 2>&1 &

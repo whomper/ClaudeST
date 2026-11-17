@@ -2822,6 +2822,7 @@ static short inf_key(const char *l, const char *name, const char **v)
 }
 
 static short inf_old;	/* an old key read: written once the new way */
+static short nf_read;	/* NATFEATS= was in the file: a rig's, kept */
 
 static u16 inf_num(const char **v)
 {
@@ -2879,6 +2880,11 @@ static short inf_setting(const char *l)
 		hebfont = n <= HEB_DOS ? n : HEB_ATARI;
 	} else if (inf_key(l, "LOG", &v)) {
 		log_on = inf_num(&v) != 0;
+	} else if (inf_key(l, "NATFEATS", &v)) {
+		/* the emulator's console, for the test rigs only (common's
+		   nf.S; Erez, 15 Nov 2026): written back only when read */
+		nf_on = inf_num(&v) != 0;
+		nf_read = 1;
 	} else if (inf_key(l, "DIALOGS3D", &v))
 		;	/* no setting any more (the guidelines, 5.6; a tester, Erez
 			   27 Oct 2026): read without it, and not kept */
@@ -3075,6 +3081,8 @@ static short config_text(void)
 	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
 	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
+	if (nf_read)
+		p = inf_put_num(p, "the emulator's console, for the test rigs (1 on)", "NATFEATS", (u16)nf_on);
 	if (inf_keep_len) {
 		strcpy(p, "; settings this version of ClaudeST doesn't use, kept as they were\r\n");
 		p += strlen(p);

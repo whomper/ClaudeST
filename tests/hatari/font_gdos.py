@@ -22,7 +22,7 @@ fixed-width GDOS fonts only, by family; moves one Down to the first
 family, in the style and size offered first, and presses Return:
   2. the window redrew in the new font, and stayed (no dialog left), and
      asked the bridge for nothing (a late click once opened Projects);
-  3. CLAUDEST.INF has FONT= with that font's id (not 1, the system font);
+  3. CLAUDEST.INF has FONT= with that font's name (not the system font);
   4. after a restart, the same chat draws as it did before the restart.
 Screenshots go in WORK/shots. Without GDOS fonts the selector has only the
 system font and no CLAUDEST.FNT is written: "no GDOS fonts, skipped",
@@ -75,13 +75,14 @@ def selected_row(shot, x, y, w, ch):
 
 
 def inf_font(path):
-    """FONT= from CLAUDEST.INF, as (id, size), or None"""
+    """FONT= from CLAUDEST.INF, as (name, size), or None (FONT=name,points
+    since 2.5: D43)"""
     try:
         with open(path, errors="replace") as f:
             for line in f:
                 if line.upper().startswith("FONT="):
-                    i, _, s = line.strip()[5:].partition(",")
-                    return int(i), int(s or 0)
+                    n, _, s = line.strip()[5:].rpartition(",")
+                    return n, int(s or 0)
     except (OSError, ValueError):
         pass
     return None
@@ -108,7 +109,7 @@ def main():
     inf = os.path.join(hd, "claudest.inf")
     with open(inf, "w", newline="") as f:
         # over STinG: FAKESTNG.PRG stands in for it (the Rig's network)
-        f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\n")
+        f.write("[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\nNATFEATS=1\r\n")
 
     bridge = subprocess.Popen([sys.executable, os.path.join(ROOT, "gateway", "claude-st", "bridge", "claude_bridge.py"),
                                "--backend", "demo", "-v", "--tcp", "127.0.0.1:2323"],
@@ -274,7 +275,7 @@ def main():
             check("the screen stayed as drawn (no dialog left)", changed(after, later) < 0.02,
                   "%.1f%% changed since" % (100 * changed(after, later)))
             font = inf_font(ci_path(hd, "claudest.inf"))
-            check("CLAUDEST.INF keeps the font", bool(font) and font[0] != 1, "FONT=%s" % (font,))
+            check("CLAUDEST.INF keeps the font", bool(font) and font[0] not in ("", "System font"), "FONT=%s" % (font,))
     finally:
         r.stop()
 
