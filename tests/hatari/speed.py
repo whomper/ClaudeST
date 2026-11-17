@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """ClaudeST's speed rig (the guidelines' Speed: the stock machines set it),
 on the family's common/tests/speed: ClaudeST built with
--DAES_PROFILE=20 into WORK-build, the bridge speed_bridge.py's (a long
+make prof (the timed build at the shipped layout) into WORK-build, the bridge speed_bridge.py's (a long
 conversation, a long streamed reply, over STinG through FAKESTNG), and each
 action's longest stretch between event calls against its time.
 
@@ -28,15 +28,15 @@ SLICE = 100     # a long job's slice: a key answered within 100 ms
 
 
 def build(work):
-    """ClaudeST with -DAES_PROFILE=20, built apart from binary/"""
+    """ClaudeST's timed build (-DAES_PROFILE=20) at the shipped build's
+    layout (make prof: common/tools/profpad.py), built apart from binary/"""
     b = os.path.abspath(work)
     shutil.rmtree(b, ignore_errors=True)
     shutil.copytree(os.path.join(ROOT, "st"), os.path.join(b, "st"),
-                    ignore=shutil.ignore_patterns("*.o", "*.elf", "build.h"))
+                    ignore=shutil.ignore_patterns("*.o", "*.elf", "*.map", "build.h", "prof"))
     os.symlink(os.path.join(ROOT, "common"), os.path.join(b, "common"))
-    subprocess.run(["make", "-s", "-C", os.path.join(b, "st"), "-j8", "EXTRA_CFLAGS=-DAES_PROFILE=20"],
-                   check=True)
-    return os.path.join(b, "binary", "CLAUDEST.PRG")
+    subprocess.run(["make", "-s", "-C", os.path.join(b, "st"), "-j8", "prof"], check=True)
+    return os.path.join(b, "binary", "prof", "CLAUDEST.PRG")
 
 
 def shot(r, n):
