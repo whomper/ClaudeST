@@ -82,24 +82,20 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 - **README:** keep the section order from the template (Highlights, Getting started, How it reaches the
   servers, Building, Source, Tests, Licence, family footer). Use British English.
 
-## Maintenance mode (Erez, 1 Nov 2026)
+## Maintenance mode (Erez, 1 Nov 2026; 17 Nov 2026)
 
-ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari, ATARI-APP-GUIDELINES.md, section 8). Until Erez ends it:
-- No new features, speed rounds, clean-ups, or catching up with new or changed guidelines.
-- No sync of the shared code (`common/`, `xl/`, `gateway/`). Shared code moving is no reason to rebuild or release.
-- A release only for:
-  - a security or data-loss fault;
-  - a crash or breakage Erez reports;
-  - something outside that stops it working (a certificate, a server);
-  - something EWeb, EPDF or EPlay need from it.
-
-  Such a release takes only that fix (one change from AERA-Atari, not a sync), and its notes say why.
-  Before it goes out, send the hub the candidate commit and wait for its go from the family check (TOS 1.04 and 4.04, NVDI); releasing first and checking after is not for ClaudeST. 2.0 went out without it (hub, 7 Nov 2026).
-- Work on `main` that isn't released stays unreleased.
-- Nothing runs in the background; the session waits for Erez or the hub.
-- Only Erez's explicit word ends this mode, for instance that every app is to take the latest shared code and release. The hub passes it on quoting him.
-
-**The next release is 2.0** (Erez, 7 Nov 2026): make it with `tools/bump.py major`, not plain `bump.py`. This doesn't end maintenance mode or call for a release; whenever the next release comes under the rules above, it is 2.0.
+ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari, ATARI-APP-GUIDELINES.md,
+section 8, and AERA-Atari 8ddb463). Erez, 17 Nov 2026: "Applications on maintenance does not mean they contain
+faults". Until Erez ends it:
+- No new features and no speed rounds of ClaudeST's own (Erez, 13 Nov 2026).
+- **Every family rule holds for ClaudeST as for the focus apps.** The hub notifies ClaudeST of each new or changed
+  rule and each shared fix; ClaudeST takes them (the rules in its code, the shared code by a `common/` sync).
+  Section 8's table ("Where each app stands") is ClaudeST's work list: each row it does not meet is fixed, or
+  the commit that meets it goes to the hub to tick.
+- Whether a change needs a release is reviewed with Erez through the hub; a fault fix always gets one.
+- Before any release, send the hub the candidate commit with the checks and wait for its go from the family
+  check (TOS 1.04 and 4.04, NVDI); releasing first and checking after is not for ClaudeST.
+- Nothing runs in the background; the session waits for Erez or the hub between tasks.
 
 ## Talking with Erez
 
