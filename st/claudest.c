@@ -2820,6 +2820,8 @@ static short inf_key(const char *l, const char *name, const char **v)
 	return 1;
 }
 
+static short inf_old;	/* an old key read: written once the new way */
+
 static u16 inf_num(const char **v)
 {
 	u16 n = 0;
@@ -2852,6 +2854,7 @@ static short inf_setting(const char *l)
 				digits = 0;
 		if (digits && k) {
 			u16 id = inf_num(&v);
+			inf_old = 1;
 			font_id = id ? id : 1;
 			font_pt = inf_num(&v);
 			font_name[0] = 0;
@@ -3026,10 +3029,26 @@ static void safe_save(const char *name, const char *tmpname, const char *data, l
 	}
 }
 
-static void save_config(void)
+/* what CLAUDEST.INF holds, as read at the start or last written: its
+   settings' text, summed. A save with the same sum writes nothing (the
+   guidelines, 6.1: the INF is written only when a setting changed) */
+static u32 inf_sum = 0xFFFFFFFFUL;
+static short inf_sum_len = -1;
+
+static u32 text_sum(const char *t, short n)
 {
-	static char text[2048 + INF_KEEP];
-	char v[24], *p = text;
+	u32 h = 2166136261UL;	/* FNV-1a */
+	while (n-- > 0)
+		h = (h ^ (u8)*t++) * 16777619UL;
+	return h;
+}
+
+static char inf_text[2048 + INF_KEEP];
+
+/* the INF's whole text for the settings as they are now */
+static short config_text(void)
+{
+	char v[24], *p = inf_text, *text = inf_text;
 
 	strcpy(p, "; ClaudeST settings, written by CLAUDEST.PRG. Lines starting with ; are notes.\r\n"
 		  "; Most of these are set in Options > Settings; see the guide.\r\n"
@@ -3062,8 +3081,26 @@ static void save_config(void)
 		p += inf_keep_len;
 	}
 	*p = 0;
+	return p - text;
+}
 
-	safe_save("claudest.inf", "claudest.in$", text, p - text);
+/* the settings as read are the file's: a save of the same writes nothing */
+static void config_read(void)
+{
+	short n = config_text();
+	inf_sum = text_sum(inf_text, n);
+	inf_sum_len = n;
+}
+
+static void save_config(void)
+{
+	short n = config_text();
+	u32 h = text_sum(inf_text, n);
+	if (n == inf_sum_len && h == inf_sum)
+		return;		/* nothing changed: no open, no write */
+	safe_save("claudest.inf", "claudest.in$", inf_text, n);
+	inf_sum = h;
+	inf_sum_len = n;
 }
 
 /* a new address or port: connect there, and keep it */
@@ -6067,6 +6104,7 @@ int main(void)
 	strlcpy_(home_dir, app_dir(), sizeof(home_dir));
 	pf_size_open = pf_handle_size;	/* futil.c's pf_load: open, then ask */
 	load_config();
+	config_read();		/* the settings as the file has them */
 	crash_install(home_dir, "ClaudeST", APP_VERSION);
 	crash_cleanup = crash_quit;
 	help_init();			/* memory the help viewer may read */
@@ -6139,6 +6177,8 @@ int main(void)
 	wind_open(win, dx, dy, dw, dh);
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
 	font_apply();		/* the text font saved in CLAUDEST.INF */
+	if (inf_old)
+		save_config();	/* an old form read once, written the new way (D44) */
 	layout();
 	set_divider_watch();
 
