@@ -3022,20 +3022,6 @@ static void safe_save(const char *name, const char *tmpname, const char *data, l
 	}
 }
 
-/* what CLAUDEST.INF holds, as read at the start or last written: its
-   settings' text, summed. A save with the same sum writes nothing (the
-   guidelines, 6.1: the INF is written only when a setting changed) */
-static u32 inf_sum = 0xFFFFFFFFUL;
-static short inf_sum_len = -1;
-
-static u32 text_sum(const char *t, short n)
-{
-	u32 h = 0x5A17C0DEUL;	/* rotated and xored: no multiply, cheap on a 68000 */
-	while (n-- > 0)
-		h = ((h << 5) | (h >> 27)) ^ (u8)*t++;
-	return h;
-}
-
 static char inf_text[2048 + INF_KEEP];
 
 /* the INF's whole text for the settings as they are now */
@@ -3088,23 +3074,61 @@ static short config_text(void)
 	return p - text;
 }
 
+/* the values CLAUDEST.INF's text is made from, as read at the start or
+   last written: a save with the same values writes nothing (the
+   guidelines, 6.1: the INF is written only when a setting changed). The
+   values, not the text: an 8 MHz ST's start makes no 2 KB of text */
+typedef struct {
+	u32 ip;
+	long nf;
+	u16 port, pt, sys, log, panes, nf_read;
+	short px, py, pw, ph;
+	char font[sizeof(font_name)], model[sizeof(pref_model)], effort[sizeof(pref_effort)];
+} INF_VALUES;
+static INF_VALUES inf_was;
+static short inf_was_set;	/* 0: write at the next save (an old form read) */
+
+static void config_values(INF_VALUES *c)
+{
+	memset(c, 0, sizeof(*c));
+	c->ip = tcp_ip;
+	c->port = tcp_port;
+	c->sys = font_id == 1 || !font_name[0];
+	if (!c->sys)
+		strcpy(c->font, font_name);
+	c->pt = font_pt;
+	c->log = log_on;
+	c->panes = sb_user;
+	c->nf_read = nf_read;
+	c->nf = nf_read ? nf_on : 0;
+	if (place_w) {
+		c->px = place_x;
+		c->py = place_y;
+		c->pw = place_w;
+		c->ph = place_h;
+	}
+	strcpy(c->model, pref_model);
+	strcpy(c->effort, pref_effort);
+}
+
 /* the settings as read are the file's: a save of the same writes nothing */
 static void config_read(void)
 {
-	short n = config_text();
-	inf_sum = text_sum(inf_text, n);
-	inf_sum_len = n;
+	config_values(&inf_was);
+	inf_was_set = 1;
 }
 
 static void save_config(void)
 {
-	short n = config_text();
-	u32 h = text_sum(inf_text, n);
-	if (n == inf_sum_len && h == inf_sum)
+	INF_VALUES now;
+	short n;
+	config_values(&now);
+	if (inf_was_set && !memcmp(&now, &inf_was, sizeof(now)))
 		return;		/* nothing changed: no open, no write */
+	n = config_text();
 	safe_save("claudest.inf", "claudest.in$", inf_text, n);
-	inf_sum = h;
-	inf_sum_len = n;
+	inf_was = now;
+	inf_was_set = 1;
 }
 
 /* a new address or port: connect there, and keep it */
@@ -5980,7 +6004,7 @@ int main(void)
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
 	font_apply();		/* the text font saved in CLAUDEST.INF */
 	if (inf_old) {		/* an old key read once, written the new way (D44): */
-		inf_sum_len = -1;	/* the same settings, but not the file's form */
+		inf_was_set = 0;	/* the same settings, but not the file's form */
 		save_config();
 	}
 	layout();
