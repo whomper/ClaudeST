@@ -204,8 +204,13 @@ short set_radio(SETTINGS *s, short x, short y, short w, const char *const *label
 		n = SET_RADIOS;
 	if (w < 8)
 		w = 8;
-	if (w > 9)
-		w = 9;
+	/* up to 9 characters, 10 apart (four fit the page's 42); wider where
+	   fewer fit, each a character apart: three of 13 (EWeb's Scripts,
+	   Erez, 17 Nov 2026: "Chosen sites") */
+	while (w > 9 && n * (w + 1) - 1 > 42)
+		w--;
+	if (w > 13)
+		w = 13;
 	if (s->b.nobj + n > s->b.omax - 1 - s->b.keep) {
 		s->b.lost++;		/* all or none */
 		return 0;
@@ -219,9 +224,11 @@ short set_radio(SETTINGS *s, short x, short y, short w, const char *const *label
 	p->was = *sel;
 	p->ch = labels;
 	for (k = 0; k < n; k++) {
-		/* 10 characters apart, and 4 pixels more for each (EFTP's, where the 3D buttons grow by a few) */
+		/* 10 characters apart (w + 1 for a wider one), and 4 pixels more for each (EFTP's, where the 3D
+		   buttons grow by a few) */
+		short step = w > 9 ? (short)(w + 1) : 10;
 		short o = db_add(&s->b, G_BUTTON, TOUCHEXIT | RBUTTON, 0, (long)labels[k],
-				 (short)(x + 10 * k + ((4 * k) << 8)), y, w, 1);
+				 (short)(x + step * k + ((4 * k) << 8)), y, w, 1);
 		if (!k)
 			p->obj = o;
 	}

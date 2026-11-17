@@ -171,7 +171,7 @@ short set_long(SETTINGS *s, short x, short y, char *buf, short len, short cap, c
 short set_popup(SETTINGS *s, short x, short y, short w, const char *const *choices, short n, short *sel);
 /* radio buttons (5.6, D24): one of up to four choices as AES buttons 10 characters apart, the way EFTP's Site Manager
    and EPlay's Output have them (G_BUTTON, RBUTTON: the 3D look has them pressed in when chosen, flat the chosen one is
-   turned over). labels[0..n-1] (not copied), each w characters wide (8 or 9), the first at x, y; *sel (0 to n - 1) is
+   turned over). labels[0..n-1] (not copied), each w characters wide (8 or 9; up to 13 where n of them, a character apart, fit the page's 42: three), the first at x, y; *sel (0 to n - 1) is
    the app's, changed at once by a click or the arrow keys; Cancel puts it back. Four are 40 characters and 12
    pixels wide, from the page's column SX: they fit the 42 of the page (not the value column SX + 30). The engine, not
    the AES, keeps the one chosen (the AES would unchoose the buttons of every other group of the page). Returns the

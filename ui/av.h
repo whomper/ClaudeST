@@ -30,7 +30,9 @@
 enum { AV_NONE, AV_START, AV_DONE, AV_PEOPLE };
 
 /* our names as the AES may know us, by the file we were started as:
-   "EWEB|EWEBST" (the one appl_find gives our id is used) */
+   "EWEB|EWEBST" (the one appl_find gives our id is used; renamed, the
+   name the AES lists for our id, where it lists them; else the first,
+   and av_window announces nothing) */
 void av_init(const char *names);
 void av_exit(void);
 void av_window(short h, int open);

@@ -246,26 +246,6 @@ const char *tos_clock(void)
 	return s;
 }
 
-long nf_probe(void);
-long nf_call2(long id, long arg);
-static long nf_id = -1;
-
-/* nf.S finds the illegal-instruction vector itself (VBR + 0x10 on a 68010
-   or later: a Vampire V4SA's Atari core keeps VBR away from 0, 15 Nov
-   2026) */
-static void sup_nf_probe(void)
-{
-	nf_id = nf_probe();
-}
-
-void nf_debug(const char *s)
-{
-	if (nf_id < 0)
-		Supexec(sup_nf_probe);
-	if (nf_id > 0)
-		nf_call2(nf_id, (long)s);
-}
-
 /* ---- libgcc replacements for -m68000 ---- */
 
 static inline unsigned long mulu16(unsigned long a, unsigned long b)

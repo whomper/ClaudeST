@@ -17,6 +17,7 @@ static char environment[200];
 static short sent[8], sent_to = -1, writes;
 static const char *running[] = { 0, "EMAIL   ", "THING   ", 0 };	/* by id */
 static int failed, checks;
+static const char *ptr(short hi, short lo);
 
 long get_cookie(long id) { (void)id; return 0; }		/* plain TOS */
 static unsigned long now_ms = 1000;
@@ -33,8 +34,51 @@ short appl_find(const char *name)
 	return -1;
 }
 
+/* an AES 4.0 that lists its programs (appl_search), or one that can't */
+static int aes4;
+short aes_version(void) { return aes4 ? 0x0410 : 0x0140; }
+short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4)
+{
+	if (!aes4)
+		return 0;
+	*o1 = *o2 = *o4 = 0;
+	*o3 = type == 4;
+	return 1;
+}
+short appl_search(short mode, char *name, short *type, short *id)
+{
+	static short at;
+	if (mode == 0)
+		at = 0;
+	for (; at < 4; at++)
+		if (running[at]) {
+			strcpy(name, running[at]);
+			*type = 2;
+			*id = at++;
+			return 1;
+		}
+	return 0;
+}
+
+/* a stand-in Thing: at a drop on an announced window it appl_find's the
+   name the AV_PROTOKOLL gave (its avserver.c, avp_check), and takes a
+   name it can't find for a program gone without AV_EXIT */
+static char thing_name[9];
+static short thing_windows;
+static int thing_drop_ok(void)
+{
+	return thing_windows == 0 || appl_find(thing_name) == appl_id();
+}
+
 short appl_write(short id, short len, const void *buf)
 {
+	const short *m = buf;
+	if (m[0] == 0x4700)
+		memcpy(thing_name, ptr(m[6], m[7]), 9);
+	if (m[0] == 0x4724)
+		thing_windows++;
+	if (m[0] == 0x4736)
+		thing_windows = 0;
 	memcpy(sent, buf, len);
 	sent_to = id;
 	writes++;
@@ -162,11 +206,35 @@ int main(void)
 	av_init("ECAL|ECALST");
 	check(!strcmp(ptr(sent[6], sent[7]), "ECAL    "), "short names padded");
 	av_exit();
+	/* renamed: the name the AES lists for our id; where it can't list
+	   them, the first, and no window announced (Thing's alert at a drop:
+	   EPlay's FireBee edition, 17 Nov 2026) */
 	running[1] = "RENAMED ";
+	aes4 = 1;
 	av_init("EFTP|EFTPST");
-	check(!strcmp(ptr(sent[6], sent[7]), "EFTP    "), "renamed to something else: the first name");
+	check(!strcmp(ptr(sent[6], sent[7]), "RENAMED "), "renamed, an AES that lists: the name it lists for our id");
+	writes = 0;
+	av_window(5, 1);
+	check(writes == 1 && sent[0] == 0x4724 && sent[3] == 5, "  its window announced (AV_ACCWINDOPEN)");
+	check(thing_drop_ok(), "  a stand-in Thing finds it by that name at a drop");
+	av_exit();
+	aes4 = 0;
+	av_init("EFTP|EFTPST");
+	check(!strcmp(ptr(sent[6], sent[7]), "EFTP    "), "renamed, an AES that can't list: the first name");
+	writes = 0;
+	av_window(5, 1);
+	check(writes == 0, "  and no window announced");
+	check(thing_drop_ok(), "  so the stand-in Thing never looks it up");
+	av_window(5, 0);
+	check(writes == 0, "  nor its closing");
 	av_exit();
 	running[1] = "EMAIL   ";
+	av_init("EMAIL|EMAILST");
+	writes = 0;
+	av_window(5, 1);
+	check(writes == 1 && thing_drop_ok(), "a name it was given: the window announced, Thing finds it");
+	av_window(5, 0);
+	av_exit();
 
 	/* started before the server: told at the first VA_START */
 	running[2] = 0;

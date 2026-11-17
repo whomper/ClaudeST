@@ -29,6 +29,7 @@ void (*av_twin_here)(short id);
 static char got[2048];			/* the last VA_START's string, ours */
 static short server = -1;		/* the AV server's id, once told */
 static int registered;
+static int named;			/* name_buf is the name the AES knows us by */
 
 /* Memory another program reads, kept while we run. An accessory under
    plain TOS has no memory of its own after the start: what Malloc or
@@ -142,6 +143,32 @@ static void tell(void)
 	registered = 1;
 }
 
+/* our own name as the AES lists it (appl_search: AES 4.0, MagiC, XaAES;
+   asked only where appl_getinfo says so, as twin.c: EmuTOS's hangs),
+   blank-padded into n; 0 where the AES can't say */
+static int own_name(char *n)
+{
+	short o1 = 0, o2 = 0, o3 = 0, o4 = 0, type, id, mode = 0, me = appl_id(), i;
+	char got[10];
+	if (!((aes_version() >= 0x0400 || get_cookie(0x3F414749L) || get_cookie(0x4D616758L)) &&	/* ?AGI, MagX */
+	      appl_getinfo(4, &o1, &o2, &o3, &o4) && o3 == 1))
+		return 0;
+	memset(got, 0, sizeof(got));
+	while (appl_search(mode, got, &type, &id)) {
+		mode = 1;
+		if (id == me) {
+			for (i = 0; i < 8 && got[i]; i++)
+				n[i] = got[i] >= 'a' && got[i] <= 'z' ? got[i] - 32 : got[i];
+			while (i < 8)
+				n[i++] = ' ';
+			n[8] = 0;
+			return appl_find(n) == me;
+		}
+		memset(got, 0, sizeof(got));
+	}
+	return 0;
+}
+
 void av_init(const char *names)
 {
 	const char *p = names;
@@ -149,15 +176,25 @@ void av_init(const char *names)
 	alloc();
 	if (registered)
 		return;
-	/* the one the AES knows us by (the file may have been either);
-	   else the first */
+	/* the one the AES knows us by (the file may have been either); else,
+	   renamed, the name the AES lists for our id; else the first, and no
+	   window is announced: a desktop finds us by this name (Thing, at a
+	   drop on an announced window, appl_find's it, and takes a name it
+	   can't find for a program gone without AV_EXIT: an alert. EPlay's
+	   FireBee edition, 17 Nov 2026) */
 	next_name(names, name_buf);
+	named = 0;
 	while (*p) {
 		p = next_name(p, n);
 		if (appl_find(n) == appl_id()) {
 			memcpy(name_buf, n, 9);
+			named = 1;
 			break;
 		}
+	}
+	if (!named && own_name(n)) {
+		memcpy(name_buf, n, 9);
+		named = 1;
 	}
 	tell();
 }
@@ -172,7 +209,7 @@ void av_exit(void)
 
 void av_window(short h, int open)
 {
-	if (registered && h > 0)
+	if (registered && named && h > 0)
 		av_post(server, open ? AV_ACCWINDOPEN : AV_ACCWINDCLOSED, h, 0);
 }
 
