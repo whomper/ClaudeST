@@ -86,6 +86,8 @@ short vh;				/* the VDI workstation (and the shared blocks', st/ui.h) */
 short cw, ch;				/* character cell of the text font */
 short sys_cw, sys_ch;			/* the system font's, as the AES uses it */
 short cst_gl_wchar, cst_gl_hchar;	/* the same, for the shared blocks (st/ui.h) */
+/* eye.c (common) names it itself, without st/ui.h */
+extern short gl_hchar __attribute__((alias("cst_gl_hchar")));
 
 /* the text font (Options > Font), as in EMail and ECal: font_id 1 is the
  * system font (font_pt 8 or 16: its 8x8 or 8x16 size; 0 the screen's
