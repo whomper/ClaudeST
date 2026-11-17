@@ -38,17 +38,31 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   is (there is no `-dev` label). Don't commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
 - **Only formal releases leave the build machine.** Erez gets vX.Y releases made by the Release
   workflow from `main`, nothing else: no test builds, no CI artifacts, no builds
-  from a branch. Work lands on `main`; to try a fix on real hardware, release it. If a release doesn't
-  work, roll back with a release: revert on `main`, release the next number, and say in the bad
-  release's notes that it is withdrawn and which one to use.
-- **Releases go out without asking Erez** (his decision, 23 Oct 2026; guidelines 1.2). Release when
-  work on `main` is ready:
-  - this repo's checks pass;
-  - the rigs on his TOS pass, where this file asks for them;
-  - the hub's family checks pass.
+  from a branch. Work lands on `main`; to try a fix on real hardware, release it. A fault found after a
+  release (by a user, the hub or Erez) is fixed forward by the next number, before other work; the old
+  release stays, and the new one's notes say in one line what it fixes (no revert, no "withdrawn" notice).
+- **The regression gate** (Erez, 17 Nov 2026; the guidelines 1.2, AERA-Atari a22574e;
+  `standards/TEST-MATRIX.md`'s gate table): "we need to be extra careful with regression issues as there
+  are users of our software. This means testing across all configurations" and "make sure we don't loose
+  performance". Every candidate that changes code goes through, in order:
+  1. this repo's checks (`make` with no warnings, `make test`, `make itest` when network code changed);
+  2. the rigs (`tests/hatari/`) on every row of the gate table ClaudeST runs on, on Erez's TOS images and
+     NVDI (never EmuTOS as evidence), each named in the report with `describe()`: Erez's configuration
+     (`Falcon-4:256` + NVDI), `Falcon-4:16`, `Falcon:65536`, `TT:ttmed` and `TT:ttlow`, MiNT + XaAES (plain,
+     `ct60`, `--ext2`), a 68060, the FireBee stand-in, `ST:mono`, `ST:med`, `ST:low` and `ST-1`, `STE`,
+     the network path (STinG through the Gateway), one boot with NatFeats off. A row ClaudeST can't run
+     (it has no accessory edition) is named with why;
+  3. the paired speed run against the last release on `Falcon-4:256` + NVDI, `Falcon-4:16` and `ST:mono`,
+     the timed build at the shipped layout (`make prof`: `common/tools/profpad.py`): no row slower beyond
+     one tick (5 ms) on any; a slower row is fixed first, and only Erez accepts one;
+  4. the candidate commit with the results to the hub, which runs the family check and answers with go or
+     the faults it found.
 
-  Then give Erez the link in one line, with anything he has to do, and send the hub the link. Roll
-  back a bad release the same way.
+  Only then is it released. **A fault a user reports becomes a case in the rigs** in the same release
+  that fixes it.
+- **Releases go out without asking Erez** (his decision, 23 Oct 2026; guidelines 1.2) once the gate
+  above has passed and the hub said go. Then give Erez the link in one line, with anything he has to
+  do, and send the hub the link.
 - **Who decides what** (Erez, 31 Oct 2026; the guidelines' "Who decides what"). Erez's part, put
   to him before the work as a decision with a short context:
   - new programs and ideas, their core capabilities, and how they work with the other programs;
