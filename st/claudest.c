@@ -5413,12 +5413,18 @@ static void handle_key(short kstate, short kr)
 		if (sb_hidden)
 			return;
 		{
+			/* under the selected row, at its left; with nothing
+			   selected in view, the list's first item, at the
+			   pane's top left (Erez, 10 Nov 2026: D17) */
 			short i = lcur;
 			if (i < 0)
 				for (i = 0; i < nitems && strcmp(items[i].id, cur_id); i++)
 					;
-			if (i >= 0 && i < nitems && i >= list_top && i < list_top + list_rows)
-				context_menu(i, wx + sb_w / 2, list_y + (i - list_top + 1) * row_h + row_h / 2);
+			if (i < list_top || i >= nitems || i >= list_top + list_rows)
+				for (i = list_top; i < nitems && i < list_top + list_rows && items[i].heading; i++)
+					;
+			if (i >= list_top && i < nitems && i < list_top + list_rows)
+				context_menu(i, wx + 4, 0);	/* opens under the row */
 		}
 		return;
 	case 0x0f: move_cursor(shift ? -1 : 1); return;			/* Tab */
