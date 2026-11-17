@@ -2823,6 +2823,11 @@ static short inf_key(const char *l, const char *name, const char **v)
 
 static short inf_old;	/* an old key read: written once the new way */
 static short nf_read;	/* NATFEATS= was in the file: a rig's, kept */
+static short panes_read;	/* PANES= read: it wins over the old SIDEBAR= (D44) */
+/* WINDOW=x,y,w,h (D43; Erez, 17 Nov 2026): the place kept, w 0 when none;
+   the place the window opened at, to see at the quit whether it moved */
+static short place_x, place_y, place_w, place_h;
+static short open_x, open_y, open_w, open_h;
 
 static u16 inf_num(const char **v)
 {
@@ -2888,8 +2893,21 @@ static short inf_setting(const char *l)
 	} else if (inf_key(l, "DIALOGS3D", &v))
 		;	/* no setting any more (the guidelines, 5.6; a tester, Erez
 			   27 Oct 2026): read without it, and not kept */
-	else if (inf_key(l, "SIDEBAR", &v))
-		sb_user = inf_num(&v);
+	else if (inf_key(l, "PANES", &v)) {
+		sb_user = inf_num(&v);	/* the chat list's width */
+		panes_read = 1;
+	} else if (inf_key(l, "SIDEBAR", &v)) {
+		/* before 2.11 (D43, D44): read once, written as PANES= */
+		u16 n = inf_num(&v);
+		if (!panes_read)
+			sb_user = n;
+		inf_old = 1;
+	} else if (inf_key(l, "WINDOW", &v)) {
+		place_x = inf_num(&v);
+		place_y = inf_num(&v);
+		place_w = inf_num(&v);
+		place_h = inf_num(&v);
+	}
 	else if (inf_key(l, "MODEL", &v)) {
 		short k = 0;
 		while (*v && *v != ' ' && k < (short)sizeof(pref_model) - 1)
@@ -3078,7 +3096,18 @@ static short config_text(void)
 	p = inf_put_num(p, "the font's Hebrew letters: 0 = Atari places, 1 = ISO-8859-8, 2 = DOS 862 (Options > Font)",
 			"HEBFONT", hebfont);
 	p = inf_put_num(p, "write CLAUDEST.LOG at the quit: 1 on, 0 off (Options > Write a log)", "LOG", log_on);
-	p = inf_put_num(p, "the sidebar's width in pixels, 0 = ClaudeST's choice (drag its edge)", "SIDEBAR", sb_user);
+	p = inf_put_num(p, "the chat list's width in pixels, 0 = ClaudeST's choice (drag its edge)", "PANES", sb_user);
+	if (place_w) {
+		char *q = v;
+		q = put_num(q, place_x);
+		*q++ = ',';
+		q = put_num(q, place_y);
+		*q++ = ',';
+		q = put_num(q, place_w);
+		*q++ = ',';
+		*put_num(q, place_h) = 0;
+		p = inf_put(p, "the window's place and size: x,y,w,h (moved or sized, kept at the quit)", "WINDOW", v);
+	}
 	p = inf_put(p, "the model for new chats, empty = claude.ai's default (F9)", "MODEL", pref_model);
 	p = inf_put(p, "its effort level, empty = the model's default", "EFFORT", pref_effort);
 	if (nf_read)
@@ -5969,7 +5998,20 @@ int main(void)
 	planes = work_out[4];
 	theme_init(ncolors >= 16, 0, 0);	/* the family's selection colour (D42): after planes */
 	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
+	/* the place kept in WINDOW=, if it is on this screen and not under
+	   the smallest size; else the whole desk (D39, D43) */
+	if (place_w >= 48 * cw && place_h >= 14 * ch && place_x >= dx && place_y >= dy &&
+	    (long)place_x + place_w <= (long)dx + dw && (long)place_y + place_h <= (long)dy + dh) {
+		dx = place_x;
+		dy = place_y;
+		dw = place_w;
+		dh = place_h;
+	}
 	x8_box(&dx, dy, &dw, dh);
+	open_x = dx;
+	open_y = dy;
+	open_w = dw;
+	open_h = dh;
 	if (win < 0) {
 		alert(1, "[3][ClaudeST: no window available.][ Quit ]");
 		menu_bar(mb.tree, 0);
@@ -5988,8 +6030,10 @@ int main(void)
 	wind_open(win, dx, dy, dw, dh);
 	wind_get(win, WF_WORKXYWH, &wx, &wy, &ww, &wh);
 	font_apply();		/* the text font saved in CLAUDEST.INF */
-	if (inf_old)
-		save_config();	/* an old form read once, written the new way (D44) */
+	if (inf_old) {		/* an old key read once, written the new way (D44): */
+		inf_sum_len = -1;	/* the same settings, but not the file's form */
+		save_config();
+	}
 	layout();
 	set_divider_watch();
 
@@ -6111,6 +6155,24 @@ int main(void)
 	if (tcp_opening >= 0)
 		sting_close(tcp_opening);
 	quit_step("the Gateway's connection closed");
+	{
+		/* moved or sized: the place kept (WINDOW=, written only then: 6.1) */
+		short x, y, w, h;
+		if (win_icon) {
+			x = norm_x;
+			y = norm_y;
+			w = norm_w;
+			h = norm_h;
+		} else
+			wind_get(win, WF_CURRXYWH, &x, &y, &w, &h);
+		if (x != open_x || y != open_y || w != open_w || h != open_h) {
+			place_x = x;
+			place_y = y;
+			place_w = w;
+			place_h = h;
+			save_config();
+		}
+	}
 	wind_close(win);
 	wind_delete(win);
 	quit_step("window closed");

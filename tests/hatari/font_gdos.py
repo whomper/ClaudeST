@@ -163,8 +163,8 @@ def main():
         def font_dialog(name):
             """Options > Font...: Options is the fifth title (the first,
             " ClaudeST " since 1.68, starts two cells in; Chat before
-            Options since 1.67), Font... its third item (Settings,
-            Account, Font: the line went in 2.5, the ticks before it with
+            Options since 1.67), Font... its third item (Account,
+            Settings, Font: the line went in 2.5, the ticks before it with
             the serial cable in 2.3 and Hebrew keys in 2.1). The first
             time, every GDOS font is measured before the selector shows:
             minutes at 16 MHz with Erez's 137 families"""

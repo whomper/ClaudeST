@@ -6,7 +6,7 @@ standards/TEST-MATRIX.md, the gate table; Erez, 17 Nov 2026): ClaudeST on
 every configuration it runs on, on Erez's TOS images and NVDI, one boot a
 row, each named as machines.py's describe() names it.
 
-    python3 tests/hatari/gate.py WORK [--prg TIMED.PRG] [--rows 1,2,8 ...]
+    python3 tests/hatari/gate.py WORK [--prg TIMED.PRG] [--rows 1,2,8,own ...]
 
 PRG is the timed build (make prof: binary/prof/CLAUDEST.PRG, built when
 not given). The rows:
@@ -24,6 +24,7 @@ not given). The rows:
  10  accessories                                  none: ClaudeST is a program only
  11  the network: STinG through the Gateway       every speed.py row (FAKESTNG)
  12  NatFeats off: no NATFEATS= in the INF        start, quit, no CRASH.LOG
+ own ClaudeST's own rigs (inf_keys, disk_budget, long_field, font_gdos)
 
 Under MiNT ClaudeST has no STinG (the rig's FAKESTNG is a TOS program):
 it starts offline, as on a MiNT machine without STinG. Each MiNT row
@@ -121,6 +122,18 @@ def refused_row(work, row, machine, prg):
     ok = changed and not crashes
     note(row, named, ok, "the screen-width alert, OK, back to the desktop%s" %
          ("" if not crashes else "; CRASH.LOG"))
+
+
+def own_rig(work, label, cmd, env=None):
+    """one of ClaudeST's own rigs, its last lines as the detail"""
+    w = os.path.join(work, "own-" + label.split()[0])
+    with open(w + ".log", "w") as f:
+        code = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, cwd=ROOT,
+                              env=dict(os.environ, **(env or {}))).returncode
+    lines = [ln for ln in open(w + ".log", errors="replace").read().splitlines()
+             if ln.startswith(("ok", "FAIL", "on ", "ST", "Falcon", "inf_keys", "speed on"))]
+    note("own", label, code == 0, "; ".join(ln.strip() for ln in lines if ln.startswith("FAIL"))[:300] or
+         "every check")
 
 
 def natfeats_off_row(work, prg):
@@ -235,6 +248,18 @@ def main():
             mint_row(work, row, m, extra, prg)
     if on("12"):
         natfeats_off_row(work, prg)
+    if on("own"):
+        # the shipped build (binary/CLAUDEST.PRG): these time nothing
+        ship = os.path.join(ROOT, "binary", "CLAUDEST.PRG")
+        own_rig(work, "inf_keys.py on ST:mono, TOS 1.04: SIDEBAR= read once, WINDOW= off and on the screen, moved",
+                [sys.executable, os.path.join(HERE, "inf_keys.py"), os.path.join(work, "own-ik"), "--prg", ship])
+        own_rig(work, "disk_budget.sh on ST:mono, TOS 1.04: the disk work, the INF only on a change",
+                ["bash", os.path.join(HERE, "disk_budget.sh")], {"IDLE": "30"})
+        own_rig(work, "long_field.sh on ST:mono, TOS 1.04: a field holding more than it shows",
+                ["bash", os.path.join(HERE, "long_field.sh")])
+        own_rig(work, "font_gdos.py on Falcon:16, TOS 4.04, NVDI: a GDOS font chosen, kept, drawn after a restart",
+                [sys.executable, os.path.join(HERE, "font_gdos.py"), os.path.join(work, "own-fg"), "--prg", ship],
+                {"AERA_WITH_NVDI": "1"})
     for row, why in (("6", "a 68060: the FireBee stand-in's 68060 under TOS (row 7) and the CT60 under MiNT (row 5); "
                            "TOS 4.04 itself runs no 68060"),
                      ("10", "ClaudeST has no accessory edition"),

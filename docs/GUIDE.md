@@ -607,7 +607,8 @@ ignored and left out the next time ClaudeST saves.
 | `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
 | `HEBFONT=0` | Options ▸ Settings, Look: where the system and bitmap fonts keep Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862) |
 | `LOG=0` | Options ▸ Write a log, or Settings: 1 writes `CLAUDEST.LOG` as ClaudeST quits; 0, the default, writes nothing |
-| `SIDEBAR=240` | dragging the divider (width in pixels; 0, the default: ClaudeST's choice) |
+| `PANES=240` | dragging the divider: the chat list's width in pixels (0, the default: ClaudeST's choice). Before 2.11 this was `SIDEBAR=`, read once and written as `PANES=` |
+| `WINDOW=40,40,560,380` | moving or sizing the window: its place and size, kept when ClaudeST quits (only when it moved). A place that isn't on the screen at the start, or none, opens the window on the whole desk |
 | `MODEL=claude-sonnet-5-5`, `EFFORT=max` | the model chip / `F9` (empty, the default: claude.ai's default model and that model's effort) |
 
 The window always opens full screen with a new chat.

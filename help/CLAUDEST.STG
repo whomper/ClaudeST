@@ -509,8 +509,12 @@
                             keeps Hebrew (0 Atari, 1 ISO-8859-8, 2 DOS 862)
     LOG=0                   Options > Write a log: 1 writes CLAUDEST.LOG
                             as ClaudeST quits (0, the default: nothing)
-    SIDEBAR=240             the sidebar's width, by dragging the divider
-                            (0: ClaudeST's choice)
+    PANES=240               the chat list's width, by dragging the divider
+                            (0: ClaudeST's choice; SIDEBAR= before 2.11,
+                            read once)
+    WINDOW=40,40,560,380    the window's place and size, kept at the
+                            quit when it moved; off the screen: the
+                            whole desk
     MODEL=...  EFFORT=...   the model chip / F9 (empty: the defaults)
 
   The serial cable's settings from ClaudeST 2.2 and earlier (LINK,
