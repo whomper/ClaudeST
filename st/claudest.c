@@ -5417,8 +5417,8 @@ static void handle_key(short kstate, short kr)
 			   selected in view, the list's first item, at the
 			   pane's top left (Erez, 10 Nov 2026: D17) */
 			short i = lcur;
-			if (i < 0)
-				for (i = 0; i < nitems && strcmp(items[i].id, cur_id); i++)
+			if (i < 0 && cur_id[0])	/* the chat open, if listed */
+				for (i = 0; i < nitems && (items[i].heading || strcmp(items[i].id, cur_id)); i++)
 					;
 			if (i < list_top || i >= nitems || i >= list_top + list_rows)
 				for (i = list_top; i < nitems && i < list_top + list_rows && items[i].heading; i++)
