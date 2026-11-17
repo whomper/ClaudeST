@@ -139,6 +139,7 @@ static void note_host(char (*list)[64], int *next, const char *host)
 }
 
 static int log_hold;
+static void log_out(void);
 /* a step of a handshake; or a time after it, written with the next
    milestone (" .. "): written out at once, it would add the disk's time */
 static void log_tls_step(const char *msg)
@@ -225,7 +226,8 @@ static int start_tls(CONN *c, const char *host, char *err, int errlen)
 	tls_log = log_tls_step;
 	ok = handshake(c, host, err, errlen);
 	log_hold = 0;
-	conn_log_flush();
+	log_out();	/* (on the disk's handle; closed at the next idle: not here,
+			   inside the server's wait for the request) */
 	return ok;
 }
 
@@ -339,52 +341,98 @@ static void log_old_name(char *old)
 	strcpy(old + dot, dot + 1 < n && conn_logfile[dot + 1] >= 'a' && conn_logfile[dot + 1] <= 'z' ? ".old" : ".OLD");
 }
 
+/* The log is kept open between lines (Erez, 17 Nov 2026: "build the log
+   middle way"): each line a write to the open file, about 1.4 ms on his
+   DFB1's IDE, where the close after it (GEMDOS writing the FAT and the
+   directory) was 140 ms of every line's 143 (common/tests/slowdisk), and
+   30 lines of a TLS connect ate laut.fm's 5 s wait for the request. The
+   file is closed, so the disk has what was written, at most a second
+   after a line, in the event wait (conn_log_idle, from gem.c), never
+   inside a TLS handshake; at once before a connection (open_plain), at an
+   error (" !! "), at a crash's report, at conn_log_flush (an app's own
+   sync points: a save, the quit) and at appl_exit. A freeze loses at most
+   the last second's lines, none from before a connection */
+static int log_h = -1;
+static int log_dirty;
+static unsigned long log_closed_at;
+static unsigned long log_h_for;	/* a sum of the name the open file is for */
+
+static unsigned long name_sum(void)
+{
+	unsigned long sum = 1;
+	const char *p;
+	for (p = conn_logfile; *p; p++)
+		sum = sum * 31 + (unsigned char)*p;
+	return sum;
+}
+
+static void log_close(void)
+{
+	if (log_h >= 0) {
+		pf_close(log_h);
+		log_h = -1;
+	}
+	log_dirty = 0;
+	log_closed_at = pf_ms();
+}
+
 static void log_write(const char *s, long n)
 {
-	int h;
 	long size = 0;
 	if (!conn_logfile[0] || n <= 0)
 		return;
-	if (conn_log_max > 0 && !conn_log_size) {
-		unsigned long sum = 1;
-		const char *p;
-		for (p = conn_logfile; *p; p++)
-			sum = sum * 31 + (unsigned char)*p;
+	if (log_h >= 0 && name_sum() != log_h_for)
+		log_close();	/* (the app named another file: this one finished) */
+	if (log_h < 0 && conn_log_max > 0 && !conn_log_size) {
+		unsigned long sum = name_sum();
 		if (sum != log_known_for) {
 			size = pf_size(conn_logfile);
 			log_known = size < 0 ? 0 : size;
 			log_known_for = sum;
 		}
 	}
-	if ((h = pf_open(conn_logfile, PF_APPEND)) < 0)
-		return;
-	if (conn_log_max > 0) {
-		if (conn_log_size) {
-			size = conn_log_size(h);
+	if (log_h < 0) {
+		if ((log_h = pf_open(conn_logfile, PF_APPEND)) < 0)
+			return;
+		log_h_for = name_sum();
+		if (conn_log_max > 0 && conn_log_size) {
+			size = conn_log_size(log_h);
 			if (size < 0)
 				size = 0;
 			else
-				pf_seek(h, size);	/* the hook may leave the place at the start */
-		} else {
-			size = log_known;
+				pf_seek(log_h, size);	/* the hook may leave the place at the start */
+			log_known = size;
 		}
+	}
+	if (conn_log_max > 0) {
+		size = log_known < 0 ? 0 : log_known;
 		if (size > 0 && size + n > conn_log_max) {
 			char old[sizeof(conn_logfile) + 4];
-			pf_close(h);
+			pf_close(log_h);
+			log_h = -1;
 			log_old_name(old);
 			pf_remove(old);		/* TOS doesn't rename over a file */
 			if (pf_rename(conn_logfile, old) != 0)
 				pf_remove(conn_logfile);	/* the cap holds even so */
-			if ((h = pf_open(conn_logfile, PF_APPEND)) < 0) {
+			if ((log_h = pf_open(conn_logfile, PF_APPEND)) < 0) {
 				log_known = 0;
 				return;
 			}
+			log_h_for = name_sum();
 			size = 0;
 		}
 		log_known = size + n;
 	}
-	pf_write(h, s, n);
-	pf_close(h);
+	pf_write(log_h, s, n);
+	log_dirty = 1;
+}
+
+/* the log's file closed when a line has waited a second (the app's event
+   wait: gem.c calls it); not inside a TLS handshake */
+void conn_log_idle(void)
+{
+	if (log_h >= 0 && log_dirty && !log_hold && pf_ms() - log_closed_at >= 1000)
+		log_close();
 }
 
 /* one line at the start of a run, for an app to call once: "EMail 1.23,
@@ -405,7 +453,8 @@ void conn_log_start(const char *app_version)
 	conn_log("start", " -- ", line, (long)strlen(line));
 }
 
-void conn_log_flush(void)
+/* what is buffered, onto the open file (not closed) */
+static void log_out(void)
 {
 	if (!loglen)
 		return;
@@ -413,10 +462,18 @@ void conn_log_flush(void)
 	loglen = 0;
 }
 
+/* an app's sync point (a save, the quit): written and closed */
+void conn_log_flush(void)
+{
+	log_out();
+	log_close();
+}
+
 void conn_log_append(const char *text, long n)
 {
-	conn_log_flush();
+	log_out();
 	log_write(text, n);
+	log_close();
 }
 
 static void log_add(const char *s, long n)
@@ -440,7 +497,7 @@ static void log_add(const char *s, long n)
 		s += k;
 		n -= k;
 		if (loglen == logcap)
-			conn_log_flush();
+			log_out();
 	}
 }
 
@@ -468,6 +525,7 @@ static void log_stamp(void)
 void conn_log(const char *who, const char *dir, const char *text, long n)
 {
 	if (!conn_logfile[0]) {		/* switched off: the buffer goes back */
+		log_close();		/* (the file closed: its name is gone) */
 		log_known_for = 0;	/* and the file's size is looked at again */
 		if (logbuf) {
 			free(logbuf);
@@ -488,12 +546,13 @@ void conn_log(const char *who, const char *dir, const char *text, long n)
 		log_add(text, n);
 	}
 	log_add("\r\n", 2);
-	/* every line on the disk at once (Erez, 15 Nov 2026: "apps should
-	   write log at once as otherwise it may be ineffective to trace
-	   errors"): a crash or a freeze leaves the log up to its last line.
-	   conn_log_hold no longer holds; the log costs a write a line, but
-	   only while Write a log is on */
-	conn_log_flush();
+	/* every line written at once (Erez, 15 Nov 2026: "apps should write
+	   log at once as otherwise it may be ineffective to trace errors"),
+	   onto the open file; closed at an error now, else within a second
+	   (log_write's note: Erez, 17 Nov 2026) */
+	log_out();
+	if (dir[0] == ' ' && dir[1] == '!')
+		log_close();
 }
 
 /* the receive buffer when conn_open is given 0: 16 KB, or less where
@@ -514,6 +573,7 @@ static CONN *open_plain(const char *name, const char *host, unsigned short port,
 	}
 	snprintf(msg, sizeof(msg), "connecting to %s:%u", host, port);
 	conn_log(name, " -- ", msg, strlen(msg));
+	conn_log_flush();	/* (closed before the connection: its waits outside a server's) */
 	h = net_open(host, port, err, errlen);
 	if (h < 0) {
 		conn_log(name, " !! ", err, strlen(err));

@@ -68,7 +68,10 @@ int   conn_pending(CONN *c);
 /* logging: set conn_logfile to a path to append the dialogue to it */
 extern char conn_logfile[200];
 void conn_log(const char *who, const char *dir, const char *text, long n);
-void conn_log_flush(void);	/* write out what is still buffered */
+void conn_log_flush(void);	/* write out what is still buffered, and close the file */
+/* the event wait's: the log's file closed once a line has waited a second
+   (gem.c calls it before each event call, where conn.c is linked) */
+void conn_log_idle(void);
 /* 1: a job begins, its milestones are written with the buffer (when it
    is full, at an error, or at conn_log_hold(0), which writes it out) */
 void conn_log_hold(int on);
