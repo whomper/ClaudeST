@@ -397,6 +397,8 @@ static void fx_case(const char *s, short fx, short colour, const short *c)
 {
 	long n = (long)strlen(s);
 	short x = 32;
+	if (!text_fx_fast(fx, 1))
+		return;			/* where it is off (NVDI, another font) the apps take vst_effects: nothing to compare */
 	clear();
 	vswr_mode(vh, 1);
 	vst_color(vh, colour);

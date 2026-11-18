@@ -7,7 +7,9 @@ says which rows are really slower (guidelines 1.2, "The speed rule in steps").
     speedcmp.py --base A.log [A2.log ...] --cand B.log [B2.log ...] [--step 10]
 
 A log is the output of a speed.py run (any app's: "speed on M, TOS", the
-"seen on" and "finished picture on" tables). Every row is keyed by its
+"seen on" and "finished picture on" tables, or one table with a column per
+machine under an "action  limit  M1  M2 ..." line, EHypView's: each cell is
+the row "M: action"). Every row is keyed by its
 section and its name; with several logs a side its value is their median.
 
 A row is a REGRESSION when the candidate's median is at least --step ms
@@ -28,12 +30,43 @@ ROW = re.compile(r"^  (\S.*?)\s{2,}(<?\d+|\?)(?:\s+(\d+))?(?:\s+(ok|OVER))?\s*(.
 SECTION = re.compile(r"^(speed on|seen on|finished picture on)\s+(.*)$")
 
 
+TABLE = re.compile(r"^action\s+limit\s+(\S.*)$")
+CELL = re.compile(r"^(<?\d+)(?: OVER)?$")
+
+
+def table_row(line, cols, w, rows):
+    """a row of the table with a column per machine (EHypView's speed.py): the action in its w characters, the
+    limit in 6, then a cell of 14 for each machine, 2 spaces apart; each cell is the row 'MACHINE: action'"""
+    name, rest = line[:w].strip(), line[w:]
+    parts = rest.split(None, 1)
+    if not name or not parts or not parts[0].isdigit():
+        return False
+    limit = int(parts[0])
+    start = w + 1 + 6 + 2
+    for i, spec in enumerate(cols):
+        cell = line[start + i * 16:start + i * 16 + 14].strip()
+        m = CELL.match(cell)
+        if m:
+            rows[("speed on", "%s: %s" % (spec, name))] = (int(m.group(1).lstrip("<")), limit)
+    return True
+
+
 def parse(path):
     """{(section, name): (value, limit)}; '<20' is 20, '?' is skipped."""
     rows = {}
     section = ""
+    cols, w = None, 0
     for line in open(path, errors="replace"):
         line = line.rstrip("\n")
+        m = TABLE.match(line)
+        if m:
+            cols = m.group(1).split()
+            w = line.index("limit") - 2
+            continue
+        if cols is not None:
+            if table_row(line, cols, w, rows):
+                continue
+            cols = None
         m = SECTION.match(line)
         if m:
             section = m.group(1)

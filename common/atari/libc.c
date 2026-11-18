@@ -818,6 +818,11 @@ cut:
 
 static void free_more(BLK *b);
 
+/* heap zones (heap_zone, at the end of this file), reached through these two, which heap_zone sets: a program
+   that makes no zone links none of their code (--gc-sections; a 1 MB ST's margin, EContact) */
+static int (*zone_free_p)(void *ptr);
+static int (*zone_realloc_p)(void *ptr, size_t n, void **r);
+
 /* the common case first, in few registers: back into dv, just before it */
 void free(void *ptr)
 {
@@ -825,6 +830,8 @@ void free(void *ptr)
 	size_t s, ps;
 	if (!ptr)
 		return;
+	if (zone_free_p && zone_free_p(ptr))
+		return;			/* a block of another zone's (heap_zone), given back there */
 	b = (BLK *)((char *)ptr - WORD);
 	if (!(b->head & INUSE))
 		return;			/* freed twice: left alone */
@@ -910,6 +917,11 @@ void *realloc(void *ptr, size_t n)
 		return malloc(n);
 	if (n > MAXREQ)
 		return 0;
+	if (zone_realloc_p) {
+		void *r;
+		if (zone_realloc_p(ptr, n, &r))
+			return r;	/* a block of another zone's: realloc'd there */
+	}
 	b = (BLK *)((char *)ptr - WORD);
 	s = SIZE(b);
 	need = block_for(n);
@@ -1392,3 +1404,179 @@ int sprintf(char *buf, const char *fmt, ...)
 }
 
 #endif
+
+#ifndef LIBC_NO_HEAP
+/* ---------------- heap zones and the room left (stdlib.h) ----------------
+ * A job that may run a long time and then be refused memory (EPDF's picture: 11 s on a 1 MB ST, then "no room",
+ * the text read meanwhile refused too, 18 Nov 2026) takes all it will need at its start in one block, a zone, or
+ * is refused at once. Between heap_zone_use(z) and heap_zone_use(0) every malloc, calloc and realloc comes from
+ * the zone's block; free gives a zone's block back to its zone whichever is in use. heap_zone_end gives the whole
+ * block back: what is still in it goes with it. A zone never grows; the main heap's lists are swapped out while one
+ * is in use (some 900 bytes moved, at a job's slice boundaries). */
+
+#define ZONE_MAX 4
+
+static int zone_n;
+static struct heap_zone *zone_cur;
+
+struct heap_zone {
+	BLK *bins[NBINS];
+	u32 binmap[NMAP];
+	BLK *dv;
+	int fixed;
+	long use, peak;			/* heap_use and heap_peak while it is in use: the main heap's stay its own */
+	char *lo, *hi;			/* its blocks */
+	void *mem;			/* the main heap's block it lives in */
+};
+
+static struct heap_zone *zones[ZONE_MAX];
+
+/* the main heap's lists and the zone's change places (twice: as before) */
+static void zone_swap(struct heap_zone *z)
+{
+	unsigned i;
+	BLK *t;
+	int f;
+	for (i = 0; i < NBINS; i++) {
+		t = bins[i];
+		bins[i] = z->bins[i];
+		z->bins[i] = t;
+	}
+	for (i = 0; i < NMAP; i++) {
+		u32 m = binmap[i];
+		binmap[i] = z->binmap[i];
+		z->binmap[i] = m;
+	}
+	t = dv;
+	dv = z->dv;
+	z->dv = t;
+	f = heap_fixed;
+	heap_fixed = z->fixed;
+	z->fixed = f;
+	{
+		long u = heap_use, k = heap_peak;
+		heap_use = z->use;
+		heap_peak = z->peak;
+		z->use = u;
+		z->peak = k;
+	}
+}
+
+void heap_zone_use(struct heap_zone *z)
+{
+	if (z == zone_cur)
+		return;
+	if (zone_cur)
+		zone_swap(zone_cur);	/* the main heap's lists back */
+	if (z)
+		zone_swap(z);
+	zone_cur = z;
+}
+
+static struct heap_zone *zone_owner(const void *ptr)
+{
+	int i;
+	for (i = 0; i < zone_n; i++)
+		if ((const char *)ptr >= zones[i]->lo && (const char *)ptr < zones[i]->hi)
+			return zones[i];
+	return 0;
+}
+
+/* ptr's zone isn't the one in use: given back there; 0 when it is */
+static int zone_free(void *ptr)
+{
+	struct heap_zone *o = zone_owner(ptr), *was = zone_cur;
+	if (o == was)
+		return 0;
+	heap_zone_use(o);
+	free(ptr);
+	heap_zone_use(was);
+	return 1;
+}
+
+/* ptr's zone isn't the one in use: realloc'd there, *r the answer; 0 when it is */
+static int zone_realloc(void *ptr, size_t n, void **r)
+{
+	struct heap_zone *o = zone_owner(ptr), *was = zone_cur;
+	if (o == was)
+		return 0;
+	heap_zone_use(o);
+	*r = realloc(ptr, n);
+	heap_zone_use(was);
+	return 1;
+}
+
+struct heap_zone *heap_zone(long n)
+{
+	struct heap_zone *z, *was = zone_cur;
+	size_t bytes;
+	char *lo, *hi;
+	if (n <= 0 || zone_n == ZONE_MAX || (size_t)n > MAXREQ)
+		return 0;
+	zone_free_p = zone_free;
+	zone_realloc_p = zone_realloc;
+	heap_zone_use(0);		/* from the main heap */
+	bytes = sizeof(*z) + (size_t)n + MINBLK + 2 * WORD + ALIGN;
+	z = malloc(bytes);
+	if (!z) {
+		heap_zone_use(was);
+		return 0;
+	}
+	memset(z, 0, sizeof(*z));
+	z->mem = z;
+	lo = (char *)(((unsigned long)(z + 1) + ALIGN - 1) & ~(unsigned long)(ALIGN - 1));
+	hi = (char *)(((unsigned long)z + bytes) & ~(unsigned long)(ALIGN - 1)) - WORD;
+	z->lo = lo;
+	z->hi = hi;
+	z->fixed = 1;
+	zones[zone_n++] = z;
+	/* its one free block and its fence, made in its own lists */
+	heap_zone_use(z);
+	((BLK *)hi)->head = INUSE;
+	make_free((BLK *)lo, (size_t)(hi - lo));
+	heap_zone_use(was);
+	return z;
+}
+
+void heap_zone_end(struct heap_zone *z)
+{
+	int i;
+	if (!z)
+		return;
+	if (zone_cur == z)
+		heap_zone_use(0);
+	for (i = 0; i < zone_n; i++)
+		if (zones[i] == z) {
+			zones[i] = zones[--zone_n];
+			break;
+		}
+	free(z->mem);			/* the main heap's block, whatever is in it */
+}
+
+/* the largest block malloc could give now, in the zone in use or the main heap (with what GEMDOS would still give
+   it): a job's check before it starts */
+long heap_room(void)
+{
+	long best = dv ? (long)SIZE(dv) : 0;
+	int i = bin_next(0), last = -1;
+	BLK *b;
+	while (i >= 0) {			/* the last list with blocks holds the biggest */
+		last = i;
+		i = bin_next((unsigned)i + 1);
+	}
+	if (last >= 0)
+		for (b = bins[last]; b; b = b->next)
+			if ((long)SIZE(b) > best)
+				best = (long)SIZE(b);
+	best = best > (long)WORD ? best - (long)WORD : 0;
+	if (!heap_fixed && !_is_acc && blocks < MAX_BLOCKS) {
+		long g = (long)Mxalloc(-1L, 3);
+		if (g == -32 || g <= 0)
+			g = (long)Malloc(-1L);
+		g -= (long)(3 * WORD + 2 * ALIGN);
+		if (g > best)
+			best = g;
+	}
+	return best;
+}
+#endif	/* LIBC_NO_HEAP */

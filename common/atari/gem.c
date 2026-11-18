@@ -948,14 +948,6 @@ static void kq_init(void)
 	}
 }
 
-/* an app that is busy before its first evnt_multi_ (its start) calls this right after appl_init: the keys typed
-   from then on carry their shift state */
-void key_state_init(void)
-{
-	if (kq_state < 0)
-		kq_init();
-}
-
 /* the keys written to the BIOS buffer since the last time, with their shift state, added to the list */
 static void kq_note(void)
 {
@@ -1515,4 +1507,13 @@ void vr_trnfm(short h, MFDB *src, MFDB *dst)
 	contrl[9] = (short)((u32)dst >> 16);
 	contrl[10] = (short)((u32)dst & 0xffff);
 	vdi(110, 0, 0, h);
+}
+
+/* (last in the file: an app that starts calling it moves no other function of gem.o; EContact, 17 Nov 2026) */
+/* an app that is busy before its first evnt_multi_ (its start) calls this right after appl_init: the keys typed
+   from then on carry their shift state */
+void key_state_init(void)
+{
+	if (kq_state < 0)
+		kq_init();
 }

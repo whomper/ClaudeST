@@ -97,6 +97,19 @@ def ro_start(mapfile):
     return int(m.group(1), 16) if m else None
 
 
+def str_block(mapfile):
+    """the block the linker merged every string into: (start, end), or None"""
+    text = open(mapfile, errors="replace").read()
+    i = text.find("*(.rodata .rodata.*)")
+    if i < 0:
+        return None
+    m = re.search(r"^ \S*\.str1\.1\s+0x([0-9a-f]+)\s+0x([0-9a-f]+) ", text[i:], re.M)
+    if not m:
+        return None
+    start = int(m.group(1), 16)
+    return start, start + int(m.group(2), 16)
+
+
 def kinds(syms, ro):
     """each symbol's kind, read-only data apart from code"""
     return {n: (a, "r" if k == "t" and ro is not None and a >= ro else k) for n, (a, k) in syms.items()}
@@ -121,9 +134,12 @@ def link(a, link_cmd, pads, mapfile):
         o = os.path.join(a.dir, name + ".o")
         subprocess.run(["m68k-linux-gnu-gcc", a.cpu, "-DPAD_NAME=" + name] +
                        ["-DPAD_%s=%d" % (k.upper(), sizes[k]) for k, _, _ in KINDS] +
+                       ["-DPAD_STR=%d" % sizes.get("str", 0)] +
                        ["-c", os.path.join(ROOT, "atari", "codepad.S"), "-o", o], check=True)
         after[obj] = o
         us += ["-Wl,-u," + name + s for _, _, s in KINDS]
+        if sizes.get("str", 0):
+            us.append("-Wl,-u," + name + "_str")
     for w in link_cmd:
         cmd.append(w)
         if w in after:
@@ -148,13 +164,16 @@ def main():
     try:
         for ln in open(kept):
             p = ln.split()
-            if len(p) == 1 + len(KINDS) and p[0] in objs:
-                pads.append((p[0], dict(zip([k for k, _, _ in KINDS], map(int, p[1:])))))
+            if len(p) in (1 + len(KINDS), 2 + len(KINDS)) and p[0] in objs:
+                sizes = dict(zip([k for k, _, _ in KINDS], map(int, p[1:1 + len(KINDS)])))
+                sizes["str"] = int(p[1 + len(KINDS)]) if len(p) > 1 + len(KINDS) else 0
+                pads.append((p[0], sizes))
     except (OSError, ValueError):
         pads = []
     ship, ship2 = nm(a.ship)
     ship = kinds(ship, ro_start(a.ship + ".map"))	# (its link's map, beside it)
     skip = set().union(*(defined(o) for o in a.exclude)) if a.exclude else set()
+    ship_blk = str_block(a.ship + ".map")
     mapfile = a.out + ".map"
     why = None
     for it in range(60):
@@ -164,25 +183,80 @@ def main():
         # (not the strings' labels, .LC: the merged block's order is the
         # linker's, with the timed build's strings in it; only where it
         # ends can be put back)
+        blk = str_block(mapfile)
+
+        def in_blk(addr, b):
+            return b is not None and b[0] <= addr < b[1]
         common = sorted((prof[n][0], n) for n in prof
                         if n in ship and n not in skip and n not in ship2 and n not in prof2
-                        and not n.startswith(("profpad_", ".L")) and ship[n][1] == prof[n][1])
+                        and not n.startswith(("profpad_", ".L")) and ship[n][1] == prof[n][1]
+                        and not in_blk(prof[n][0], blk) and not in_blk(ship[n][0], ship_blk))
         bad = [(addr, n) for addr, n in common if (ship[n][0] - addr) % 256]
         if not bad:
             break
         addr, n = bad[0]
         kind = prof[n][1]
+        d = (ship[n][0] - addr) % 256
+        k = next(k for k, letter, _ in KINDS if letter == kind)
+        if kind == "r" and blk and addr >= blk[1] and \
+           all((ship[x[1]][0] - x[0]) % 256 == 0 for x in common if prof[x[1]][1] == "r" and x[0] < blk[0]):
+            # (read-only data after the merged strings, all before it in
+            # place: the timed build's strings made the block longer; as
+            # many again of its own, mod 256, put the rest back: EConvert,
+            # 18 Nov 2026, the timed gem.c's 55 bytes)
+            for o, sizes in pads:
+                if o == objs[-1]:
+                    sizes["str"] = (sizes.get("str", 0) + d) % 256
+                    break
+            else:
+                sizes = {kk: 256 for kk, _, _ in KINDS}
+                sizes["str"] = d
+                pads.append((objs[-1], sizes))
+            continue
+        # the first symbol of its kind out of place: the section itself
+        # starts elsewhere, because the one before it ends elsewhere (the
+        # BSS after a timed object's longer data). Only the section before
+        # it, made longer at its very end, puts it back: a pad of that kind
+        # after the last object (EPDF, 18 Nov 2026: crt0's _BasePage, the
+        # first BSS, with no object before it to pad after)
+        if all(prof[x[1]][1] != kind for x in common if x[0] < addr) and k != KINDS[0][0]:
+            prev = KINDS[[kk for kk, _, _ in KINDS].index(k) - 1][0]
+            for o, sizes in pads:
+                if o == objs[-1]:
+                    sizes[prev] = (sizes[prev] + d - 1) % 256 + 1
+                    break
+            else:
+                sizes = {kk: 256 for kk, _, _ in KINDS}
+                sizes[prev] = d
+                pads.append((objs[-1], sizes))
+            continue
         parts = pieces(mapfile)
         obj = object_at(parts, addr)
+        if obj not in objs:
+            # an archive's member (libgcc.a's __divdi3, after the last
+            # object listed: EConvert, 18 Nov 2026): the pad goes after the
+            # last listed object before it
+            listed = [o for st, _, o in parts if st < addr and o in objs]
+            if listed:
+                before = listed[-1]
+                for o, sizes in pads:
+                    if o == before:
+                        sizes[k] = (sizes[k] + d - 1) % 256 + 1
+                        break
+                else:
+                    sizes = {kk: 256 for kk, _, _ in KINDS}
+                    sizes[k] = d
+                    pads.append((before, sizes))
+                    pads.sort(key=lambda p: objs.index(p[0]))
+                continue
         # its object's first symbol of that kind: out of place too, or a pad
         # before the object can't help
         first = next((x for x in common if prof[x[1]][1] == kind and object_at(parts, x[0]) == obj), None)
-        if obj not in objs or first is None or (ship[first[1]][0] - first[0]) % 256 == 0:
+        if obj not in objs or first is None or (ship[first[1]][0] - first[0]) % 256 == 0 \
+           or objs.index(obj) == 0:
             why = "%s (%s) moved inside %s: a pad can't put it back" % (n, kind, obj)
             break
         before = objs[objs.index(obj) - 1]
-        d = (ship[n][0] - addr) % 256
-        k = next(k for k, letter, _ in KINDS if letter == kind)
         for o, sizes in pads:
             if o == before:
                 sizes[k] = (sizes[k] + d - 1) % 256 + 1
@@ -194,7 +268,7 @@ def main():
             pads.sort(key=lambda p: objs.index(p[0]))
     with open(kept, "w") as f:
         for o, sizes in pads:
-            f.write(o + " " + " ".join(str(sizes[k]) for k, _, _ in KINDS) + "\n")
+            f.write(o + " " + " ".join(str(sizes[k]) for k, _, _ in KINDS) + " %d\n" % sizes.get("str", 0))
     print("profpad: %s: %d symbols at the shipped places modulo 256, %d not; pads after %s"
           % (a.out, len(common) - len(bad), len(bad),
              ", ".join("%s %s" % (os.path.basename(o), "/".join(str(s[k]) for k, _, _ in KINDS))

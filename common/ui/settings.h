@@ -216,6 +216,11 @@ short set_obj_pages(const SETTINGS *s);
    button's work, where a file selector or list of the app's covered the screen (TOS; in a window the AES asks
    for it). Our dialog is drawn again over it (EMail's ui_redraws, win_redraw_area) */
 extern void (*settings_drawn)(OBJECT *tree, short band);
+/* settings_changed(s, obj): something the user did in the dialog took effect, while it runs: a page shown (obj its
+   tab; by a click or the list's Up and Down), a tick turned, a radio chosen, a pop-up's choice or a button's work
+   done (obj the control's object). The app reads set_page_now() or its own variables there (EHypView's rig lines,
+   17 Nov 2026). NULL: nothing */
+extern void (*settings_changed)(SETTINGS *s, short obj);
 extern void (*settings_uncover)(short x, short y, short w, short h);
 
 #endif

@@ -303,6 +303,11 @@ int press_track(const GRECT *r, short x, short y, void (*idle)(void), void (*msg
 }
 #endif
 static short asked_clicks;
+/* a button held down: the AES gives its press again to each wait for a press (held_left times at most) until
+   graf_mkstate has seen it down release_in times */
+static short held_obj, held_left, release_in;
+static short fake_mb;
+static int timer_script, timer_waits;	/* a timer-0 wait takes the script's next event (dlg_later's turns) */
 #ifdef DLG_CLICK
 static void idle_mark(void) { }
 #endif
@@ -317,12 +322,29 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 	if (!(flags & MU_TIMER))
 		evnt_updates = updates;
 	if (flags & MU_TIMER) {
+		timer_waits++;
 		if (npre) {
 			ev->which = MU_KEYBD;
 			ev->kreturn = pre_keys[--npre];
+		} else if (timer_script > 1) {
+			timer_script--;		/* flush_keys' wait at dlg_do's start: nothing typed ahead */
+			ev->which = MU_TIMER;
+		} else if (timer_script && script->which) {
+			ev->which = script->which;
+			ev->kreturn = script->key;
+			ev->mx = script->obj;
+			ev->breturn = script->clicks;
+			script++;
 		} else {
 			ev->which = MU_TIMER;
 		}
+		return ev->which;
+	}
+	if (held_obj && fake_mb && held_left > 0) {
+		held_left--;
+		ev->which = MU_BUTTON;		/* the same press, the button still down */
+		ev->mx = held_obj;
+		ev->breturn = 1;
 		return ev->which;
 	}
 	if (!script->which)
@@ -381,6 +403,35 @@ char *clip_line(char *buf)
 	if (e)
 		*e = 0;
 	return buf;
+}
+
+/* clipedit.c: ^C ^X ^V in a short field */
+static int clip_edits;
+static short clip_edit_obj, clip_edit_key;
+int clip_edit(OBJECT *t, short obj, short *idx, short key)
+{
+	(void)t, (void)idx;
+	clip_edits++;
+	clip_edit_obj = obj;
+	clip_edit_key = key;
+	return 1;
+}
+
+/* hebkey.c: F10 switches the Hebrew keyboard */
+short hebrew_kbd;
+void set_hebrew_kbd(short on)
+{
+	hebrew_kbd = on;
+}
+
+/* the app's badge in the dialog's band */
+static int badges;
+static short badge_band;
+static void app_badge(OBJECT *t, short band)
+{
+	(void)t;
+	badges++;
+	badge_band = band;
 }
 
 static short find(short from, short inc, unsigned short flag)
@@ -516,11 +567,13 @@ short form_dial(short flag, short x, short y, short w, short h)
 }
 
 /* dlg_win_button's: the button's state now, and where it is let go */
-static short fake_mb, fake_watch, watches;
+static short fake_watch, watches;
 short graf_mkstate(short *mx, short *my, short *mb, short *ks)
 {
 	*mx = *my = *ks = 0;
 	*mb = fake_mb;
+	if (fake_mb && release_in && --release_in == 0)
+		fake_mb = 0;
 	return 1;
 }
 
@@ -765,9 +818,83 @@ static void test_long_fields(void)
 		r = run(F1, CANCEL, p);
 	}
 	check(r == OK && !f.clear && f.mask == '*' && !strcmp(f.view, "***"), "the eye again: the stars back");
+	/* the button still down after the click on the eye: the AES gives the press again to the next wait; dlg_do
+	   waits for it to come up, so the eye turns once (EFTP, 17 Nov 2026: it turned back at once) */
+	{
+		static const STEP p[] = { KEY(KEY_RETURN), END };
+		fake_mb = 1, held_obj = ROW, held_left = 2, release_in = 2;
+		r = run(F1, CANCEL, p);
+		held_obj = 0, fake_mb = 0;
+	}
+	check(r == OK && f.clear && f.mask == 0, "the eye clicked and held: turned once, the text shown (the button waited for)");
 	check(!lf_eye_click(tree, ROW + 1, &i, 0) && !lf_eye_click(tree, 0, &i, 0), "lf_eye_click: other objects are not its");
 	lf_forget(tree);
 	check(!lf_of(tree, F1) && !lf_eye_click(tree, ROW, &i, 0), "lf_forget: the eyes let go with the fields");
+}
+
+/* dlg_keys (the app's keys, settings.c's and EFTP's keyboard reach, D25): 0 leaves the key to dlg_do, 1 takes it,
+   2 ends dlg_do with the object it names, as a click on it would */
+static short key_goes, key_field;
+static int app_keys(OBJECT *t, short key, short kstate, short edit, short *field)
+{
+	(void)t, (void)kstate, (void)edit;
+	if ((key & 0xff) != ' ')
+		return 0;
+	*field = key_field;
+	return key_goes;
+}
+
+static void test_keys_end(void)
+{
+	short r;
+	dlg_keys = app_keys;
+
+	setup();
+	key_goes = 2, key_field = OK;
+	{
+		static const STEP s[] = { KEY(0x3920), END };
+		r = run(F1, CANCEL, s);
+	}
+	check(r == OK && (tree[OK].ob_state & SELECTED) && draws >= 1 && ed_end == 1 && !strcmp(text[0], "hello"),
+	      "dlg_keys 2 on an EXIT button: dlg_do returns it, drawn selected as after a click, the field ended untyped");
+	tidy("dlg_keys 2");
+
+	setup();
+	key_goes = 2, key_field = ROW;
+	{
+		static const STEP s[] = { KEY(0x3920), END };
+		r = run(F1, CANCEL, s);
+	}
+	check(r == ROW && !(tree[ROW].ob_state & SELECTED) && !strcmp(text[0], "hello"),
+	      "dlg_keys 2 on a TOUCHEXIT: dlg_do returns it, its state the app's");
+	tidy("dlg_keys 2, a TOUCHEXIT");
+
+	setup();
+	key_goes = 2, key_field = 0;
+	{
+		static const STEP s[] = { KEY(0x3920), KEY(K('a')), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, s);
+	}
+	check(r == OK && !strcmp(text[0], "helloa"), "dlg_keys 2 with no object: the key taken, as 1, the dialog goes on");
+
+	setup();
+	key_goes = 1, key_field = F2;
+	{
+		static const STEP s[] = { KEY(0x3920), KEY(K('z')), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, s);
+	}
+	check(r == OK && !strcmp(text[0], "hello") && !strcmp(text[1], "worldz"),
+	      "dlg_keys 1: the key taken, the cursor to the field it named, as before");
+
+	setup();
+	key_goes = 0, key_field = OK;
+	{
+		static const STEP s[] = { KEY(0x3920), KEY(KEY_RETURN), END };
+		r = run(F1, CANCEL, s);
+	}
+	check(r == OK && !strcmp(text[0], "hello "), "dlg_keys 0: the key dlg_do's, typed into the field, as before");
+	tidy("dlg_keys 0");
+	dlg_keys = 0;
 }
 
 /* dlg_3d: the AES's 3D flags (0x0200 indicator, 0x0400 background, 0x0600
@@ -841,9 +968,155 @@ void vq_color(short h, short index, short *rgb)
 	rgb[2] = tt_pal[index][2];
 }
 
+/* the clock: still, unless a case steps it (dlg_later's 30 ms slices) */
+static unsigned long fake_ms, ms_step;
+static int dlg_turns;		/* dlg_open's turn between the save and the drawing */
+short evnt_timer_(unsigned long ms)
+{
+	(void)ms;
+	dlg_turns++;
+	return 1;
+}
+
 unsigned long tos_ms(void)
 {
-	return 0;
+	fake_ms += ms_step;
+	return fake_ms;
+}
+
+
+/* ---------------- what dlg_do took from EFTP's form_loop (17 Nov 2026) ---------------- */
+
+static void test_form_loop(void)
+{
+	short r;
+	/* dlg_later: queued objects drawn a slice a turn on timer-0 waits, then the script */
+	setup();
+	ms_step = 40;			/* each object a slice over 30 ms: one a turn */
+	timer_waits = 0;
+	dlg_later(tree, TITLE);
+	dlg_later(tree, F1);
+	dlg_later(tree, ROW);
+	check(dlg_later_waiting() && draws == 0, "dlg_later: three of seven queued, nothing drawn yet");
+	{
+		static const STEP s[] = { KEY(KEY_RETURN), END };
+		r = run(0, CANCEL, s);
+	}
+	check(r == OK && !dlg_later_waiting() && timer_waits == 4 && draws >= 3,
+	      "dlg_do: a slice a turn (three timer-0 turns after flush_keys' one), then Return: OK");
+	check(mouse_off == 0, "... the mouse shown again after each slice");
+	dlg_later_drop();
+
+	/* a key draws what waits first, then goes into the field */
+	setup();
+	timer_script = 2, timer_waits = 0;
+	dlg_later(tree, TITLE);
+	dlg_later(tree, ROW);
+	{
+		static const STEP s[] = { KEY(K('a')), KEY(KEY_RETURN), END };
+		r = run(0, CANCEL, s);
+	}
+	check(r == OK && !dlg_later_waiting() && !strcmp(text[0], "helloa") && draws >= 2,
+	      "a key while objects wait: all of them drawn first, then the key typed");
+	dlg_later_drop();
+
+	/* a press is taken at once, the rest left for later turns; dlg_later_drop forgets them */
+	setup();
+	ms_step = 40;
+	timer_script = 2;
+	dlg_later(tree, TITLE);
+	dlg_later(tree, ROW);
+	{
+		static const STEP s[] = { CLICK(CANCEL), END };
+		r = run(0, CANCEL, s);
+	}
+	check(r == CANCEL && dlg_later_waiting() && draws == 0, "a press while objects wait: taken at once, nothing drawn first");
+	dlg_later_drop();
+	check(!dlg_later_waiting(), "dlg_later_drop: the queue gone");
+	timer_script = 0, ms_step = 0;
+
+	/* more than half the tree: the whole at once */
+	setup();
+	dlg_later(tree, TITLE);
+	dlg_later(tree, F1);
+	dlg_later(tree, F2);
+	dlg_later(tree, OK);
+	check(!dlg_later_waiting() && draws >= 1, "dlg_later: more than half the tree: the whole drawn at once");
+	dlg_later(tree, F1);
+	dlg_later(tree, F1);
+	check(dlg_later_waiting(), "dlg_later: an object queued twice waits once");
+	dlg_later_drop();
+
+	/* ^C ^X ^V in a short field go to clip_edit; elsewhere nothing */
+	setup();
+	clip_edits = 0;
+	{
+		static const STEP s[] = { KEY(0x2e03), KEY(0x2f16), KEY(KEY_RETURN), END };
+		r = run(0, CANCEL, s);
+	}
+	check(r == OK && clip_edits == 2 && clip_edit_obj == F1 && clip_edit_key == 0x2f16,
+	      "^C and ^V in a short field: clip_edit, the field's");
+	setup();
+	tree[F1].ob_flags &= ~EDITABLE;
+	tree[F2].ob_flags &= ~EDITABLE;
+	clip_edits = 0;
+	{
+		static const STEP s[] = { KEY(0x2e03), KEY(KEY_RETURN), END };
+		r = run(0, CANCEL, s);
+	}
+	check(r == OK && clip_edits == 0, "^C with no field: no clip_edit");
+
+	/* cancel 0: Esc and Undo take the tree's Cancel, else its only exit button, else nothing */
+	setup();
+	tree[F1].ob_flags &= ~EDITABLE;
+	tree[F2].ob_flags &= ~EDITABLE;
+	{
+		static const STEP s[] = { KEY(KEY_ESC), END };
+		r = run(0, 0, s);
+	}
+	check(r == CANCEL, "cancel 0: Esc takes the tree's Cancel button");
+	setup();
+	{
+		static const STEP s[] = { KEY(KEY_UNDO), END };
+		r = run(0, 0, s);
+	}
+	check(r == CANCEL && !strcmp(text[0], "hello"), "cancel 0: Undo in a field takes Cancel, the field as it was");
+	setup();
+	tree[CANCEL].ob_spec = (long)"Later";
+	{
+		static const STEP s[] = { KEY(KEY_UNDO), KEY(KEY_RETURN), END };
+		r = run(0, 0, s);
+	}
+	check(r == OK, "cancel 0, two exit buttons and no Cancel: Undo does nothing, Return still OK");
+	setup();
+	tree[CANCEL].ob_flags &= ~EXIT;
+	tree[F1].ob_flags &= ~EDITABLE;
+	tree[F2].ob_flags &= ~EDITABLE;
+	{
+		static const STEP s[] = { KEY(KEY_ESC), END };
+		r = run(0, 0, s);
+	}
+	check(r == OK, "cancel 0, one exit button (OK): Esc takes it");
+
+	/* the band's badge: when the dialog starts, and after F10, where the band shows (TOS) */
+	setup();
+	dlg_badge = app_badge;
+	badges = 0, hebrew_kbd = 0;
+	{
+		short x, y, w, h;
+		static const STEP s[] = { KEY(0x4400), KEY(KEY_RETURN), END };
+		dlg_window_on = 0;
+		dlg_band(TITLE);
+		dlg_open(tree, &x, &y, &w, &h);
+		script = s;
+		if (!setjmp(out))
+			r = dlg_do(tree, 0, CANCEL);
+		check(r == OK && badges == 2 && badge_band == TITLE && hebrew_kbd == 1,
+		      "dlg_badge: drawn when dlg_do starts and after F10 (the keyboard switched), in the band");
+		dlg_close();
+	}
+	dlg_badge = 0;
+	hebrew_kbd = 0;
 }
 
 int main(void)
@@ -853,6 +1126,7 @@ int main(void)
 	dlg_find_own = 0;		/* this stand-in's objc_find answers from the script; dlg_find is tested in ../settings */
 
 	test_3d();
+	test_keys_end();
 
 	setup();
 	{
@@ -1395,6 +1669,7 @@ int main(void)
 	}
 
 	test_long_fields();
+	test_form_loop();
 
 	check(dlg_esc(KEY_ESC) && dlg_esc(KEY_UNDO) && !dlg_esc(KEY_RETURN) && !dlg_esc(K('a')) &&
 	      !dlg_esc(0x0e08), "dlg_esc: Esc and Undo only");

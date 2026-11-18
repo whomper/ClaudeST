@@ -11,7 +11,7 @@ typedef struct {
 	const short *p;			/* S_OBJ: the object's number, in a variable of the test */
 	void (*fn)(void);		/* S_CALL: a check made while the dialog is up */
 } STEP;
-enum { S_END, S_KEY, S_MSG, S_TAB, S_OK, S_CANCEL, S_OBJ, S_XY, S_CALL };
+enum { S_END, S_KEY, S_MSG, S_TAB, S_OK, S_CANCEL, S_OBJ, S_XY, S_CALL, S_TURNTAB };
 #define SMAXTAB 12
 #define END     { S_END, 0, 0, 0, 0 }
 #define KEY(k)  { S_KEY, (k), 0, 0, 0 }
@@ -23,6 +23,8 @@ enum { S_END, S_KEY, S_MSG, S_TAB, S_OK, S_CANCEL, S_OBJ, S_XY, S_CALL };
 #define XY(x, y) { S_XY, (x), (y), 0, 0 }
 #define MSG(t)  { S_MSG, (t), 0, 0, 0 }
 #define CALL(f) { S_CALL, 0, 0, 0, (f) }
+/* a press on page n's name that comes while the dialog draws, at its next look between turns (MU_BUTTON with a timer) */
+#define TURNTAB(n) { S_TURNTAB, (n), 0, 0, 0 }
 
 #define KEY_RETURN 0x1c0d
 #define KEY_ESC    0x011b

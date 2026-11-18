@@ -3154,10 +3154,14 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b)
    goes a row at a time (pic_dither_row), so a picture needn't be whole
    in memory to be dithered (EPDF's scans on a 1 MB ST, 31 Oct 2026);
    pic_dither is the same done over a whole picture, the same pens */
+#define FEW_KNOWN (32768 / 8)			/* a bit a cell: its pen is known */
+#define FEW_BYTES (FEW_KNOWN + 32768 / 4)	/* then 2 bits a cell, its pen */
 struct pic_dither_rows {
 	PIC_PAL *pal;
 	long w, y;			/* the row's width; rows done (serpentine: odd ones run back) */
 	short *rows, *cur, *nxt;	/* this row's errors and the next's; NULL: each pixel's nearest pen */
+	unsigned char *few;		/* 3 or 4 pens (no near[]): nearest_far's answers, 2 bits a
+					   cell, after a bit a cell saying it's known (12 KB, after the rows) */
 	int two;			/* two pens: on the brightness alone */
 	short lr[32], lg[64], lb[32], y0, y1, mid;
 	int light;
@@ -3199,10 +3203,17 @@ static void dither_init(PIC_DITHER *dt, long w, PIC_PAL *pal)
 			dt->nxt = dt->rows + w + 3;
 		}
 	} else {
-		dt->rows = calloc((size_t) (w + 2) * 6, sizeof *dt->rows);
+		/* (3 or 4 pens have no near[]: a table of their own, 12 KB, in
+		   the rows' block; ST medium's 4 pens searched every pixel, a
+		   grey page 56 s on a stock Falcon. More pens without near[], its
+		   32 KB refused: each searched, as before) */
+		size_t few = pal->near == NULL && pal->n <= 4 ? FEW_BYTES : 0;
+		dt->rows = calloc((size_t) (w + 2) * 6 * sizeof *dt->rows + few, 1);
 		if (dt->rows != NULL) {
 			dt->cur = dt->rows;
 			dt->nxt = dt->rows + (w + 2) * 3;
+			if (few)
+				dt->few = (unsigned char *) (dt->rows + (w + 2) * 6);
 		}
 	}
 }
@@ -3280,6 +3291,124 @@ static void row_two(PIC_DITHER *dt, const unsigned short *px, const unsigned cha
 #define C5(x) ((((x) & 31) << 3) | (((x) & 31) >> 2))
 #define C6(x) ((((x) & 63) << 2) | (((x) & 63) >> 4))
 
+/* each pen's index in near[] for a component of -128..383: its step of
+   16, by a mask and a shift (the 68000's shifts of 6, 1 and 4 were the
+   NEAR_AT's three adds of 128, three shifts of 4 and two of 5) */
+#define NEAR_R(r) ((unsigned short) (((r) + 128) & 0x1f0) << 6)
+#define NEAR_G(g) ((unsigned short) (((g) + 128) & 0x1f0) << 1)
+#define NEAR_B(b) ((unsigned short) ((b) + 128) >> 4)
+
+static const short c5_of[32] = {
+#define C5_(i) ((((i) & 31) << 3) | (((i) & 31) >> 2))
+	C5_(0), C5_(1), C5_(2), C5_(3), C5_(4), C5_(5), C5_(6), C5_(7), C5_(8), C5_(9), C5_(10), C5_(11),
+	C5_(12), C5_(13), C5_(14), C5_(15), C5_(16), C5_(17), C5_(18), C5_(19), C5_(20), C5_(21), C5_(22),
+	C5_(23), C5_(24), C5_(25), C5_(26), C5_(27), C5_(28), C5_(29), C5_(30), C5_(31)
+#undef C5_
+};
+
+/* a pen not in near[] yet: found, kept (out of the loop below: the loop
+   small enough for the 68030's cache) */
+static __attribute__((noinline)) int near_miss(PIC_PAL *pal, int r, int g, int b)
+{
+	return nearest_far(pal, r, g, b);
+}
+
+static const short c6_of[64] = {
+#define C6_(i) ((((i) & 63) << 2) | (((i) & 63) >> 4))
+	C6_(0), C6_(1), C6_(2), C6_(3), C6_(4), C6_(5), C6_(6), C6_(7), C6_(8), C6_(9), C6_(10), C6_(11),
+	C6_(12), C6_(13), C6_(14), C6_(15), C6_(16), C6_(17), C6_(18), C6_(19), C6_(20), C6_(21), C6_(22),
+	C6_(23), C6_(24), C6_(25), C6_(26), C6_(27), C6_(28), C6_(29), C6_(30), C6_(31), C6_(32), C6_(33),
+	C6_(34), C6_(35), C6_(36), C6_(37), C6_(38), C6_(39), C6_(40), C6_(41), C6_(42), C6_(43), C6_(44),
+	C6_(45), C6_(46), C6_(47), C6_(48), C6_(49), C6_(50), C6_(51), C6_(52), C6_(53), C6_(54), C6_(55),
+	C6_(56), C6_(57), C6_(58), C6_(59), C6_(60), C6_(61), C6_(62), C6_(63)
+#undef C6_
+};
+
+/* 3 or 4 pens' answers kept in the dither's own table (dt->few): known
+   bit, then 2 bits for the pen */
+static __attribute__((noinline)) int few_miss(PIC_DITHER *dt, unsigned short cell, int r, int g, int b)
+{
+	int k = nearest_far(dt->pal, r, g, b);
+	dt->few[cell >> 3] |= (unsigned char) (1 << (cell & 7));
+	dt->few[FEW_KNOWN + (cell >> 2)] |= (unsigned char) (k << ((cell & 3) << 1));
+	return k;
+}
+
+/* row_many's common cases, a picture with no alpha: the same pens, in a
+   loop the 68030's 256-byte cache holds most of (the 32-bit loop it was:
+   a grey page's dither on a stock Falcon 21.6 s in 16 colours, 14.1 s so;
+   ST medium's 4 pens 56.1 s, 16.9 s). ROW_PENS(name, PEN) makes one,
+   PEN(cell, r, g, b) its pen: near[] (more than 4 pens) or the dither's
+   own table (3 or 4) */
+#define ROW_PENS(NAME, PEN) \
+static __attribute__((noinline)) void NAME(PIC_DITHER *dt, const unsigned short *s, unsigned char *op) \
+{ \
+	PIC_PAL *pal = dt->pal; \
+	const unsigned char *near = pal->near, *few = dt->few; \
+	const unsigned char (*rgb)[3] = (const unsigned char (*)[3]) pal->rgb; \
+	long n; \
+	int dir = (dt->y & 1) ? -1 : 1; \
+	short step = (short) (3 * dir); \
+	short *c, *d; \
+	short er = 0, eg = 0, eb = 0; \
+	long x = dir > 0 ? 0 : dt->w - 1; \
+	(void) near; \
+	(void) few; \
+	s += x; \
+	op += x; \
+	c = dt->cur + (x + 1) * 3; \
+	d = dt->nxt + (x + 1) * 3; \
+	for (n = dt->w; n > 0; n--) { \
+		unsigned short v = *s, cell; \
+		short r, g, b; \
+		int k; \
+		const unsigned char *pen; \
+		s += dir; \
+		r = (short) (c5_of[v >> 11] + ((short) (er + c[0]) >> 4)); \
+		g = (short) (c6_of[(v >> 5) & 63] + ((short) (eg + c[1]) >> 4)); \
+		b = (short) (c5_of[v & 31] + ((short) (eb + c[2]) >> 4)); \
+		if ((unsigned short) (r + 128) > 511) \
+			r = r < -128 ? -128 : 383; \
+		if ((unsigned short) (g + 128) > 511) \
+			g = g < -128 ? -128 : 383; \
+		if ((unsigned short) (b + 128) > 511) \
+			b = b < -128 ? -128 : 383; \
+		cell = (unsigned short) (NEAR_R(r) | NEAR_G(g) | NEAR_B(b)); \
+		k = PEN(cell, r, g, b); \
+		*op = (unsigned char) k; \
+		op += dir; \
+		pen = rgb[k]; \
+		r = (short) (r - pen[0]); \
+		g = (short) (g - pen[1]); \
+		b = (short) (b - pen[2]); \
+		er = (short) (r * 7); \
+		eg = (short) (g * 7); \
+		eb = (short) (b * 7); \
+		d[-step] += (short) (r * 3); \
+		d[-step + 1] += (short) (g * 3); \
+		d[-step + 2] += (short) (b * 3); \
+		d[0] += (short) (r * 5); \
+		d[1] += (short) (g * 5); \
+		d[2] += (short) (b * 5); \
+		d[step] = r; \
+		d[step + 1] = g; \
+		d[step + 2] = b; \
+		c += step; \
+		d += step; \
+	} \
+	{ \
+		short *t = dt->cur; \
+		dt->cur = dt->nxt; \
+		dt->nxt = t; \
+		memset(dt->nxt, 0, (size_t) (dt->w + 2) * 6); \
+	} \
+}
+#define PEN_NEAR(cell, r, g, b) (near[cell] ? near[cell] - 1 : near_miss(pal, r, g, b))
+#define PEN_FEW(cell, r, g, b) (few[(cell) >> 3] & (1 << ((cell) & 7)) \
+	? (few[FEW_KNOWN + ((cell) >> 2)] >> (((cell) & 3) << 1)) & 3 : few_miss(dt, cell, r, g, b))
+ROW_PENS(row_near, PEN_NEAR)
+ROW_PENS(row_few, PEN_FEW)
+
 static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *o)
 {
 	/* Floyd-Steinberg: each pixel's error (what it wanted less its pen)
@@ -3287,13 +3416,20 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 	   serpentine. The colour wanted may lie past the cube's edge (light
 	   blue on 16 colours wants more blue than there is): its pen is the
 	   nearest to that, so the error is paid back by pens that lie that
-	   way instead of being lost to a clamp (the colour came out grey) */
+	   way instead of being lost to a clamp (the colour came out grey).
+	   In 16 bits, as the errors fit (each at most 9 x 383 with its 7/16):
+	   the same pens as the 32-bit loop it was, byte for byte. A picture
+	   with no alpha goes through row_near or row_few, smaller */
 	PIC_PAL *pal = dt->pal;
+	const unsigned char *near = pal->near, *few = dt->few;
 	long w = dt->w, n;
 	int dir = (dt->y & 1) ? -1 : 1, step = 3 * dir;
 	long x = dir > 0 ? 0 : w - 1;
+	const unsigned short *s = px + x;
+	unsigned char *op = o + x;
+	const unsigned char *a = al != NULL ? al + x : NULL;
 	short *c, *d;
-	int er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 16ths */
+	short er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 16ths */
 	if (dt->rows == NULL) {
 		for (n = 0; n < w; n++) {
 			unsigned v = px[n];
@@ -3301,40 +3437,66 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 		}
 		return;
 	}
+	if (al == NULL && near != NULL) {
+		row_near(dt, px, o);
+		return;
+	}
+	if (al == NULL && few != NULL) {
+		row_few(dt, px, o);
+		return;
+	}
 	c = dt->cur + (x + 1) * 3;
 	d = dt->nxt + (x + 1) * 3;
-	for (n = 0; n < w; n++, x += dir, c += step, d += step) {
-		unsigned v = px[x];
-		int r, g, b, k, qr, qg, qb;
-		if (al != NULL && al[x] < 128) {
-			o[x] = 0;
-			er = eg = eb = 0;
-			continue;
+	for (n = w; n > 0; n--, s += dir, op += dir, c += step, d += step) {
+		unsigned short v = *s, cell;
+		short r, g, b, qr, qg, qb;
+		int k;
+		const unsigned char *pen;
+		if (a != NULL) {
+			unsigned char al_ = *a;
+			a += dir;
+			if (al_ < 128) {
+				*op = 0;
+				er = eg = eb = 0;
+				continue;
+			}
 		}
-		r = (int) C5(v >> 11) + ((er + c[0]) >> 4);
-		g = (int) C6((v >> 5) & 63) + ((eg + c[1]) >> 4);
-		b = (int) C5(v & 31) + ((eb + c[2]) >> 4);
+		r = (short) (c5_of[v >> 11] + ((short) (er + c[0]) >> 4));
+		g = (short) (C6((v >> 5) & 63) + ((short) (eg + c[1]) >> 4));
+		b = (short) (c5_of[v & 31] + ((short) (eb + c[2]) >> 4));
 		r = r < -128 ? -128 : r > 383 ? 383 : r;
 		g = g < -128 ? -128 : g > 383 ? 383 : g;
 		b = b < -128 ? -128 : b > 383 ? 383 : b;
-		k = pal->near != NULL ? pal->near[NEAR_AT(r, g, b)] : 0;
-		k = k ? k - 1 : nearest_far(pal, r, g, b);
-		o[x] = (unsigned char) k;
-		qr = r - pal->rgb[k][0];
-		qg = g - pal->rgb[k][1];
-		qb = b - pal->rgb[k][2];
-		er = qr * 7;
-		eg = qg * 7;
-		eb = qb * 7;
+		cell = (unsigned short) (NEAR_R(r) | NEAR_G(g) | NEAR_B(b));
+		if (near != NULL) {
+			k = near[cell];
+			k = k ? k - 1 : nearest_far(pal, r, g, b);
+		} else if (few == NULL)
+			k = nearest_far(pal, r, g, b);
+		else if (few[cell >> 3] & (1 << (cell & 7)))
+			k = (few[FEW_KNOWN + (cell >> 2)] >> ((cell & 3) << 1)) & 3;
+		else {
+			k = nearest_far(pal, r, g, b);
+			((unsigned char *) few)[cell >> 3] |= (unsigned char) (1 << (cell & 7));
+			((unsigned char *) few)[FEW_KNOWN + (cell >> 2)] |= (unsigned char) (k << ((cell & 3) << 1));
+		}
+		*op = (unsigned char) k;
+		pen = pal->rgb[k];
+		qr = (short) (r - pen[0]);
+		qg = (short) (g - pen[1]);
+		qb = (short) (b - pen[2]);
+		er = (short) (qr * 7);
+		eg = (short) (qg * 7);
+		eb = (short) (qb * 7);
 		d[-step] += (short) (qr * 3);
 		d[-step + 1] += (short) (qg * 3);
 		d[-step + 2] += (short) (qb * 3);
 		d[0] += (short) (qr * 5);
 		d[1] += (short) (qg * 5);
 		d[2] += (short) (qb * 5);
-		d[step] = (short) qr;
-		d[step + 1] = (short) qg;
-		d[step + 2] = (short) qb;
+		d[step] = qr;
+		d[step + 1] = qg;
+		d[step + 2] = qb;
 	}
 	{
 		short *t = dt->cur;
