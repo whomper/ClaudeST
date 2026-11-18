@@ -71,5 +71,20 @@ check(rc == 0 and "REGRESSION" not in out, "the same log twice is clean")
 c2 = CAND.replace("slow row                                      125", "slow row                                       95")
 rc, out = run([BASE, BASE], [CAND, c2])
 check("slow row" not in out.split("NEWLY OVER")[0], "runs that overlap the base are not a regression")
+# EHypView's table: a column per machine (17 Nov 2026)
+TBASE = """
+action                 limit         ST:mono         ST:med     Falcon-4:16
+front page at start      200             180            190             160
+line scroll               50        130 OVER       140 OVER         75 OVER
+menu open                100             <20              -        no event
+3 over
+"""
+TCAND = TBASE.replace("190             160", "190             175").replace("140 OVER         75", "145 OVER         75")
+rc, out = run([TBASE], [TCAND])
+check(rc == 1 and "Falcon-4:16: front page at start" in out and "160 -> 175" in out,
+      "a column table: the machine's cell 160 -> 175 is a regression")
+check("ST:med: line scroll" not in out.split("REGRESSION")[1].split("slightly")[0] if "REGRESSION" in out else True,
+      "a column table: 140 -> 145 is one step, not a regression")
+check("6 rows the same or faster" in out or "rows the same or faster" in out, "a column table: the other cells counted")
 print("speedcmp: %d failed" % fails)
 sys.exit(1 if fails else 0)

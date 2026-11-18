@@ -41,7 +41,7 @@ _CF_, _SND's bit 3 (the DSP) cleared (EmuTOS leaves it set under Hatari's
 cpushl), not ColdFire code (TLSFB.OVL, EWEBFB.PRG; common/tests/coldfire
 runs common's under qemu-m68k -cpu cfv4e), FireTOS's own 68000 emulation (an instruction the
 ColdFire lacks still runs here, a 68060's set) nor the FireBee's hardware.
-No NVDI on it (AERA_WITH_NVDI is for the Falcons). common/tests/firebee
+No NVDI on it (AERA_WITH_NVDI is for the Falcons, and the TT with AERA_NVDI_ON=Falcon,TT). common/tests/firebee
 checks it from inside.
 
 The network: m.network() puts FAKESTNG.PRG (made again with make in
@@ -446,14 +446,14 @@ class Machine:
             (", a stand-in (a 68060 Falcon with FireTOS's cookies), not a FireBee"
              if self.name == "FireBee" else "") + \
             ("; with " + ", ".join(self.with_accs) if getattr(self, "with_accs", None) else "") + \
-            ("; NVDI" if os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else "") + \
+            ("; NVDI" if self.has_nvdi() else "") + \
             (" (Erez's configuration)" if "%s:%s" % (self.name, self.screen) == ERZ_MACHINE and self.real and
-             os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else "")
+             self.has_nvdi() else "")
 
     def args(self):
         """Hatari's arguments; also writes the machine's own settings"""
         os.makedirs(self.hd, exist_ok=True)
-        if os.environ.get("AERA_WITH_NVDI") and self.name.startswith("Falcon") and not self.nvdi():
+        if os.environ.get("AERA_WITH_NVDI") and self.nvdi_wanted() and not self.nvdi():
             sys.exit("machines.py: AERA_WITH_NVDI, but no NVDI here")
         if os.environ.get("AERA_WITH_ACCS"):
             self.accs([a for a in os.environ["AERA_WITH_ACCS"].split(",") if a.strip()])
@@ -479,10 +479,22 @@ class Machine:
             f.write(nv)
         # under NVDI, TOS's memory count as well (TOS 4.04 on Falcon-4 was
         # still counting after 45 s): fast-boot skips it
-        fast = ["--fast-boot", "yes"] if os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) else []
+        fast = ["--fast-boot", "yes"] if self.has_nvdi() else []
         return (["--tos", self.tos] + self.base + SCREENS[self.screen] +
                 ["--harddrive", self.hd, "--gemdos-drive", "C", "--sound", "off",
                  "--confirm-quit", "no"] + fast)
+
+    def has_nvdi(self):
+        """NVDI on this machine's C:, or coming at its boot (AERA_WITH_NVDI for it, NVDI here): describe() before
+        args() says so too (EHypView, 17 Nov 2026)"""
+        return os.path.exists(os.path.join(self.hd, "AUTO", "NVDI.PRG")) or \
+            bool(os.environ.get("AERA_WITH_NVDI") and self.nvdi_wanted() and nvdi_here())
+
+    def nvdi_wanted(self):
+        """AERA_WITH_NVDI's machines: the Falcons, or the families AERA_NVDI_ON names (\"Falcon,TT\": the gate's TT
+        row with NVDI, 17 Nov 2026). Never the FireBee stand-in"""
+        fams = [f.strip() for f in (os.environ.get("AERA_NVDI_ON") or "Falcon").split(",") if f.strip()]
+        return not self.name.startswith("FireBee") and any(self.name.startswith(f) for f in fams)
 
     def nvdi(self):
         """Erez's NVDI on C: (see above): True, or False when it isn't here"""

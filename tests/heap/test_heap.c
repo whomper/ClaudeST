@@ -4,6 +4,7 @@
  * test_heap.c - the heap in atari/libc.c (malloc, free, calloc, realloc,
  * heap_add) on the build machine, with a GEMDOS of the test's own:
  *
+ *   zone         a job's memory taken at its start (heap_zone)
  *   fixed        an accessory's heap: fill it, empty it, it is one block again
  *   grow         a program's heap: 512 KB from GEMDOS, then doubling up to
  *                8 MB, then 8 MB at a time
@@ -216,6 +217,68 @@ static size_t some_size(void)
 }
 
 /* ---- the cases ---- */
+
+/* zones: a job's memory taken at its start; its mallocs from it, never from GEMDOS; free from anywhere */
+static void case_zone(void)
+{
+	HEAP_ZONE *z;
+	void *m1, *m2, *zs[4000], *big;
+	long calls, room, use0, peak0;
+	int n = 0, i, inside = 1;
+	pool_new(64L << 20);
+	m1 = heap_malloc(1000);
+	use0 = heap_use;
+	peak0 = heap_peak;
+	room = heap_room();
+	check(room > (60L << 20), "zone: the room is GEMDOS's too, for a growing heap");
+	z = heap_zone(200000);
+	check(z != 0, "zone: 200 KB taken");
+	heap_zone_use(z);
+	check(heap_room() >= 200000 && heap_room() < 210000, "zone: its room is its block's");
+	calls = gemdos_calls;
+	while (n < 4000 && (zs[n] = heap_malloc(100 + (n % 7) * 50)) != 0) {
+		if ((char *)zs[n] < (char *)z || (char *)zs[n] > (char *)z + 210000)
+			inside = 0;
+		memset(zs[n], n & 0xff, 100);
+		n++;
+	}
+	check(n > 500 && n < 4000, "zone: full, then malloc says no");
+	check(inside, "zone: every block inside its block");
+	check(gemdos_calls == calls, "zone: never grows from GEMDOS");
+	check(heap_room() < 400, "zone: full, no room");
+	m2 = heap_malloc(50);
+	check(m2 == 0 || ((char *)m2 > (char *)z && (char *)m2 < (char *)z + 210000),
+	      "zone: the main heap isn't used while the zone is");
+	heap_zone_use(0);
+	check(heap_use == use0 + (long)0 || heap_use > use0, "zone: the main heap's use is its own");
+	check(heap_peak >= peak0, "zone: the main heap's peak kept");
+	m2 = heap_malloc(50);
+	check(m2 != 0 && ((char *)m2 < (char *)z || (char *)m2 > (char *)z + 210000), "zone: main again, outside the zone");
+	for (i = 2; i < n / 2; i++)			/* zone blocks freed with the main heap in use */
+		heap_free(zs[i]);
+	heap_zone_use(z);
+	check(heap_room() > 50000, "zone: the blocks freed from outside are its again");
+	heap_free(m1);					/* a main block freed with the zone in use */
+	big = heap_malloc(40000);
+	check(big != 0 && (char *)big > (char *)z && (char *)big < (char *)z + 210000, "zone: its freed room used again");
+	{
+		void *r = heap_realloc(big, 41000);
+		check(r != 0 && (char *)r > (char *)z && (char *)r < (char *)z + 210000, "zone: realloc in it");
+		big = r ? r : big;
+		r = heap_realloc(big, 150000);		/* more than the zone has free: refused, not the main heap's */
+		check(r == 0, "zone: a realloc past its room refused, never from the main heap");
+	}
+	heap_zone_use(0);
+	check(heap_check(0) >= 0, "zone: the main heap checks out with a zone in it");
+	m1 = heap_realloc(zs[1], 120);			/* a zone block realloc'd with main in use: in the zone */
+	check(m1 != 0 && (char *)m1 > (char *)z && (char *)m1 < (char *)z + 210000, "zone: realloc from outside stays in");
+	heap_zone_end(z);
+	check(heap_check(0) >= 0, "zone: the main heap checks out after the zone's end");
+	z = heap_zone(70L << 20);
+	check(z == 0, "zone: more than there is: refused at once");
+	heap_free(m2);
+	check(heap_check(0) >= 0, "zone: all checks out");
+}
 
 static void case_fixed(void)
 {
@@ -792,6 +855,8 @@ int main(int argc, char **argv)
 	const char *c = argc > 1 ? argv[1] : "";
 	if (!strcmp(c, "fixed"))
 		case_fixed();
+	else if (!strcmp(c, "zone"))
+		case_zone();
 	else if (!strcmp(c, "grow"))
 		case_grow();
 	else if (!strcmp(c, "trim"))

@@ -41,6 +41,15 @@ int lf_key(LFIELD *f, short key, short ch, short kstate, short *idx) __attribute
 /* the Hebrew keyboard (hebkey.c), in an app that has it: a key types what key_char
    says; without it, the key's own character */
 unsigned char key_char(short kstate, short key) __attribute__((weak));
+/* the clipboard in a short (objc_edit) field, in an app that has clip.c and clipedit.c: ^C ^X ^V (a long field's are
+   lf_key's); weak, so an app without them adds nothing */
+int clip_key(short key) __attribute__((weak));
+int clip_edit(OBJECT *tree, short obj, short *idx, short key) __attribute__((weak));
+/* dlg_later's, set by its first call, so a program that never queues links none of it (--gc-sections) */
+static void (*sl_run)(unsigned long ms);	/* a slice of the queue: ms milliseconds, 0 all of it */
+static void (*sl_drop_for)(OBJECT *tree);	/* the queue dropped when its dialog closes */
+static OBJECT *sl_tree;
+static short sl_n, sl_next;
 short hebrew_kbd __attribute__((weak));
 void set_hebrew_kbd(short on) __attribute__((weak));
 
@@ -298,6 +307,7 @@ static struct {
 	unsigned short state;		/* the root's, as it was */
 	long spec;
 	short band, band_h;		/* dlg_band's object, hidden, and its height */
+	short tband;			/* dlg_band's object where it shows (TOS): dlg_badge's band */
 } dw[DLG_NEST];
 static short ndw;
 
@@ -1197,8 +1207,11 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 		*y = dy + (dh - *h) / 2;
 	}
 	dw[i].band = 0;
+	dw[i].tband = 0;
 	if (dlg_windowed() && tree && next_band > 0)
 		band_hide(tree, i, next_band);
+	else if (tree && next_band > 0)
+		dw[i].tband = next_band;
 	if (dlg_windowed()) {
 		short wx = tree ? tree[0].ob_x : *x, wy = tree ? tree[0].ob_y : *y;
 		short ww = tree ? tree[0].ob_width : *w, wh = tree ? tree[0].ob_height : *h;
@@ -1246,6 +1259,8 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 	dw[i].w = *w;
 	dw[i].h_ = *h;
 	dw[i].under = dlg_under(*x, *y, *w, *h);
+	if (dw[i].under)
+		evnt_timer_(0);		/* a turn between the screen's save (48 ms of a Falcon's under NVDI) and the drawing */
 	form_dial(FMD_START, *x, *y, *w, *h);
 	graf_mouse(M_OFF, 0);
 	if (tree)
@@ -1287,6 +1302,8 @@ short dlg_open_area(void (*draw)(short x, short y, short w, short h),
 void dlg_close(void)
 {
 	short i;
+	if (ndw > 0 && sl_drop_for)
+		sl_drop_for(dw[ndw - 1].tree);	/* what was still queued: the dialog goes */
 	if (!ndw)
 		return;
 	i = --ndw;
@@ -1460,6 +1477,27 @@ void dlg_touch(OBJECT *tree, short *next, short x, short y)
 }
 #endif
 
+/* a press taken by a loop's own look between turns of its drawing (settings.c's page), given to the next wait that
+   asks for the mouse as its own event: TOS 1.04 drops a press made while the program draws, and a quick second
+   click on a page's name was lost (EHypView's gui-test on ST-1, 17 Nov 2026) */
+static struct {
+	int on;
+	short x, y, ks;
+} pend;
+
+void dlg_press_later(short x, short y, short kstate)
+{
+	pend.on = 1;
+	pend.x = x;
+	pend.y = y;
+	pend.ks = kstate;
+}
+
+int dlg_press_waiting(void)
+{
+	return pend.on;
+}
+
 static short dlg_evnt_(short flags, short clicks, short mask, short state,
 		       unsigned long timer, short *msg, AEVENT *e)
 {
@@ -1467,6 +1505,16 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 #ifdef DLG_CLICK
 	dlg_touch_up();
 #endif
+	if (pend.on && (flags & MU_BUTTON)) {
+		memset(e, 0, sizeof(*e));
+		e->which = MU_BUTTON;
+		e->mx = pend.x;
+		e->my = pend.y;
+		e->kstate = pend.ks;
+		e->breturn = 1;
+		pend.on = 0;
+		return MU_BUTTON;
+	}
 	if (!dlg_in_window())
 		return evnt_multi_(flags, clicks, mask, state, timer, msg, e);
 	i = ndw - 1;
@@ -1559,11 +1607,22 @@ short dlg_evnt(short flags, short clicks, short mask, short state,
 /* objc_find(tree, 0, 8, mx, my) in C: the last (topmost) object that shows and holds the point, children
    after their parent, -1 outside the root. The AES's walk through a Settings dialog's hundred objects took
    an 8 MHz ST 45 to 50 ms a click (TOS 1.04, 9 Nov 2026); this is under a millisecond */
+static short find_near;		/* the point is just outside a 3D button: the AES decides (dlg_find) */
+
+#define FIND_3D 3			/* how far the AES's 3D look may draw a button outside its box */
+
 static short find_in(OBJECT *tree, short i, short ox, short oy, short depth, short mx, short my)
 {
 	short x = (short)(ox + tree[i].ob_x), y = (short)(oy + tree[i].ob_y), found = i, k;
-	if ((tree[i].ob_flags & HIDETREE) || mx < x || my < y || mx >= x + tree[i].ob_width || my >= y + tree[i].ob_height)
+	if (tree[i].ob_flags & HIDETREE)
 		return -1;
+	if (mx < x || my < y || mx >= x + tree[i].ob_width || my >= y + tree[i].ob_height) {
+		/* an indicator's or activator's 3D border (FL3DIND, part of FL3DACT) is part of it in AES 4's objc_find */
+		if ((tree[i].ob_flags & 0x0200) && mx >= x - FIND_3D && my >= y - FIND_3D &&
+		    mx < x + tree[i].ob_width + FIND_3D && my < y + tree[i].ob_height + FIND_3D)
+			find_near = 1;
+		return -1;
+	}
 	if (depth > 0 && tree[i].ob_head >= 0) {
 		for (k = tree[i].ob_head;; k = tree[k].ob_next) {	/* the last child's next is the parent */
 			short r = find_in(tree, k, x, y, (short)(depth - 1), mx, my);
@@ -1578,16 +1637,256 @@ static short find_in(OBJECT *tree, short i, short ox, short oy, short depth, sho
 
 int dlg_find_own = 1;
 
-/* the AES's own where it draws 3D (an indicator's or activator's border is part of the object: AES 4 reckons it
-   in objc_find), ours where it doesn't */
+/* ours; where the AES draws 3D, the AES's own for a point within FIND_3D pixels outside a raised button or
+   indicator, whose border AES 4 reckons part of it in objc_find. Asked for every click, the AES's walk took a
+   Falcon 20-30 ms a press in EFTP's Site Manager (17 Nov 2026), where EFTP's own loop had taken none */
 short dlg_find(OBJECT *tree, short mx, short my)
 {
-	if (!dlg_find_own || (tree[0].ob_flags & 0x0600))		/* FL3DMASK */
+	short r;
+	if (!dlg_find_own)
 		return objc_find(tree, 0, 8, mx, my);
-	return find_in(tree, 0, 0, 0, 8, mx, my);
+	find_near = 0;
+	r = find_in(tree, 0, 0, 0, 8, mx, my);
+	if (find_near && (tree[0].ob_flags & 0x0600))		/* FL3DMASK */
+		return objc_find(tree, 0, 8, mx, my);
+	return r;
 }
 
 int (*dlg_keys)(OBJECT *tree, short key, short kstate, short edit, short *field);
+
+/* ---------------- objects drawn a slice at a time (dlg_later) ----------------
+ * A dialog's own loop may change many objects at once: EFTP's Site Manager, a site chosen, fills ten fields, some
+ * 200 ms of an 8 MHz ST in one go, and a quick double click's second press, read only after it, came too late to
+ * count (the hub, 11 Nov 2026). dlg_later queues them; dlg_do draws the queue 30 ms a turn on a timer-0 event, a
+ * key drawing the rest first (the field it types into is whole), a press taken at once. In a dialog window, or when
+ * more than half the tree waits, they are drawn at once. Each object is drawn alone: objc_draw from the root,
+ * clipped, cost the AES 40-65 ms on an 8 MHz ST, from the object 6-16. An object that fills its box is drawn from
+ * itself through its frame and edge; one drawn over what is under it (a string, an image) from the nearest box round
+ * it that fills it, clipped to itself; then every later object in the tree that reaches into that piece, there, as
+ * the whole tree would be (EFTP's dialogs.c, 11 Nov 2026). */
+#define SL_MAX 256			/* trees with more objects are drawn at once */
+static short sl_nobj;
+/* taken at the first dlg_later, not in BSS (2.3 KB a program that never uses it kept for nothing; a 1 MB ST) */
+static struct {
+	short q[SL_MAX];
+	unsigned char pending[SL_MAX];	/* queued, its own turn still to come */
+	struct {
+		short x, y;
+		unsigned char hid;	/* hidden, or inside a hidden one */
+		unsigned char out;	/* how far the AES draws it outside its box */
+	} at[SL_MAX];
+} *sl;
+#define sl_q sl->q
+#define sl_pending sl->pending
+#define sl_at sl->at
+
+static short sl_count(OBJECT *tree)
+{
+	short n = 0;
+	while (n < SL_MAX && !(tree[n].ob_flags & LASTOB))
+		n++;
+	return (short)(n + 1);		/* SL_MAX + 1: too many */
+}
+
+static int sl_opaque(OBJECT *tree, short o)
+{
+	switch (tree[o].ob_type & 0xff) {
+	case G_BOX: case G_BOXCHAR: case G_BOXTEXT: case G_FBOXTEXT: case G_BUTTON:
+		return 1;
+	}
+	return 0;
+}
+
+/* how far the AES draws an object outside its box: a frame outside, the outline (3), the shadow (twice the frame),
+   the 3D edge */
+static unsigned char sl_reach(OBJECT *tree, short o)
+{
+	short th = 0, out;
+	switch (tree[o].ob_type & 0xff) {
+	case G_BOX: case G_IBOX: case G_BOXCHAR:
+		th = (signed char)(tree[o].ob_spec >> 16);
+		break;
+	case G_BOXTEXT: case G_FBOXTEXT:
+		th = ((TEDINFO *)tree[o].ob_spec)->te_thickness;
+		break;
+	case G_BUTTON:
+		th = (short)(-1 - ((tree[o].ob_flags & EXIT) != 0) - ((tree[o].ob_flags & DEFAULT) != 0));
+		break;
+	}
+	out = th < 0 ? -th : 0;
+	if ((tree[o].ob_state & OUTLINED) && out < 3)
+		out = 3;
+	if (tree[o].ob_state & SHADOWED)
+		out += 2 * (th < 0 ? -th : th);
+	if (tree[o].ob_flags & 0x0600)	/* the 3D look's edge */
+		out += 3;
+	return (unsigned char)out;
+}
+
+/* where each object is and whether it shows, in one pass over the tree (a parent comes before its children):
+   objc_offset is an AES call, a millisecond or more each */
+static void sl_fill(OBJECT *tree)
+{
+	short i, c;
+	sl_at[0].x = tree[0].ob_x;
+	sl_at[0].y = tree[0].ob_y;
+	sl_at[0].hid = (tree[0].ob_flags & HIDETREE) != 0;
+	sl_at[0].out = sl_reach(tree, 0);
+	for (i = 0; i < sl_nobj; i++)
+		for (c = tree[i].ob_head; c > 0 && c != i && c < sl_nobj; c = tree[c].ob_next) {
+			sl_at[c].x = (short)(sl_at[i].x + tree[c].ob_x);
+			sl_at[c].y = (short)(sl_at[i].y + tree[c].ob_y);
+			sl_at[c].hid = sl_at[i].hid || (tree[c].ob_flags & HIDETREE);
+			sl_at[c].out = sl_reach(tree, c);
+		}
+}
+
+static short sl_parent(OBJECT *tree, short o)
+{
+	short p = o;
+	while (tree[p].ob_next >= 0 && tree[tree[p].ob_next].ob_tail != p)
+		p = tree[p].ob_next;
+	return tree[p].ob_next < 0 ? 0 : tree[p].ob_next;
+}
+
+/* the objects from the from-th on that reach into c[], drawn there, each alone */
+static void sl_draw_from(OBJECT *tree, short from, const short *c)
+{
+	short j;
+	for (j = from; j < sl_nobj; j++) {
+		short r = sl_at[j].out;
+		if (sl_at[j].hid || sl_pending[j] || sl_at[j].x - r > c[2] || sl_at[j].y - r > c[3] ||
+		    sl_at[j].x + tree[j].ob_width - 1 + r < c[0] || sl_at[j].y + tree[j].ob_height - 1 + r < c[1])
+			continue;
+		objc_draw(tree, j, 0, c[0], c[1], (short)(c[2] - c[0] + 1), (short)(c[3] - c[1] + 1));
+	}
+}
+
+static void sl_draw_one(OBJECT *tree, short o)
+{
+	short x = sl_at[o].x, y = sl_at[o].y, r = sl_at[o].out, from = o, c[4];
+	if (sl_opaque(tree, o)) {
+		c[0] = (short)(x - r), c[1] = (short)(y - r);
+		c[2] = (short)(x + tree[o].ob_width - 1 + r), c[3] = (short)(y + tree[o].ob_height - 1 + r);
+	} else {
+		c[0] = x, c[1] = y, c[2] = (short)(x + tree[o].ob_width - 1), c[3] = (short)(y + tree[o].ob_height - 1);
+		do
+			from = from ? sl_parent(tree, from) : 0;
+		while (from && !(sl_opaque(tree, from) && sl_at[from].x <= c[0] && sl_at[from].y <= c[1] &&
+				 sl_at[from].x + tree[from].ob_width > c[2] && sl_at[from].y + tree[from].ob_height > c[3]));
+	}
+	sl_draw_from(tree, from, c);
+}
+
+void dlg_later_drop(void)
+{
+	while (sl && sl_next < sl_n)
+		sl_pending[sl_q[sl_next++]] = 0;
+	sl_n = sl_next = 0;
+	sl_tree = 0;
+}
+
+/* a slice of the queue: up to ms milliseconds (0: all of it) */
+static void sl_slice(unsigned long ms)
+{
+	unsigned long t0 = tos_ms();
+	if (sl_next >= sl_n)
+		return;
+	sl_fill(sl_tree);
+	graf_mouse(M_OFF, 0);
+	do {
+		short o = sl_q[sl_next++];
+		sl_pending[o] = 0;
+		sl_draw_one(sl_tree, o);
+	} while (sl_next < sl_n && (!ms || tos_ms() - t0 < ms));
+	graf_mouse(M_ON, 0);
+	if (sl_next >= sl_n)
+		sl_n = sl_next = 0;
+}
+
+static void sl_drop_tree(OBJECT *tree);
+
+void dlg_later(OBJECT *tree, short obj)
+{
+	if (!sl && (sl = calloc(1, sizeof(*sl))) == 0) {
+		dlg_draw(tree, obj > 0 ? obj : 0);	/* no memory: at once, as before */
+		return;
+	}
+	sl_run = sl_slice;
+	sl_drop_for = sl_drop_tree;
+	if (sl_tree != tree) {
+		dlg_later_drop();
+		sl_tree = tree;
+		sl_nobj = sl_count(tree);
+	}
+	if (obj <= 0 || obj >= sl_nobj || sl_nobj > SL_MAX || dlg_in_window()) {
+		/* the root, a tree too big for the queue, or a window (dlg_draw draws through what shows of it): now */
+		dlg_draw(tree, obj > 0 && obj < sl_nobj ? obj : 0);
+		return;
+	}
+	if (sl_pending[obj])
+		return;
+	if (sl_n - sl_next + 1 > sl_nobj / 2) {	/* most of it: the whole, once */
+		dlg_later_drop();
+		dlg_draw(tree, 0);
+		return;
+	}
+	sl_pending[obj] = 1;
+	sl_q[sl_n++] = obj;
+}
+
+static void sl_drop_tree(OBJECT *tree)
+{
+	if (tree && sl_tree == tree)
+		dlg_later_drop();
+}
+
+int dlg_later_waiting(void)
+{
+	return sl_n > sl_next;
+}
+
+/* until the left button is let go (a second at most): a press acted on while held isn't taken again */
+static void button_up(void)
+{
+	short mx, my, mb, ks, n, m[8];
+	AEVENT e;
+	for (n = 0; n < 50; n++) {
+		graf_mkstate(&mx, &my, &mb, &ks);
+		if (!(mb & 1))
+			return;
+		dlg_evnt(MU_TIMER, 0, 0, 0, 20, m, &e);
+	}
+}
+
+/* what Undo presses, and Esc where no field has the cursor, when the caller gives cancel 0: the tree's "Cancel" exit
+   button, else its only exit button (OK in a box that only says something); 0 when neither is there, and then they
+   do nothing (EFTP's esc_button, the guidelines 3.5) */
+static short esc_button(OBJECT *tree)
+{
+	short i, exits = 0, last = 0;
+	for (i = 1;; i++) {
+		if ((tree[i].ob_type & 0xff) == G_BUTTON && (tree[i].ob_flags & EXIT) && !(tree[i].ob_flags & HIDETREE)) {
+			if (tree[i].ob_spec && !strcmp((const char *)tree[i].ob_spec, "Cancel"))
+				return i;
+			exits++;
+			last = i;
+		}
+		if (tree[i].ob_flags & LASTOB)
+			break;
+	}
+	return exits == 1 ? last : 0;
+}
+
+void (*dlg_badge)(OBJECT *tree, short band);
+
+/* the band's badge (the Hebrew keyboard's), drawn by the app's dlg_badge where the band shows: on TOS, the dialog's
+   band from dlg_band; in a window the band is hidden and the title is the AES's */
+static void badge(OBJECT *tree)
+{
+	if (dlg_badge && ndw > 0 && dw[ndw - 1].h <= 0 && dw[ndw - 1].tree == tree && dw[ndw - 1].tband > 0)
+		dlg_badge(tree, dw[ndw - 1].tband);
+}
 
 short dlg_do(OBJECT *tree, short start, short cancel)
 {
@@ -1599,6 +1898,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 		wind_update(BEG_MCTRL);
 	}
 	flush_keys();
+	badge(tree);			/* the dialog has just been drawn, its band with it */
 	next = start > 0 ? start : start < 0 ? 0 : first_field(tree);
 	while (cont) {
 		LFIELD *lf;
@@ -1612,16 +1912,43 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				objc_edit(tree, edit, 0, &idx, ED_INIT);
 		}
 		lf = lf_of && edit > 0 ? lf_of(tree, edit) : 0;
-		dlg_evnt(MU_KEYBD | MU_BUTTON, DLG_CLICKS, 1, 1, 0, m, &e);
+		if (sl_run && sl_tree == tree && sl_n > sl_next) {
+			/* objects queued by dlg_later: a slice of them, then a look at the mouse and keys */
+			dlg_evnt(MU_KEYBD | MU_BUTTON | MU_TIMER, DLG_CLICKS, 1, 1, 0, m, &e);
+			if (!(e.which & (MU_KEYBD | MU_BUTTON))) {
+				sl_run(30);
+				continue;
+			}
+			if (e.which & MU_KEYBD)
+				sl_run(0);	/* a key: the fields whole before it goes into one */
+			/* a press: at once (a double click's second), the rest on later turns */
+		} else {
+			dlg_evnt(MU_KEYBD | MU_BUTTON, DLG_CLICKS, 1, 1, 0, m, &e);
+		}
 		if (e.which & MU_KEYBD) {
 			if (dlg_esc(e.kreturn) && !dlg_undo(e.kreturn))
 				e.kreturn = 0x011b;	/* ^[ too: the key objc_edit empties a field on */
 			want = 0;
 			if (heb_f10(e.kreturn)) {
-				/* the Hebrew keyboard switched */
+				/* the Hebrew keyboard switched: the band's badge shown or gone */
+				if (dlg_badge && !win && ndw > 0 && dw[ndw - 1].tree == tree && dw[ndw - 1].tband > 0) {
+					redraw(tree, dw[ndw - 1].tband);
+					badge(tree);
+				}
 			} else if (dlg_keys && (hk = dlg_keys(tree, e.kreturn, e.kstate, edit, &want)) != 0) {
 				/* the app's own key (settings.c's focus, Space, the arrows); it says where the text cursor goes */
-				if (want > 0) {
+				if (hk == 2 && want > 0) {
+					/* the key acts on an object (Space on a button, a tick): dlg_do ends with it, as a
+					   click on it would, an EXIT button drawn selected for the caller to deselect */
+					if ((tree[want].ob_flags & EXIT) && !(tree[want].ob_state & SELECTED)) {
+						tree[want].ob_state |= SELECTED;
+						redraw(tree, want);
+					}
+					next = want;
+					cont = 0;
+				} else if (hk == 2) {
+					/* no object: the key taken, as 1 */
+				} else if (want > 0) {
 					next = want;
 				} else if (want < 0 && edit > 0) {
 					objc_edit(tree, edit, 0, &idx, ED_END);
@@ -1631,13 +1958,21 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 			} else if (lf && !dlg_undo(e.kreturn) && lf_key(lf, e.kreturn, key_char ? key_char(e.kstate, e.kreturn) : e.kreturn & 0xff, e.kstate, &idx)) {
 				/* the long field took it (Esc empties it) */
 			} else if (dlg_cancel_key(e.kreturn, edit > 0)) {
-				/* Cancel: the field isn't given the key, so it keeps its text */
-				next = cancel;
-				cont = 0;
-				if (cancel > 0 && (tree[cancel].ob_state & SELECTED)) {
-					tree[cancel].ob_state &= ~SELECTED;
-					redraw(tree, cancel);
+				/* Cancel: the field isn't given the key, so it keeps its text. cancel 0: the tree's Cancel,
+				   else its only exit button; with neither the key does nothing */
+				short c = cancel ? cancel : esc_button(tree);
+				if (c) {
+					next = c;
+					cont = 0;
+					if (c > 0 && (tree[c].ob_state & SELECTED)) {
+						tree[c].ob_state &= ~SELECTED;
+						redraw(tree, c);
+					}
 				}
+			} else if (edit > 0 && !lf && clip_key && clip_edit && clip_key(e.kreturn)) {
+				/* ^C ^X ^V in a short field (CLIP_NONE is 0); a long field's are lf_key's, which never
+				   copies or cuts a password (LFIELD.secret) */
+				clip_edit(tree, edit, &idx, e.kreturn);
 			} else {
 				short kr;
 				cont = form_keybd(tree, edit, next, e.kreturn, &next, &kr);
@@ -1659,6 +1994,9 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				if (!cont && lf_eye_click && lf_eye_click(tree, next, &idx, edit)) {
 					cont = 1;	/* a password's eye: the stars or the text, the dialog goes on */
 					next = 0;
+					/* and nothing more until the button is up: asked for again while it was held, the
+					   press came back at once and turned the eye back (EFTP, 17 Nov 2026) */
+					button_up();
 				}
 #ifdef DLG_CLICK
 				if (!cont)

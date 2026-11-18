@@ -282,8 +282,15 @@ def run(a):
                     stop["shell"] = True
                 if stop["shell"]:
                     break
-                if not p or stop["now"] or h.poll() is not None:
+                if not p or stop["now"]:
                     continue
+                if h.poll() is not None:
+                    # (Hatari gone: a step not done is a failure, not a pass;
+                    # a TOS image it couldn't open read as "got", EWeb, 17 Nov 2026)
+                    print("%6.1fs Hatari stopped (exit %s) before: %s" % (time.time() - t0, h.returncode, st),
+                          flush=True)
+                    ok = False
+                    break
                 print("%6.1fs %s" % (time.time() - t0, " ".join(p)), flush=True)
                 if p[0] in ("move", "click", "rclick", "dclick", "drag") and win is None:
                     for _ in range(50):
@@ -343,10 +350,12 @@ def run(a):
                     if len(p) > 2 and p[-1].replace(".", "").isdigit():
                         timeout, text = float(p[-1]), " ".join(p[1:-1])
                     end = time.time() + timeout
+                    found = False
                     while not stop["now"] and h.poll() is None:
                         with open(logp, errors="replace") as f:
                             got = f.read()
                         if text in got:
+                            found = True
                             break
                         if SHELL in got:
                             stop["shell"] = True
@@ -357,6 +366,10 @@ def run(a):
                             break
                         time.sleep(0.25)
                     if not ok or stop["shell"]:
+                        break
+                    if not found:
+                        print("until: '%s' did not come: Hatari stopped (exit %s)" % (text, h.returncode), flush=True)
+                        ok = False
                         break
                     print("%6.1fs   got '%s'" % (time.time() - t0, text), flush=True)
                 else:

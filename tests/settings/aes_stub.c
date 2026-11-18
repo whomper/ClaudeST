@@ -394,9 +394,12 @@ short objc_draw(OBJECT *t, short start, short depth, short x, short y, short w, 
 }
 
 /* the object under the pointer: the last child drawn there, none that is hidden; 0 the box, -1 outside */
+int objc_finds;			/* how many times objc_find was asked (dlg_find asks it only near a 3D border) */
+
 short objc_find(OBJECT *t, short start, short depth, short x, short y)
 {
 	short i, hit = 0;
+	objc_finds++;
 	(void)start, (void)depth;
 	if (x < t[0].ob_x || y < t[0].ob_y || x >= t[0].ob_x + t[0].ob_width || y >= t[0].ob_y + t[0].ob_height)
 		return -1;
@@ -517,6 +520,16 @@ short evnt_multi_(short flags, short clicks, short mask, short state, unsigned l
 	memset(ev, 0, sizeof(*ev));
 	if (refs_hook)
 		refs_hook();
+	if ((flags & MU_TIMER) && (flags & MU_BUTTON) && timer == 0) {
+		timers++;			/* a look between turns of a drawing (settings.c's turn) */
+		if (script->kind == S_TURNTAB) {
+			ev->which = MU_BUTTON;
+			ev->breturn = 1;
+			click_at(stub_tree, ref_tab[script->a], &ev->mx, &ev->my);
+			script++;
+			return ev->which;
+		}
+	}
 	if (flags & MU_TIMER) {
 		if (pre_key) {
 			ev->which = MU_KEYBD;
