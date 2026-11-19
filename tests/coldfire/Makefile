@@ -170,7 +170,7 @@ $(B)/test_ll64_host: test_ll64.c | $(B)
 
 # ui/text.c's row loops: C on the ColdFire, the assembly on a 68030, one sum
 $(B)/rows.c: $(C)/ui/text.c | $(B)
-	sed -n '/^#ifdef __mcoldfire__$$/,/^static void rows_copy_mid(/p' $< | sed '$$d' > $@
+	(echo '#ifdef __mcoldfire__'; sed -n "/^\/\* (a ColdFire's: the same rows in C/,/^static void rows_copy_mid(/p" $< | sed '$$d') > $@
 $(B)/test_rows_cf: test_rows.c $(B)/rows.c $(B)/libc.o $(B)/rt.o
 	$(CC) $(CF) -I$(B) -o $@.o -c test_rows.c
 	$(LD) -o $@ $@.o $(B)/libc.o $(B)/rt.o
