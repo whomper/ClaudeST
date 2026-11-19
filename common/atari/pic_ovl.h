@@ -23,5 +23,8 @@ int pic_ovl_chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 void pic_ovl_palette(PIC_PAL *pal, const char *near, long key);
 /* pal's table written, if it learnt more (at the window's close) */
 void pic_ovl_near_save(PIC_PAL *pal, const char *near, long key);
-void pic_ovl_unload(void);		/* its memory back (an accessory's store_release) */
+void pic_ovl_unload(void);
+/* chunky8's copies for key made beforehand, a step a call (pix kept until
+   done), so that its draw only copies: 1 ready, -1 call again, 0 not */
+int pic_ovl_chunky8_prepare(const unsigned char *pix, int w, int h, long key, short vdi);		/* its memory back (an accessory's store_release) */
 #endif

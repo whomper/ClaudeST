@@ -23,6 +23,10 @@
  * streams); such a file is then PIC_UNSUPPORTED. Each is some 8 KB of a
  * program's resident size (png.c; nsgif's gif.c and lzw.c), which NVDI's
  * menus under four accessories on a 4 MB Falcon want (2 Nov 2026).
+ * PIC_NO_FAST_ROWS leaves out row_many's loops for a picture with no
+ * alpha (row_near, row_few: some 1.9 KB): the general loop gives the same
+ * pens, slower. For a program that always passes alpha, or whose memory
+ * counts more than that speed (EContact on a 1 MB ST, 19 Nov 2026).
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -3306,6 +3310,7 @@ static const short c5_of[32] = {
 #undef C5_
 };
 
+#ifndef PIC_NO_FAST_ROWS
 /* a pen not in near[] yet: found, kept (out of the loop below: the loop
    small enough for the 68030's cache) */
 static __attribute__((noinline)) int near_miss(PIC_PAL *pal, int r, int g, int b)
@@ -3408,6 +3413,7 @@ static __attribute__((noinline)) void NAME(PIC_DITHER *dt, const unsigned short 
 	? (few[FEW_KNOWN + ((cell) >> 2)] >> (((cell) & 3) << 1)) & 3 : few_miss(dt, cell, r, g, b))
 ROW_PENS(row_near, PEN_NEAR)
 ROW_PENS(row_few, PEN_FEW)
+#endif /* PIC_NO_FAST_ROWS */
 
 static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *o)
 {
@@ -3437,6 +3443,7 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 		}
 		return;
 	}
+#ifndef PIC_NO_FAST_ROWS
 	if (al == NULL && near != NULL) {
 		row_near(dt, px, o);
 		return;
@@ -3445,6 +3452,7 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 		row_few(dt, px, o);
 		return;
 	}
+#endif
 	c = dt->cur + (x + 1) * 3;
 	d = dt->nxt + (x + 1) * 3;
 	for (n = w; n > 0; n--, s += dir, op += dir, c += step, d += step) {
@@ -3811,3 +3819,99 @@ int pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out)
 #endif
 	return dither_whole(p, pal, out);
 }
+
+#ifdef PIC_OVL_BUILD
+/* pic_dither_dsp_prepare a piece a call (PIC.OVL's prepare_step): the
+   check's work in steps a GEM turn holds (on a stock Falcon the whole was
+   140 ms in 16 colours, 410 ms in 256: EContact, 19 Nov 2026). A step is
+   the DSP's program loaded with the palette's tables, then the picture
+   dithered there (it stays loaded between: dither_dsp finds it so, or
+   loads it again, the same either way; the lock is taken and given back
+   within each), then a row of the 68030's dither of the same picture; the
+   last compares them. The same picture
+   as dd_check's, the same pens and the same answer. -1: call again; 1
+   the DSP will dither, 0 not. pal NULL: stop, what is held given back */
+static struct {
+	PIC t;
+	PIC_DITHER dt;
+	PIC_PAL *pal;
+	short y;			/* -2 the DSP's program next, -1 its dither, else the 68030's row */
+	short on;			/* a check under way */
+	unsigned short px[40 * 12];
+	unsigned char al[40 * 12], a[40 * 12], b[40 * 12];
+} ds;
+
+int pic_dither_dsp_prepare_step(PIC_PAL *pal)
+{
+	int i, r;
+	if (pal == NULL || (ds.on && ds.pal != pal)) {
+		if (ds.on && ds.y >= 0)
+			free(ds.dt.rows);
+		ds.on = 0;
+		if (pal == NULL)
+			return 0;
+	}
+	if (pic_dsp == NULL || !pic_dsp_dither || pal->n == 2 || dd_state < 0)
+		return 0;
+	if (dd_state > 0)
+		return 1;
+	if (!ds.on) {
+		/* the known picture (dd_check's) */
+		memset(&ds.t, 0, sizeof ds.t);
+		ds.t.w = 40;
+		ds.t.h = 12;
+		ds.t.px = ds.px;
+		ds.t.alpha = ds.al;
+		for (i = 0; i < 40 * 12; i++) {
+			int x = i % 40, y = i / 40;
+			ds.px[i] = (unsigned short) ((((x * 31) / 39) << 11) | (((y * 63) / 11) << 5) | ((x + y * 7) & 31));
+			ds.al[i] = (unsigned char) (x == 7 || (x + y) % 13 == 0 ? 0 : 255);
+		}
+		ds.pal = pal;
+		ds.y = -2;
+		ds.on = 1;
+		return -1;
+	}
+	if (ds.y == -2) {
+		int got = pic_dsp->begin(PIC_DSP_DITHER);
+		if (!got) {
+			ds.on = 0;		/* (dd_check's -1: tried again later) */
+			return 0;
+		}
+		pic_dsp_failed = 0;
+		if (got == 1 || dd_n != pal->n || memcmp(dd_rgb, pal->rgb, (size_t) pal->n * 3) != 0)
+			dd_palette(pal);
+		pic_dsp->end(1);
+		ds.y = -1;
+		return -1;
+	}
+	if (ds.y < 0) {
+		r = dither_dsp(&ds.t, pal, ds.a);
+		if (r <= 0) {
+			/* (dd_check's -1, couldn't be had: tried again later; it
+			   stopped answering: the 68030's) */
+			dd_state = r < 0 ? -1 : 0;
+			ds.on = 0;
+			return 0;
+		}
+		dither_init(&ds.dt, ds.t.w, pal);
+		ds.y = 0;
+		return -1;
+	}
+	pic_dither_row(&ds.dt, ds.px + ds.y * 40, ds.al + ds.y * 40, ds.b + ds.y * 40);
+	if (++ds.y < ds.t.h)
+		return -1;
+	free(ds.dt.rows);
+	ds.on = 0;
+	dd_state = memcmp(ds.a, ds.b, sizeof ds.a) == 0 ? 1 : -1;
+	return dd_state > 0;
+}
+
+/* for the tests: as if no check had been made (the palette sent again) */
+void pic_dither_dsp_forget(void)
+{
+	pic_dither_dsp_prepare_step(NULL);
+	dd_state = 0;
+	dd_n = 0;
+}
+#endif

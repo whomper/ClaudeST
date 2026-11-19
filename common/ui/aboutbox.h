@@ -38,6 +38,11 @@ typedef struct {
 
 void about_show(const ABOUT *a);
 
+/* the 256-colour icon's map made ahead, while idle (from the first timer
+   event after the start): the About box's first opening then finds it;
+   nothing where it isn't wanted or is made already */
+void about_prepare(const ABOUT *a);
+
 /* where TOS put the program and its memory: "TT RAM", "TT RAM in part"
    or "", for a status line */
 const char *about_ram(void);

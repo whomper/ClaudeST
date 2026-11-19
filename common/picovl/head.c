@@ -135,28 +135,34 @@ static unsigned short *b8;
 static long b8cap, b8key = -1;
 static int b8w, b8h;
 
+static int c8_same(int w, int h, long key);
+static int c8_start(int w, int h, long key);
+static int c8_unit(void);
+static struct {
+	const unsigned char *pix;	/* the picture being made ready */
+	long key;
+	int w, h;
+	short vdi, m, y;		/* the pass (0 the picture, 1 the mask), its row */
+	short on;			/* one under way */
+} c8;
+
 static int chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 		   int sx, int sy, int sw, int sh, int dx, int dy)
 {
-	/* VDI pen to the register its pixel holds (pens 16-254 their own) */
-	static const unsigned char hw16[16] = { 0, 255, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13 };
-	int wpl = (w + 15) / 16, x, y, p, m;
+	int wpl = (w + 15) / 16;
 	long plane = (long)wpl * h, n = plane * 8;
-	unsigned short *std, *dev, *msk;
+	unsigned short *dev, *msk;
 	PIC_MFDB s, d;
 	short pxy[8];
-	if (n * 3 > b8cap) {
-		free(b8);
-		b8cap = 0;
-		b8key = -1;
-		if (!(b8 = malloc(n * 3 * 2)) || (unsigned long)b8 + n * 6 > 0x1000000UL) {
-			free(b8);
-			b8 = 0;
+	if (key != b8key || w != b8w || h != b8h) {
+		/* (built here, or what chunky8_prepare left finished) */
+		if (!c8_same(w, h, key) && !c8_start(w, h, key))
 			return 0;
-		}
-		b8cap = n * 3;
+		c8.pix = pix;
+		c8.vdi = vdi;
+		while (c8_unit() < 0)
+			;
 	}
-	std = b8;
 	dev = b8 + n;
 	msk = b8 + 2 * n;
 	memset(&s, 0, sizeof(s));
@@ -164,35 +170,6 @@ static int chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 	s.fd_h = h;
 	s.fd_wdwidth = wpl;
 	s.fd_nplanes = 8;
-	d = s;
-	if (key != b8key || w != b8w || h != b8h) {
-		s.fd_stand = 1;
-		for (m = 0; m < 2; m++) {	/* the picture, then the mask */
-			memset(std, 0, n * 2);
-			for (y = 0; y < h; y++) {
-				const unsigned char *in = pix + (long)y * w;
-				for (x = 0; x < w; x++) {
-					int v = in[x];
-					unsigned short bit = (unsigned short)(0x8000U >> (x & 15)), *o;
-					if (v == 255 || v == 0)
-						continue;
-					v = m ? 255 : v < 16 ? hw16[v] : v;
-					o = std + (long)y * wpl + (x >> 4);
-					for (p = 0; p < 8; p++, o += plane)
-						if (v & (1 << p))
-							*o |= bit;
-				}
-			}
-			s.fd_addr = std;
-			d.fd_addr = m ? msk : dev;
-			d.fd_stand = 0;
-			H->vr_trnfm(vdi, &s, &d);
-		}
-		b8key = key;
-		b8w = w;
-		b8h = h;
-	}
-	s.fd_stand = 0;
 	pxy[0] = sx;
 	pxy[1] = sy;
 	pxy[2] = sx + sw - 1;
@@ -209,10 +186,14 @@ static int chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 	return 1;
 }
 
+static int prepare_step(PIC_PAL *pal);
+static int chunky8_prepare(const unsigned char *pix, int w, int h, long key, short vdi);
+
 __attribute__((section(".picovl"), used))
 const PIC_OVL picovl = {
 	PICOVL_MAGIC, PICOVL_MAJOR, sizeof(PIC_OVL), PICOVL_VERSION,
-	init, pic_dither_dsp_prepare, dither, pic_dither_state, near_load, near_save, dither_cells, chunky8
+	init, pic_dither_dsp_prepare, dither, pic_dither_state, near_load, near_save, dither_cells, chunky8,
+	prepare_step, chunky8_prepare
 };
 
 /* ---- the program's, through PIC_HOST ---- */
@@ -228,3 +209,129 @@ void conn_log(const char *who, const char *dir, const char *text, long n)
 }
 long tos_supexec(void *f) { return H->supexec(f); }
 long get_cookie(long id) { return H->get_cookie(id); }
+
+/* ---- the steps (PIC.OVL 1.2): the check and chunky8's copy made ready a
+   piece a call, each call some STEP_MS of work, for a GEM turn ---- */
+
+#define STEP_MS 20
+
+/* pic_dither_dsp_prepare in steps: -1 call again, 1 the DSP, 0 the 68030
+   (NULL: stop, what is held given back) */
+static int prepare_step(PIC_PAL *pal)
+{
+	unsigned long t0 = H->pf_ms();
+	int r;
+	while ((r = pic_dither_dsp_prepare_step(pal)) < 0 && H->pf_ms() - t0 < STEP_MS)
+		;
+	return r;
+}
+
+static int c8_same(int w, int h, long key)
+{
+	return c8.on && c8.key == key && c8.w == w && c8.h == h;
+}
+
+/* a build begun for key: the room (in ST RAM, the blitter's) and the
+   first pass's plane cleared; 0 none to be had */
+static int c8_start(int w, int h, long key)
+{
+	long n = (long)((w + 15) / 16) * h * 8;
+	c8.on = 0;
+	b8key = -1;			/* (its copy is being written over) */
+	if (n * 3 > b8cap) {
+		free(b8);
+		b8cap = 0;
+		if (!(b8 = malloc(n * 3 * 2)) || (unsigned long)b8 + n * 6 > 0x1000000UL) {
+			free(b8);
+			b8 = 0;
+			return 0;
+		}
+		b8cap = n * 3;
+	}
+	memset(b8, 0, n * 2);
+	c8.key = key;
+	c8.w = w;
+	c8.h = h;
+	c8.m = c8.y = 0;
+	c8.on = 1;
+	return 1;
+}
+
+/* a piece of the build: 4 rows of a pass into its planes, or a pass to
+   the device's form. 1 the copies are ready, -1 more to do */
+static int c8_unit(void)
+{
+	/* VDI pen to the register its pixel holds (pens 16-254 their own) */
+	static const unsigned char hw16[16] = { 0, 255, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13 };
+	int w = c8.w, h = c8.h, wpl = (w + 15) / 16, m = c8.m, x, y, p;
+	long plane = (long)wpl * h, n = plane * 8;
+	unsigned short *std = b8;
+	PIC_MFDB s, d;
+	if (c8.y < h) {
+		for (y = c8.y; y < h && y < c8.y + 4; y++) {
+			const unsigned char *in = c8.pix + (long)y * w;
+			for (x = 0; x < w; x++) {
+				int v = in[x];
+				unsigned short bit = (unsigned short)(0x8000U >> (x & 15)), *o;
+				if (v == 255 || v == 0)
+					continue;
+				v = m ? 255 : v < 16 ? hw16[v] : v;
+				o = std + (long)y * wpl + (x >> 4);
+				for (p = 0; p < 8; p++, o += plane)
+					if (v & (1 << p))
+						*o |= bit;
+			}
+		}
+		c8.y = y;
+		return -1;
+	}
+	memset(&s, 0, sizeof(s));
+	s.fd_w = wpl * 16;
+	s.fd_h = h;
+	s.fd_wdwidth = wpl;
+	s.fd_nplanes = 8;
+	d = s;
+	s.fd_stand = 1;
+	s.fd_addr = std;
+	d.fd_addr = b8 + (m ? 2 * n : n);	/* the picture, then the mask */
+	H->vr_trnfm(c8.vdi, &s, &d);
+	if (m == 0) {
+		memset(std, 0, n * 2);
+		c8.m = 1;
+		c8.y = 0;
+		return -1;
+	}
+	c8.on = 0;
+	b8key = c8.key;
+	b8w = w;
+	b8h = h;
+	return 1;
+}
+
+/* chunky8's two copies made for key beforehand, a step a call (pix as
+   chunky8's, kept until done): 1 ready (chunky8 then only copies), -1
+   call again, 0 no room (chunky8 says 0 too). pix NULL: stop, and the
+   copies' memory given back */
+static int chunky8_prepare(const unsigned char *pix, int w, int h, long key, short vdi)
+{
+	unsigned long t0;
+	int r;
+	if (!pix) {
+		c8.on = 0;
+		free(b8);
+		b8 = 0;
+		b8cap = 0;
+		b8key = -1;
+		return 0;
+	}
+	if (key == b8key && w == b8w && h == b8h)
+		return 1;
+	if (!c8_same(w, h, key) && !c8_start(w, h, key))
+		return 0;
+	c8.pix = pix;
+	c8.vdi = vdi;
+	t0 = H->pf_ms();
+	while ((r = c8_unit()) < 0 && H->pf_ms() - t0 < STEP_MS)
+		;
+	return r;
+}

@@ -9,6 +9,7 @@
  * or its memory the program dithers on the 68030 as it did. Small, as
  * every program carries it, an ST's too.
  */
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include "tos.h"
@@ -23,7 +24,12 @@
 
 static const PIC_OVL *ov;
 static void *image;
-static signed char state;	/* 0 not tried, 1 loaded, 2 the DSP's, 3 the 68030's, -1 none */
+static signed char state;	/* 0 not tried, 1 loaded, 2 the DSP's, 3 the 68030's, -1 none,
+				   4 its table read, the check in steps (1.2's prepare_step) */
+
+/* a member of 1.2's or later, when this PIC.OVL has it (an older one is
+   loaded too: its one-shot calls then) */
+#define HAS(m) (ov->size >= (short)(offsetof(PIC_OVL, m) + sizeof(ov->m)))
 
 static long supexec(void *f) { return tos_supexec(f); }
 
@@ -58,7 +64,7 @@ static void load(void)
 	ovl_flush();			/* its code was written as data */
 	o = image;
 	if (o->magic != PICOVL_MAGIC || o->major != PICOVL_MAJOR ||
-	    o->size < (short)sizeof(PIC_OVL) || !o->init(&host)) {
+	    o->size < (short)offsetof(PIC_OVL, prepare_step) || !o->init(&host)) {
 		free(image);
 		image = 0;
 		return;
@@ -76,7 +82,17 @@ int pic_ovl_step(PIC_PAL *pal, const char *near, long key)
 	}
 	if (state == 1) {
 		ov->near_load(pal, near, key);
+		if (HAS(prepare_step)) {
+			state = 4;	/* (the table's read a step of its own) */
+			return -1;
+		}
 		state = ov->prepare(pal) ? 2 : 3;
+		return -1;
+	}
+	if (state == 4) {
+		int r = ov->prepare_step(pal);
+		if (r >= 0)
+			state = r ? 2 : 3;
 		return -1;
 	}
 	return state == 2;
@@ -96,6 +112,8 @@ int pic_ovl_chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 
 void pic_ovl_palette(PIC_PAL *pal, const char *near, long key)
 {
+	if (ov && state == 4)
+		ov->prepare_step(0);	/* (a check under way begins again, for these pens) */
 	if (ov)
 		ov->near_load(pal, near, key);
 }
@@ -108,8 +126,23 @@ void pic_ovl_near_save(PIC_PAL *pal, const char *near, long key)
 
 void pic_ovl_unload(void)
 {
+	if (ov && HAS(chunky8_prepare)) {
+		if (state == 4)
+			ov->prepare_step(0);		/* (what the check holds) */
+		ov->chunky8_prepare(0, 0, 0, 0, 0);	/* (the copies' memory) */
+	}
 	ov = 0;
 	free(image);
 	image = 0;
 	state = 0;
+}
+
+/* chunky8's copies made for key before it draws, a step a call (pix kept
+   until done): 1 ready, -1 call again, 0 not (no PIC.OVL, or no room).
+   An older PIC.OVL without the steps: 1, chunky8 makes them as before */
+int pic_ovl_chunky8_prepare(const unsigned char *pix, int w, int h, long key, short vdi)
+{
+	if (!ov)
+		return 0;
+	return HAS(chunky8_prepare) ? ov->chunky8_prepare(pix, w, h, key, vdi) : 1;
 }

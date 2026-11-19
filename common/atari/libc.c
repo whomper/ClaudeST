@@ -820,8 +820,10 @@ static void free_more(BLK *b);
 
 /* heap zones (heap_zone, at the end of this file), reached through these two, which heap_zone sets: a program
    that makes no zone links none of their code (--gc-sections; a 1 MB ST's margin, EContact) */
+#ifdef LIBC_ZONES
 static int (*zone_free_p)(void *ptr);
 static int (*zone_realloc_p)(void *ptr, size_t n, void **r);
+#endif
 
 /* the common case first, in few registers: back into dv, just before it */
 void free(void *ptr)
@@ -830,8 +832,10 @@ void free(void *ptr)
 	size_t s, ps;
 	if (!ptr)
 		return;
+#ifdef LIBC_ZONES
 	if (zone_free_p && zone_free_p(ptr))
 		return;			/* a block of another zone's (heap_zone), given back there */
+#endif
 	b = (BLK *)((char *)ptr - WORD);
 	if (!(b->head & INUSE))
 		return;			/* freed twice: left alone */
@@ -917,11 +921,13 @@ void *realloc(void *ptr, size_t n)
 		return malloc(n);
 	if (n > MAXREQ)
 		return 0;
+#ifdef LIBC_ZONES
 	if (zone_realloc_p) {
 		void *r;
 		if (zone_realloc_p(ptr, n, &r))
 			return r;	/* a block of another zone's: realloc'd there */
 	}
+#endif
 	b = (BLK *)((char *)ptr - WORD);
 	s = SIZE(b);
 	need = block_for(n);
@@ -1405,8 +1411,12 @@ int sprintf(char *buf, const char *fmt, ...)
 
 #endif
 
-#ifndef LIBC_NO_HEAP
+#if defined(LIBC_ZONES) && !defined(LIBC_NO_HEAP)
 /* ---------------- heap zones and the room left (stdlib.h) ----------------
+ * Only with -DLIBC_ZONES: without it free() and realloc() are as they were
+ * before the zones, byte for byte (EWeb, 19 Nov 2026: the hooks' tests
+ * moved free and realloc in the 68030's caches, the news page +45 ms on a
+ * stock Falcon). A program that calls heap_zone or heap_room builds with it.
  * A job that may run a long time and then be refused memory (EPDF's picture: 11 s on a 1 MB ST, then "no room",
  * the text read meanwhile refused too, 18 Nov 2026) takes all it will need at its start in one block, a zone, or
  * is refused at once. Between heap_zone_use(z) and heap_zone_use(0) every malloc, calloc and realloc comes from

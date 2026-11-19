@@ -17,7 +17,8 @@ long heap_trim(void);
    heap_zone_use(z) and heap_zone_use(0) malloc, calloc and realloc come from it (it never grows), and free gives a
    zone's block back to its zone whichever is in use. heap_zone_end(z) gives the whole block back, with whatever is
    still in it. heap_room() is the largest block malloc could give now (in the zone in use, or the main heap with
-   what GEMDOS would still give it). Four zones at most. */
+   what GEMDOS would still give it). Four zones at most. Only in a libc.c built with -DLIBC_ZONES (without it
+   free and realloc are as before the zones: EWeb, 19 Nov 2026). */
 typedef struct heap_zone HEAP_ZONE;
 HEAP_ZONE *heap_zone(long n);
 void heap_zone_use(HEAP_ZONE *z);

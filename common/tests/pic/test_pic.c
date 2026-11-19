@@ -518,6 +518,10 @@ static int sharp(void)
 	return bad != 0;
 }
 
+#ifdef PIC_OVL_BUILD
+static int steps(int argc, char **argv);
+#endif
+
 static int run(int argc, char **argv)
 {
 	if (argc >= 2 && strcmp(argv[1], "-S") == 0)
@@ -531,6 +535,10 @@ static int run(int argc, char **argv)
 #ifdef WITH_DSP_SIM
 	if (argc >= 2 && strcmp(argv[1], "-X") == 0)
 		return dsame(argc - 2, argv + 2);
+#endif
+#ifdef PIC_OVL_BUILD
+	if (argc >= 2 && strcmp(argv[1], "-P") == 0)
+		return steps(argc - 2, argv + 2);
 #endif
 	if (argc == 6 && (strcmp(argv[1], "-d") == 0 || strcmp(argv[1], "-D") == 0 || strcmp(argv[1], "-m") == 0))
 		return one(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5], argv[1][1] == 'D' ? 2 : argv[1][1] == 'm' ? 3 : 1);
@@ -566,3 +574,89 @@ int main(int argc, char **argv)
 #endif
 	return r;
 }
+
+#ifdef PIC_OVL_BUILD
+/* PIC.OVL's prepare_step (pic_dither_dsp_prepare_step) against its
+   prepare: the same answer, the same table of nearest pens after it and
+   the same pens for every picture after it, at 2, 4, 16 and 256 colours;
+   once more with a check stopped part way (NULL) and begun again */
+static int steps(int argc, char **argv)
+{
+	static const unsigned char two[2][3] = { { 255, 255, 255 }, { 0, 0, 0 } };
+	static const unsigned char four[4][3] = { { 255, 255, 255 }, { 255, 0, 0 }, { 0, 255, 0 }, { 0, 0, 0 } };
+	const unsigned char (*rgb[4])[3] = { two, four, vga16, (const unsigned char (*)[3]) pal256 };
+	static const int ns[4] = { 2, 4, 16, 256 };
+	long bad = 0, tried = 0;
+	int k, way, a;
+	make256();
+	pic_dsp_dither = 1;
+	for (k = 0; k < 4; k++) {
+		static unsigned char near0[32768], near1[32768];
+		unsigned char *outs0[64] = { 0 };
+		int r0 = -2, n0 = 0;
+		for (way = 0; way < 3; way++) {
+			PIC_PAL pal;
+			unsigned char *outs[64] = { 0 };
+			int r, n = 0, nout = 0;
+			memset(&pal, 0, sizeof pal);
+			pic_pal_init(&pal, ns[k], rgb[k]);
+			pic_dither_dsp_forget();
+			if (way == 0)
+				r = pic_dither_dsp_prepare(&pal);
+			else {
+				if (way == 2) {
+					/* three steps, stopped, then from the start */
+					for (n = 0; n < 3 && pic_dither_dsp_prepare_step(&pal) < 0; n++)
+						;
+					pic_dither_dsp_prepare_step(NULL);
+				}
+				for (n = 0; (r = pic_dither_dsp_prepare_step(&pal)) < 0; n++)
+					if (n > 100)
+						break;
+			}
+			/* the table as the check left it */
+			memset(way ? near1 : near0, 0, 32768);
+			if (pal.near != NULL)
+				memcpy(way ? near1 : near0, pal.near, 32768);
+			for (a = 0; a < argc && nout < 64; a++) {
+				long len;
+				int why;
+				unsigned char *d = load(argv[a], &len);
+				PIC *p = d != NULL ? pic_decode(d, len, 61, 37, 4L << 20, &why) : NULL;
+				if (p != NULL) {
+					outs[nout] = malloc((size_t) p->w * p->h);
+					pic_dither(p, &pal, outs[nout]);
+					nout++;
+					pic_free(p);
+				}
+				free(d);
+			}
+			if (way == 0) {
+				r0 = r;
+				n0 = nout;
+				memcpy(outs0, outs, sizeof outs);
+			} else {
+				int i, same = r == r0 && nout == n0 && memcmp(near0, near1, 32768) == 0;
+				for (i = 0; same && i < nout; i++)
+					same = memcmp(outs[i], outs0[i], 61 * 37) == 0;
+				tried++;
+				if (!same) {
+					bad++;
+					printf("FAIL %d colours: %s: %d, prepare's %d (%d steps)\n", ns[k],
+					       way == 1 ? "in steps" : "stopped and begun again", r, r0, n);
+				} else
+					printf("%d colours: in steps%s the same as prepare (%d, %d steps, %d pictures)\n",
+					       ns[k], way == 2 ? ", stopped and begun again," : "", r, n, nout);
+				for (i = 0; i < nout; i++)
+					free(outs[i]);
+			}
+			pic_pal_free(&pal);
+		}
+		for (a = 0; a < n0; a++)
+			free(outs0[a]);
+	}
+	pic_dsp_dither = 0;
+	printf("prepare in steps: %ld tried, %ld differ\n", tried, bad);
+	return bad != 0;
+}
+#endif
