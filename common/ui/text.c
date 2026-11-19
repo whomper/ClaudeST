@@ -46,11 +46,34 @@ static void sup_os(void)
 /* Line-A's variables (a0) and its three system fonts (a1) */
 static const short *line_a(const unsigned char *const **fonts)
 {
+#ifdef __mcoldfire__
+	/* no Line-A on a ColdFire: 0xa000 is the EMAC's macw there, four bytes
+	   that swallow the next instruction's first word, a0 and a1 left as
+	   they were (EWEBFB.PRG killed by FreeMiNT's memory protection at the
+	   first scroll on a tester's FireBee, 19 Nov 2026). The callers give
+	   up on the zeros and take the VDI's way */
+	static const short none[64];
+	static const unsigned char *const no_fonts[3];
+	*fonts = no_fonts;
+	return none + 32;	/* read either side of a0 */
+#else
+	/* a 68000 program on a FireBee (_CF_): 0xa000 reaches the EMAC there
+	   too, never FireTOS's Line-A, so the same zeros */
+	static signed char cf = -1;
+	if (cf < 0)
+		cf = get_cookie(0x5F43465FL) != 0;	/* '_CF_' */
+	if (cf) {
+		static const short none[64];
+		static const unsigned char *const no_fonts[3];
+		*fonts = no_fonts;
+		return none + 32;
+	}
 	register const short *la __asm__("a0");
 	register const unsigned char *const *f __asm__("a1");
 	__asm__ volatile(".dc.w 0xa000" : "=r"(la), "=r"(f) : : "d0", "d1", "d2", "a2", "memory", "cc");
 	*fonts = f;
 	return la;
+#endif
 }
 
 /* the system font of this cell height from Line-A, its form 256 bytes

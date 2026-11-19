@@ -948,9 +948,26 @@ static short probe(unsigned char *buf, unsigned char *base, unsigned char *scr, 
 /* the screen's bytes a line, as the VDI has them (Line-A's v_lin_wr) */
 static long screen_bpl(void)
 {
+#ifdef __mcoldfire__
+	/* no Line-A on a ColdFire: 0xa000 is the EMAC's macw there, four bytes
+	   that swallow the next instruction's first word, a0 and a1 left as
+	   they were (EWEBFB.PRG killed by FreeMiNT's memory protection at the
+	   first scroll on a tester's FireBee, 19 Nov 2026). The callers give
+	   up on the zeros and take the VDI's way */
+	return 0;
+#else
+	/* a 68000 program on a FireBee (_CF_): 0xa000 reaches the EMAC there
+	   too, never FireTOS's Line-A, so the same zeros */
+	static signed char cf = -1;
+	if (cf < 0)
+		cf = get_cookie(0x5F43465FL) != 0;	/* '_CF_' */
+	if (cf) {
+		return 0;
+	}
 	register const short *la __asm__("a0");
 	__asm__ volatile(".dc.w 0xa000" : "=r"(la) : : "d0", "d1", "d2", "a1", "a2", "memory", "cc");
 	return la[1];		/* v_lin_wr */
+#endif
 }
 
 /* n bytes (even, the rows even too) of each row: text.c's every-row
