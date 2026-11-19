@@ -338,6 +338,14 @@ def main():
         if r.returncode != 0:
             fails += 1
             print("FAIL dithered on the DSP")
+    if "ovldsp" in os.path.basename(shlex.split(cmd)[0]):
+        # PIC.OVL's check in steps (prepare_step) against its prepare in one
+        r = subprocess.run(shlex.split(cmd) + ["-P"] + pictures(), capture_output=True, text=True)
+        checks += 1
+        print(r.stdout.strip()[-3000:], r.stderr.strip()[-2000:])
+        if r.returncode != 0:
+            fails += 1
+            print("FAIL PIC.OVL's check in steps")
     # in slices: the same with turns taken, and stopped by one
     r = subprocess.run(shlex.split(cmd) + ["-s"] + pictures(), capture_output=True, text=True)
     checks += 1

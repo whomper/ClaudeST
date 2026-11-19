@@ -989,6 +989,13 @@ static struct {
 	short rows;
 } ob;
 
+/* the screen under the box kept, to be put back: 1, or 0 on TOS under
+   NVDI (no MiNT, no MagiC), where the box's place is given back with
+   FMD_FINISH and the windows under it redrawn instead. A stock Falcon in
+   256 colours took 40 ms of its About box's 205 to keep the 140 KB under
+   it (EUpdate, 19 Nov 2026); -1 not worked out yet */
+static short keep_under = -1;
+
 extern short _is_acc;		/* crt0.S: started as a desk accessory */
 
 /* GUARD bytes of our own each side of the buffer the VDI blits from: NVDI's
@@ -1063,12 +1070,18 @@ static int draw_off(void (*draw)(int framed))
 	if (!buf)
 		return 0;
 	buf += GUARD;
-	ob.under = malloc(ob.n * ob.rows);
-	if (!ob.under) {
-		buf_free(buf);
-		return 0;
+	if (keep_under < 0)
+		keep_under = !(get_cookie(0x4E564449L) && !get_cookie(0x4D694E54L) &&	/* 'NVDI', 'MiNT' */
+			       !get_cookie(0x4D616758L));				/* 'MagX' */
+	ob.under = 0;
+	if (keep_under) {
+		ob.under = malloc(ob.n * ob.rows);
+		if (!ob.under) {
+			buf_free(buf);
+			return 0;
+		}
+		rows_copy(ob.under, ob.n, ob.screen, ob.bpl, ob.rows, ob.n);
 	}
-	rows_copy(ob.under, ob.n, ob.screen, ob.bpl, ob.rows, ob.n);
 	base = buf - (long)dy * ob.bpl;	/* the screen's row dy at the buffer's start */
 	if (!off_ok) {
 		/* does the VDI draw where the logical screen is, at our idea of
@@ -1098,8 +1111,12 @@ static int draw_off(void (*draw)(int framed))
 			}
 		}
 		if (off_ok < 0) {
-			rows_copy(ob.screen, ob.bpl, ob.under, ob.n, ob.rows, ob.n);	/* a test pixel on the screen */
+			if (ob.under)
+				rows_copy(ob.screen, ob.bpl, ob.under, ob.n, ob.rows, ob.n);	/* a test pixel on the screen */
+			else
+				form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);	/* (and redrawn) */
 			free(ob.under);
+			ob.under = 0;
 			buf_free(buf);
 			return 0;
 		}
@@ -1143,8 +1160,10 @@ static int draw_off(void (*draw)(int framed))
 		   grounds took an ST 40 ms */
 		short r, i, g = planes, lw = (dx & 15) ? g : 0, rw = (short)(ob.n >> 1) - 2 * g;
 		unsigned short *d = (unsigned short *)(buf + ob.off);
-		const unsigned short *u = (const unsigned short *)ob.under;
-		long ds = ob.bpl >> 1, us = ob.n >> 1;
+		/* (what the box leaves showing: from the screen under it as it
+		   was kept, or, where it isn't, from the screen itself) */
+		const unsigned short *u = (const unsigned short *)(ob.under ? ob.under : ob.screen);
+		long ds = ob.bpl >> 1, us = ob.under ? ob.n >> 1 : ob.bpl >> 1;
 		short x1 = (short)(x0 + (short)(ob.n / (planes * 2)) * 16);
 		unsigned short lkeep = (unsigned short)~(0xFFFFu >> (dx & 15)), rkeep[2];
 		int white = ground_cpu && rw >= lw;
@@ -1250,11 +1269,15 @@ static void box_run(void (*draw)(int framed), const char *name)
 	wind_update(3);
 	graf_mouse(M_OFF, 0);
 	if (draw_off(draw)) {
+		int kept = ob.under != 0;
 		graf_mouse(M_ON, 0);
 		wait_close();
-		off_back();
+		if (kept)
+			off_back();
 		wind_update(2);
 		wind_update(END_UPDATE);
+		if (!kept)
+			form_dial(FMD_FINISH, dx, dy, dw + 3, dh + 3);	/* the windows under it redrawn */
 		return;
 	}
 	graf_mouse(M_ON, 0);
@@ -1476,4 +1499,21 @@ void crash_offer(const char *app, const char *where)
 			last = q;
 	text_box("CRASH.LOG", last);
 	free(text);
+}
+
+/* the 256-colour icon's map to the screen's pens made now, while the
+   program is idle (its first timer event after the start), so that the
+   About box finds it made: a stock Falcon in 256 colours under NVDI took
+   36 ms of the first opening's 205 for it (EUpdate, 19 Nov 2026). Nothing
+   where no map is wanted (fewer than 256 colours, no 256-colour icon) or
+   one is made already; about_show keeps it while the pens keep their
+   colours. Last in the file: the apps link with --gc-sections */
+void about_prepare(const ABOUT *a)
+{
+#ifndef NO_ICON256
+	if (planes >= 8 && a && a->icon256 && a->icon256_rgb && map_for != a->icon256_rgb)
+		icon256_pens(a->icon256_rgb, map256);
+#else
+	(void)a;
+#endif
 }

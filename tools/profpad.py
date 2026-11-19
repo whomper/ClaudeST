@@ -199,11 +199,17 @@ def main():
         d = (ship[n][0] - addr) % 256
         k = next(k for k, letter, _ in KINDS if letter == kind)
         if kind == "r" and blk and addr >= blk[1] and \
-           all((ship[x[1]][0] - x[0]) % 256 == 0 for x in common if prof[x[1]][1] == "r" and x[0] < blk[0]):
+           all((ship[x[1]][0] - x[0]) % 256 == 0 for x in common if prof[x[1]][1] == "r" and x[0] < blk[0]) and \
+           not any(prof[x[1]][1] == "r" and blk[1] <= x[0] < addr for x in common):
             # (read-only data after the merged strings, all before it in
             # place: the timed build's strings made the block longer; as
             # many again of its own, mod 256, put the rest back: EConvert,
-            # 18 Nov 2026, the timed gem.c's 55 bytes)
+            # 18 Nov 2026, the timed gem.c's 55 bytes). Only the first
+            # symbol after the block: a later one out of place moved with an
+            # object before it, its own pad's work (EHypView, 19 Nov 2026:
+            # none.6 then libwin's what.3, after the timed ehypview.o's
+            # longer read-only data, the two pads undoing each other for
+            # 60 tries)
             for o, sizes in pads:
                 if o == objs[-1]:
                     sizes["str"] = (sizes.get("str", 0) + d) % 256

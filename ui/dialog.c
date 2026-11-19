@@ -45,6 +45,9 @@ unsigned char key_char(short kstate, short key) __attribute__((weak));
    lf_key's); weak, so an app without them adds nothing */
 int clip_key(short key) __attribute__((weak));
 int clip_edit(OBJECT *tree, short obj, short *idx, short key) __attribute__((weak));
+/* -DDLG_NO_LATER leaves out what a program that never calls them needs
+   none of: dlg_later's slices, dlg_press_later's press, dlg_keys and
+   dlg_badge (some 1 KB: EContact on a 1 MB ST, 19 Nov 2026) */
 /* dlg_later's, set by its first call, so a program that never queues links none of it (--gc-sections) */
 static void (*sl_run)(unsigned long ms);	/* a slice of the queue: ms milliseconds, 0 all of it */
 static void (*sl_drop_for)(OBJECT *tree);	/* the queue dropped when its dialog closes */
@@ -1505,6 +1508,7 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 #ifdef DLG_CLICK
 	dlg_touch_up();
 #endif
+#ifndef DLG_NO_LATER
 	if (pend.on && (flags & MU_BUTTON)) {
 		memset(e, 0, sizeof(*e));
 		e->which = MU_BUTTON;
@@ -1515,6 +1519,7 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 		pend.on = 0;
 		return MU_BUTTON;
 	}
+#endif
 	if (!dlg_in_window())
 		return evnt_multi_(flags, clicks, mask, state, timer, msg, e);
 	i = ndw - 1;
@@ -1890,7 +1895,10 @@ static void badge(OBJECT *tree)
 
 short dlg_do(OBJECT *tree, short start, short cancel)
 {
-	short next, edit = 0, idx = 0, cont = 1, m[8], hk, want;
+	short next, edit = 0, idx = 0, cont = 1, m[8];
+#ifndef DLG_NO_LATER
+	short hk, want;
+#endif
 	int win = dlg_in_window();
 	AEVENT e;
 	if (!win) {
@@ -1912,6 +1920,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 				objc_edit(tree, edit, 0, &idx, ED_INIT);
 		}
 		lf = lf_of && edit > 0 ? lf_of(tree, edit) : 0;
+#ifndef DLG_NO_LATER
 		if (sl_run && sl_tree == tree && sl_n > sl_next) {
 			/* objects queued by dlg_later: a slice of them, then a look at the mouse and keys */
 			dlg_evnt(MU_KEYBD | MU_BUTTON | MU_TIMER, DLG_CLICKS, 1, 1, 0, m, &e);
@@ -1922,19 +1931,26 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 			if (e.which & MU_KEYBD)
 				sl_run(0);	/* a key: the fields whole before it goes into one */
 			/* a press: at once (a double click's second), the rest on later turns */
-		} else {
+		} else
+#endif
+		{
 			dlg_evnt(MU_KEYBD | MU_BUTTON, DLG_CLICKS, 1, 1, 0, m, &e);
 		}
 		if (e.which & MU_KEYBD) {
 			if (dlg_esc(e.kreturn) && !dlg_undo(e.kreturn))
 				e.kreturn = 0x011b;	/* ^[ too: the key objc_edit empties a field on */
+#ifndef DLG_NO_LATER
 			want = 0;
+#endif
 			if (heb_f10(e.kreturn)) {
 				/* the Hebrew keyboard switched: the band's badge shown or gone */
+#ifndef DLG_NO_LATER
 				if (dlg_badge && !win && ndw > 0 && dw[ndw - 1].tree == tree && dw[ndw - 1].tband > 0) {
 					redraw(tree, dw[ndw - 1].tband);
 					badge(tree);
 				}
+#endif
+#ifndef DLG_NO_LATER
 			} else if (dlg_keys && (hk = dlg_keys(tree, e.kreturn, e.kstate, edit, &want)) != 0) {
 				/* the app's own key (settings.c's focus, Space, the arrows); it says where the text cursor goes */
 				if (hk == 2 && want > 0) {
@@ -1955,6 +1971,7 @@ short dlg_do(OBJECT *tree, short start, short cancel)
 					edit = 0;
 					next = 0;
 				}
+#endif
 			} else if (lf && !dlg_undo(e.kreturn) && lf_key(lf, e.kreturn, key_char ? key_char(e.kstate, e.kreturn) : e.kreturn & 0xff, e.kstate, &idx)) {
 				/* the long field took it (Esc empties it) */
 			} else if (dlg_cancel_key(e.kreturn, edit > 0)) {

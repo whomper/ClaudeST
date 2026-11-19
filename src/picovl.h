@@ -94,6 +94,18 @@ typedef struct {
 	   transparent where it isn't (EContact's round photos) */
 	int (*chunky8)(const unsigned char *pix, int w, int h, long key, short vdi,
 		       int sx, int sy, int sw, int sh, int dx, int dy);
+	/* 1.2 on (size says whether they are there): prepare's work a step
+	   a call, some 20 ms of a stock Falcon's each (the whole was 140 ms in
+	   16 colours, 410 ms in 256 under NVDI: a GEM turn's too many): -1
+	   call again, then prepare's 1 or 0. NULL: stop, what is held given
+	   back (before the overlay goes) */
+	int (*prepare_step)(PIC_PAL *pal);
+	/* chunky8's two copies made beforehand for key, a step a call (pix
+	   kept by the caller until done): 1 ready (chunky8 then only copies:
+	   its first draw of a photo was 125 ms in 256 colours under NVDI),
+	   -1 call again, 0 no room. chunky8 without it makes them as before.
+	   pix NULL: stop, and their memory given back */
+	int (*chunky8_prepare)(const unsigned char *pix, int w, int h, long key, short vdi);
 } PIC_OVL;
 
 #endif
