@@ -112,8 +112,9 @@ then on `sudo aera-gateway` works in any folder.
 ### 3. Set up the Atari
 
 The [latest release](https://github.com/whomper/ClaudeST/releases/latest)
-has these files, each on its own and all together in
-`claudest-x.y.zip` (the icon files in its `icons/` folder). From 1.74
+has two zip files and nothing else, `claudest-x.y.zip` and
+`claudest-x.y-firebee.zip`, with these files in each (the icon files in an
+`icons/` folder). From 1.74
 every file is named in lowercase (`claudest.prg`): TOS's drives take a
 name whatever its case, a MiNT ext2 drive doesn't, and there ClaudeST
 looks for its files in lowercase.

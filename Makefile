@@ -12,7 +12,8 @@
 #                   the 68000 build checked for word and long accesses at an
 #                   odd stack offset (common/tools/oddaccess.py; The machines)
 #   make icons      the icon again, from common/icons/CLAUDEST.txt: icons/, st/icon*.h, docs/icon*.png
-#   make dist       a release's files in dist/: each file, and CLAUDEST-x.y.zip
+#   make dist       a release's two packages in dist/: claudest-x.y.zip and
+#                   claudest-x.y-firebee.zip
 #
 # binary/ is what make builds, never committed: releases carry the
 # program (.github/workflows/release.yml). The version is VERSION in
@@ -58,10 +59,10 @@ icons:
 	python3 common/tools/appicon.py CLAUDEST --rsc icons/CLAUDEST.RSC --rscnv icons/CLSTNV.RSC \
 	    --icn icons/CLAUDEST.ICN --mask icons/CLAUDSMK.ICN --headers st --docs docs
 
-# a release's files: each one in dist/, and all of them in
-# dist/claudest-x.y.zip (the icons in icons/), for the release workflow;
-# and the FireBee's package, claudest-x.y-firebee.zip, the same files with
-# its own claudest.prg (the guidelines, 7.4)
+# a release's two packages, and nothing else (the guidelines, 7.4): all the
+# files in dist/claudest-x.y.zip (the icons in icons/), for the release
+# workflow; and the FireBee's, claudest-x.y-firebee.zip, the same files with
+# its own claudest.prg
 DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
 ICONS   := icons/CLAUDEST.RSC icons/CLSTNV.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
 # the release: every file, the zip and its folder named in lowercase (the
@@ -71,7 +72,6 @@ lc = $(shell echo $(notdir $(1)) | tr A-Z a-z)
 dist: all help
 	rm -rf dist
 	mkdir -p dist/zip/icons
-	$(foreach f,$(DIST) $(ICONS),cp $(f) dist/$(call lc,$(f)) &&) true
 	$(foreach f,$(DIST),cp $(f) dist/zip/$(call lc,$(f)) &&) true
 	$(foreach f,$(ICONS),cp $(f) dist/zip/icons/$(call lc,$(f)) &&) true
 	cd dist/zip && zip -q -9 -r ../claudest-$(VERSION_STR).zip .

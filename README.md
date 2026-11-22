@@ -32,7 +32,7 @@ Download the latest `claudest-x.y.zip` from **[Releases](../../releases/latest)*
 
 1. Set up the Gateway with [AERA-Gateway](https://github.com/whomper/AERA-Gateway#getting-started) and
    your claude.ai [session key](docs/GUIDE.md#1-get-your-claudeai-session-key).
-2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder on the Atari and run it. On a FireBee take the release's `-firebee.zip` package: the same files, the program built for the ColdFire.
+2. From the release's `claudest-x.y.zip`, copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder on the Atari and run it. On a FireBee take the release's `-firebee.zip` package: the same files, the program built for the ColdFire.
 3. Choose **Options ▸ Settings…** (`Ctrl+,`) and type the Gateway's address (port 2323). The status line shows *Online* with a green dot.
 
 **Needs:** TOS 1.04 or newer, EmuTOS or MiNT; 640×200 or larger; about 370 KB free RAM; STinG with a
@@ -55,7 +55,7 @@ sudo apt install gcc-m68k-linux-gnu python3 zip   # Debian/Ubuntu; no MiNTLib ne
 make                         # binary/CLAUDEST.PRG, and the FireBee's binary/fb/CLAUDEST.PRG
 make test                    # the bridge's tests and the right-to-left layout's
 make help HCP=/path/to/hcp   # binary/CLAUDEST.HYP and .REF (common/tools/build-hcp.sh DIR builds hcp)
-make dist                    # dist/claudest-x.y.zip and each file, as on the Releases page
+make dist                    # dist/claudest-x.y.zip and -firebee.zip, as on the Releases page
 ```
 
 A release: `tools/bump.py`, push, then **Actions > Release > Run workflow**. [More](docs/GUIDE.md#building).
