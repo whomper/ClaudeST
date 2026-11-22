@@ -59,8 +59,11 @@ SPEED_ROWS = [
 ]
 SCREEN_ALERT = "the screen-width alert, OK, back to the desktop"
 PACKAGE_ALERT = "the FireBee package's alert, OK, back to the desktop, ClaudeST never started"
-REFUSED_ROWS = [("4", "TT:ttlow", SCREEN_ALERT), ("7", "FireBee:16", PACKAGE_ALERT),
-                ("7", "FireBee:256", PACKAGE_ALERT), ("8", "ST:low", SCREEN_ALERT)]
+# (row, machine, what, under NVDI): the TT's under NVDI (the guidelines, 1.2:
+# 60% of the boots; AERA_NVDI_ON=Falcon,TT), the ST and the FireBee stand-in
+# can't run it
+REFUSED_ROWS = [("4", "TT:ttlow", SCREEN_ALERT, True), ("7", "FireBee:16", PACKAGE_ALERT, False),
+                ("7", "FireBee:256", PACKAGE_ALERT, False), ("8", "ST:low", SCREEN_ALERT, False)]
 MINT_ROWS = [("5", "tt", []), ("5", "ct60", []), ("5", "falcon", ["--ext2"])]
 
 results = []
@@ -97,10 +100,11 @@ def speed_row(work, row, machine, nvdi, prg):
     note(row, named, code == 0, "; ".join(fails[:4]) or "speed rig: every check and time")
 
 
-def refused_row(work, row, machine, prg, what):
+def refused_row(work, row, machine, prg, what, nvdi):
     w = os.path.join(work, "r%s-%s" % (row, machine.replace(":", "_")))
     shutil.rmtree(w, ignore_errors=True)
-    r = speed.Rig(w, machine, extra=["--drive-led", "no"])
+    nvdi = nvdi and machines.nvdi_here()
+    r = speed.Rig(w, machine, nvdi=nvdi, extra=["--drive-led", "no"])
     named_prg = os.path.join(w + "-p", "CLAUDEST.PRG")
     os.makedirs(os.path.dirname(named_prg), exist_ok=True)
     shutil.copy(prg, named_prg)
@@ -108,7 +112,7 @@ def refused_row(work, row, machine, prg, what):
     r.write("claudest.inf", "[OPTIONS]\nHOST=127.0.0.1\nPORT=2323\nNATFEATS=1\nLOG=1\n")
     try:
         r.start("C:\\CLAUDEST.PRG", ready="")
-        time.sleep(15)
+        time.sleep(75 if nvdi else 15)	# NVDI's fonts load behind a still screen
         r.still()
         alert = shutil.copy(r.shot("alert"), w + "-alert.png")
         r.key("Return")
@@ -249,9 +253,9 @@ def main():
     for row, m, nvdi in SPEED_ROWS:
         if on(row):
             speed_row(work, row, m, nvdi, prg)
-    for row, m, what in REFUSED_ROWS:
+    for row, m, what, nvdi in REFUSED_ROWS:
         if on(row):
-            refused_row(work, row, m, prg, what)
+            refused_row(work, row, m, prg, what, nvdi)
     for row, m, extra in MINT_ROWS:
         if on(row):
             mint_row(work, row, m, extra, prg)
@@ -260,13 +264,21 @@ def main():
     if on("own"):
         # the shipped build (binary/CLAUDEST.PRG): these time nothing
         ship = os.path.join(ROOT, "binary", "CLAUDEST.PRG")
-        own_rig(work, "inf_keys.py on ST:mono, TOS 1.04: SIDEBAR= read once, WINDOW= off and on the screen, moved",
-                [sys.executable, os.path.join(HERE, "inf_keys.py"), os.path.join(work, "own-ik"), "--prg", ship])
+        # on a Falcon under NVDI where Erez's copy is here (the guidelines,
+        # 1.2: 60% of the boots); disk_budget stays on the ST, its pieces
+        # the 68000's 16 KB
+        nv = machines.nvdi_here()
+        own_rig(work, "inf_keys.py on Falcon-4:16, TOS 4.04%s: SIDEBAR= read once, WINDOW= off and on the screen, moved"
+                % (", NVDI" if nv else ""),
+                [sys.executable, os.path.join(HERE, "inf_keys.py"), os.path.join(work, "own-ik"), "--prg", ship,
+                 "--machine", "Falcon-4:16"] + (["--nvdi"] if nv else []))
         own_rig(work, "disk_budget.sh on ST:mono, TOS 1.04: the disk work, the INF only on a change",
                 ["bash", os.path.join(HERE, "disk_budget.sh")], {"IDLE": "30"})
-        own_rig(work, "long_field.sh on ST:mono, TOS 1.04: a field holding more than it shows",
-                ["bash", os.path.join(HERE, "long_field.sh")])
-        own_rig(work, "firebee_test.py: the standard build on the FireBee stand-in, the FireBee build on a Falcon and an ST: each names the other package",
+        own_rig(work, "long_field.sh on Falcon-4:16, TOS 4.04%s: a field holding more than it shows"
+                % (", NVDI" if nv else ""),
+                ["bash", os.path.join(HERE, "long_field.sh")],
+                dict({"MACHINE": "Falcon-4:16"}, **({"AERA_WITH_NVDI": "1"} if nv else {})))
+        own_rig(work, "firebee_test.py: the standard build on the FireBee stand-in, the FireBee build on a Falcon (NVDI) and an ST: each names the other package",
                 [sys.executable, os.path.join(HERE, "firebee_test.py"), os.path.join(work, "own-fbt")])
         own_rig(work, "font_gdos.py on Falcon:16, TOS 4.04, NVDI: a GDOS font chosen, kept, drawn after a restart",
                 [sys.executable, os.path.join(HERE, "font_gdos.py"), os.path.join(work, "own-fg"), "--prg", ship],

@@ -7,7 +7,8 @@ the same file names; common's cpucheck.c and cpucheck_cf.S):
   1. The standard CLAUDEST.PRG on the FireBee stand-in (_CF_ in the jar):
      its cpu_cf_alert, naming the FireBee package; OK, and the desktop
      again, ClaudeST never started (no first event call, the INF untouched).
-  2. The FireBee's CLAUDEST.PRG on a Falcon (no _CF_): its cpu_alert, naming
+  2. The FireBee's CLAUDEST.PRG on a Falcon (no _CF_; under NVDI where
+     Erez's copy is here, the guidelines, 1.2): its cpu_alert, naming
      the standard package, the same way. A ColdFire program can't run here;
      its first code, cpucheck_cf.S, is the same bytes for the 68000 and the
      ColdFire, so the Falcon runs it up to the alert.
@@ -47,10 +48,10 @@ def differ(a, b):
         return False
 
 
-def case(work, name, machine, prg, file_name):
+def case(work, name, machine, prg, file_name, nvdi=False):
     w = os.path.join(work, name)
     shutil.rmtree(w, ignore_errors=True)
-    r = speed.Rig(w, machine, extra=["--drive-led", "no"])
+    r = speed.Rig(w, machine, nvdi=nvdi, extra=["--drive-led", "no"])
     p = os.path.join(w + "-p", file_name)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     shutil.copy(prg, p)
@@ -60,7 +61,7 @@ def case(work, name, machine, prg, file_name):
     before = open(inf, "rb").read()
     try:
         r.start("C:\\" + file_name, ready="")
-        time.sleep(20)
+        time.sleep(75 if nvdi else 20)	# NVDI's fonts load behind a still screen
         r.still()
         alert = shutil.copy(r.shot("alert"), w + "-alert.png")
         r.key("Return")
@@ -89,7 +90,7 @@ def main():
     work = os.path.abspath(a.work)
     os.makedirs(work, exist_ok=True)
     case(work, "1-st-on-firebee", "FireBee:16", os.path.abspath(a.st), "CLAUDEST.PRG")
-    case(work, "2-fb-on-falcon", "Falcon-4:16", os.path.abspath(a.fb), "CLAUDEST.PRG")
+    case(work, "2-fb-on-falcon", "Falcon-4:16", os.path.abspath(a.fb), "CLAUDEST.PRG", nvdi=speed.machines.nvdi_here())
     case(work, "3-fb-on-st", "ST:mono", os.path.abspath(a.fb), "CLAUDEST.PRG")
     print("firebee_test: %s" % ("all ok" if not fails else "%d failed" % fails))
     return 1 if fails else 0

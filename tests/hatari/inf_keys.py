@@ -16,7 +16,10 @@ boots on one machine:
   4. no WINDOW=: the window moved by its title bar, then ^Q: WINDOW=
      written, the new place.
 
-    python3 tests/hatari/inf_keys.py WORK [--machine ST:mono] [--prg PRG]
+    python3 tests/hatari/inf_keys.py WORK [--machine ST:mono] [--nvdi] [--prg PRG]
+
+The gate runs it on Falcon-4:16 under NVDI (the guidelines, 1.2: 60% of
+the boots under NVDI).
 """
 import argparse
 import os
@@ -30,6 +33,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "common", "tests", "speed"))
 import speed  # noqa: E402
 
+NVDI = False
 BASE = "[OPTIONS]\r\nHOST=127.0.0.1\r\nPORT=2323\r\nNATFEATS=1\r\n"
 fails = 0
 
@@ -53,7 +57,7 @@ def boot(work, name, machine, prg, inf, user):
     and after)"""
     w = os.path.join(work, name)
     shutil.rmtree(w, ignore_errors=True)
-    r = speed.Rig(w, machine, extra=["--drive-led", "no"])
+    r = speed.Rig(w, machine, nvdi=NVDI, extra=["--drive-led", "no"])
     p = os.path.join(w + "-p", "CLAUDEST.PRG")
     os.makedirs(os.path.dirname(p), exist_ok=True)
     shutil.copy(prg, p)
@@ -66,7 +70,12 @@ def boot(work, name, machine, prg, inf, user):
                               stdout=open(w + "-bridge.log", "w"), stderr=subprocess.STDOUT)
     try:
         r.start("C:\\CLAUDEST.PRG", ready="")
-        time.sleep(20)
+        # online: the bridge has answered its first questions (under NVDI
+        # the fonts load for a minute behind a still screen)
+        t = time.time() + 180
+        while time.time() < t and "session usage" not in open(w + "-bridge.log", errors="replace").read():
+            time.sleep(2)
+        time.sleep(5)
         r.still()
         start = shutil.copy(r.shot("start"), w + "-start.png")
         f = inf_file(r.hd)
@@ -96,8 +105,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("work")
     ap.add_argument("--machine", default="ST:mono")
+    ap.add_argument("--nvdi", action="store_true", help="under Erez's NVDI (a Falcon or the TT)")
     ap.add_argument("--prg", default=os.path.join(ROOT, "binary", "CLAUDEST.PRG"))
     a = ap.parse_args()
+    global NVDI
+    NVDI = a.nvdi
     work = os.path.abspath(a.work)
     os.makedirs(work, exist_ok=True)
     prg = os.path.abspath(a.prg)

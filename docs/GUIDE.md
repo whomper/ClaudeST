@@ -238,7 +238,12 @@ Replies still come in while it is iconified.
 
 - **Status area** (bottom left): a dot for the connection, green when
   online and red when not (filled or hollow in black and white), with
-  *Connecting…*, *Online* or *Offline: …* beside it. With claude.ai, a
+  *Connecting…*, *Online* or *Offline: …* beside it. While you wait for
+  Claude it says where the time goes: *Sending to the Gateway… 12 KB*
+  (a message or a file going out), *Claude is thinking…*, then
+  *Receiving from the Gateway… 3 KB* as the reply arrives, and the
+  connection's words again when it's done. In a narrow sidebar the words
+  are shorter: *Sending 12 KB*, *Thinking…*, *Receiving 3 KB*. With claude.ai, a
   ring next to it fills clockwise as you use up your plan's nearest limit:
   the current session (claude.ai's 5-hour limit) where your plan has one,
   otherwise the week's. Blue, turning red from 90%, on a grey track
@@ -272,6 +277,10 @@ Replies still come in while it is iconified.
   conversation pane, so what you type next starts a new chat.
 - **Scrolling:** the scroll bar, `↑` `↓`, `Shift+↑/↓` by page, and
   `Clr/Home` / `Shift+Clr/Home` for the top and bottom.
+- **While Claude answers,** **New chat**, **Search chats**,
+  **Attach file…** and **Account…** are greyed, and their keys do
+  nothing, until the reply is in. **Reconnect** stays, the way out of a
+  reply that doesn't come.
 
 ## Chats, projects and search
 

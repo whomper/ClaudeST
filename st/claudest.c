@@ -211,7 +211,7 @@ static char list_title[48] = "Recents";
 static char cur_id[40];
 static short fresh = 1;			/* just started: nothing opened yet */
 static char chat_title[80] = "New chat";
-static char status[64] = "Waiting for bridge...";
+static char status[64] = "Waiting for the Gateway...";
 static short busy;
 static short online;
 static short win_icon;			/* shown as ClaudeST's icon (WM_ICONIFY) */
@@ -262,6 +262,12 @@ static char save_path[160];
 #define D_INPUT   8
 #define D_STATUS  16
 #define D_LIST    32		/* the list only, not the menu above it */
+#define D_WORDS   64		/* the status line's words only (a phase) */
+/* the whole window, its frame, header and status too: uncovered, resized
+   or new. D_ALL alone is its four parts, each in its own area: a new chat
+   or another area of the sidebar (F2: an ST's 320 ms whole, the status
+   and header unchanged; the guidelines' Speed, 300 ms) */
+#define D_WHOLE   128
 #define D_ALL     15
 static short dirty;
 static short text_dirty_row = 0x7fff;	/* first text row needing redraw */
@@ -354,6 +360,7 @@ static void quit_step(const char *what)
 	Fclose((short)fh);
 }
 static void say_notice(const char *s);
+static void busy_menu(void);
 static char *put_num(char *p, u16 v);
 
 /* ------------------------------------------------------------------ */
@@ -435,6 +442,84 @@ static void set_status(const char *s)
 	dirty |= D_STATUS;
 }
 
+/* Work handed to the Gateway, in three phases on the status line (the
+ * guidelines, 7.3; Erez, 7 Nov 2026): Sending (a file attached, a message
+ * sent), Working (Claude thinking: the bridge's Y 1), Receiving (the reply
+ * arriving: the bytes so far); then the status line's own words again.
+ * The KB figure is drawn again only when it changed and 100 ms after the
+ * last draw, so the line doesn't flicker or cost the reply its time. */
+#define PH_NONE 0
+#define PH_SEND 1
+#define PH_WORK 2
+#define PH_RECV 3
+static short phase;
+static long ph_bytes;			/* sent (PH_SEND) or received (PH_RECV) */
+static short ph_kb = -1;		/* the KB last drawn */
+static long ph_drawn;			/* tos_ms() of that draw */
+static char ph_role;			/* the message being received: 'A' Claude's */
+static long ph_since;			/* tos_ms() when the phase began */
+static short ph_shown;			/* a phase is on the status line */
+
+/* a phase changes only the words, never the ring or the dot: the words
+   alone are drawn again (an ST's whole status area is 40 ms, too much for
+   a reply's pieces). A phase is drawn once it has lasted 300 ms (the
+   guidelines, 7.3: a shorter one need not be), from phase_due(): a short
+   message sent, or a reply that starts at once, costs no drawing */
+static void set_phase(short p)
+{
+	if (p != phase) {
+		phase = p;
+		ph_bytes = 0;
+		ph_kb = -1;
+		ph_since = tos_ms();
+		if (p == PH_NONE && ph_shown)
+			dirty |= D_WORDS;	/* the connection's words again */
+		ph_shown = 0;
+	}
+}
+
+static void phase_due(void)
+{
+	if (phase != PH_NONE && !ph_shown && tos_ms() - ph_since >= 300)
+		dirty |= D_WORDS;
+}
+
+/* the KB figure again when it changed, once a second at most */
+static void phase_bytes(long n)
+{
+	short kb;
+	ph_bytes += n;
+	kb = (short)((ph_bytes + 1023) >> 10 > 32000 ? 32000 : (ph_bytes + 1023) >> 10);
+	if (ph_shown && kb != ph_kb && tos_ms() - ph_drawn >= 1000)
+		dirty |= D_WORDS;
+}
+
+/* what the status line shows in `room` characters: a phase, else the
+   connection's words. A phase in its full words where they fit, else in
+   short ones (the ST's sidebar holds 14): "Sending 12 KB", "Thinking...",
+   "Receiving 3 KB" */
+static const char *status_text(char *t, short room)
+{
+	short kb, full;
+	if (phase == PH_NONE || (!ph_shown && tos_ms() - ph_since < 300))
+		return status;
+	ph_shown = 1;
+	if (phase == PH_WORK)
+		return room >= 21 ? "Claude is thinking..." : "Thinking...";
+	kb = (short)((ph_bytes + 1023) >> 10 > 32000 ? 32000 : (ph_bytes + 1023) >> 10);
+	ph_kb = kb;
+	ph_drawn = tos_ms();
+	full = room >= (phase == PH_SEND ? 31 : 35);
+	strcpy(t, phase == PH_SEND ? (full ? "Sending to the Gateway..." : "Sending") :
+				     (full ? "Receiving from the Gateway..." : "Receiving"));
+	if (ph_bytes) {
+		strcat(t, " ");
+		strcpy(put_num(t + strlen(t), (u16)kb), " KB");
+	} else if (!full)
+		strcat(t, "...");
+	return t;
+}
+
 static void tcp_lost(short code)
 {
 	char msg[64];
@@ -442,6 +527,12 @@ static void tcp_lost(short code)
 		sting_close(tcp_cn);
 	tcp_cn = -1;
 	online = 0;
+	phase = PH_NONE;
+	if (busy) {			/* no reply comes now: the commands back */
+		busy = 0;
+		busy_menu();
+		dirty |= D_TITLE | D_INPUT;
+	}
 	strcpy(msg, "Offline: ");
 	strlcpy_(msg + 9, sting_error(code), sizeof(msg) - 9);
 	set_status(msg);
@@ -1168,6 +1259,32 @@ static short nav_active(short i)
  * area has just been cleared; otherwise it is updated in place, without
  * erasing it first: the ring and dot are copied over their old pictures
  * and the text is written in replace mode, padded to its full width. */
+static short st_dtx = -1;		/* where the status line's words start */
+
+/* the status line's words alone, in replace mode, padded to the edge */
+static void draw_status_words(void)
+{
+	char t[80], pt[48];
+	const char *st;
+	short n, k;
+	if (sb_hidden || st_dtx < 0)
+		return;
+	n = (wx + sb_w - 4 - st_dtx) / cw;
+	if (n > (short)sizeof(t) - 1)
+		n = sizeof(t) - 1;
+	if (n <= 0)
+		return;
+	st = status_text(pt, n);
+	k = strlen(st);
+	if (k > n)
+		k = n;
+	memcpy(t, st, k);
+	memset(t + k, ' ', n - k);
+	vswr_mode(vh, 1);
+	text_white(st_dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
+	vswr_mode(vh, 2);
+}
+
 static void draw_status(short full)
 {
 	if (sb_hidden)		/* it is in the sidebar (W12) */
@@ -1187,6 +1304,7 @@ static void draw_status(short full)
 	if (usage_pct >= 0)
 		tx = on_byte(x + 2 * rrx + cw, x + 2 * rrx);
 	dtx = on_byte(tx + 2 * drx + cw / 2, tx + 2 * drx);	/* the connection's words */
+	st_dtx = dtx;
 	if (!full && (tx != last_tx || sb_w != last_sb))	/* the layout moved */
 		fill(wx, status_y - 1, wx + sb_w - 1, wy + wh - 1, 0);
 	last_tx = tx;
@@ -1221,10 +1339,12 @@ static void draw_status(short full)
 	if (n > (short)sizeof(t) - 1)
 		n = sizeof(t) - 1;
 	if (n > 0) {
-		short k = strlen(status);
+		char pt[48];
+		const char *st = status_text(pt, n);
+		short k = strlen(st);
 		if (k > n)
 			k = n;
-		memcpy(t, status, k);
+		memcpy(t, st, k);
 		memset(t + k, ' ', n - k);
 		text_white(dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
 	}
@@ -1993,6 +2113,8 @@ static void redraw_areas(short mask, short (*areas)[4], short na)
 			text_clip(vh, clip);
 			if (mask & (D_SIDEBAR | D_LIST))
 				draw_sidebar();
+			else if (mask & D_WORDS)
+				draw_status_words();
 			else if (mask & D_STATUS) {
 				/* the status drawn again in place (its ring, the
 				   connection's words): off the screen and shown at
@@ -2066,20 +2188,22 @@ static void flush_dirty(void)
 	}
 	if (!dirty)
 		return;
-	if ((dirty & D_ALL) == D_ALL) {
+	if (dirty & D_WHOLE) {
 		text_dirty_row = 0;
 		redraw(D_ALL, wx, wy, ww, wh);
 	} else {
 		/* the menu and list only: the header never changes, and the
 		 * status area has its own update below */
 		if (sb_hidden)
-			dirty &= ~(D_SIDEBAR | D_LIST | D_STATUS);
+			dirty &= ~(D_SIDEBAR | D_LIST | D_STATUS | D_WORDS);
 		if (dirty & D_SIDEBAR)
 			redraw(D_SIDEBAR, wx, wy + title_h + 1, sb_w, status_y - 2 - (wy + title_h + 1));
 		else if (dirty & D_LIST)
 			redraw(D_LIST, wx, list_y - 2, sb_w, status_y - list_y);
 		if (dirty & D_STATUS)
 			redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
+		else if ((dirty & D_WORDS) && st_dtx >= 0)
+			redraw(D_WORDS, st_dtx, status_y, wx + sb_w - 4 - st_dtx, row_h);
 		if (dirty & D_TITLE)
 			redraw(D_TITLE, px, wy, pw, title_h + 1);
 		if (dirty & D_TEXT) {
@@ -2147,6 +2271,20 @@ static void answer_show(short id, short button)
 		on_resize();
 	}
 	wind_set(win, WF_TOP, 0, 0, 0, 0);
+}
+
+/* while Claude replies, the commands that would start another job are
+   greyed, and their keys do nothing (the guidelines, 3.1; D19): New chat,
+   Search chats, Attach file..., Account... Reconnect stays, the way out */
+static void busy_menu(void)
+{
+	static const int cmds[] = { C_NEW, C_FIND, C_ATTACH, C_ACCT };
+	short i;
+	for (i = 0; i < 4; i++) {
+		short o = mbar_object(&mb, cmds[i]);
+		if (o >= 0)
+			menu_ienable(mb.tree, o, !busy);
+	}
 }
 
 static void answered(void)
@@ -2304,11 +2442,18 @@ static void handle_line(char *s)
 		clear_text();
 		break;
 	case 'M':			/* M <role> : begin message */
-		begin_message(n > 1 && f[1][0] ? f[1][0] : 'A');
+		ph_role = n > 1 && f[1][0] ? f[1][0] : 'A';
+		begin_message(ph_role);
 		break;
 	case 'P':			/* P <text> : append text */
-		if (n > 1)
-			append(f[1], strlen(f[1]));
+		if (n > 1) {
+			short k = strlen(f[1]);
+			append(f[1], k);
+			if (phase >= PH_WORK && ph_role == 'A') {
+				set_phase(PH_RECV);
+				phase_bytes(k);
+			}
+		}
 		break;
 	case 'H': {			/* H <text> : bold heading paragraph */
 		char m = MK_BOLD;
@@ -2398,6 +2543,12 @@ static void handle_line(char *s)
 			busy = n > 1 && f[1][0] == '1';
 			if (was && !busy)
 				answered();
+			if (busy != was)
+				busy_menu();
+			if (busy && phase == PH_SEND)
+				set_phase(PH_WORK);
+			else if (!busy)
+				set_phase(PH_NONE);
 		}
 		dirty |= D_TITLE | D_INPUT;
 		break;
@@ -3014,6 +3165,8 @@ static void set_window_name(void)
 
 static void do_new_chat(void)
 {
+	if (busy)
+		return;		/* greyed while Claude replies (D19) */
 	search_mode = 0;
 	cur_id[0] = 0;
 	strcpy(chat_title, "New chat");
@@ -3042,6 +3195,8 @@ static void clear_context(const char *title, const char *hint)
 /* the Account page: plan, usage and when it resets, account details */
 static void do_account(void)
 {
+	if (busy)
+		return;		/* greyed while Claude replies (D19) */
 	search_mode = 0;
 	clear_context("Account", "Asking claude.ai about your account...");
 	tx_cmd("ACCOUNT", 0, 0);
@@ -3049,6 +3204,8 @@ static void do_account(void)
 
 static void do_search(void)
 {
+	if (busy)
+		return;		/* greyed while Claude replies (D19) */
 	search_mode = 1;
 	nav_pending = -1;
 	inlen = in_cur = in_start = 0;
@@ -3149,6 +3306,7 @@ static void attach_file(const char *path)
 		size[k] = 0;
 	}
 	tx_cmd("ATTACH", name, size);
+	set_phase(PH_SEND);
 	graf_mouse(BUSYBEE, 0);
 	/* read in big pieces (the guidelines, 6.5), sent a line at a time */
 	piece = get_cookie(0x5F435055L) >= 30 ? 32L * 1024 : 16L * 1024;	/* _CPU */
@@ -3170,6 +3328,7 @@ static void attach_file(const char *path)
 			hex[2 * k] = 0;
 			tx_cmd("ADATA", hex, 0);
 			sent += k;
+			phase_bytes(k);
 			/* "Attaching 40%" (in tenths, without overflowing a long) */
 			if ((sent == len ? 10 : sent / (len / 10 + 1)) != pct) {
 				pct = (short)(sent == len ? 10 : sent / (len / 10 + 1));
@@ -3190,6 +3349,7 @@ static void attach_file(const char *path)
 	if (buf != disk_buf)
 		big_free(buf);
 	graf_mouse(ARROW, 0);
+	set_phase(PH_NONE);
 	if (sent != len) {
 		tx_cmd("UNATTACH", 0, 0);
 		natt = 0;
@@ -3205,6 +3365,8 @@ static void attach_file(const char *path)
 /* File > Attach file...: the GEM file selector, in the current folder */
 static void choose_attach(void)
 {
+	if (busy)
+		return;		/* greyed while Claude replies (D19) */
 	static char path[160], file[16];
 	short drv = (short)Dgetdrv(), button = 0, i;
 	char full[180], *p;
@@ -3220,7 +3382,7 @@ static void choose_attach(void)
 	file[0] = 0;
 	flush_dirty();
 	fsel_exinput(path, file, &button, "Attach a file");
-	dirty |= D_ALL;		/* the selector covered the window */
+	dirty |= D_ALL | D_WHOLE;	/* the selector covered the window */
 	if (!button || !file[0])
 		return;
 	strcpy(full, path);
@@ -3256,6 +3418,7 @@ static void submit(void)
 			fresh = 0;
 		}
 		tx_cmd("SEND", input, 0);
+		set_phase(PH_SEND);
 		natt = 0;		/* the bridge sends them with this message */
 	} else {
 		return;
@@ -4477,7 +4640,7 @@ static void choose_save_file(const char *name)
 	strlcpy_(file, name, sizeof(file));
 	flush_dirty();
 	fsel_exinput(path, file, &button, "Save artifact as");
-	dirty |= D_ALL;		/* the selector covered the window */
+	dirty |= D_ALL | D_WHOLE;	/* the selector covered the window */
 	if (!button || !file[0]) {
 		save_id[0] = 0;
 		return;
@@ -5394,7 +5557,7 @@ static void on_resize(void)
 	last_slider_pos = last_slider_size = -1;
 	update_slider();
 	set_divider_watch();
-	dirty |= D_ALL;
+	dirty |= D_ALL | D_WHOLE;
 }
 
 /* the window's work area on a multiple of 8 across (the guidelines'
@@ -5567,7 +5730,7 @@ static void handle_msg(short *msg)
 			a.w = msg[6];
 			a.h = msg[7];
 			icon_window(&a);
-		} else if (msg[3] == win && (dirty & D_ALL) == D_ALL) {
+		} else if (msg[3] == win && (dirty & D_WHOLE)) {
 			/* the whole window is to be drawn this turn (flush_dirty,
 			   below): the area with it, once. The start drew its window
 			   twice, for the AES's redraw and for D_ALL (an 8 MHz ST:
@@ -5889,7 +6052,7 @@ int app_main(void)
 		append(hi, sizeof(hi) - 1);
 	}
 
-	dirty = D_ALL;
+	dirty = D_ALL | D_WHOLE;
 	if (crash_previous()) {
 		flush_dirty();
 		crash_offer("ClaudeST", "next to CLAUDEST.PRG");
@@ -5961,6 +6124,7 @@ int app_main(void)
 		if (!online && ticks - last_hello > 125 && tcp_cn >= 0)
 			send_hello();
 		heartbeat();
+		phase_due();
 		{
 			/* a reply arriving is drawn at most every 100 ms, a few
 			   pieces at a time; what the user did, at once */

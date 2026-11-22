@@ -189,7 +189,12 @@
 
   - @{B}The dot:@{b} green when online, red when not (filled or hollow
     in black and white), with Connecting..., Online or Offline beside
-    it.
+    it. While you wait for Claude it says where the time goes:
+    "Sending to the Gateway... 12 KB", "Claude is thinking...", then
+    "Receiving from the Gateway... 3 KB" as the reply arrives (in a
+    narrow sidebar "Sending 12 KB", "Thinking...", "Receiving 3 KB").
+    While Claude answers, New chat, Search chats, Attach file... and
+    Account... are greyed; Reconnect stays.
   - @{B}The ring@{b} fills clockwise as you use up your plan's nearest
     limit: the current session (claude.ai's 5-hour limit) where your
     plan has one, otherwise the week's. Blue, turning red from 90%, on
