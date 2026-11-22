@@ -13,6 +13,19 @@ int main_check(void);		/* cpucheck_cf.S's main, renamed */
 const char cpu_alert[] = "[3][needs a ColdFire][ Quit ]";
 static int app_called, ops[8], nops, fails;
 int app_main(void) { app_called = 1; return 42; }
+#ifdef ACC
+/* an accessory on the wrong machine: never ends, says nothing at the boot, its entry (ACC_NAME) and the
+   alert when it is opened; the stand-in AES ends the run at its third evnt_mesag */
+short _is_acc = 1;
+#ifdef ACC_NAME
+const char cpu_acc_name[] = "  Test";
+#endif
+#ifdef ACC_ALERT
+const char cpu_acc_alert[] = "[3][put the other .ACC in its place][ OK ]";
+#endif
+static int mesags;
+static void acc_end(void);
+#endif
 
 static void check(const char *what, int ok)
 {
@@ -41,8 +54,24 @@ static void sig(int s, void *info, void *ucv)
 		if (nops < 8)
 			ops[nops++] = control[0];
 		if (control[0] == 52)
+#ifdef ACC_ALERT
+			check("form_alert(1, cpu_acc_alert)", intin[0] == 1 && addrin[0] == (void *)cpu_acc_alert &&
+			      control[1] == 1 && control[3] == 1);
+#else
 			check("form_alert(1, cpu_alert)", intin[0] == 1 && addrin[0] == (void *)cpu_alert &&
 			      control[1] == 1 && control[3] == 1);
+#endif
+#ifdef ACC
+		if (control[0] == 23) {
+			short *msg = addrin[0];
+			if (++mesags == 1)
+				msg[0] = 40;		/* AC_OPEN */
+			else if (mesags == 2)
+				msg[0] = 41;		/* AC_CLOSE: nothing to do */
+			else
+				acc_end();
+		}
+#endif
 		intout[0] = 1;
 	} else {
 		out("cpucheck: SIGILL at "); out_hex(pc); out("\n");
@@ -50,6 +79,27 @@ static void sig(int s, void *info, void *ucv)
 	}
 	uc->gregs[16] = pc + 2;
 }
+
+#ifdef ACC
+static void acc_end(void)
+{
+	int i;
+#ifdef ACC_NAME
+	static const int want[6] = { 10, 35, 23, 52, 23, 23 };
+	check("accessory: appl_init, menu_register, evnt_mesag, form_alert at AC_OPEN, evnt_mesag on", nops == 6);
+	for (i = 0; i < 6 && i < nops; i++)
+		check("accessory: the calls in order", ops[i] == want[i]);
+#else
+	static const int plain[4] = { 10, 23, 23, 23 };
+	check("accessory without a name: appl_init, then evnt_mesag only", nops == 4);
+	for (i = 0; i < 4 && i < nops; i++)
+		check("accessory without a name: the calls in order", ops[i] == plain[i]);
+#endif
+	check("accessory: app_main never called", !app_called);
+	out(fails ? "cpucheck: failed\n" : "cpucheck: an accessory on the wrong machine waits, its alert at AC_OPEN\n");
+	sys_exit(fails != 0);
+}
+#endif
 
 int main(void)
 {

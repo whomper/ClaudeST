@@ -24,20 +24,59 @@ main:
 	trap	#14
 	addq.l	#6,%sp
 	tst.l	%d0
-	beq.s	refuse
+	beq.w	refuse
 	jmp	app_main		| a ColdFire: the program's own main
 
 refuse:
 	lea	pb_init,%a0		| appl_init
-	bsr.s	aes
-	move.w	intout,%d0
+	bsr.w	aes
+	move.l	#_is_acc,%d0		| an accessory (crt0's flag; weak: none outside an app)
+	beq.w	4f
+	move.l	%d0,%a0
+	move.w	(%a0),%d0
+	ext.l	%d0
+	tst.l	%d0
+	beq.w	4f
+| an accessory never ends (crt0's loop would stop the machine) and says nothing at the boot: its Desk
+| entry (cpu_acc_name, weak), and the alert when the user opens it (Erez, 22 Nov 2026; ECal found the hang)
+	move.l	#cpu_acc_name,%d0
+	beq.s	5f
+	move.l	%d0,addrin
+	move.w	global+4,%d0		| ap_id
+	move.w	%d0,intin
+	lea	pb_reg,%a0		| menu_register(ap_id, cpu_acc_name)
+	bsr.w	aes
+5:	move.l	#msgbuf,%d0
+	move.l	%d0,addrin
+	lea	pb_mesag,%a0		| evnt_mesag(msgbuf)
+	bsr.w	aes
+	move.w	msgbuf,%d0
+	ext.l	%d0
+	cmp.l	#40,%d0			| AC_OPEN
+	bne.s	5b
+	move.l	#cpu_acc_name,%d0
+	beq.s	5b
+	moveq	#1,%d0
+	move.w	%d0,intin
+	move.l	#cpu_acc_alert,%d0	| the accessory's own words where it has them (weak)
+	bne.s	6f
+	move.l	#cpu_alert,%d0
+6:	move.l	%d0,addrin
+	lea	pb_alert,%a0		| form_alert(1, cpu_alert)
+	bsr.w	aes
+	bra.s	5b
+4:	move.w	intout,%d0
 	ext.l	%d0
 	tst.l	%d0
 	blt.s	1f
+	moveq	#1,%d0
+	move.w	%d0,intin
+	move.l	#cpu_alert,%d0
+	move.l	%d0,addrin
 	lea	pb_alert,%a0		| form_alert(1, cpu_alert)
-	bsr.s	aes
+	bsr.w	aes
 	lea	pb_exit,%a0		| appl_exit
-	bsr.s	aes
+	bsr.w	aes
 1:	moveq	#1,%d0
 	rts
 
@@ -72,6 +111,10 @@ pb_exit:	.long	ctl_exit, global, intin, intout, addrin, addrout
 ctl_init:	.word	10, 0, 1, 0, 0
 ctl_alert:	.word	52, 1, 1, 1, 0
 ctl_exit:	.word	19, 0, 1, 0, 0
+pb_reg:		.long	ctl_reg, global, intin, intout, addrin, addrout
+pb_mesag:	.long	ctl_mesag, global, intin, intout, addrin, addrout
+ctl_reg:	.word	35, 1, 1, 1, 0
+ctl_mesag:	.word	23, 0, 1, 1, 0
 intin:		.word	1, 0
 addrin:		.long	cpu_alert, 0
 	.bss
@@ -79,3 +122,7 @@ addrin:		.long	cpu_alert, 0
 global:		.space	30
 intout:		.space	14
 addrout:	.space	4
+msgbuf:		.space	16
+	.weak	_is_acc
+	.weak	cpu_acc_name
+	.weak	cpu_acc_alert
