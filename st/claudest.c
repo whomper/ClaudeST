@@ -2275,15 +2275,22 @@ static void answer_show(short id, short button)
 
 /* while Claude replies, the commands that would start another job are
    greyed, and their keys do nothing (the guidelines, 3.1; D19): New chat,
-   Search chats, Attach file..., Account... Reconnect stays, the way out */
+   Search chats, Attach file..., Account... Reconnect stays, the way out.
+   Items, not titles: the AES draws them only as their menu drops down, so
+   their state is set in the tree itself (menu_ienable, four AES calls,
+   cost a reply's first turn 20 ms on an ST) */
 static void busy_menu(void)
 {
 	static const int cmds[] = { C_NEW, C_FIND, C_ATTACH, C_ACCT };
 	short i;
 	for (i = 0; i < 4; i++) {
 		short o = mbar_object(&mb, cmds[i]);
-		if (o >= 0)
-			menu_ienable(mb.tree, o, !busy);
+		if (o >= 0) {
+			if (busy)
+				mb.tree[o].ob_state |= DISABLED;
+			else
+				mb.tree[o].ob_state &= ~DISABLED;
+		}
 	}
 }
 
