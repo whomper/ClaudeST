@@ -382,3 +382,12 @@ int av_startprog(const char *path, const char *cmd)
 	appl_write(server, 16, msg);
 	return 0;
 }
+
+/* 1 when an AV server answers (the desktop's, not our own id), without sending it anything: an app writes the file
+   av_startprog would hand over only when there is someone to open it (EWeb's page source, 22 Nov 2026) */
+int av_has_server(void)
+{
+	if (server < 0)
+		server = find_server();
+	return server >= 0 && server != appl_id();
+}

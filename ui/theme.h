@@ -50,6 +50,11 @@ typedef struct {
 extern short pen[THEME_MAX];
 extern int colour;	/* colours are on (else black and white) */
 
+/* set to 1 before theme_init by an app whose pictures use the whole 256-colour palette (EHypView, 22 Nov 2026):
+   in 256 colours the roles then take the nearest of the screen's pens as they are, and no pen is set or put
+   back. The palette is read once (256 vq_color calls); 16 colours and black and white as without it */
+extern int theme_keep;
+
 /* after the VDI is open: colour_on is the app's option; extra the app's roles (P_BASE, P_BASE + 1, ...), n of
    them (n + P_BASE <= THEME_MAX); 0 and 0 for the six alone. Calls theme_exit first, so it may be repeated
    (a changed option, a changed screen mode). The app puts its own caches right after (bold_forget) */

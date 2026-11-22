@@ -413,7 +413,7 @@ static int dsame(int argc, char **argv)
 	static const int sizes[2][2] = { { 0, 0 }, { 61, 37 } };
 	static PIC_PAL pals[3];
 	long tried = 0, differ = 0;
-	int a, s, k;
+	int a, s, j, k;
 	make256();
 	pic_pal_init(&pals[0], 4, four);
 	pic_pal_init(&pals[1], 16, vga16);
@@ -428,9 +428,20 @@ static int dsame(int argc, char **argv)
 			PIC *p = pic_decode(d, n, sizes[s][0], sizes[s][1], 4L << 20, &why);
 			if (p == NULL)
 				continue;
+			/* each palette at the shares pic_pal_soft takes (16: all, as
+			   ever; 12 and 8 EContact's; 4): the DSP's and the 68030's
+			   the same pens at each */
+			for (j = 0; j < 4; j++)
 			for (k = 0; k < 3; k++) {
+				static const int shares[4] = { 16, 12, 8, 4 };
 				size_t np = (size_t) p->w * p->h;
 				unsigned char *x = malloc(np), *y = malloc(np);
+				int share = shares[j];
+#ifdef PIC_OVL_BUILD
+				extern int pic_ovl_soft;
+				pic_ovl_soft = share;
+#endif
+				pic_pal_soft(&pals[k], share);
 				pic_dsp_dither = 1;
 #ifdef PIC_OVL_BUILD
 				/* PIC.OVL's entries (common/picovl): its check, then the
@@ -459,11 +470,12 @@ static int dsame(int argc, char **argv)
 					for (i = 0; i < np && x[i] == y[i]; i++)
 						;
 					differ++;
-					printf("FAIL %s %dx%d %d colours: pixel %ld,%ld: %d, the 68030's %d\n", argv[a], p->w,
-					       p->h, pals[k].n, (long) (i % p->w), (long) (i / p->w), x[i], y[i]);
+					printf("FAIL %s %dx%d %d colours, share %d/16: pixel %ld,%ld: %d, the 68030's %d\n", argv[a],
+					       p->w, p->h, pals[k].n, share, (long) (i % p->w), (long) (i / p->w), x[i], y[i]);
 				}
 				free(x);
 				free(y);
+				pic_pal_soft(&pals[k], 16);
 			}
 			pic_free(p);
 		}

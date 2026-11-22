@@ -38,11 +38,11 @@ with tempfile.TemporaryDirectory() as d:
 
     m = machines.Machine("ST-1", os.path.join(d, "st1"))
     a = m.args()
-    check("ST-1: 1 MB, mono by default, Erez's TOS 1.04",
+    check("ST-1: 1 MB, mono by default, real TOS 1.04",
           a[a.index("--memsize") + 1] == "1" and "mono" in a and m.describe() == "ST-1:mono, TOS 1.04")
     check("ST-1: its own HOME", m.env()["HOME"] == os.path.join(d, "st1.home"))
 
-    check("ST-1 with Erez's TOS 1.04: C:\\AUTO\\BOOTC.PRG makes C: the boot drive",
+    check("ST-1 with real TOS 1.04: C:\\AUTO\\BOOTC.PRG makes C: the boot drive",
           os.path.exists(os.path.join(d, "st1", "AUTO", "BOOTC.PRG")))
 
     prg = open(os.path.join(d, "st1", "AUTO", "CLOCK.PRG"), "rb").read()
@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory() as d:
         f.write(struct.pack(">HH", 0x602E, 0x162) + bytes(60))
     m = machines.Machine("STE", os.path.join(d, "ste2"))
     m.args()
-    check("STE with Erez's tos162.img: TOS 1.62 named", m.describe() == "STE:mono, TOS 1.62")
+    check("STE with a real tos162.img: TOS 1.62 named", m.describe() == "STE:mono, TOS 1.62")
 
     m = machines.Machine("TT", os.path.join(d, "tt"))
     a = m.args()
@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as d:
     check("the Falcon: BOOTC.PRG with a real TOS (a 1 MB Falcon boots from A:), none with EmuTOS",
           os.path.exists(os.path.join(auto, "BOOTC.PRG")) == machines.Machine("Falcon", os.path.join(d, "f16x")).real)
 
-    # the FireBee stand-in: EmuTOS even with Erez's TOS 4.04 there (it runs no 68060)
+    # the FireBee stand-in: EmuTOS even with real TOS 4.04 there (it runs no 68060)
     with open(os.path.join(tos, "tos404.img"), "wb") as f:
         f.write(struct.pack(">HH", 0x602E, 0x404) + bytes(60))
     emu = os.path.join(d, "etos.img")

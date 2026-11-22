@@ -15,8 +15,8 @@ HD is the folder Hatari shows as C:. From a rig:
     subprocess.Popen(["hatari"] + m.args() + ["--auto", "C:\\\\APP.PRG"], env=m.env())
     print(m.describe())         # "Falcon:256, TOS 4.04" - put it in the report
 
-The TOS: Erez's own (TOS 1.04 from his ST, TOS 4.04 from his Falcon; the
-STE's tos162.img, where he has one) when
+The TOS: real TOS images (TOS 1.04 from an ST, TOS 4.04 from a Falcon; the
+STE's tos162.img, where the owner has one) when
 the folder $AERA_TOS (~/.aera/tos) has them, else EmuTOS 1.4, fetched once
 into ~/.cache/aera. AERA_TOS=emutos takes EmuTOS always. The TOS images
 are never put in git (Atari's copyright), nor sent anywhere.
@@ -48,17 +48,17 @@ The network: m.network() puts FAKESTNG.PRG (made again with make in
 tools/fakesting whenever its source changed) in C:\\AUTO, starts serial_bridge.py
 on the other end of the serial port and gives Hatari's serial arguments;
 the Atari's TCP connections become this computer's. m.stop() ends the
-bridge. It works on Erez's TOS too: FAKESTNG makes the cookie jar TOS
+bridge. It works on real TOS too: FAKESTNG makes the cookie jar TOS
 1.04 lacks and turns off its XON/XOFF.
 
-NVDI: m.nvdi() installs Erez's own NVDI 5.03 (C:\\AUTO\\NVDI.PRG, NVDI.INF,
-ASSIGN.SYS, his GEMSYS drivers and his Bitstream fonts in C:\\BTFONTS) from
+NVDI: m.nvdi() installs the owner's NVDI copy 5.03 (C:\\AUTO\\NVDI.PRG, NVDI.INF,
+ASSIGN.SYS, the GEMSYS drivers and the Bitstream fonts in C:\\BTFONTS) from
 the folder $AERA_NVDI (~/.aera/nvdi/x), as the TOS images: commercial,
 never in git nor sent anywhere. False when it isn't there (a rig that
 needs it says so and stops). The rig's process takes NVDI out of the hd again when it ends (nvdi_remove, atexit): a kept work
 directory never holds it. AERA_WITH_NVDI=1 installs it on every Falcon
-a rig starts, so the hub runs an app's own rigs under NVDI unchanged. His GEMSYS\\STING (his network's settings)
-and his accessories are left out. NVDI 5.03 boots on the Falcon's TOS 4.04
+a rig starts, so the hub runs an app's own rigs under NVDI unchanged. The GEMSYS\\STING (a network's settings)
+and the accessories are left out. NVDI 5.03 boots on the Falcon's TOS 4.04
 in about 30 s here, reading every font.
 
 The family's accessories alongside: m.accs(["ECal", "EContact"]) puts those
@@ -67,7 +67,7 @@ editions on an ST) in C:\\, each with C:\\NAME.INF naming its folder
 C:\\NAME so that no first-time question waits; a file the rig put there
 itself is kept. AERA_WITH_ACCS=ECal,EContact does it on every machine a
 rig starts, so the hub runs an app's own rigs with the others loaded, as
-on Erez's machines. Name only the other programs, not the one under test.
+on the owner's machines. Name only the other programs, not the one under test.
 """
 import hashlib
 import atexit
@@ -81,8 +81,8 @@ import time
 import urllib.request
 import zipfile
 
-# Erez's configuration, the one every app's testing has once (his word, 10 Nov 2026): a Falcon with TOS 4.04,
-# 4 MB and NVDI, in the 256 colours his own screen uses. His Falcon has 14 MB, but 4 MB runs it as well, and 4 MB
+# the reference configuration, the one every app's testing has once (decided 10 Nov 2026): a Falcon with TOS 4.04,
+# 4 MB and NVDI, in the 256 colours the reference screen uses. The reference Falcon has 14 MB, but 4 MB runs it as well, and 4 MB
 # is the stock Falcon (Falcon-4: 68030 at 16 MHz, no FPU). A rig takes it as machine ERZ_MACHINE with NVDI on
 # (AERA_WITH_NVDI=1, or erz_env()); a container with no TOS images or NVDI runs the same machine on EmuTOS
 # without NVDI and says so in describe(), and the hub runs it for real.
@@ -90,14 +90,14 @@ ERZ_MACHINE = "Falcon-4:256"
 
 
 def nvdi_here(env=None):
-    """True when Erez's NVDI is on this computer (the folder Machine.nvdi() reads)"""
+    """True when the owner's NVDI copy is on this computer (the folder Machine.nvdi() reads)"""
     e = os.environ if env is None else env
     src = e.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
     return os.path.exists(os.path.join(src, "auto", "nvdi.prg"))
 
 
 def erz_env(env=None):
-    """the environment that makes a rig run Erez's configuration: NVDI on every Falcon it starts. Where this
+    """the environment that makes a rig run the reference configuration: NVDI on every Falcon it starts. Where this
     computer has no NVDI it is left off (the stand-in: the same machine on EmuTOS, as describe() says), so a rig
     can call this unconditionally; AERA_WITH_NVDI set by hand still stops with 'no NVDI here'."""
     e = dict(os.environ if env is None else env)
@@ -108,7 +108,7 @@ def erz_env(env=None):
 
 # name: (what it is, Hatari's arguments, screens (the first is the default), real TOS file)
 MACHINES = {
-    "ST": ("Erez's 1040 ST: 68000 at 8 MHz, 4 MB",
+    "ST": ("a 1040 ST: 68000 at 8 MHz, 4 MB",
            ["--machine", "st", "--memsize", "4"], ["mono", "med", "low"], "tos104us.img"),
     "ST-1": ("an ST with 1 MB, the smallest the family runs on (the ST editions)",
              ["--machine", "st", "--memsize", "1"], ["mono", "med", "low"], "tos104us.img"),
@@ -118,13 +118,13 @@ MACHINES = {
     "TT": ("a TT030: 68030 at 32 MHz, 68882, 4 MB ST RAM and 16 MB TT RAM (68030 code in fast RAM)",
            ["--machine", "tt", "--cpuclock", "32", "--fpu", "68882", "--memsize", "4",
             "--ttram", "16", "--addr24", "off"], ["ttmed", "mono", "med", "ttlow"], "tos306.img"),
-    "Falcon": ("Erez's Falcon030 with a DFB1: 68030 and 68882 (Hatari's most, 32 MHz), "
+    "Falcon": ("the reference Falcon030 with a DFB1: 68030 and 68882 (Hatari's most, 32 MHz), "
                "14 MB ST RAM, 128 MB TT RAM, the DSP, VGA",
                ["--machine", "falcon", "--cpuclock", "32", "--fpu", "68882", "--memsize", "14",
                 "--ttram", "128", "--addr24", "off", "--dsp", "emu", "--monitor", "vga"],
                ["16", "256", "65536"], "tos404.img"),
     "Falcon-4": ("a Falcon030 as sold: 68030 at 16 MHz, no FPU, 4 MB ST RAM and no TT RAM, the DSP, VGA "
-                 "(Erez, 19 Oct 2026: the machine for all three accessories loaded at once)",
+                 "(decided 19 Oct 2026: the machine for all three accessories loaded at once)",
                  ["--machine", "falcon", "--cpuclock", "16", "--memsize", "4", "--ttram", "0",
                   "--addr24", "on", "--dsp", "emu", "--monitor", "vga"],
                  ["16", "256", "65536"], "tos404.img"),
@@ -153,7 +153,7 @@ FALCON_MODE = {"16": 0x001A, "256": 0x001B,    # VGA | 80 columns | 4 or 8 plane
 EMUTOS = ("https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip",
           "1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663", "etos512us.img")
 
-# C:\AUTO\BOOTC.PRG, for Erez's TOS images: Hatari's C: is no hard disk to
+# C:\AUTO\BOOTC.PRG, for real TOS images: Hatari's C: is no hard disk to
 # TOS 1.04, which then counts A: as the boot drive (_bootdev) and programs
 # that read it look for their files on an empty floppy drive; TOS 4.04 does
 # the same on a 1 MB Falcon (EHypView's colour-test, 21 Oct 2026: it looked
@@ -447,7 +447,7 @@ class Machine:
              if self.name == "FireBee" else "") + \
             ("; with " + ", ".join(self.with_accs) if getattr(self, "with_accs", None) else "") + \
             ("; NVDI" if self.has_nvdi() else "") + \
-            (" (Erez's configuration)" if "%s:%s" % (self.name, self.screen) == ERZ_MACHINE and self.real and
+            (" (the reference configuration)" if "%s:%s" % (self.name, self.screen) == ERZ_MACHINE and self.real and
              self.has_nvdi() else "")
 
     def args(self):
@@ -497,7 +497,7 @@ class Machine:
         return not self.name.startswith("FireBee") and any(self.name.startswith(f) for f in fams)
 
     def nvdi(self):
-        """Erez's NVDI on C: (see above): True, or False when it isn't here"""
+        """the owner's NVDI copy on C: (see above): True, or False when it isn't here"""
         src = os.environ.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
         need = [os.path.join("auto", "nvdi.prg"), "nvdi.inf", "ASSIGN.SYS", "gemsys", "btfonts"]
         missing = [n for n in need if not os.path.exists(os.path.join(src, n))]
@@ -519,11 +519,11 @@ class Machine:
             shutil.copytree(os.path.join(src, "btfonts"), fonts)
         if not getattr(self, "_nvdi_atexit", False):
             self._nvdi_atexit = True
-            atexit.register(self.nvdi_remove)      # Erez's NVDI is never left in a hd a rig keeps
+            atexit.register(self.nvdi_remove)      # the owner's NVDI copy is never left in a hd a rig keeps
         return True
 
     def nvdi_remove(self):
-        """Erez's NVDI taken out of the hd again (his rule: never in a kept hd, nor in git or a release):
+        """the owner's NVDI copy taken out of the hd again (the rule: never in a kept hd, nor in git or a release):
         called when the rig's process ends, so a run's kept work directory has none of it"""
         for n in (os.path.join("AUTO", "NVDI.PRG"), "NVDI.INF", "ASSIGN.SYS"):
             try:
@@ -608,7 +608,7 @@ def main(argv):
         sys.exit(__doc__)
     if argv[1] == "list":
         for name, (what, _, screens, real) in MACHINES.items():
-            print("%-7s %s\n        screens: %s; Erez's TOS: %s" % (name, what, ", ".join(screens),
+            print("%-7s %s\n        screens: %s; real TOS: %s" % (name, what, ", ".join(screens),
                                                                   real or "none, EmuTOS always"))
         return
     m = Machine(argv[2], argv[3])

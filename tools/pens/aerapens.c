@@ -63,6 +63,7 @@ PIC *tj_pic_decode(const unsigned char *d, long n, int w, int h, long max_px, in
 void tj_pic_free(PIC *p);
 void tj_pic_pal_init(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 void tj_pic_pal_free(PIC_PAL *pal);
+void tj_pic_pal_soft(PIC_PAL *pal, int sixteenths);
 int tj_pic_dither(const PIC *p, PIC_PAL *pal, unsigned char *out);
 
 typedef struct {
@@ -71,11 +72,12 @@ typedef struct {
 	void (*free)(PIC *p);
 	void (*pal_init)(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 	void (*pal_free)(PIC_PAL *pal);
+	void (*pal_soft)(PIC_PAL *pal, int sixteenths);
 	int (*dither)(const PIC *p, PIC_PAL *pal, unsigned char *out);
 } BUILD;
 
-static const BUILD lj = { pic_size, pic_decode, pic_free, pic_pal_init, pic_pal_free, pic_dither };
-static const BUILD tj = { tj_pic_size, tj_pic_decode, tj_pic_free, tj_pic_pal_init, tj_pic_pal_free, tj_pic_dither };
+static const BUILD lj = { pic_size, pic_decode, pic_free, pic_pal_init, pic_pal_free, pic_pal_soft, pic_dither };
+static const BUILD tj = { tj_pic_size, tj_pic_decode, tj_pic_free, tj_pic_pal_init, tj_pic_pal_free, tj_pic_pal_soft, tj_pic_dither };
 
 static const char answer_line[] = "aerapens " PENS_COMMON " " PENS_BUILD "\n";
 
@@ -114,7 +116,7 @@ int pens_make(const unsigned char *in, long n, unsigned char **out, long *len, c
 	long w, h, np, plen, sw, sh, row, mrow, size, y, x, line = (long) sizeof answer_line - 1;
 	unsigned char *pens, *o, *ans;
 	unsigned long crc;
-	int depth, pw;
+	int depth, pw, soft;
 	PIC_PAL pal;
 	PIC *p;
 	*out = NULL;
@@ -135,6 +137,7 @@ int pens_make(const unsigned char *in, long n, unsigned char **out, long *len, c
 	}
 	b = in[5] == 'l' ? &lj : &tj;
 	np = in[6] + 1;
+	soft = in[7];
 	w = be(in + 8, 2);
 	h = be(in + 10, 2);
 	plen = be(in + 12, 4);
@@ -165,6 +168,8 @@ int pens_make(const unsigned char *in, long n, unsigned char **out, long *len, c
 	}
 	memset(&pal, 0, sizeof pal);
 	b->pal_init(&pal, (int) np, (const unsigned char (*)[3]) in);
+	if (soft >= 1 && soft <= 15)
+		b->pal_soft(&pal, soft);
 	crc = crc32(in, np * 3);
 	p = b->decode(in + np * 3, plen, (int) w, (int) h, PENS_IN_PX, &pw);
 	if (p == NULL) {

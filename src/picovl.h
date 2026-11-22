@@ -106,6 +106,11 @@ typedef struct {
 	   -1 call again, 0 no room. chunky8 without it makes them as before.
 	   pix NULL: stop, and their memory given back */
 	int (*chunky8_prepare)(const unsigned char *pix, int w, int h, long key, short vdi);
+	/* 1.3 on: the share of each pixel's error the DSP's dither passes on
+	   from now on, in sixteenths (pic_pal_soft's; 16, all of it, at the
+	   start). The overlay keeps it itself: a program's PIC_PAL may be an
+	   older one without the field */
+	void (*soft)(int sixteenths);
 } PIC_OVL;
 
 #endif

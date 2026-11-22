@@ -78,6 +78,7 @@ const char *av_name(void);
    names for it (EWeb's page source in the user's editor, Erez 21 Nov 2026). 0 asked: av_message() then gives
    AV_PROGSTARTED with "1" (started) or "0"; -1 no AV server: the app shows it itself */
 int av_startprog(const char *path, const char *cmd);
+int av_has_server(void);	/* 1: an AV server (not us) answers; nothing sent */
 
 /* memory other programs may read: global under MiNT and MagiC (Mxalloc
    mode 0x2B), else local (static: an accessory has nothing else) */

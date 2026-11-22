@@ -3082,6 +3082,11 @@ void pic_pal_init(PIC_PAL *pal, int n, const unsigned char rgb[][3])
 }
 
 
+void pic_pal_soft(PIC_PAL *pal, int sixteenths)
+{
+	pal->soft = (unsigned char) (sixteenths <= 0 || sixteenths >= 16 ? 0 : sixteenths);
+}
+
 void pic_pal_free(PIC_PAL *pal)
 {
 	free(pal->near);
@@ -3160,8 +3165,20 @@ int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b)
    pic_dither is the same done over a whole picture, the same pens */
 #define FEW_KNOWN (32768 / 8)			/* a bit a cell: its pen is known */
 #define FEW_BYTES (FEW_KNOWN + 32768 / 4)	/* then 2 bits a cell, its pen */
+/* the share of a pixel's error passed on, in sixteenths (16: all). PIC.OVL
+   reads its own (pic_ovl_soft, set through its table): a program's older
+   PIC_PAL hasn't the field */
+#ifdef PIC_OVL_BUILD
+int pic_ovl_soft = 16;
+#define SOFT_OF(pal) pic_ovl_soft
+#else
+#define SOFT_OF(pal) ((pal)->soft ? (pal)->soft : 16)
+#endif
+
 struct pic_dither_rows {
 	PIC_PAL *pal;
+	short soft;			/* SOFT_OF(pal) when opened; below 16, the soft rows'
+					   errors are longs, in 256ths (rows as long *) */
 	long w, y;			/* the row's width; rows done (serpentine: odd ones run back) */
 	short *rows, *cur, *nxt;	/* this row's errors and the next's; NULL: each pixel's nearest pen */
 	unsigned char *few;		/* 3 or 4 pens (no near[]): nearest_far's answers, 2 bits a
@@ -3177,10 +3194,13 @@ struct pic_dither_rows {
    two pens can show */
 static void dither_init(PIC_DITHER *dt, long w, PIC_PAL *pal)
 {
+	size_t el;			/* an error's bytes: a short, or a soft dither's long */
 	memset(dt, 0, sizeof(*dt));
 	dt->pal = pal;
 	dt->w = w;
 	dt->two = pal->n == 2;
+	dt->soft = (short) SOFT_OF(pal);
+	el = dt->soft < 16 ? sizeof(long) : sizeof(short);
 	if (dt->two) {
 		short i;
 		/* each pen's brightness (0.299, 0.587, 0.114 in 256ths), and each
@@ -3201,10 +3221,14 @@ static void dither_init(PIC_DITHER *dt, long w, PIC_PAL *pal)
 		}
 		for (i = 0; i < 64; i++)
 			dt->lg[i] = (short) ((150 * ((i << 2) | (i >> 4))) >> 8);
-		dt->rows = calloc((size_t) (w + 2) * 2, sizeof *dt->rows);
+		dt->rows = calloc((size_t) (w + 2) * 2, el);
 		if (dt->rows != NULL) {
 			dt->cur = dt->rows + 1;
 			dt->nxt = dt->rows + w + 3;
+			if (dt->soft < 16) {
+				dt->cur = (short *) ((long *) dt->rows + 1);
+				dt->nxt = (short *) ((long *) dt->rows + w + 3);
+			}
 		}
 	} else {
 		/* (3 or 4 pens have no near[]: a table of their own, 12 KB, in
@@ -3212,12 +3236,12 @@ static void dither_init(PIC_DITHER *dt, long w, PIC_PAL *pal)
 		   grey page 56 s on a stock Falcon. More pens without near[], its
 		   32 KB refused: each searched, as before) */
 		size_t few = pal->near == NULL && pal->n <= 4 ? FEW_BYTES : 0;
-		dt->rows = calloc((size_t) (w + 2) * 6 * sizeof *dt->rows + few, 1);
+		dt->rows = calloc((size_t) (w + 2) * 6 * el + few, 1);
 		if (dt->rows != NULL) {
 			dt->cur = dt->rows;
-			dt->nxt = dt->rows + (w + 2) * 3;
+			dt->nxt = (short *) ((char *) dt->rows + (w + 2) * 3 * el);
 			if (few)
-				dt->few = (unsigned char *) (dt->rows + (w + 2) * 6);
+				dt->few = (unsigned char *) dt->rows + (w + 2) * 6 * el;
 		}
 	}
 }
@@ -3514,6 +3538,124 @@ static void row_many(PIC_DITHER *dt, const unsigned short *px, const unsigned ch
 	}
 }
 
+/* The soft dithers (pic_pal_soft below 16): row_two's and row_many's,
+   each pixel's error q passed on as q x soft (in 256ths, longs), the
+   weights as ever: 7/16 on, 3/16, 5/16 and 1/16 to the row below. The
+   DSP's dither.a56 does the same with its four weights scaled by soft
+   (dd_palette), to the bit: a colour wanted is its base plus the 256ths
+   carried, floored once. Apart from the 16-bit rows, so that all of it
+   costs nothing */
+static void row_two_soft(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *out)
+{
+	long w = dt->w, n, e = 0, *c, *d;
+	const short *lr = dt->lr, *lg = dt->lg, *lb = dt->lb;
+	short y0 = dt->y0, y1 = dt->y1, mid = dt->mid, soft = dt->soft;
+	int light = dt->light, dir = (dt->y & 1) ? -1 : 1;
+	long x = dir > 0 ? 0 : w - 1;
+	for (c = (long *) dt->cur + x, d = (long *) dt->nxt + x, n = w; n > 0; n--, x += dir, c += dir, d += dir) {
+		unsigned v = px[x];
+		short want, q;
+		long qs;
+		if (al != NULL && al[x] < 128) {
+			out[x] = 0;
+			e = 0;
+			continue;
+		}
+		want = (short) (lr[v >> 11] + lg[(v >> 5) & 63] + lb[v & 31] + ((e + *c) >> 8));
+		if (want >= mid) {
+			out[x] = (unsigned char) light;
+			q = want - y0;
+		} else {
+			out[x] = (unsigned char) !light;
+			q = want - y1;
+		}
+		qs = (long) q * soft;
+		e = qs * 7;
+		d[-dir] += qs * 3;
+		d[0] += qs * 5;
+		d[dir] = qs;
+	}
+	{
+		short *t = dt->cur;
+		dt->cur = dt->nxt;
+		dt->nxt = t;
+		memset((long *) dt->nxt - 1, 0, (size_t) (w + 2) * sizeof(long));
+	}
+}
+
+static void row_many_soft(PIC_DITHER *dt, const unsigned short *px, const unsigned char *al, unsigned char *o)
+{
+	PIC_PAL *pal = dt->pal;
+	const unsigned char *near = pal->near, *few = dt->few;
+	long w = dt->w, n;
+	int dir = (dt->y & 1) ? -1 : 1, step = 3 * dir;
+	long x = dir > 0 ? 0 : w - 1;
+	const unsigned short *s = px + x;
+	unsigned char *op = o + x;
+	const unsigned char *a = al != NULL ? al + x : NULL;
+	long *c = (long *) dt->cur + (x + 1) * 3, *d = (long *) dt->nxt + (x + 1) * 3;
+	long er = 0, eg = 0, eb = 0;	/* 7/16 of the last pixel's, in 256ths */
+	short soft = dt->soft;
+	for (n = w; n > 0; n--, s += dir, op += dir, c += step, d += step) {
+		unsigned short v = *s, cell;
+		short r, g, b;
+		long qr, qg, qb;
+		int k;
+		const unsigned char *pen;
+		if (a != NULL) {
+			unsigned char al_ = *a;
+			a += dir;
+			if (al_ < 128) {
+				*op = 0;
+				er = eg = eb = 0;
+				continue;
+			}
+		}
+		r = (short) (c5_of[v >> 11] + ((er + c[0]) >> 8));
+		g = (short) (C6((v >> 5) & 63) + ((eg + c[1]) >> 8));
+		b = (short) (c5_of[v & 31] + ((eb + c[2]) >> 8));
+		r = r < -128 ? -128 : r > 383 ? 383 : r;
+		g = g < -128 ? -128 : g > 383 ? 383 : g;
+		b = b < -128 ? -128 : b > 383 ? 383 : b;
+		cell = (unsigned short) (NEAR_R(r) | NEAR_G(g) | NEAR_B(b));
+		if (near != NULL) {
+			k = near[cell];
+			k = k ? k - 1 : nearest_far(pal, r, g, b);
+		} else if (few == NULL)
+			k = nearest_far(pal, r, g, b);
+		else if (few[cell >> 3] & (1 << (cell & 7)))
+			k = (few[FEW_KNOWN + (cell >> 2)] >> ((cell & 3) << 1)) & 3;
+		else {
+			k = nearest_far(pal, r, g, b);
+			((unsigned char *) few)[cell >> 3] |= (unsigned char) (1 << (cell & 7));
+			((unsigned char *) few)[FEW_KNOWN + (cell >> 2)] |= (unsigned char) (k << ((cell & 3) << 1));
+		}
+		*op = (unsigned char) k;
+		pen = pal->rgb[k];
+		qr = (long) (r - pen[0]) * soft;
+		qg = (long) (g - pen[1]) * soft;
+		qb = (long) (b - pen[2]) * soft;
+		er = qr * 7;
+		eg = qg * 7;
+		eb = qb * 7;
+		d[-step] += qr * 3;
+		d[-step + 1] += qg * 3;
+		d[-step + 2] += qb * 3;
+		d[0] += qr * 5;
+		d[1] += qg * 5;
+		d[2] += qb * 5;
+		d[step] = qr;
+		d[step + 1] = qg;
+		d[step + 2] = qb;
+	}
+	{
+		short *t = dt->cur;
+		dt->cur = dt->nxt;
+		dt->nxt = t;
+		memset(dt->nxt, 0, (size_t) (w + 2) * 3 * sizeof(long));
+	}
+}
+
 PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal)
 {
 	PIC_DITHER *dt = malloc(sizeof(*dt));
@@ -3524,7 +3666,9 @@ PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal)
 
 void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned char *alpha, unsigned char *out)
 {
-	if (dt->two)
+	if (dt->soft < 16 && dt->rows != NULL)
+		(dt->two ? row_two_soft : row_many_soft)(dt, px, alpha, out);
+	else if (dt->two)
 		row_two(dt, px, alpha, out);
 	else
 		row_many(dt, px, alpha, out);
@@ -3589,16 +3733,23 @@ static int dither_whole(const PIC *p, PIC_PAL *pal, unsigned char *out)
 
 static int dd_state;			/* 0: not checked yet, 1: checked, -1: the 68030 does it */
 static int dd_n;			/* the palette the DSP has (0: none) */
+static int dd_soft;			/* and its share (dd_palette) */
 static unsigned char dd_rgb[256][3];
 
 /* the tables: the program's constants and the palette's */
 static void dd_palette(const PIC_PAL *pal)
 {
-	static const unsigned long consts[20] = {
+	unsigned long consts[20] = {
 		0x001000, 0x000020, 0x000010, 0x40, 0x70, 0x700000, 0x300000, 0x500000, 0x100000,
 		0x50, 0x70, 0xb0, DD_PR, 0x010000, 0x000100, 1, 0x90, 0x400000, 0xff, 0xff8000
 	};
 	unsigned long w[3 * 258], shi;
+	int i5, soft = SOFT_OF(pal);
+	/* the error's four weights, 7/8, 3/8, 5/8 and 1/8 (of q 2^14), times
+	   the share: exact for every one (pic_pal_soft), the 68030's soft
+	   rows to the bit. At 16 as they always were */
+	for (i5 = 5; i5 <= 8; i5++)
+		consts[i5] = consts[i5] / 16 * (unsigned long) soft;
 	long n = pal->n, i;
 	/* internal X $40..$E0: WR, WG, LO, WB, WI, and the pack's constant */
 	for (i = 0; i < 32; i++) {
@@ -3659,6 +3810,7 @@ static void dd_palette(const PIC_PAL *pal)
 	dsp_load(D_LOADX, DD_PB + 1, w + 2 * n, n);
 	w[0] = DD_PAL;
 	pic_dsp->put(w, 1);
+	dd_soft = soft;
 	dd_n = pal->n;
 	memcpy(dd_rgb, pal->rgb, (size_t) pal->n * 3);
 }
@@ -3676,7 +3828,7 @@ static int dither_dsp(const PIC *p, PIC_PAL *pal, unsigned char *out)
 	if (!got)
 		return 0;
 	pic_dsp_failed = 0;
-	if (got == 1 || dd_n != pal->n || memcmp(dd_rgb, pal->rgb, (size_t) pal->n * 3) != 0)
+	if (got == 1 || dd_n != pal->n || dd_soft != SOFT_OF(pal) || memcmp(dd_rgb, pal->rgb, (size_t) pal->n * 3) != 0)
 		dd_palette(pal);
 	h[0] = DD_DITHER;
 	h[1] = (unsigned long) w;
@@ -3879,7 +4031,7 @@ int pic_dither_dsp_prepare_step(PIC_PAL *pal)
 			return 0;
 		}
 		pic_dsp_failed = 0;
-		if (got == 1 || dd_n != pal->n || memcmp(dd_rgb, pal->rgb, (size_t) pal->n * 3) != 0)
+		if (got == 1 || dd_n != pal->n || dd_soft != SOFT_OF(pal) || memcmp(dd_rgb, pal->rgb, (size_t) pal->n * 3) != 0)
 			dd_palette(pal);
 		pic_dsp->end(1);
 		ds.y = -1;

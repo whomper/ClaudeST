@@ -20,6 +20,7 @@
 #define pic_pal_free tj_pic_pal_free
 #define pic_pal_init tj_pic_pal_init
 #define pic_pal_nearest tj_pic_pal_nearest
+#define pic_pal_soft tj_pic_pal_soft
 #define pic_poll tj_pic_poll
 #define pic_scale_poll_rows tj_pic_scale_poll_rows
 #define pic_size tj_pic_size

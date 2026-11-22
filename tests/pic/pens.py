@@ -10,7 +10,7 @@ a third of its size, by aerapens built for this machine and for a Pi
 TJpgDec) under qemu-m68k: every output must be the 68k one to the byte (or every
 build must refuse it alike). make pens; run.py first (it makes build/gen).
 
-    pens.py [-q] [FILE...]"""
+    pens.py [-q] [FILE...]        (PENS_NO_PI=1: without the Pi's builds)"""
 import glob
 import os
 import subprocess
@@ -19,6 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "pens"))
 B = os.path.join(HERE, "build", "pens")
+NO_PI = os.environ.get("PENS_NO_PI") == "1"	# no Pi cross-compilers here: the 68k and this machine only
 
 ST16 = [(255, 255, 255), (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255), (0, 255, 255),
         (170, 170, 170), (85, 85, 85), (170, 0, 0), (0, 170, 0), (170, 170, 0), (0, 0, 170), (170, 0, 170),
@@ -36,7 +37,8 @@ def build():
     def make(*args):
         subprocess.run(["make", "-s", "-C", TOOL] + list(args), check=True)
     make()
-    make("pi")
+    if not NO_PI:
+        make("pi")
     # the reference: EWEB.PRG's build as 68030 code, EWEBST.PRG's as 68000
     for ed, arch in (("lj", "-m68030"), ("tj", "-m68000")):
         make("CC=m68k-linux-gnu-gcc", "NM=m68k-linux-gnu-nm", "ARCH=" + arch, "B=" + os.path.join(B, "m68k-" + ed),
@@ -48,12 +50,12 @@ def runners(ed):
     return [("68k", ["qemu-m68k", "-cpu", "m68030", os.path.join(B, "m68k-" + ed, "aerapens")]),
             ("here", [os.path.join(TOOL, "build", "aerapens")]),
             ("arm64", ["qemu-aarch64", os.path.join(TOOL, "build", "arm64", "aerapens")]),
-            ("armhf", ["qemu-arm", os.path.join(TOOL, "build", "armhf", "aerapens")])]
+            ("armhf", ["qemu-arm", os.path.join(TOOL, "build", "armhf", "aerapens")])][:2 if NO_PI else 4]
 
 
-def request(ed, w, h, pal, data):
-    """aerapens' request (aerapens.c)"""
-    return (b"AEPQ\1" + (b"l" if ed == "lj" else b"t") + bytes([len(pal) - 1, 0]) + w.to_bytes(2, "big") +
+def request(ed, w, h, pal, data, soft=0):
+    """aerapens' request (aerapens.c); soft: pic_pal_soft's share in sixteenths, 0 the whole"""
+    return (b"AEPQ\1" + (b"l" if ed == "lj" else b"t") + bytes([len(pal) - 1, soft]) + w.to_bytes(2, "big") +
             h.to_bytes(2, "big") + len(data).to_bytes(4, "big") + bytes(v for c in pal for v in c) + data)
 
 
@@ -83,18 +85,21 @@ def main():
             sizes.append((max(1, own[0] // 3), max(1, own[1] // 3)))
         for ed in ("lj", "tj"):
             for pname, pal in PALS.items():
-                for w, h in sizes:
+              # the softer dithers (pic_pal_soft: 12 and 8, EContact's and EWeb's) with 16 pens and more
+              for soft in ((0, 12, 8) if len(pal) >= 16 else (0,)):
+                for w, h in sizes[:1] if soft else sizes:
                     ref = None
                     for name, cmd in runners(ed):
-                        p = subprocess.run(cmd, input=request(ed, w, h, pal, data), capture_output=True, timeout=600)
+                        p = subprocess.run(cmd, input=request(ed, w, h, pal, data, soft), capture_output=True,
+                                           timeout=600)
                         got = (p.returncode, p.stdout)
                         runs += 1
                         if ref is None:
                             ref = got
                             refused += p.returncode != 0
                         elif got != ref:
-                            bad.append("%s %s %s %sx%s: %s differs from the 68k (exit %d against %d, %d bytes "
-                                       "against %d)" % (os.path.basename(path), ed, pname, w, h, name, got[0],
+                            bad.append("%s %s %s/%d %sx%s: %s differs from the 68k (exit %d against %d, %d bytes "
+                                       "against %d)" % (os.path.basename(path), ed, pname, soft, w, h, name, got[0],
                                                         ref[0], len(got[1]), len(ref[1])))
                         else:
                             same += 1

@@ -9,6 +9,7 @@
 
 short pen[THEME_MAX];
 int colour;
+int theme_keep;
 
 #define FIRST_PEN 16		/* past the desktop's sixteen */
 
@@ -55,6 +56,36 @@ void theme_accent4(short role, const short rgb[3])
 	pen[role] = 2;
 }
 
+/* 256 colours without setting a pen: each role the nearest of the screen's own (text roles not lighter than
+   pen_nearest allows, while one is left); the palette read once into a table on the stack */
+static void keep256(short all, const THEME_ROLE *extra)
+{
+	short pal[256][3], i, p, n = 256;
+	for (p = 0; p < n; p++)
+		vq_color(vdi_h, p, pal[p]);
+	for (i = 0; i < all; i++) {
+		const THEME_ROLE *r = role(i, extra);
+		short best = -1;
+		long bd = 0x7fffffffL;
+		int pass;
+		for (pass = 0; pass < 2 && best < 0; pass++)
+			for (p = 0; p < n; p++) {
+				long dr = pal[p][0] - r->rgb[0], dg = pal[p][1] - r->rgb[1], db = pal[p][2] - r->rgb[2], d;
+				if (r->text16 && !pass && 299L * pal[p][0] + 587L * pal[p][1] + 114L * pal[p][2] > 600000L)
+					continue;
+				d = 3 * dr * dr + 4 * dg * dg + 2 * db * db;
+				if (d < bd) {
+					bd = d;
+					best = p;
+				}
+			}
+		pen[i] = best < 0 ? 1 : best;
+	}
+	for (i = P_BASE; i < all; i++)
+		if (role(i, extra)->not_dim && pen[i] == pen[P_DIM])
+			pen[i] = pen[P_TEXT];
+}
+
 void theme_init(int colour_on, const THEME_ROLE *extra, short n)
 {
 	short i, all;
@@ -70,7 +101,9 @@ void theme_init(int colour_on, const THEME_ROLE *extra, short n)
 	on4 = colour_on && planes == 2;
 	if (!colour)
 		return;
-	if (planes >= 8) {
+	if (planes >= 8 && theme_keep)
+		keep256(all, extra);
+	else if (planes >= 8) {
 		for (i = 0; i < all; i++) {
 			short rgb[3];
 			const THEME_ROLE *r = role(i, extra);

@@ -189,11 +189,18 @@ static int chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
 static int prepare_step(PIC_PAL *pal);
 static int chunky8_prepare(const unsigned char *pix, int w, int h, long key, short vdi);
 
+extern int pic_ovl_soft;	/* pic.c's, in PIC_OVL_BUILD */
+
+static void soft(int sixteenths)
+{
+	pic_ovl_soft = sixteenths <= 0 || sixteenths > 16 ? 16 : sixteenths;
+}
+
 __attribute__((section(".picovl"), used))
 const PIC_OVL picovl = {
 	PICOVL_MAGIC, PICOVL_MAJOR, sizeof(PIC_OVL), PICOVL_VERSION,
 	init, pic_dither_dsp_prepare, dither, pic_dither_state, near_load, near_save, dither_cells, chunky8,
-	prepare_step, chunky8_prepare
+	prepare_step, chunky8_prepare, soft
 };
 
 /* ---- the program's, through PIC_HOST ---- */
