@@ -303,6 +303,9 @@ short graf_mouse(short num, void *form)
 	return 1;
 }
 
+/* (gem.c's: dialog.c sets it when a dialog opens in a window) */
+int (*gem_screen_held)(void);
+
 short graf_mkstate(short *mx, short *my, short *mb, short *ks)
 {
 	*mx = *my = *mb = *ks = 0;

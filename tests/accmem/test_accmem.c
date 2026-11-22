@@ -140,7 +140,7 @@ int main(void)
 
 	/* a 1 MB ST with STinG: 400 KB free; one accessory */
 	a = take(400 * KB, 0, 2048 * KB, 0, 0, 0);
-	check(a == 200 * KB, "1 MB ST, 400 KB free: half (under 2 MB free, as before)");
+	check(a == 208 * KB, "1 MB ST, 400 KB free: half and 8 KB (a first boot under 1 MB, 20 Nov 2026)");
 	a = take(150 * KB, 0, 256 * KB, 0, 0, 0);
 	check(a == 118 * KB, "150 KB free: all but 32 KB (half is under 96 KB)");
 	acc_heap_leave = 96 * KB;
@@ -150,9 +150,13 @@ int main(void)
 	check(a == 64 * KB, "  130 KB free: still 64 KB, the least a heap is");
 	a = take(90 * KB, 0, 1024 * KB, 0, 0, 0);
 	check(a == 58 * KB, "  90 KB free: all but 32 KB");
+	a = take(204 * KB, 0, 1024 * KB, 0, 0, 0);
+	check(a == 108 * KB, "  204 KB free, 96 KB to leave (EHypView's): half and 6 KB, 96 still left");
 	a = take(300 * KB, 0, 1024 * KB, 0, 0, 0);
-	check(a == 150 * KB, "300 KB free, 96 KB to leave: half, as ever");
+	check(a == 158 * KB, "300 KB free, 96 KB to leave: half and 8 KB, 96 KB still left");
 	acc_heap_leave = 32 * KB;
+	a = take(204 * KB, 0, 1024 * KB, 0, 0, 0);
+	check(a == 110 * KB, "a 1 MB Falcon's 204 KB free: half and 8 KB, EHypView's front page's room (20 Nov 2026)");
 	a = take(30 * KB, 0, 256 * KB, 0, 0, 0);
 	check(a == 0 && !added, "30 KB free: nothing taken");
 

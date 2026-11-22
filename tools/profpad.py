@@ -134,7 +134,7 @@ def link(a, link_cmd, pads, mapfile):
         o = os.path.join(a.dir, name + ".o")
         subprocess.run(["m68k-linux-gnu-gcc", a.cpu, "-DPAD_NAME=" + name] +
                        ["-DPAD_%s=%d" % (k.upper(), sizes[k]) for k, _, _ in KINDS] +
-                       ["-DPAD_STR=%d" % sizes.get("str", 0)] +
+                       ["-DPAD_STR=%d" % sizes.get("str", 0), "-DPAD_STR_BYTE=0x7d"] +
                        ["-c", os.path.join(ROOT, "atari", "codepad.S"), "-o", o], check=True)
         after[obj] = o
         us += ["-Wl,-u," + name + s for _, _, s in KINDS]
@@ -225,7 +225,16 @@ def main():
         # it, made longer at its very end, puts it back: a pad of that kind
         # after the last object (EPDF, 18 Nov 2026: crt0's _BasePage, the
         # first BSS, with no object before it to pad after)
-        if all(prof[x[1]][1] != kind for x in common if x[0] < addr) and k != KINDS[0][0]:
+        # (but a pad already linked before its object has room of that kind
+        # there, a byte at a time: the section's start is aligned, and the
+        # section before it can move it only by that alignment's steps.
+        # ECal's lift, 19 Nov 2026: crash.o's ipl_user, 2 bytes off, after
+        # nf.o's pad, the read-only pad's 4-byte steps going round for 60
+        # tries)
+        parts = pieces(mapfile)
+        obj = object_at(parts, addr)
+        pad_before = obj in objs and any(objs.index(o) < objs.index(obj) for o, _ in pads)
+        if all(prof[x[1]][1] != kind for x in common if x[0] < addr) and k != KINDS[0][0] and not pad_before:
             prev = KINDS[[kk for kk, _, _ in KINDS].index(k) - 1][0]
             for o, sizes in pads:
                 if o == objs[-1]:
@@ -236,8 +245,6 @@ def main():
                 sizes[prev] = d
                 pads.append((objs[-1], sizes))
             continue
-        parts = pieces(mapfile)
-        obj = object_at(parts, addr)
         if obj not in objs:
             # an archive's member (libgcc.a's __divdi3, after the last
             # object listed: EConvert, 18 Nov 2026): the pad goes after the

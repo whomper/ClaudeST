@@ -17,12 +17,15 @@
 #define AV_ACCWINDCLOSED 0x4726
 #define AV_EXIT		0x4736
 #define AV_STARTED	0x4738
+#define AV_STARTPROG	0x4722
+#define VA_PROGSTART	0x4723
 
 /* what we tell the server we understand: VA_START (bit 1), answering it
    with AV_STARTED (bit 2), quoted file names (bit 4) */
 #define AV_WE_TAKE	0x0016
 
-static char local_name[10], local_out[1024];
+static char local_name[10], local_out[1024], local_prog[256];
+static char *prog_buf;			/* AV_STARTPROG's path and command, while the server reads them */
 static char *name_buf = local_name, *out_buf;
 int (*av_people_started)(const char *p);
 void (*av_twin_here)(short id);
@@ -236,6 +239,13 @@ int av_message(const short *msg, const char **s)
 	    av_people_started((const char *)(((unsigned long)(unsigned short)msg[3] << 16) |
 					     (unsigned short)msg[4])))
 		return AV_DONE;		/* our PEOPLE arrived (av_people.c) */
+	if (msg[0] == VA_PROGSTART) {
+		/* the server's answer to av_startprog: w3 nonzero when it started */
+		got[0] = msg[3] ? '1' : '0';
+		got[1] = 0;
+		*s = got;
+		return AV_PROGSTARTED;
+	}
 	if (msg[0] != VA_START && msg[0] != AV_PEOPLE_MSG)
 		return AV_NONE;
 	{
@@ -341,4 +351,34 @@ int av_send(const char *names, const char *text)
 	out_buf[l] = 0;
 	av_post(id, VA_START, 0, out_buf);
 	return 1;
+}
+
+/* a file opened by the desktop (AV_STARTPROG): a program started, or a document opened with the program the
+   desktop names for its type (an .htm or .txt in the user's editor); cmd its command line or 0. 0 when asked
+   (the answer comes as AV_PROGSTARTED, "1" started, "0" not), -1 when there is no AV server to ask */
+int av_startprog(const char *path, const char *cmd)
+{
+	long lp = (long)strlen(path), lc = cmd ? (long)strlen(cmd) : 0;
+	short msg[8];
+	if (server < 0)
+		server = find_server();
+	if (server < 0 || server == appl_id() || lp + lc + 2 > (long)sizeof(local_prog))
+		return -1;
+	if (!prog_buf)
+		prog_buf = av_shared(local_prog, sizeof(local_prog));
+	memcpy(prog_buf, path, lp + 1);
+	if (cmd)
+		memcpy(prog_buf + lp + 1, cmd, lc + 1);
+	memset(msg, 0, sizeof(msg));
+	msg[0] = AV_STARTPROG;
+	msg[1] = appl_id();
+	msg[3] = (short)((unsigned long)prog_buf >> 16);
+	msg[4] = (short)(unsigned long)prog_buf;
+	if (cmd) {
+		msg[5] = (short)((unsigned long)(prog_buf + lp + 1) >> 16);
+		msg[6] = (short)(unsigned long)(prog_buf + lp + 1);
+	}
+	msg[7] = 0x4145;		/* "AE": echoed in VA_PROGSTART */
+	appl_write(server, 16, msg);
+	return 0;
 }

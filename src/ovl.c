@@ -216,9 +216,16 @@ static long flush_super(void)
 		unsigned long set, way;
 		(void)jar;
 		(void)cpu;
+		/* nop first: the ColdFire's store buffer drained, so the
+		   relocations just written are in the cache when its lines are
+		   pushed (EmuTOS's flush does the same; a FireBee crash with
+		   HypView resident, 21 Nov 2026, is suspected of it); and after,
+		   the pipeline synchronised before the new code runs */
+		__asm__ volatile("nop" ::: "memory");
 		for (set = 0; set < 512; set++)
 			for (way = 0; way < 4; way++)
 				__asm__ volatile("cpushl %%bc,(%0)" : : "a"(set << 4 | way) : "memory");
+		__asm__ volatile("nop" ::: "memory");
 		return 0;
 	}
 #endif
@@ -229,11 +236,13 @@ static long flush_super(void)
 			   ColdFire build above (cpushl %bc,(%a0) as words). TLSFB.OVL
 			   is loaded so (Erez, 15 Nov 2026) */
 			unsigned long set, way;
+			__asm__ volatile(".short 0x4e71" ::: "memory");	/* nop: the store buffer drained */
 			for (set = 0; set < 512; set++)
 				for (way = 0; way < 4; way++) {
 					register unsigned long a __asm__("a0") = set << 4 | way;
 					__asm__ volatile(".short 0xf4e8" : : "a"(a) : "memory");
 				}
+			__asm__ volatile(".short 0x4e71" ::: "memory");	/* nop */
 			return 0;
 		} else if (jar[0] == 0x5F435055L)	/* _CPU: 0, 10, 20, 30, 40, 60 */
 			cpu = jar[1];

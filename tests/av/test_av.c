@@ -374,6 +374,21 @@ int main(void)
 		memcpy(environment, keep, sizeof(keep));
 	}
 
+	/* AV_STARTPROG (EWeb's page source in the user's editor, Erez 21 Nov 2026) */
+	{
+		const char *s;
+		short ans[8] = { 0x4723, 2, 0, 1, 0, 0, 0, 0x4145 };
+		int w = writes;
+		check(av_startprog("C:\\EWEB\\CACHE\\SOURCE.HTM", 0) == 0 && writes == w + 1 && sent[0] == 0x4722 &&
+		      !strcmp(ptr(sent[3], sent[4]), "C:\\EWEB\\CACHE\\SOURCE.HTM") && sent[5] == 0 && sent[6] == 0,
+		      "av_startprog: AV_STARTPROG with the file, no command line");
+		check(av_startprog("C:\\ED.PRG", "C:\\A.TXT") == 0 && !strcmp(ptr(sent[3], sent[4]), "C:\\ED.PRG") &&
+		      !strcmp(ptr(sent[5], sent[6]), "C:\\A.TXT"), "av_startprog: a program with its command line");
+		check(av_message(ans, &s) == AV_PROGSTARTED && !strcmp(s, "1"), "VA_PROGSTART: started");
+		ans[3] = 0;
+		check(av_message(ans, &s) == AV_PROGSTARTED && !strcmp(s, "0"), "VA_PROGSTART: not started");
+	}
+
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;
 }
