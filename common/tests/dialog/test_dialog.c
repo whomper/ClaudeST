@@ -568,6 +568,9 @@ short form_dial(short flag, short x, short y, short w, short h)
 
 /* dlg_win_button's: the button's state now, and where it is let go */
 static short fake_watch, watches;
+/* (gem.c's: dialog.c sets it when a dialog opens in a window) */
+int (*gem_screen_held)(void);
+
 short graf_mkstate(short *mx, short *my, short *mb, short *ks)
 {
 	*mx = *my = *ks = 0;

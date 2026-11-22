@@ -659,10 +659,19 @@ static int aes_multi(void)
 	return k;
 }
 
-/* the GEM file selector; the titled version needs AES 1.4 (TOS 1.04) */
+/* set by dialog.c while a dialog in a window holds the screen (wind_update): the file selector is then the AES's
+   own window, dragged by the user, and with the screen held nobody gave back what it uncovered (a tester's V4SA,
+   EUpdate's "Where its files go", 19 Nov 2026). 0: nothing held */
+int (*gem_screen_held)(void);
+
+/* the GEM file selector; the titled version needs AES 1.4 (TOS 1.04). The screen let go while it is up where a
+   dialog window holds it (gem_screen_held) */
 short fsel_exinput(char *path, char *name, short *button, const char *title)
 {
 	short r;
+	int held = gem_screen_held && gem_screen_held();
+	if (held)
+		wind_update(END_UPDATE);
 	addrin[0] = path;
 	addrin[1] = name;
 	if (aes_version() >= 0x0104) {
@@ -672,6 +681,8 @@ short fsel_exinput(char *path, char *name, short *button, const char *title)
 		r = aes(90, 0, 2, 2, 0);
 	}
 	*button = aintout[1];
+	if (held)
+		wind_update(BEG_UPDATE);
 	return r;
 }
 
@@ -1516,4 +1527,96 @@ void key_state_init(void)
 {
 	if (kq_state < 0)
 		kq_init();
+}
+
+/* a physical workstation: a printer or a file driver from ASSIGN.SYS (GDOS/NVDI: 21-30 printers, 31 metafile,
+   91 picture files), its 57 words as v_opnvwk's; the handle, 0 when there is none. Drawing on it as on the
+   screen, v_updwk prints the page, v_clrwk starts the next, v_clswk ends the job (common/ui/print.c) */
+short v_opnwk(const short *work_in, short *work_out)
+{
+	short i;
+	for (i = 0; i < 11; i++)
+		vintin[i] = work_in[i];
+	attr_h = -1;
+	vdi(1, 0, 11, 0);
+	for (i = 0; i < 45; i++)
+		work_out[i] = vintout[i];
+	for (i = 0; i < 12; i++)
+		work_out[45 + i] = ptsout[i];
+	return contrl[6];
+}
+
+void v_clswk(short h) { vdi(2, 0, 0, h); attr_h = -1; }
+void v_clrwk(short h) { vdi(3, 0, 0, h); }
+void v_updwk(short h) { vdi(4, 0, 0, h); }
+
+/* WDIALOG's print dialog (MagiC, or WDIALOG.PRG in AUTO under TOS; appl_getinfo(7)'s bit 4), and NVDI 5's
+   v_opnprn: the printer the user chose opened with their settings (common/ui/print.c). The settings are
+   PRN_SETTINGS, whose layout the app reads only through these calls and a few documented fields */
+void *pdlg_create(short flags)
+{
+	addrout[0] = 0;				/* an AES without WDIALOG leaves it */
+	aintin[0] = flags;
+	aes(200, 1, 0, 0, 1);
+	return addrout[0];
+}
+
+short pdlg_delete(void *dlg)
+{
+	addrin[0] = dlg;
+	return aes(201, 0, 1, 1, 0);
+}
+
+static short pdlg_sub(short sub, void *dlg, void *set)
+{
+	aintin[0] = sub;
+	addrin[0] = dlg;
+	addrin[1] = set;
+	return aes(205, 1, 1, set ? 2 : 1, 0);
+}
+
+void *pdlg_new_settings(void *dlg)
+{
+	aintin[0] = 5;
+	addrin[0] = dlg;
+	aes(205, 1, 0, 1, 1);
+	return addrout[0];
+}
+
+short pdlg_free_settings(void *set) { aintin[0] = 6; addrin[0] = set; return aes(205, 1, 1, 1, 0); }
+short pdlg_dflt_settings(void *dlg, void *set) { return pdlg_sub(7, dlg, set); }
+short pdlg_validate_settings(void *dlg, void *set) { return pdlg_sub(8, dlg, set); }
+short pdlg_use_settings(void *dlg, void *set) { return pdlg_sub(9, dlg, set); }
+short pdlg_save_default_settings(void *dlg, void *set) { return pdlg_sub(10, dlg, set); }
+
+short pdlg_do(void *dlg, void *set, const char *name, short options)
+{
+	aintin[0] = options;
+	addrin[0] = dlg;
+	addrin[1] = set;
+	addrin[2] = (void *)name;
+	return aes(207, 1, 1, 3, 0);
+}
+
+/* the printer in set, through the physical workstation base (graf_handle's): its handle, 0 if none */
+short v_opnprn(short base, void *set, short *work_out)
+{
+	unsigned char *p = set;
+	short i;
+	vintin[0] = *(short *)(p + 32);		/* driver_id */
+	for (i = 1; i < 10; i++)
+		vintin[i] = 1;
+	vintin[10] = 2;
+	vintin[11] = (short)*(long *)(p + 80);	/* size_id */
+	vintin[12] = (short)((u32)(p + 128) >> 16);	/* device: the output's file name */
+	vintin[13] = (short)((u32)(p + 128) & 0xffff);
+	vintin[14] = (short)((u32)p >> 16);
+	vintin[15] = (short)((u32)p & 0xffff);
+	attr_h = -1;
+	vdi(1, 0, 16, base);
+	for (i = 0; i < 45; i++)
+		work_out[i] = vintout[i];
+	for (i = 0; i < 12; i++)
+		work_out[45 + i] = ptsout[i];
+	return contrl[6];
 }

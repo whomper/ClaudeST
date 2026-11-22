@@ -63,6 +63,18 @@ long acc_heap_take(long first, long tt_first, long heapkb, long memkb)
 		cap = avail / (n > 2 ? 2 * n : 4);
 	} else {
 		cap = avail / 2;
+		/* a first boot (nothing measured yet) under 1 MB: half and up to
+		   8 KB, as far as acc_heap_leave still leaves. Half of a 1 MB
+		   Falcon's ~204 KB left EHypView's front page a picture short by a
+		   kilobyte (20 Nov 2026); from the next boot MEMKB= is what was
+		   measured */
+		if (!known) {
+			long more = avail - acc_heap_leave - cap;
+			if (more > 8L * 1024)
+				more = 8L * 1024;
+			if (more > 0)
+				cap += more;
+		}
 	}
 	if (want > cap) {
 		want = cap & ~1L;

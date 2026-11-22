@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """run.py WORK EMUTOS.IMG [PRG] [--copy FILE ...] [--display :97] [--wait S]
           [--steps "..."] [--size MB] [--setenv NAME=VALUE ...] [--cnf LINE ...]
-          [--ext2 DIR] [--start PATH] [--mem-prot]
+          [--ext2 DIR] [--start PATH] [--mem-prot] [--aes xaaes|myaes]
 
 An Atari GEM program in Hatari under FreeMiNT 1.17.0 with XaAES, an AES
 that iconifies windows, multitasks and does drag and drop, on a Falcon
@@ -37,6 +37,9 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
               move X Y          the mouse
               click X Y, rclick X Y, dclick X Y
               drag X1 Y1 X2 Y2  press at X1 Y1, move to X2 Y2, let go
+              hold X1 Y1 X2 Y2 N MS
+                                as drag, in N steps MS apart, a screenshot taken
+                                while still held (a window moved live)
               key 0x1c          a key by its scan code, or a character
               ctrl n            Control with a key, a letter by its scan code (a capital adds Shift)
               until TEXT [S]    wait (120 s) for TEXT in hatari.log, a line
@@ -56,9 +59,20 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
 --mem-prot  FreeMiNT's memory protection on (MEM_PROT=YES in mint.ini, Hatari --mmu on), for a program that
             touches its own memory from an interrupt or while another process runs (PRGFLAGS: private by
             default, bits 4-5; 0x10 is global). The default is off, as before
+--inet      MiNTnet's sockets: FreeMiNT's inet4.xdd (from the archive fetch.py took) in the mint folder, so
+            Fsocket answers and a program that waits for a network stack goes on (its connections to
+            127.0.0.1 refused, the rest unanswered: there is no interface but the loopback)
 --start P   what XAAES.CNF starts instead of C:\\PRG, e.g. "d:\\eweb.prg"
             for a release folder given as --ext2 (PRG may then be left out;
             given, it is copied to C: all the same)
+
+--aes myaes MyAES (Olivier Landemarre's AES, 0.99, a tester's: 21 Nov 2026) in place of XaAES: its 68020
+            folder from the release zip (myaes.lutece.net), unpacked, named by AERA_MYAES (default
+            ~/.aera/myaes/config/68020/myaes), is put in C:\\GEMSYS\\MYAES without the names FAT's 8.3
+            can't hold (skin pictures, a keyboard folder); MiNT's GEM= starts its kernel, its shell is
+            what XAAES.CNF's run line would start, --setenv lines become its exports; MyAES opens the
+            screen itself in its own mode (640 x 480, 256 colours), so OPNWK.PRG is left out Its 68020 kernel needs an FPU: --machine ct60. It is a test
+            stand-in, never committed and never in a release. --cnf is XaAES's and is refused with it
 
 Prints the screenshots' names at the end; exits 1 when a step failed.
 """
@@ -83,7 +97,12 @@ BASE = os.path.join(HERE, "build", "base")
 
 def ext2_xfs():
     """FreeMiNT's ext2.xfs (68020 and up), from the archive fetch.py took"""
-    out = os.path.join(HERE, "build", "ext2.xfs")
+    return from_archive("ext2.xfs", "driver/xfs/ext2.xfs")
+
+
+def from_archive(name, member):
+    """a file of the FreeMiNT archive fetch.py took, kept in build as name"""
+    out = os.path.join(HERE, "build", name)
     if not os.path.exists(out):
         import zipfile
         zips = [f for f in os.listdir(os.path.join(HERE, "build")) if f.startswith("freemint-") and f.endswith(".zip")]
@@ -91,7 +110,7 @@ def ext2_xfs():
             sys.exit("no FreeMiNT archive in build: make base")
         with zipfile.ZipFile(os.path.join(HERE, "build", zips[0])) as z:
             with open(out, "wb") as f:
-                f.write(z.read("driver/xfs/ext2.xfs"))
+                f.write(z.read(member))
     return out
 
 
@@ -124,6 +143,7 @@ def main():
     ap.add_argument("--cnf", action="append", default=[], metavar="LINE")
     ap.add_argument("--ext2", metavar="DIR")
     ap.add_argument("--start", metavar="PATH")
+    ap.add_argument("--aes", default="xaaes", choices=["xaaes", "myaes"])
     ap.add_argument("--machine", default="falcon", choices=["falcon", "tt", "ct60"],
                     help="falcon: VGA, 14 MB, the IDE disk (default); tt: a TT030 at 32 MHz with 4 MB + 16 MB TT RAM on "
                          "its high resolution monitor (1280x960 mono), the same IDE disk; ct60: a CT60's stand-in, a "
@@ -139,6 +159,8 @@ def main():
                          "MMU makes Hatari slow (the steps' waits may need to be longer)")
     ap.add_argument("--dsp", default="none", choices=["none", "dummy", "emu"],
                     help="Hatari's --dsp (default none; emu for a program that plays through the DSP)")
+    ap.add_argument("--inet", action="store_true",
+                    help="MiNTnet's sockets (FreeMiNT's inet4.xdd): a program that needs a network stack runs on")
     a = ap.parse_args()
     if not a.prg and not a.start:
         ap.error("a PRG, or --start")
@@ -153,6 +175,48 @@ def main():
             return r
         print("FreeMiNT came up in its shell, not XaAES: starting again", flush=True)
     return 1
+
+
+def myaes(a, hd, mintdir, ver, first):
+    """MyAES in place of XaAES (--aes myaes): its folder in C:\\GEMSYS\\MYAES, MiNT's GEM= its kernel, the
+    program its shell"""
+    if a.cnf:
+        sys.exit("run.py: --cnf is XaAES's, not MyAES's")
+    src = os.environ.get("AERA_MYAES", os.path.expanduser("~/.aera/myaes/config/68020/myaes"))
+    if not os.path.exists(os.path.join(src, "myaes020.prg")):
+        sys.exit("run.py: --aes myaes, but no myaes020.prg in %s (AERA_MYAES)" % src)
+    dst = os.path.join(hd, "GEMSYS", "MYAES")
+
+    def fits(n):
+        try:
+            fatimg.name83(n)
+            return True
+        except ValueError:
+            return False
+    for d, ds, fs in os.walk(src):
+        ds[:] = [x for x in ds if fits(x)]
+        to = os.path.join(dst, os.path.relpath(d, src))
+        os.makedirs(to, exist_ok=True)
+        for f in fs:
+            if fits(f):
+                shutil.copy(os.path.join(d, f), os.path.join(to, f))
+    cnf = os.path.join(mintdir, ver, "mint.cnf")
+    with open(cnf) as f:
+        t = [l for l in f.read().splitlines() if not l.startswith("GEM=")]
+    with open(cnf, "w") as f:
+        f.write("\n".join(t + ["GEM=u:\\c\\gemsys\\myaes\\myaes020.prg"]) + "\n")
+    with open(os.path.join(dst, "desktop.cnf"), "w", newline="\r\n") as f:
+        f.write("shell %s\n" % first)
+        for e in a.setenv:
+            f.write("export %s\n" % e)
+    os.remove(os.path.join(hd, "auto", "opnwk.prg"))     # MyAES opens the screen itself, in its own mode
+    with open(os.path.join(dst, "autorun.cnf"), "w", newline="\r\n") as f:
+        f.write("# the rig's program is the shell\n")
+    p = os.path.join(dst, "myaes.cnf")
+    with open(p, errors="replace") as f:
+        t = f.read().replace("accpath = C:\\acc\\", "accpath = C:\\")
+    with open(p, "w") as f:
+        f.write(t)
 
 
 def run(a):
@@ -197,6 +261,8 @@ def run(a):
     if a.start:
         first = a.start
     img2 = None
+    if a.inet:
+        shutil.copy(from_archive("inet4.xdd", "driver/xdd/inet4.xdd"), os.path.join(mintdir, ver, "inet4.xdd"))
     if a.ext2:
         shutil.copy(ext2_xfs(), os.path.join(mintdir, ver, "ext2.xfs"))
         img2 = os.path.join(work, "ext2.img")
@@ -206,13 +272,16 @@ def run(a):
         with open(os.path.join(hd, "LATER.TXT"), "w") as f:
             f.write("%d %s\r\n" % (a.later, first if a.start else "C:\\" + name))
         first = "c:\\LATER.PRG"
-    with open(os.path.join(mintdir, ver, "xaaes", "xaaes.cnf"), "a") as f:
-        for e in a.setenv:
-            k, v = e.split("=", 1)
-            f.write("setenv %s %s\n" % (k, v))
-        for l in a.cnf:
-            f.write(l + "\n")
-        f.write("run %s\n" % first)
+    if a.aes == "myaes":
+        myaes(a, hd, mintdir, ver, first)
+    else:
+        with open(os.path.join(mintdir, ver, "xaaes", "xaaes.cnf"), "a") as f:
+            for e in a.setenv:
+                k, v = e.split("=", 1)
+                f.write("setenv %s %s\n" % (k, v))
+            for l in a.cnf:
+                f.write(l + "\n")
+            f.write("run %s\n" % first)
     img = os.path.join(work, "hd.img")
     fatimg.build(hd, img, a.size)
 
@@ -292,7 +361,7 @@ def run(a):
                     ok = False
                     break
                 print("%6.1fs %s" % (time.time() - t0, " ".join(p)), flush=True)
-                if p[0] in ("move", "click", "rclick", "dclick", "drag") and win is None:
+                if p[0] in ("move", "click", "rclick", "dclick", "drag", "hold") and win is None:
                     for _ in range(50):
                         f = (xdo("search", "--pid", str(h.pid)) or xdo("search", "--name", "Hatari")).split()
                         if f:
@@ -330,6 +399,20 @@ def run(a):
                         xdo("mousemove", str(wx + x1 + (x2 - x1) * k // 10), str(wy + y1 + (y2 - y1) * k // 10))
                         time.sleep(0.08)
                     time.sleep(0.4)
+                    xdo("mouseup", "1")
+                    time.sleep(0.5)
+                elif p[0] == "hold":
+                    x1, y1, x2, y2, n, ms = (int(v) for v in p[1:7])
+                    xdo("mousemove", str(wx + x1), str(wy + y1))
+                    time.sleep(0.3)
+                    xdo("mousedown", "1")
+                    time.sleep(0.4)
+                    for k in range(1, n + 1):	# a slow hand: N steps, MS apart, the shot taken before letting go
+                        xdo("mousemove", str(wx + x1 + (x2 - x1) * k // n), str(wy + y1 + (y2 - y1) * k // n))
+                        time.sleep(ms / 1000.0)
+                    time.sleep(0.5)
+                    cmd("hatari-shortcut screenshot")
+                    time.sleep(1)
                     xdo("mouseup", "1")
                     time.sleep(0.5)
                 elif p[0] == "key":

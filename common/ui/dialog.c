@@ -396,6 +396,7 @@ int dlg_in_window(void)
 	return ndw > 0 && dw[ndw - 1].h > 0;
 }
 
+
 static int clip(short *x, short *y, short *w, short *h, short cx, short cy, short cw, short ch)
 {
 	short x2 = *x + *w < cx + cw ? *x + *w : cx + cw;
@@ -461,6 +462,13 @@ static void win_paint_some(short i, short x, short y, short w, short h, int some
 	short rx, ry, rw, rh;
 	wind_update(BEG_UPDATE);
 	graf_mouse(M_OFF, 0);
+	if (dw[i].tree) {
+		/* the tree where the window is now: an AES that moves a window itself during a drag (real-time
+		   moving) can ask for a piece before our WM_MOVED has put the tree there, and the app's own drawing
+		   (filepick's list) went to the old place (a tester's V4SA, EPlay's Add files, 19 Nov 2026) */
+		short d1, d2;
+		wind_get(dw[i].h, WF_WORKXYWH, &dw[i].tree[0].ob_x, &dw[i].tree[0].ob_y, &d1, &d2);
+	}
 	wind_get(dw[i].h, WF_FIRSTXYWH, &rx, &ry, &rw, &rh);
 	while (rw > 0 && rh > 0) {
 		if (clip(&rx, &ry, &rw, &rh, x, y, w, h)) {
@@ -1246,6 +1254,7 @@ static short open_any(OBJECT *tree, void (*draw)(short, short, short, short),
 			ndw = i + 1;
 			win_paint(i, *x, *y, *w, *h);
 			wind_update(BEG_UPDATE);	/* as on TOS: the caller draws and runs it */
+			gem_screen_held = dlg_in_window;	/* fsel_exinput lets it go while the selector is up */
 			return 1;
 		}
 		/* no window to be had: over the screen, as on TOS */
@@ -1542,7 +1551,13 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 				/* the work area stays on 16 pixels across */
 				wind_calc(WC_WORK, DLG_KIND, msg[4], msg[5], msg[6], msg[7], &wx, &wy, &ww, &wh);
 				msg[4] += ((wx + 8) & ~15) - wx;
+				/* (without the screen held: the AES gives back what the window uncovered, the desktop and the
+				   windows under it, while it moves; held, an AES that redraws those through its screen
+				   manager or the desktop's owner left the dialog's old places on the screen, trails at each
+				   step of a drag: a tester's V4SA, EUpdate's and EPlay's file dialogs, 19 Nov 2026) */
+				wind_update(END_UPDATE);
 				wind_set(dw[k].h, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
+				wind_update(BEG_UPDATE);
 				if (dw[k].tree)
 					wind_get(dw[k].h, WF_WORKXYWH, &dw[k].tree[0].ob_x,
 						 &dw[k].tree[0].ob_y, &d1, &d1);

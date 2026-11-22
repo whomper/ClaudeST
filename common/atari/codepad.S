@@ -33,8 +33,15 @@ RO(PAD_NAME):
 	.section .rodata.str1.1,"aMS",@progbits,1
 	.globl	STR(PAD_NAME)
 STR(PAD_NAME):
+#ifndef PAD_STR_BYTE
+#define PAD_STR_BYTE 0x7e
+#endif
+	/* (not 0x7f: a string another pad's tail could hold; profpad.py's
+	   pads take 0x7d, -DPAD_STR_BYTE, so an app's own pad of 0x7e, a
+	   longer one, doesn't hold theirs as its tail and merge it away:
+	   EWeb's pad_onstack_str, 19 Nov 2026) */
 	.rept	PAD_STR - 1
-	.byte	0x7e	/* (not 0x7f: a string another pad's tail could hold) */
+	.byte	PAD_STR_BYTE
 	.endr
 	.byte	0
 #endif

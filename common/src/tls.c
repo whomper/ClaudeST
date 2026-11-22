@@ -93,13 +93,23 @@ const char *tls_ovl_version(void) { return ""; }
 void tls_ovl_unload(void) { }
 #endif
 
-/* the elliptic curves: BearSSL's own, or ecdsp.c's on the DSP */
-static const br_ec_impl *ec_impl = &br_ec_all_m31;
+/* the elliptic curves: BearSSL's own, or ecdsp.c's on the DSP. On a ColdFire (the FireBee's tlsfb.ovl:
+   32x32->32 multiplies, no 64-bit product) BearSSL's 15-bit code: ColdFire instructions under qemu-m68k
+   -cpu cfv4e (21 Nov 2026), a P-256 product 18.3 M against prime_i31's 38.0 M with mont31's loop (m31's
+   61.3 M), X25519 7.0 M against m31's 35.7 M, the same points */
+#ifdef __mcoldfire__
+#define EC_ALL br_ec_all_m15
+#define ECDSA_VRFY br_ecdsa_i15_vrfy_asn1
+#else
+#define EC_ALL br_ec_all_m31
+#define ECDSA_VRFY br_ecdsa_i31_vrfy_asn1
+#endif
+static const br_ec_impl *ec_impl = &EC_ALL;
 static br_ecdsa_vrfy ec_vrfy;
 
 void tls_set_ec(const br_ec_impl *impl, br_ecdsa_vrfy vrfy)
 {
-	ec_impl = impl ? impl : &br_ec_all_m31;
+	ec_impl = impl ? impl : &EC_ALL;
 	ec_vrfy = vrfy;
 }
 
@@ -174,7 +184,7 @@ static uint32_t ecdsa_timed(const br_ec_impl *impl, const void *hash, size_t has
    a TT: a P-256 product 1.5 s against 2.0 s); X25519 stays m31's */
 static const br_ec_impl *ec_for(int curve)
 {
-#ifdef TLS_030
+#if defined(TLS_030) && !defined(__mcoldfire__)
 	if (ec_real == &br_ec_all_m31)
 		return curve == BR_EC_curve25519 ? &br_ec_c25519_m31 : &br_ec_prime_i31;
 #endif
@@ -1677,7 +1687,11 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 	else
 		br_ssl_engine_set_suites(&t->cc.eng, suites_all, sizeof(suites_all) / sizeof(suites_all[0]));
 	/* timed (ms_ec, ms_ecdsa) for the handshake's log line */
+#ifdef __mcoldfire__
+	ecdsa_real = ec_vrfy ? ec_vrfy : ECDSA_VRFY;
+#else
 	ecdsa_real = ec_vrfy ? ec_vrfy : br_ecdsa_vrfy_asn1_get_default();
+#endif
 	br_ssl_engine_set_ecdsa(&t->cc.eng, rsa_only ? 0 : ecdsa_timed);
 	/* BearSSL's: the fastest code for a 32-bit CPU without fast 64-bit
 	   products */
@@ -1695,7 +1709,7 @@ TLS *tls_start(int sock, const char *host, int flags, int *retry, char *err, int
 	br_ssl_engine_set_rsavrfy(&t->cc.eng, rsa_vrfy);
 	br_ssl_client_set_rsapub(&t->cc, rsa_public);
 	br_x509_minimal_set_rsa(&t->xc, rsa_check);
-	sig_vrfy = ec_vrfy ? ec_vrfy : br_ecdsa_i31_vrfy_asn1;
+	sig_vrfy = ec_vrfy ? ec_vrfy : ECDSA_VRFY;
 	br_x509_minimal_set_ecdsa(&t->xc, &ec_timed, sig_check);
 	t->xc.dn_hash_impl = &dn_vtable;
 	set_time(&t->xc);

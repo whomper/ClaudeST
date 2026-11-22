@@ -27,7 +27,7 @@
 #ifndef AERA_AV_H
 #define AERA_AV_H
 
-enum { AV_NONE, AV_START, AV_DONE, AV_PEOPLE };
+enum { AV_NONE, AV_START, AV_DONE, AV_PEOPLE, AV_PROGSTARTED };
 
 /* our names as the AES may know us, by the file we were started as:
    "EWEB|EWEBST" (the one appl_find gives our id is used; renamed, the
@@ -74,6 +74,10 @@ extern void (*av_people_hook)(const char *s, short from);
 int av_modal_message(const short *msg);
 /* the name the AES knows us by, without its padding ("ECAL", "EWEBST") */
 const char *av_name(void);
+/* a file opened through the desktop (AV_STARTPROG): a program, or a document in the program the desktop
+   names for it (EWeb's page source in the user's editor, Erez 21 Nov 2026). 0 asked: av_message() then gives
+   AV_PROGSTARTED with "1" (started) or "0"; -1 no AV server: the app shows it itself */
+int av_startprog(const char *path, const char *cmd);
 
 /* memory other programs may read: global under MiNT and MagiC (Mxalloc
    mode 0x2B), else local (static: an accessory has nothing else) */

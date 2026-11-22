@@ -221,6 +221,8 @@ extern short aes_double;	/* the last press evnt_multi_ gave came as the second o
 short aes_count(void);		/* global[1]: 1 on TOS, -1 on a multitasking AES */
 short appl_getinfo(short type, short *o1, short *o2, short *o3, short *o4);	/* 0: not known, or no appl_getinfo (AES < 4.0 without ?AGI or MagiC) */
 short fsel_exinput(char *path, char *name, short *button, const char *title);
+/* while it gives 1, fsel_exinput lets the screen go (wind_update) while the selector is up: dialog.c sets it */
+extern int (*gem_screen_held)(void);
 short form_do(OBJECT *tree, short start);
 short form_keybd(OBJECT *tree, short obj, short next, short ch, short *onext, short *och);
 short form_button(OBJECT *tree, short obj, short clicks, short *onext);
@@ -282,6 +284,23 @@ short evnt_multi_(short flags, short clicks, short mask, short state,
 /* VDI */
 short v_opnvwk_(short phys, short *work_out);
 void v_clsvwk(short h);
+/* a physical workstation (a printer, a file driver): its handle, 0 if none; v_updwk prints the page, v_clrwk
+   starts the next, v_clswk ends it (common/ui/print.c) */
+short v_opnwk(const short *work_in, short *work_out);
+void v_clswk(short h);
+void v_clrwk(short h);
+void v_updwk(short h);
+/* WDIALOG's print dialog and NVDI 5's printer opened with its settings (PRN_SETTINGS, opaque) */
+void *pdlg_create(short flags);
+short pdlg_delete(void *dlg);
+void *pdlg_new_settings(void *dlg);
+short pdlg_free_settings(void *set);
+short pdlg_dflt_settings(void *dlg, void *set);
+short pdlg_validate_settings(void *dlg, void *set);
+short pdlg_use_settings(void *dlg, void *set);
+short pdlg_save_default_settings(void *dlg, void *set);
+short pdlg_do(void *dlg, void *set, const char *name, short options);
+short v_opnprn(short base, void *set, short *work_out);
 void vs_clip(short h, short on, const short *pxy);
 void vswr_mode(short h, short mode);
 void vsf_interior(short h, short style);
