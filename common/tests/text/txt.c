@@ -232,6 +232,9 @@ static void move_case(short x1, short x2, short dy)
 	vro_cpyfm(vh, 3, p, &scr, &scr);
 	mgrab(mbuf_a);
 	mfill();
+	/* as an app that sets its font each redraw (EHypView): no glyph
+	   compared yet, scr_rows still the CPU's (sf_geom, 22 Nov 2026) */
+	text_font(vh, 1, cw, ch);
 	text_clip(vh, c);
 	scr_rows(vh, p);
 	text_noclip(vh);
@@ -473,6 +476,15 @@ static void timing(void)
 		for (k = 0; k < 4; k++)
 			scr_rows(vh, p);
 		snprintf(line, sizeof(line), "TXT time: a window's scroll by a row: scr_rows %lu ms", (unsigned long)(tos_ms() - t) / 4);
+		say(line);
+		t = tos_ms();
+		for (k = 0; k < 4; k++) {
+			text_font(vh, 1, cw, ch);	/* each redraw's, no text drawn since */
+			text_clip(vh, cc);
+			scr_rows(vh, p);
+		}
+		snprintf(line, sizeof(line), "TXT time: a window's scroll by a row, text_font just set: scr_rows %lu ms",
+			 (unsigned long)(tos_ms() - t) / 4);
 		say(line);
 		/* a narrow pane's (EContact's list: 192 wide, x 8 mod 16, a
 		   cut group at each side of every row) */

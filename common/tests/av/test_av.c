@@ -168,6 +168,7 @@ int main(void)
 	writes = 0;
 	av_init("EMAIL   ");
 	check(writes == 0, "no AV server: no AV_PROTOKOLL");
+	check(av_has_server() == 0 && writes == 0, "no AV server: av_has_server says so, nothing sent");
 	av_exit();
 	check(writes == 0, "no AV server: no AV_EXIT");
 
@@ -379,6 +380,7 @@ int main(void)
 		const char *s;
 		short ans[8] = { 0x4723, 2, 0, 1, 0, 0, 0, 0x4145 };
 		int w = writes;
+		check(av_has_server() == 1 && writes == w, "av_has_server: a server answers, nothing sent");
 		check(av_startprog("C:\\EWEB\\CACHE\\SOURCE.HTM", 0) == 0 && writes == w + 1 && sent[0] == 0x4722 &&
 		      !strcmp(ptr(sent[3], sent[4]), "C:\\EWEB\\CACHE\\SOURCE.HTM") && sent[5] == 0 && sent[6] == 0,
 		      "av_startprog: AV_STARTPROG with the file, no command line");

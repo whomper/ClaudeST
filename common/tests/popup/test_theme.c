@@ -172,6 +172,30 @@ int main(void)
 		theme_exit();
 	}
 
+	/* theme_keep (EHypView, 22 Nov 2026): in 256 colours the roles take the nearest of the screen's own pens,
+	   none set; text roles not the light ones while a dark one is left */
+	planes = 8;
+	for (i = 0; i < 256; i++) {
+		palette[i][0] = (short)(i * 1000 / 255);
+		palette[i][1] = (short)(i * 1000 / 255);
+		palette[i][2] = (short)(i * 1000 / 255);
+	}
+	palette[200][0] = 0, palette[200][1] = 470, palette[200][2] = 850;	/* a blue among the greys */
+	theme_keep = 1;
+	nset = nget = 0;
+	theme_init(1, mine, 3);
+	check(nset == 0 && nget == 256, "theme_keep: the palette read once, no pen set");
+	check(pen[P_SEL] == 200, "theme_keep: the selection takes the nearest blue");
+	check(pen[P_PANEL] >= 230 && pen[P_TEXT] <= 40, "theme_keep: panel light, text dark, from the greys");
+	theme_exit();
+	check(nset == 0, "theme_keep: theme_exit puts nothing back");
+	planes = 4;
+	nset = 0;
+	theme_init(1, mine, 3);
+	check(pen[P_SEL] == 12 && nset == 0, "theme_keep: 16 colours as without it");
+	theme_exit();
+	theme_keep = 0;
+
 	printf("%d checks, %d failed\n", total, failed);
 	return failed != 0;
 }

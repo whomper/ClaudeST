@@ -137,11 +137,24 @@ typedef struct {
 	   pens (a monochrome ST's 32 KB back), NULL: each worked out */
 	unsigned char *near;
 	unsigned char order[256];	/* the pens sorted by their red */
+	/* (last, as PIC.OVL reads a program's PIC_PAL by its places)
+	   pic_pal_soft's share, in sixteenths; 0: 16, all of it */
+	unsigned char soft;
 } PIC_PAL;
 /* n pens of these colours. A PIC_PAL starts zeroed (static, or memset)
    and may be made again; pic_pal_free gives its table back */
 void pic_pal_init(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 void pic_pal_free(PIC_PAL *pal);
+/* Soft (Erez, 21 Nov 2026, EContact's photos): the share of each pixel's
+   error the dithers pass on, in sixteenths, 1 to 16 (0 or 16: all of it,
+   Floyd-Steinberg as it always was, byte for byte, at no cost). Less is
+   less grain where the palette has no near colour (a pastel among 256's
+   6-level cube, anything on 16), for a colour a little off. Every dither
+   takes it: pic_dither, pic_dither_row and the DSP's (PIC.OVL 1.3 on;
+   with an older one a soft dither is the 68030's, the same pens). EContact
+   asks for 12 on 16 pens and 8 on more; off unless asked. pic_pal_init
+   leaves it as it is */
+void pic_pal_soft(PIC_PAL *pal, int sixteenths);
 /* the pen nearest a colour (to 4 bits a component; -128..383 each) */
 int pic_pal_nearest(PIC_PAL *pal, int r, int g, int b);
 /* the picture as pens, Floyd-Steinberg (serpentine; a colour wanted past

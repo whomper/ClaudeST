@@ -9,12 +9,15 @@ other program's latest release, not a build of its main).
     getrelease.py APP@v1.8 DIR FILE...       that release
     getrelease.py --source APP DIR PATH...   files of the source at the
                                              latest release's tag
+    getrelease.py --firebee APP DIR FILE...  from the FireBee package
 
 APP is the repository's name under github.com/whomper (EHypView,
 EContact...). FILE is a file the release carries; with --source, PATH is
 a file in the repository as it was tagged for the release, for a program
 whose release carries no files of its own (AERA-Gateway's
-gateway/eftpgate.py). The files land in DIR (by their names, without the
+gateway/eftpgate.py). A release with no such file of its own (the guidelines' 7.4, 22 Nov
+2026: two zips and nothing else) gives it from its package, app-x.y.zip, or with --firebee
+app-x.y-firebee.zip, found by its name in any case. The files land in DIR (by their names, without the
 folders), and DIR/APP.VERSION says which release they came from (a rig
 prints it, so a report names it). Standard Python only. The same file is
 in AERA-Atari's common/tools and xl/tools.
@@ -52,7 +55,7 @@ def latest(app, name):
         except urllib.error.URLError:
             pass
         return highest_tag(app)
-    sys.exit("%s: no release with %s" % (app, name))
+    return highest_tag(app)	# none of its own: the files are in the release's zips (7.4)
 
 
 def spellings(name):
@@ -82,14 +85,38 @@ def highest_tag(app):
     return max(tags, key=lambda t: (int(t[1]), int(t[2])))[0]
 
 
-def fetch(spec, d, names, source=False):
+_zips = {}
+
+
+def from_zip(app, tag, name, firebee):
+    """NAME's bytes from the release's package, app-x.y.zip or app-x.y-firebee.zip"""
+    import io
+    import zipfile
+    zname = "%s-%s%s.zip" % (app.lower(), tag.lstrip("v"), "-firebee" if firebee else "")
+    if zname not in _zips:
+        url = "https://github.com/%s/%s/releases/download/%s/%s" % (OWNER, app, tag, zname)
+        try:
+            with urllib.request.urlopen(url) as r:
+                _zips[zname] = zipfile.ZipFile(io.BytesIO(r.read()))
+        except urllib.error.HTTPError:
+            _zips[zname] = None
+    z = _zips[zname]
+    if z is None:
+        return None
+    for m in z.namelist():
+        if m.lower().rstrip("/").split("/")[-1] == os.path.basename(name).lower() or m.lower() == name.lower():
+            return z.read(m)
+    return None
+
+
+def fetch(spec, d, names, source=False, firebee=False):
     app, _, tag = spec.partition("@")
     tag = tag or (highest_tag(app) if source else latest(app, names[0]))
     os.makedirs(d, exist_ok=True)
     for n in names:
         data, err = None, None
         # a source file by its exact path; a release's file whatever its case
-        for m in [n] if source else spellings(n):
+        for m in [] if firebee else [n] if source else spellings(n):
             if source:
                 url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (OWNER, app, tag, m)
             else:
@@ -100,8 +127,10 @@ def fetch(spec, d, names, source=False):
                 break
             except urllib.error.HTTPError as e:
                 err = e
+        if data is None and not source:
+            data = from_zip(app, tag, n, firebee)
         if data is None:
-            sys.exit("%s %s: no %s (%s)" % (app, tag, n, err))
+            sys.exit("%s %s: no %s (%s)" % (app, tag, n, err or "not in its zip"))
         with open(os.path.join(d, os.path.basename(n)), "wb") as f:
             f.write(data)
     with open(os.path.join(d, app.upper() + ".VERSION"), "w") as f:
@@ -116,8 +145,9 @@ if __name__ == "__main__":
     hubonly.require("getrelease.py")
     args = sys.argv[1:]
     source = args[:1] == ["--source"]
-    if source:
+    firebee = args[:1] == ["--firebee"]
+    if source or firebee:
         args = args[1:]
     if len(args) < 3:
         sys.exit(__doc__)
-    fetch(args[0], args[1], args[2:], source)
+    fetch(args[0], args[1], args[2:], source, firebee)

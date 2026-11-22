@@ -74,6 +74,19 @@ static void load(void)
 	conn_log("Photo", " -- ", "PIC.OVL loaded", 14);
 }
 
+/* pal's share to the overlay: 1 the DSP will dither with it; 0 not (an
+   overlay older than 1.3 knows only all of it: a soft dither stays the
+   68030's, the same pens) */
+static int share(const PIC_PAL *pal)
+{
+	int s = pal->soft ? pal->soft : 16;
+	if (HAS(soft)) {
+		ov->soft(s);
+		return 1;
+	}
+	return s == 16;
+}
+
 int pic_ovl_step(PIC_PAL *pal, const char *near, long key)
 {
 	if (state == 0) {
@@ -90,7 +103,9 @@ int pic_ovl_step(PIC_PAL *pal, const char *near, long key)
 		return -1;
 	}
 	if (state == 4) {
-		int r = ov->prepare_step(pal);
+		int r;
+		share(pal);
+		r = ov->prepare_step(pal);
 		if (r >= 0)
 			state = r ? 2 : 3;
 		return -1;
@@ -101,7 +116,7 @@ int pic_ovl_step(PIC_PAL *pal, const char *near, long key)
 int pic_ovl_cells(const unsigned short *cells, int cw, int ch, int w, int h, int cx,
 		  const short *half, PIC_PAL *pal, unsigned char *out, unsigned char *used)
 {
-	return state == 2 && ov->dither_cells(cells, cw, ch, w, h, cx, half, pal, out, used);
+	return state == 2 && share(pal) && ov->dither_cells(cells, cw, ch, w, h, cx, half, pal, out, used);
 }
 
 int pic_ovl_chunky8(const unsigned char *pix, int w, int h, long key, short vdi,
