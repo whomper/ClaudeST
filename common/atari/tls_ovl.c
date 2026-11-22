@@ -65,8 +65,9 @@ const char *tls_ovl_version(void)
 	return ov ? ov->version : "";
 }
 
-/* the overlay's file: tls_ovl_path, or on a ColdFire (the FireBee: the
-   _CF_ cookie) tlsfb.ovl in its folder, TLS.OVL's ColdFire build. The
+/* the overlay's file: tls_ovl_path. A FireBee build (__mcoldfire__) takes it as it is: its package's tls.ovl
+   is TLS.OVL's ColdFire build. A 68000 program on a ColdFire (the _CF_ cookie: a release made before the two
+   packages) takes tlsfb.ovl in its folder, TLS.OVL's ColdFire build. The
    programs are 68000 code that FireTOS runs; TLS.OVL's 68030 code can't
    run there (a tester ran EMail with EWeb's TLSFB.OVL renamed, and it
    worked: Erez, 15 Nov 2026, "yes to TLSFB.OVL") */
@@ -74,6 +75,11 @@ static void ovl_path(char *path, int n)
 {
 	char *s;
 	str_copy(path, tls_ovl_path, n);
+#ifdef __mcoldfire__
+	/* a FireBee build (its own package, Erez 22 Nov 2026: "rename all other FB files into their standard
+	   filename"): the package's tls.ovl is the ColdFire one, under its standard name */
+	return;
+#endif
 	if (!get_cookie(0x5F43465FL))		/* '_CF_' */
 		return;
 	for (s = path + strlen(path); s > path && s[-1] != '\\' && s[-1] != '/'; s--)

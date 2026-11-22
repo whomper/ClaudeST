@@ -19,9 +19,11 @@ and each cross-compiler command is run again for the ColdFire:
   with --emac-ok FILE.o (the 68000 build's object path);
 - no pads: the 68030's caches aren't the ColdFire's.
 
-TLS on the FireBee is TLSFB.OVL (common/tlsovl, copied as it is). An accessory is made the same way from
-its own ELF; it is installed in place of the 68000 one, never beside it (a FireBee loads every .ACC in the
-root: the guidelines, 7.4).
+TLS on the FireBee is common/tlsovl's tlsfb.ovl, shipped in the FireBee zip as tls.ovl (Erez, 22 Nov
+2026: every file of the FireBee package under its standard name; a __mcoldfire__ build's tls_ovl.c loads
+tls.ovl as named). An accessory is made the same way from its own ELF; it is installed in place of the
+68000 one, never beside it (a FireBee loads every .ACC in the root: the guidelines, 7.4). OUT is the
+build's own name (build/cf/ or binary/cf/); the release's FireBee zip carries it under the standard one.
 
     common/tools/mkfirebee.py --elf build/NAME.elf [--make "PADS=no"] [--outdir build/cf/]
                               [--prgflags 7] [--emac-ok build/x.o ...] OUT.PRG
