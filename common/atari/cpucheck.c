@@ -32,6 +32,13 @@
 extern const long cpu_need;
 extern const char cpu_alert[];
 extern const char cpu_cf_alert[] __attribute__((weak));
+/* an accessory's Desk menu entry ("  ECal"): where it is defined, an accessory on the wrong machine registers
+   it and shows its alert when the user opens it; without it, it waits without a word */
+extern const char cpu_acc_name[] __attribute__((weak));
+/* an accessory's own words, where its program's don't fit ("put X.ACC in its place", [ OK ]); else the program's */
+extern const char cpu_acc_alert[] __attribute__((weak));
+extern const char cpu_cf_acc_alert[] __attribute__((weak));
+extern short _is_acc __attribute__((weak));	/* crt0.S: 1 when started as a desk accessory */
 int app_main(void);
 
 /* XBIOS 38, Supexec: f in supervisor mode, its d0 back */
@@ -93,7 +100,7 @@ static short aes(short op, short nin, short nout, short nain)
 	control[3] = nain;
 	control[4] = 0;
 	__asm__ volatile("move.l %0,%%d1\n\t"
-			 "move.w #200,%%d0\n\t"
+			 "move.l #200,%%d0\n\t"
 			 "trap #2"
 			 : : "g"(aespb) : "d0", "d1", "d2", "a0", "a1", "a2", "memory", "cc");
 	return intout[0];
@@ -107,6 +114,31 @@ int main(void)
 	else if (cpu_cf_alert && supexec(cf_cookie))
 		say = cpu_cf_alert;
 	if (say) {
+		if (&_is_acc && _is_acc) {
+			if (say == cpu_alert && cpu_acc_alert)
+				say = cpu_acc_alert;
+			else if (say == cpu_cf_alert && cpu_cf_acc_alert)
+				say = cpu_cf_acc_alert;
+			/* an accessory never ends (crt0's loop would stop the machine) and says nothing at the
+			   boot (the guidelines, 2.2): its entry, and the alert when the user opens it (Erez, 22 Nov
+			   2026: every app native on the FireBee; ECal found the hang) */
+			static short msg[8];
+			short id = aes(10, 0, 1, 0);	/* appl_init */
+			if (id >= 0 && cpu_acc_name) {
+				intin[0] = global[2];
+				addrin[0] = (void *)cpu_acc_name;
+				aes(35, 1, 1, 1);	/* menu_register */
+			}
+			for (;;) {
+				addrin[0] = msg;
+				aes(23, 0, 1, 1);	/* evnt_mesag */
+				if (msg[0] == 40 && cpu_acc_name) {	/* AC_OPEN */
+					intin[0] = 1;
+					addrin[0] = (void *)say;
+					aes(52, 1, 1, 1);	/* form_alert */
+				}
+			}
+		}
 		if (aes(10, 0, 1, 0) >= 0) {	/* appl_init */
 			intin[0] = 1;
 			addrin[0] = (void *)say;

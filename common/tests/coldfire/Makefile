@@ -15,7 +15,7 @@ BASE   ?= origin/main
 CF     := -mcpu=5475 -O2 -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
           -fno-tree-loop-distribute-patterns -nostdinc -isystem $(GCCINC) -I. -I$(C)/src -Wall
 LD     := $(CC) -mcpu=5475 -nostdlib -static -no-pie -Wl,-z,noexecstack
-TESTS  := $(B)/test_crt0 $(B)/test_crt0_acc $(B)/test_sting $(B)/test_nf $(B)/test_inflate $(B)/test_inflate_c $(B)/test_mont $(B)/test_mont_host $(B)/test_crash $(B)/test_tls $(B)/test_cpucheck_cf $(B)/test_cpucheck_030 $(B)/test_cpucheck_c_cf $(B)/test_cpucheck_c_none $(B)/test_rows_cf $(B)/test_rows_030 $(B)/test_ll64 $(B)/test_ll64_host $(B)/test_tlsfb
+TESTS  := $(B)/test_crt0 $(B)/test_crt0_acc $(B)/test_sting $(B)/test_nf $(B)/test_inflate $(B)/test_inflate_c $(B)/test_mont $(B)/test_mont_host $(B)/test_crash $(B)/test_tls $(B)/test_cpucheck_cf $(B)/test_cpucheck_030 $(B)/test_cpucheck_c_cf $(B)/test_cpucheck_c_none $(B)/test_cpucheck_acc1_030 $(B)/test_cpucheck_acc0_030 $(B)/test_cpucheck_acc2_030 $(B)/test_cpucheck_c_acc $(B)/test_cpucheck_c_acc0 $(B)/test_cpucheck_c_acc2 $(B)/test_rows_cf $(B)/test_rows_030 $(B)/test_ll64 $(B)/test_ll64_host $(B)/test_tlsfb
 
 all: $(TESTS)
 
@@ -151,13 +151,22 @@ $(B)/test_cpucheck_030: test_cpucheck.c $(B)/cpucheck_cf.o gemdos.c libc.c rt.S
 	$(CC) -m68030 -nostdlib -static -no-pie -Wl,-z,noexecstack -o $@ $(B)/t030.o $(B)/cpucheck_cf.o \
 		$(B)/gemdos030.o $(B)/libc030.o $(B)/rt030.o -lgcc
 
+# an accessory on the wrong machine (cpucheck_cf.S as a 68030 runs it): it waits on evnt_mesag, its
+# entry registered and its alert at AC_OPEN (cpu_acc_name), or silent without one (Erez, 22 Nov 2026)
+$(B)/test_cpucheck_acc%_030: test_cpucheck.c $(B)/cpucheck_cf.o $(B)/test_cpucheck_030
+	$(CC) $(subst -mcpu=5475,-m68030,$(CF)) -DACC $(if $(filter 0,$*),,-DACC_NAME) $(if $(filter 2,$*),-DACC_ALERT) -c -o $@.o test_cpucheck.c
+	$(CC) -m68030 -nostdlib -static -no-pie -Wl,-z,noexecstack -o $@ $@.o $(B)/cpucheck_cf.o \
+		$(B)/gemdos030.o $(B)/libc030.o $(B)/rt030.o -lgcc
+
 # cpucheck.c: as an app builds it (68000 code, its main renamed), run in a
 # 68030 harness with and without cpu_cf_alert
 $(B)/cpucheck_c.o: $(C)/atari/cpucheck.c | $(B)
 	$(CC) $(subst -mcpu=5475,-m68000,$(CF)) -Os -c -o $@ $<
 	$(CROSS)objcopy --redefine-sym main=main_check $@
 $(B)/test_cpucheck_c_%: test_cpucheck_c.c $(B)/cpucheck_c.o $(B)/test_cpucheck_030
-	$(CC) $(subst -mcpu=5475,-m68030,$(CF)) $(if $(filter cf,$*),-DCF_ALERT) -c -o $@.o test_cpucheck_c.c
+	$(CC) $(subst -mcpu=5475,-m68030,$(CF)) $(if $(filter cf,$*),-DCF_ALERT) \
+		$(if $(filter acc acc0 acc2,$*),-DACC) $(if $(filter acc acc2,$*),-DACC_NAME) \
+		$(if $(filter acc2,$*),-DACC_ALERT) -c -o $@.o test_cpucheck_c.c
 	$(CC) -m68030 -nostdlib -static -no-pie -Wl,-z,noexecstack -o $@ $@.o $(B)/cpucheck_c.o \
 		$(B)/gemdos030.o $(B)/libc030.o $(B)/rt030.o -lgcc
 
@@ -229,6 +238,12 @@ test: $(TESTS)
 	qemu-m68k -cpu m68030 $(B)/test_cpucheck_030
 	qemu-m68k -cpu m68030 $(B)/test_cpucheck_c_cf
 	qemu-m68k -cpu m68030 $(B)/test_cpucheck_c_none
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_acc1_030
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_acc0_030
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_c_acc
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_c_acc0
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_acc2_030
+	qemu-m68k -cpu m68030 $(B)/test_cpucheck_c_acc2
 	$(QEMU) $(B)/test_crash
 	$(QEMU) $(B)/test_crash take
 	$(QEMU) $(B)/test_crash linef
