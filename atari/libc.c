@@ -1045,17 +1045,20 @@ long heap_check(long *nfree)
 
 unsigned long strtoul(const char *s, char **end, int base_)
 {
+	const char *s0 = s, *d0;
 	unsigned long v = 0;
 	while (isspace((u8)*s))
 		s++;
 	if (*s == '+')
 		s++;
 	if ((base_ == 0 || base_ == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+		s0 = s + 1;	/* "0x" with no hex digit: the "0" is the number */
 		s += 2;
 		base_ = 16;
 	} else if (base_ == 0) {
 		base_ = 10;
 	}
+	d0 = s;
 	for (;; s++) {
 		int d;
 		if (isdigit((u8)*s))
@@ -1068,21 +1071,33 @@ unsigned long strtoul(const char *s, char **end, int base_)
 			break;
 		v = v * base_ + d;
 	}
+	/* no digit: *end is the text as given, as the C standard has it (EFTP's make cftest, 22 Nov 2026) */
 	if (end)
-		*end = (char *)s;
+		*end = (char *)(s == d0 ? s0 : s);
 	return v;
 }
 
 long strtol(const char *s, char **end, int base_)
 {
+	const char *s0 = s;
+	char *e;
+	unsigned long v;
 	int neg = 0;
 	while (isspace((u8)*s))
 		s++;
 	if (*s == '-') {
 		neg = 1;
 		s++;
+		if (isspace((u8)*s) || *s == '+') {	/* "- 5" is no number */
+			if (end)
+				*end = (char *)s0;
+			return 0;
+		}
 	}
-	return neg ? -(long)strtoul(s, end, base_) : (long)strtoul(s, end, base_);
+	v = strtoul(s, &e, base_);
+	if (end)
+		*end = e == s ? (char *)s0 : e;	/* strtoul gives s back when no digit came */
+	return neg ? -(long)v : (long)v;
 }
 
 int atoi(const char *s) { return (int)strtol(s, 0, 10); }
