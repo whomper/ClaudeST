@@ -24,7 +24,7 @@ not given). The rows:
  10  accessories                                  none: ClaudeST is a program only
  11  the network: STinG through the Gateway       every speed.py row (FAKESTNG)
  12  NatFeats off: no NATFEATS= in the INF        start, quit, no CRASH.LOG
- own ClaudeST's own rigs (inf_keys, disk_budget, long_field, font_gdos)
+ own ClaudeST's own rigs (inf_keys, disk_budget, long_field, firebee_test, font_gdos)
 
 Under MiNT ClaudeST has no STinG (the rig's FAKESTNG is a TOS program):
 it starts offline, as on a MiNT machine without STinG. Each MiNT row
@@ -259,6 +259,8 @@ def main():
                 ["bash", os.path.join(HERE, "disk_budget.sh")], {"IDLE": "30"})
         own_rig(work, "long_field.sh on ST:mono, TOS 1.04: a field holding more than it shows",
                 ["bash", os.path.join(HERE, "long_field.sh")])
+        own_rig(work, "firebee_test.py: CLAUDEST.PRG on the FireBee stand-in and CLAUDEFB.PRG on a Falcon and an ST name the other",
+                [sys.executable, os.path.join(HERE, "firebee_test.py"), os.path.join(work, "own-fbt")])
         own_rig(work, "font_gdos.py on Falcon:16, TOS 4.04, NVDI: a GDOS font chosen, kept, drawn after a restart",
                 [sys.executable, os.path.join(HERE, "font_gdos.py"), os.path.join(work, "own-fg"), "--prg", ship],
                 {"AERA_WITH_NVDI": "1"})

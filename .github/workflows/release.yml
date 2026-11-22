@@ -55,7 +55,7 @@ jobs:
           # answers, over IPv4
           printf '%s\n' https://mirrors.edge.kernel.org/ubuntu http://azure.archive.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           sudo apt-get -o Acquire::Retries=3 -o Acquire::ForceIPv4=true update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::ForceIPv4=true install -y gcc-m68k-linux-gnu zip autoconf automake libtool gettext autopoint pkg-config
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::ForceIPv4=true install -y gcc-m68k-linux-gnu qemu-user zip autoconf automake libtool gettext autopoint pkg-config
       - name: hcp, for the help file
         run: common/tools/build-hcp.sh "$RUNNER_TEMP/hcp"
       - name: Test
