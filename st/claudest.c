@@ -101,11 +101,11 @@ static short cur_font_id = 1, cur_font_pt;	/* the font set now (set_font) */
 static short set_font(short id, short pt);
 static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
 /* Hebrew in the system and bitmap fonts is the Atari character set's:
-   the "Hebrew in fonts" setting went in 2.11 (Erez, 17 Nov 2026; HEBFONT=
+   the "Hebrew in fonts" setting went in 2.11 (17 Nov 2026; HEBFONT=
    read once and dropped) */
 /* Write a log (Options and Settings, LOG= in CLAUDEST.INF): CLAUDEST.LOG
    at the quit, only when on; off until the user ticks it (the guidelines,
-   6.5: no log without its switch; Erez, 14 Nov 2026) */
+   6.5: no log without its switch; 14 Nov 2026) */
 static short log_on;
 /* how the current font gets Hebrew: */
 #define HM_MAP     0			/* the Atari character set's (system and bitmap fonts) */
@@ -287,7 +287,7 @@ static short text_diff;			/* draw_text: rows as shown are left alone */
 static short pending_scroll;		/* lines auto-scrolled since last redraw */
 
 /* the link to the bridge: TCP through STinG (the serial cable went in
-   2.3, Erez 9 Nov 2026: networking only) */
+   2.3, 9 Nov 2026: networking only) */
 static u32 tcp_ip;
 static u16 tcp_port = 2323;
 static short tcp_cn = -1;
@@ -380,7 +380,7 @@ static const MBAR_ITEM m_desk[] = {
 	{ 0, 0, 0 }
 };
 /* File keeps the program's commands; the chats' own are under Chat, New
-   among them (the guidelines, 3.1; a tester, Erez 27 Oct 2026). A
+   among them (the guidelines, 3.1; a tester, 27 Oct 2026). A
    one-window program lists Quit alone; ^U still quits (handle_key; D3) */
 static const MBAR_ITEM m_file[] = {
 	{ "Reconnect", "^R", C_REF },
@@ -402,12 +402,12 @@ static const MBAR_ITEM m_chat[] = {
 	{ "Attach file...", "^O", C_ATTACH },
 	{ "-", 0, 0 },
 	/* "Show chat list" while it is hidden (set_sidebar): the same length,
-	   so the item's text is changed in place (D45, Erez 10 Nov 2026) */
+	   so the item's text is changed in place (D45, 10 Nov 2026) */
 	{ "Hide chat list", "\x01^S", C_SIDEBAR },
 	{ 0, 0, 0 }
 };
 /* the account item, Settings, Font, a line, then the ticks (D6, D13;
-   Erez, 10 Nov 2026; the guidelines, 3.1: Write a log last) */
+   10 Nov 2026; the guidelines, 3.1: Write a log last) */
 static const MBAR_ITEM m_opts[] = {
 	{ "Account...", "F8", C_ACCT },
 	{ "Settings...", "^,", C_SET },
@@ -443,7 +443,7 @@ static void set_status(const char *s)
 }
 
 /* Work handed to the Gateway, in three phases on the status line (the
- * guidelines, 7.3; Erez, 7 Nov 2026): Sending (a file attached, a message
+ * guidelines, 7.3; 7 Nov 2026): Sending (a file attached, a message
  * sent), Working (Claude thinking: the bridge's Y 1), Receiving (the reply
  * arriving: the bytes so far); then the status line's own words again.
  * The KB figure is drawn again only when it changed and 100 ms after the
@@ -664,7 +664,7 @@ static short grows_plainly(short li)
    has the same offset is left as it is only if its text is the same
    (draw_text compared offsets alone, so a cleared chat's "Loading...",
    where the old text's line had been, left that line on the screen:
-   Erez, 10 Nov 2026) */
+   10 Nov 2026) */
 static u16 row_sum(long off, short len)
 {
 	const u8 *t = (const u8 *)tb + off;
@@ -865,7 +865,7 @@ static void heb_runs(short x, short y, const char *s, short n)
 
 /* in transparent mode (every bold caller's). Bold is never vst_effects'
    here, where text sits in cells: NVDI widens each letter by a pixel or
-   more, out of its cell (EHypView, from Erez's photo, 27 Oct 2026). Black
+   more, out of its cell (EHypView, from a photo, 27 Oct 2026). Black
    bold the fast way, the plain text ORed a pixel to the right (text_fx);
    other bold the plain text struck again a pixel to the right
    (text_bold_strike); the guidelines' Speed, text */
@@ -1063,7 +1063,7 @@ static void blit_mask(unsigned short *m, short w, short h, short x, short y,
  * box white, so it replaces an older ring without first being erased. */
 /* the shapes ring() worked out last, kept: the status line's ring and dot
  * and the list's dots come back the same at every redraw, and working one
- * out is ~130 ms on an 8 MHz ST (the start's first redraw; Erez, 13 Nov
+ * out is ~130 ms on an 8 MHz ST (the start's first redraw; 13 Nov
  * 2026: the start made faster) */
 enum { RING_KEEP = 4 };
 static struct {
@@ -1376,7 +1376,7 @@ static void draw_status(short full)
 
 /* the navigation's highlight as it was last drawn whole (a bit a row; -1
  * not known): a list that ends with the same one draws only the list
- * (Erez, 13 Nov 2026: the start made faster) */
+ * (13 Nov 2026: the start made faster) */
 static short nav_shown = -1;
 
 static short nav_mask(void)
@@ -1446,8 +1446,8 @@ static void draw_sidebar(void)
 		if (it->heading) {
 			/* a date heading, in grey like claude.ai's: TOS's dark
 			   grey where the screen has it; with too few colours, not
-			   the dotted "light" text, which is hard to read (Erez,
-			   29 Oct 2026) */
+			   the dotted "light" text, which is hard to read
+			   (29 Oct 2026) */
 			if (ncolors >= 16)
 				text(x, y + (row_h - ch) / 2 - 1, it->label, n, 0, tos_pen[9]);
 			else
@@ -2256,7 +2256,7 @@ static void redraw_dot(short i);
 
 /* Claude's answer has come while the window is behind another or an
    icon: a notification where BGEM.NG runs (the guidelines, 4.5; a tester,
-   Erez 27 Oct 2026), its Show bringing the window to the front; elsewhere
+   27 Oct 2026), its Show bringing the window to the front; elsewhere
    nothing, as before */
 static void on_resize(void);
 
@@ -2808,7 +2808,7 @@ static short inf_key(const char *l, const char *name, const char **v)
 static short inf_old;	/* an old key read: written once the new way */
 static short nf_read;	/* NATFEATS= was in the file: a rig's, kept */
 static short panes_read;	/* PANES= read: it wins over the old SIDEBAR= (D44) */
-/* WINDOW=x,y,w,h (D43; Erez, 17 Nov 2026): the place kept, w 0 when none;
+/* WINDOW=x,y,w,h (D43; 17 Nov 2026): the place kept, w 0 when none;
    the place the window opened at, to see at the quit whether it moved */
 static short place_x, place_y, place_w, place_h;
 static short open_x, open_y, open_w, open_h;
@@ -2870,11 +2870,11 @@ static short inf_setting(const char *l)
 		log_on = inf_num(&v) != 0;
 	} else if (inf_key(l, "NATFEATS", &v)) {
 		/* the emulator's console, for the test rigs only (common's
-		   nf.S; Erez, 15 Nov 2026): written back only when read */
+		   nf.S; 15 Nov 2026): written back only when read */
 		nf_on = inf_num(&v) != 0;
 		nf_read = 1;
 	} else if (inf_key(l, "DIALOGS3D", &v))
-		;	/* no setting any more (the guidelines, 5.6; a tester, Erez
+		;	/* no setting any more (the guidelines, 5.6; a tester,
 			   27 Oct 2026): read without it, and not kept */
 	else if (inf_key(l, "PANES", &v)) {
 		sb_user = inf_num(&v);	/* the chat list's width */
@@ -3607,7 +3607,7 @@ static short dlg_x, dlg_y, dlg_w, dlg_h, fld_x, fld_y, fld_w, fld_cols;
 static short btn_y, btn_h, ok_x, cancel_x, btn_w;
 
 /* The own dialogs' AES objects (the guidelines, 5.6: "Buttons are the
- * AES's"; a tester, Erez 27 Oct 2026): the box, its exit buttons and its
+ * AES's"; a tester, 27 Oct 2026): the box, its exit buttons and its
  * choices are a tree the AES draws (objc_draw), in its look, 3D where it
  * has one (dlg_3d); the text and the fields go over it with the VDI. A
  * dialog's place() builds it where the parts are now (own_begin,
@@ -4162,7 +4162,7 @@ static void probe_hebrew(short id)
  * system font's form again and turns the CPU's text and fills off until a
  * first line has been drawn by the VDI and compared, and every redraw sets
  * the window's font (an 8 MHz ST: the sidebar's fills went to the VDI,
- * ~70 ms of each whole redraw; Erez, 13 Nov 2026: the start made faster) */
+ * ~70 ms of each whole redraw; 13 Nov 2026: the start made faster) */
 static short tf_id = -1, tf_w, tf_h;
 
 static void text_font_as(short id, short w, short h)
@@ -4392,7 +4392,7 @@ static void help(void)
 }
 
 /* the About box: the AERA programs' shared one (common/ui/aboutbox.c),
- * with its status lines in the family's words (the guidelines, 1.3; Erez,
+ * with its status lines in the family's words (the guidelines, 1.3;
  * 27 Oct 2026): how ClaudeST is connected, then the memory. Line 2, what
  * the app holds, is left out: the chats are claude.ai's, none kept here.
  * And the trademarks it names */
@@ -5142,7 +5142,7 @@ static int list_bar_goto(long t)
 
 static void handle_msg(short *msg);
 
-/* a list's press (the guidelines' 5.8, Erez, 1 Nov 2026): the row is
+/* a list's press (the guidelines' 5.8, 1 Nov 2026): the row is
    shown selected on the press, and what it does waits for the release.
    common's press_track waits for it, the link served and messages handled
    meanwhile; 1 if it came up over x1..x2, y1..y2 (moved while held is a
@@ -5243,7 +5243,7 @@ static void handle_click(short mx, short my)
 
 /* the Hebrew keyboard switched (common's set_hebrew_kbd calls it): the
    typing field's badge. It always starts off and isn't kept in the INF:
-   F10 only (guideline 5.3, Erez 8 Nov 2026); an old HEBREW= line is
+   F10 only (guideline 5.3, 8 Nov 2026); an old HEBREW= line is
    ignored and goes at the next save. */
 static void hebrew_changed(void)
 {
@@ -5312,7 +5312,7 @@ static void move_cursor(short d)
  * the bottom right, the keyboard's reach (D25). Pages in the family's
  * order: Secure (the Gateway's address and port, 7.3's words), Advanced
  * (the log); it opens on Secure, the page the guide's set-up step names.
- * (Look, with "Hebrew in fonts", went in 2.11: Erez, 17 Nov 2026) */
+ * (Look, with "Hebrew in fonts", went in 2.11: 17 Nov 2026) */
 static char sd_addr[16], sd_port[6];
 static short sd_log;
 static short sd_addr_obj, sd_port_obj;
@@ -5416,7 +5416,7 @@ static void settings_open(void)
 static void do_list(const char *kind);
 static void set_sidebar(short hide);
 
-/* Esc in the window (the guidelines, 3.5; a tester, Erez 27 Oct 2026):
+/* Esc in the window (the guidelines, 3.5; a tester, 27 Oct 2026):
    the reply, several lines, is never emptied by it (Shift+Delete does
    that); a search, a field of one line, is, and Esc does nothing else
    there. It lets go of the item picked in the sidebar */
@@ -5452,7 +5452,7 @@ static void handle_key(short kstate, short kr)
 		{
 			/* under the selected row, at its left; with nothing
 			   selected in view, the list's first item, at the
-			   pane's top left (Erez, 10 Nov 2026: D17) */
+			   pane's top left (10 Nov 2026: D17) */
 			short i = lcur;
 			if (i < 0 && cur_id[0])	/* the chat open, if listed */
 				for (i = 0; i < nitems && (items[i].heading || strcmp(items[i].id, cur_id)); i++)
@@ -5725,7 +5725,7 @@ static void handle_msg(short *msg)
 		case C_COPY: reply_clip(CLIP_COPY); break;
 		case C_PASTE: reply_clip(CLIP_PASTE); break;
 		case C_ANSWER: copy_answer(); break;
-		case C_QUIT: quit = 1; break;	/* lost with Close window in 2.2 (Erez, 11 Nov 2026) */
+		case C_QUIT: quit = 1; break;	/* lost with Close window in 2.2 (11 Nov 2026) */
 		}
 		menu_tnormal(mb.tree, msg[3], 1);
 		break;
@@ -5741,7 +5741,7 @@ static void handle_msg(short *msg)
 			/* the whole window is to be drawn this turn (flush_dirty,
 			   below): the area with it, once. The start drew its window
 			   twice, for the AES's redraw and for D_ALL (an 8 MHz ST:
-			   ~260 ms; Erez, 13 Nov 2026: the start made faster) */
+			   ~260 ms; 13 Nov 2026: the start made faster) */
 		} else if (msg[3] == win) {
 			short saved = text_dirty_row;
 			text_dirty_row = 0;
@@ -6037,7 +6037,7 @@ int app_main(void)
 	set_window_name();
 	/* the slider as the empty pane has it, set while the window is shut:
 	   the AES draws it with the frame, not again a turn later (an 8 MHz
-	   ST; Erez, 13 Nov 2026: the start made faster) */
+	   ST; 13 Nov 2026: the start made faster) */
 	wind_set(win, WF_VSLSIZE, 1000, 0, 0, 0);
 	wind_set(win, WF_VSLIDE, 0, 0, 0, 0);
 	last_slider_size = 1000;

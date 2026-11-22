@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """The regression gate's rigs (the guidelines 1.2; AERA-Atari's
-standards/TEST-MATRIX.md, the gate table; Erez, 17 Nov 2026): ClaudeST on
-every configuration it runs on, on Erez's TOS images and NVDI, one boot a
+standards/TEST-MATRIX.md, the gate table; 17 Nov 2026): ClaudeST on
+every configuration it runs on, on real TOS images and the reference NVDI, one boot a
 row, each named as machines.py's describe() names it.
 
     python3 tests/hatari/gate.py WORK [--prg TIMED.PRG] [--rows 1,2,8,own ...]
@@ -11,7 +11,7 @@ row, each named as machines.py's describe() names it.
 PRG is the timed build (make prof: binary/prof/CLAUDEST.PRG, built when
 not given). The rows:
 
-  1  Falcon-4:256 + NVDI (Erez's configuration)   speed.py, every check
+  1  Falcon-4:256 + NVDI (the reference config.) speed.py, every check
   2  Falcon-4:16, TOS's VDI                       speed.py
   3  Falcon:65536 + NVDI                          speed.py
   4  TT:ttmed + NVDI, TT:ttmed TOS's VDI;         speed.py
@@ -148,7 +148,7 @@ def own_rig(work, label, cmd, env=None):
 
 
 def natfeats_off_row(work, prg):
-    """row 12: Erez's configuration with no NATFEATS= (as a user's INF):
+    """row 12: the reference configuration with no NATFEATS= (as a user's INF):
     starts, opens Settings, quits by ^Q, no CRASH.LOG, nothing on the
     emulator's console from ClaudeST"""
     w = os.path.join(work, "r12-natfeats-off")
@@ -264,7 +264,7 @@ def main():
     if on("own"):
         # the shipped build (binary/CLAUDEST.PRG): these time nothing
         ship = os.path.join(ROOT, "binary", "CLAUDEST.PRG")
-        # on a Falcon under NVDI where Erez's copy is here (the guidelines,
+        # on a Falcon under NVDI where the NVDI copy is here (the guidelines,
         # 1.2: 60% of the boots); disk_budget stays on the ST, its pieces
         # the 68000's 16 KB
         nv = machines.nvdi_here()

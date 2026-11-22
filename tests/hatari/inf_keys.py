@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""CLAUDEST.INF's window and pane keys (D43, D44; Erez, 17 Nov 2026), four
+"""CLAUDEST.INF's window and pane keys (D43, D44; 17 Nov 2026), four
 boots on one machine:
 
   1. SIDEBAR=200, the key before 2.11: read once; the INF is written at
      the start with PANES=200 and without SIDEBAR=.
-  1b. HEBFONT=2, a setting gone in 2.11 (Erez, 17 Nov 2026): read once;
+  1b. HEBFONT=2, a setting gone in 2.11 (17 Nov 2026): read once;
      the INF is written at the start without it.
   2. WINDOW= off the screen: the window opens on the whole desk, the same
      picture as a start with no WINDOW=; a quit without a move writes
@@ -105,7 +105,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("work")
     ap.add_argument("--machine", default="ST:mono")
-    ap.add_argument("--nvdi", action="store_true", help="under Erez's NVDI (a Falcon or the TT)")
+    ap.add_argument("--nvdi", action="store_true", help="under NVDI (a Falcon or the TT)")
     ap.add_argument("--prg", default=os.path.join(ROOT, "binary", "CLAUDEST.PRG"))
     a = ap.parse_args()
     global NVDI

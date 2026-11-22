@@ -18,7 +18,7 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 
   When a change touches one of these, do it the guideline's way, even if the old code here did it
   differently.
-- **Speed is set by the stock machines** (Erez, 26 Oct 2026; the guidelines' "Speed"): an 8 MHz ST
+- **Speed is set by the stock machines** (26 Oct 2026; the guidelines' "Speed"): an 8 MHz ST
   and a stock Falcon (`ST`, `ST-1`, `Falcon-4`), not the DFB1. Design and code for them: draw only
   what changed, keep the 68000's slow operations out of inner loops, do work once. A change to
   drawing, a loop over the data or the start gives its `AESGAP` stretches on `ST` and `Falcon-4`,
@@ -36,48 +36,48 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   `git tag -a`); it tests, builds, tags vX.Y and publishes the two zips (no loose files; the FireBee zip first, the standard one last, the order checked through the API) as a
   GitHub Release. A normal build must leave every tracked file unchanged and shows the version as it
   is (there is no `-dev` label). Don't commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
-- **Only formal releases leave the build machine.** Erez gets vX.Y releases made by the Release
+- **Only formal releases leave the build machine.** The owner gets vX.Y releases made by the Release
   workflow from `main`, nothing else: no test builds, no CI artifacts, no builds
   from a branch. Work lands on `main`; to try a fix on real hardware, release it. A fault found after a
-  release (by a user, the hub or Erez) is fixed forward by the next number, before other work; the old
+  release (by a user, the hub or the owner) is fixed forward by the next number, before other work; the old
   release stays, and the new one's notes say in one line what it fixes (no revert, no "withdrawn" notice).
-- **The regression gate** (Erez, 17 Nov 2026; the guidelines 1.2, AERA-Atari a22574e;
+- **The regression gate** (17 Nov 2026; the guidelines 1.2, AERA-Atari a22574e;
   `standards/TEST-MATRIX.md`'s gate table): "we need to be extra careful with regression issues as there
   are users of our software. This means testing across all configurations" and "make sure we don't loose
   performance". Every candidate that changes code goes through, in order:
   1. this repo's checks (`make` with no warnings, `make test`, `make itest` when network code changed);
-  2. the rigs (`tests/hatari/`) on every row of the gate table ClaudeST runs on, on Erez's TOS images and
-     NVDI (never EmuTOS as evidence), each named in the report with `describe()`: Erez's configuration
+  2. the rigs (`tests/hatari/`) on every row of the gate table ClaudeST runs on, on real TOS images and
+     NVDI (never EmuTOS as evidence), each named in the report with `describe()`: the reference configuration
      (`Falcon-4:256` + NVDI), `Falcon-4:16`, `Falcon:65536`, `TT:ttmed` and `TT:ttlow`, MiNT + XaAES (plain,
      `ct60`, `--ext2`), a 68060, the FireBee stand-in, `ST:mono`, `ST:med`, `ST:low` and `ST-1`, `STE`,
      the network path (STinG through the Gateway), one boot with NatFeats off. A row ClaudeST can't run
      (it has no accessory edition) is named with why;
   3. the paired speed run against the last release on `Falcon-4:256` + NVDI, `Falcon-4:16` and `ST:mono`,
      the timed build at the shipped layout (`make prof`: `common/tools/profpad.py`): no row slower beyond
-     one tick (5 ms) on any; a slower row is fixed first, and only Erez accepts one;
+     one tick (5 ms) on any; a slower row is fixed first, and only the owner accepts one;
   4. the candidate commit with the results to the hub, which runs the family check and answers with go or
      the faults it found.
 
   Only then is it released. **A fault a user reports becomes a case in the rigs** in the same release
   that fixes it.
-- **Releases go out without asking Erez** (his decision, 23 Oct 2026; guidelines 1.2) once the gate
-  above has passed and the hub said go. Then give Erez the link in one line, with anything he has to
+- **Releases go out without asking the owner** (decided 23 Oct 2026; guidelines 1.2) once the gate
+  above has passed and the hub said go. Then give the owner the link in one line, with anything the owner has to
   do, and send the hub the link.
-- **Who decides what** (Erez, 31 Oct 2026; the guidelines' "Who decides what"). Erez's part, put
-  to him before the work as a decision with a short context:
+- **Who decides what** (31 Oct 2026; the guidelines' "Who decides what"). The owner's part, put
+  to the owner before the work as a decision with a short context:
   - new programs and ideas, their core capabilities, and how they work with the other programs;
   - the user experience: the look, the layout, the way through a task, the words, the icons, the
     defaults;
-  - phases: work stays inside the phase he approved; at its end, one phase report (what it set out
+  - phases: work stays inside the phase the owner approved; at its end, one phase report (what it set out
     to do, what was done with the release links, what is left, the next phase as a proposal), and
-    the next phase starts when he says so;
+    the next phase starts when the owner says so;
   - priorities and conflicts between programs or sessions (through the hub, with its options and
     recommendation);
   - packages on the Pi and ports.
 
   How it is made is the team's, without asking: code, structure, shared code, tests, measurements,
   fixes, docs and releases inside an approved phase.
-- **ClaudeST's tests run ClaudeST alone** (Erez, 8 Nov 2026; guidelines 1.2, AERA-Atari 76417f7):
+- **ClaudeST's tests run ClaudeST alone** (8 Nov 2026; guidelines 1.2, AERA-Atari 76417f7):
   make test, the bridge's tests and the Hatari rigs load, start and fetch no other AERA program or
   accessory (no `getrelease.py`). What ClaudeST does with another (the Help key and EHypView, the
   family) is tested against a stand-in this repo owns, or by the hub's family checks (acc_all.py,
@@ -89,6 +89,11 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   the author of every commit: `git commit --author="AERA | Erez Yaary <yaary@me.com>"`, with Claude as
   the signing committer, so GitHub shows the commits as Verified (AERA-Atari,
   `standards/GITHUB-IDENTITY.md`).
+- **Elsewhere on GitHub the owner is named only as the maker** (AERA-Atari 37e434d,
+  `GITHUB-IDENTITY.md`, Commits; 22 Nov 2026): no release note, commit message, comment, doc or code
+  comment says who asked for a change or decided it ("decided 22 Nov 2026", or what the program does
+  and why); the test machine is "the reference configuration (Falcon-4:256, TOS 4.04, NVDI)" or "real
+  TOS 1.04 and 4.04". Old text is cleaned when its file is next touched.
 - **Never commit:**
   - real addresses from the owner's network: use `192.168.1.x`, `PI_IP`, `ATARI_IP`
   - passwords, session keys, `.KEY` / `.INF` files from a test run
@@ -96,26 +101,26 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 - **README:** keep the section order from the template (Highlights, Getting started, How it reaches the
   servers, Building, Source, Tests, Licence, family footer). Use British English.
 
-## Maintenance mode (Erez, 1 Nov 2026; 17 Nov 2026)
+## Maintenance mode (1 Nov 2026; 17 Nov 2026)
 
 ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari, ATARI-APP-GUIDELINES.md,
-section 8, and AERA-Atari 8ddb463). Erez, 17 Nov 2026: "Applications on maintenance does not mean they contain
-faults". Until Erez ends it:
-- No new features and no speed rounds of ClaudeST's own (Erez, 13 Nov 2026).
+section 8, and AERA-Atari 8ddb463). Decided 17 Nov 2026: "Applications on maintenance does not mean they contain
+faults". Until the owner ends it:
+- No new features and no speed rounds of ClaudeST's own (13 Nov 2026).
 - **Every family rule holds for ClaudeST as for the focus apps.** The hub notifies ClaudeST of each new or changed
   rule and each shared fix; ClaudeST takes them (the rules in its code, the shared code by a `common/` sync).
   Section 8's table ("Where each app stands") is ClaudeST's work list: each row it does not meet is fixed, or
   the commit that meets it goes to the hub to tick.
-- Whether a change needs a release is reviewed with Erez through the hub; a fault fix always gets one.
+- Whether a change needs a release is reviewed with the owner through the hub; a fault fix always gets one.
 - Before any release, send the hub the candidate commit with the checks and wait for its go from the family
   check (TOS 1.04 and 4.04, NVDI); releasing first and checking after is not for ClaudeST.
-- Nothing runs in the background; the session waits for Erez or the hub between tasks.
+- Nothing runs in the background; the session waits for the owner or the hub between tasks.
 
-## Talking with Erez
+## Talking with the owner
 
-- No progress or in-between messages: write only when he has a decision to make, with short context
+- No progress or in-between messages: write only when the owner has a decision to make, with short context
   and the decision.
-- Findings: the information, your assessment and what he should do. Nothing more.
+- Findings: the information, your assessment and what the owner should do. Nothing more.
 - Messages to the hub session stay complete, with the evidence.
 
 ## ClaudeST
@@ -123,7 +128,7 @@ faults". Until Erez ends it:
 - **The version** is `#define VERSION` in `st/claudest.c`, not a `VERSION` file: `tools/bump.py`
   raises it (1.34 -> 1.35), and `tools/check_version.sh` fails when vX.Y is out already (the
   release workflow runs it). A release carries `CLAUDEST.PRG`, `CLAUDEST.HYP` and `.REF` and the
-  icon (`icons/`); no example `CLAUDEST.INF` (Erez, 20 Oct 2026): ClaudeST writes its own.
+  icon (`icons/`); no example `CLAUDEST.INF` (20 Oct 2026): ClaudeST writes its own.
 - `bridge/` is ClaudeST's; `gateway/` is a read-only copy of
   [AERA-Gateway](https://github.com/whomper/AERA-Gateway)'s, whose
   `aera-gateway install claude` sets the bridge up (`pi/install.sh` hands

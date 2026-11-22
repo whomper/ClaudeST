@@ -8,7 +8,7 @@ the same file names; common's cpucheck.c and cpucheck_cf.S):
      its cpu_cf_alert, naming the FireBee package; OK, and the desktop
      again, ClaudeST never started (no first event call, the INF untouched).
   2. The FireBee's CLAUDEST.PRG on a Falcon (no _CF_; under NVDI where
-     Erez's copy is here, the guidelines, 1.2): its cpu_alert, naming
+     the NVDI copy is here, the guidelines, 1.2): its cpu_alert, naming
      the standard package, the same way. A ColdFire program can't run here;
      its first code, cpucheck_cf.S, is the same bytes for the 68000 and the
      ColdFire, so the Falcon runs it up to the alert.
