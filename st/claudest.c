@@ -2188,6 +2188,11 @@ static void flush_dirty(void)
 	}
 	if (!dirty)
 		return;
+	/* a phase's words never with a reply's text: the next turn that
+	   draws nothing else draws them (words_now; a streamed piece on a
+	   Falcon 10 ms longer with them) */
+	short keep = busy && (dirty & D_TEXT) && !(dirty & D_WHOLE) ? dirty & D_WORDS : 0;
+	dirty &= ~keep;
 	if (dirty & D_WHOLE) {
 		text_dirty_row = 0;
 		redraw(D_ALL, wx, wy, ww, wh);
@@ -2218,8 +2223,18 @@ static void flush_dirty(void)
 	}
 	if (dirty & D_TEXT)
 		slider_due = 1;
-	dirty = 0;
+	dirty = keep;
 	text_dirty_row = 0x7fff;
+}
+
+/* the status line's words alone, in a turn that draws nothing else */
+static void words_now(void)
+{
+	if ((dirty & D_WORDS) && !win_icon) {
+		if (!sb_hidden && st_dtx >= 0)
+			redraw(D_WORDS, st_dtx, status_y, wx + sb_w - 4 - st_dtx, row_h);
+		dirty &= ~D_WORDS;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -6151,7 +6166,8 @@ int app_main(void)
 					text_at = now;
 				drew = dirty || pending_scroll;
 				flush_dirty();
-			}
+			} else
+				words_now();
 			/* the AES redraws the slider (45 ms on an ST): not in the
 			   pass that scrolled or drew, nor while a key is in */
 			if (slider_due && !drew && !(ev.which & (MU_KEYBD | MU_BUTTON))) {
