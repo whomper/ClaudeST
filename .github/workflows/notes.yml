@@ -1,0 +1,43 @@
+name: Notes
+
+# AERA (AERA-Atari standards/repo-template/files/.github/workflows/
+# notes.yml: change it there, then copy it into each app).
+
+# Replaces one published release's notes with the text given, the release's
+# files and tag untouched: a sentence put right, or text the standards no
+# longer allow taken out (GITHUB-IDENTITY.md, Commits). The run's log shows
+# the change as a diff. Actions > Notes > Run workflow, or through the API.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release, e.g. v2.16"
+        required: true
+        type: string
+      body:
+        description: "Its new notes, whole (Markdown)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  notes:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          BODY: ${{ inputs.body }}
+        run: |
+          gh release view "$TAG" --json body -q .body > "$RUNNER_TEMP/old.md"
+          printf '%s\n' "$BODY" > "$RUNNER_TEMP/new.md"
+          if [ ! -s "$RUNNER_TEMP/new.md" ] || [ "$(wc -c < "$RUNNER_TEMP/new.md")" -lt 2 ]; then
+            echo "empty notes refused"; exit 1
+          fi
+          diff -u "$RUNNER_TEMP/old.md" "$RUNNER_TEMP/new.md" || true
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/new.md"
+          echo "$TAG: notes replaced"
