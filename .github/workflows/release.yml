@@ -73,5 +73,25 @@ jobs:
           else
             printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
           fi
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "ClaudeST $VERSION" \
+          # the FireBee's zip first, the standard one last, and nothing else
+          # (the guidelines, 7.4: an EUpdate up to 2.14 unpacks every zip of a
+          # release in the API's order, and the last one wins)
+          STD=dist/claudest-$VERSION.zip
+          FB=dist/claudest-$VERSION-firebee.zip
+          if [ "$(ls dist | wc -l)" != 2 ] || [ ! -f "$STD" ] || [ ! -f "$FB" ]; then
+            echo "::error::dist/ is not the two zips: $(ls dist)"
+            exit 1
+          fi
+          gh release create "$TAG" "$FB" --target "$GITHUB_SHA" --title "ClaudeST $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md"
+          gh release upload "$TAG" "$STD"
+      - name: The zips' order, through the API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GOT=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '[.assets[].name] | join(" ")')
+          echo "assets: $GOT"
+          if [ "$GOT" != "claudest-$VERSION-firebee.zip claudest-$VERSION.zip" ]; then
+            echo "::error::the release's files are not the FireBee zip, then the standard zip: $GOT"
+            exit 1
+          fi

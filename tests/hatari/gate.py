@@ -17,8 +17,11 @@ not given). The rows:
   4  TT:ttmed + NVDI, TT:ttmed TOS's VDI;         speed.py
      TT:ttlow                                     refused (320 wide)
   5  MiNT + XaAES: tt, ct60, --ext2               start, Settings, quit
-  6  68060: FireBee's 68060 under plain TOS is    (row 7), and ct60 above
-  7  FireBee:16, FireBee:256 (EmuTOS: a stand-in) speed.py
+  6  68060                                       ct60 under MiNT (row 5)
+  7  FireBee:16, FireBee:256 (EmuTOS: a stand-in) refused: the standard build
+                                                  names the FireBee package
+     (the guidelines, 7.4: the ColdFire build's core under qemu, make test;
+     its GEM, screen and speed are a real FireBee's)
   8  ST:mono, ST:med, ST-1:mono; ST:low           speed.py; refused
   9  STE:mono                                     speed.py
  10  accessories                                  none: ClaudeST is a program only
@@ -51,11 +54,13 @@ LAST_STEP = "out of the AES"
 SPEED_ROWS = [
     ("1", "Falcon-4:256", True), ("2", "Falcon-4:16", False), ("3", "Falcon:65536", True),
     ("4", "TT:ttmed", True), ("4", "TT:ttmed", False),
-    ("7", "FireBee:16", False), ("7", "FireBee:256", False),
     ("8", "ST:mono", False), ("8", "ST:med", False), ("8", "ST-1:mono", False),
     ("9", "STE:mono", False),
 ]
-REFUSED_ROWS = [("4", "TT:ttlow"), ("8", "ST:low")]
+SCREEN_ALERT = "the screen-width alert, OK, back to the desktop"
+PACKAGE_ALERT = "the FireBee package's alert, OK, back to the desktop, ClaudeST never started"
+REFUSED_ROWS = [("4", "TT:ttlow", SCREEN_ALERT), ("7", "FireBee:16", PACKAGE_ALERT),
+                ("7", "FireBee:256", PACKAGE_ALERT), ("8", "ST:low", SCREEN_ALERT)]
 MINT_ROWS = [("5", "tt", []), ("5", "ct60", []), ("5", "falcon", ["--ext2"])]
 
 results = []
@@ -92,7 +97,7 @@ def speed_row(work, row, machine, nvdi, prg):
     note(row, named, code == 0, "; ".join(fails[:4]) or "speed rig: every check and time")
 
 
-def refused_row(work, row, machine, prg):
+def refused_row(work, row, machine, prg, what):
     w = os.path.join(work, "r%s-%s" % (row, machine.replace(":", "_")))
     shutil.rmtree(w, ignore_errors=True)
     r = speed.Rig(w, machine, extra=["--drive-led", "no"])
@@ -111,6 +116,7 @@ def refused_row(work, row, machine, prg):
         r.still()
         gone = shutil.copy(r.shot("after"), w + "-after.png")
         named = r.describe()
+        con = r.console()
     finally:
         r.stop()
     differs = subprocess.run(["compare", "-metric", "AE", alert, gone, "null:"], capture_output=True, text=True)
@@ -119,9 +125,10 @@ def refused_row(work, row, machine, prg):
     except (ValueError, IndexError):
         changed = False
     crashes = crash_logs(r.hd)
-    ok = changed and not crashes
-    note(row, named, ok, "the screen-width alert, OK, back to the desktop%s" %
-         ("" if not crashes else "; CRASH.LOG"))
+    started = what == PACKAGE_ALERT and "AESSTART" in con
+    ok = changed and not crashes and not started
+    note(row, named, ok, "%s%s%s" % (what, "" if not crashes else "; CRASH.LOG",
+                                     "" if not started else "; but ClaudeST started"))
 
 
 def own_rig(work, label, cmd, env=None):
@@ -242,9 +249,9 @@ def main():
     for row, m, nvdi in SPEED_ROWS:
         if on(row):
             speed_row(work, row, m, nvdi, prg)
-    for row, m in REFUSED_ROWS:
+    for row, m, what in REFUSED_ROWS:
         if on(row):
-            refused_row(work, row, m, prg)
+            refused_row(work, row, m, prg, what)
     for row, m, extra in MINT_ROWS:
         if on(row):
             mint_row(work, row, m, extra, prg)
@@ -264,8 +271,8 @@ def main():
         own_rig(work, "font_gdos.py on Falcon:16, TOS 4.04, NVDI: a GDOS font chosen, kept, drawn after a restart",
                 [sys.executable, os.path.join(HERE, "font_gdos.py"), os.path.join(work, "own-fg"), "--prg", ship],
                 {"AERA_WITH_NVDI": "1"})
-    for row, why in (("6", "a 68060: the FireBee stand-in's 68060 under TOS (row 7) and the CT60 under MiNT (row 5); "
-                           "TOS 4.04 itself runs no 68060"),
+    for row, why in (("6", "a 68060: the CT60 under MiNT (row 5); TOS 4.04 itself runs no 68060, and the FireBee "
+                           "stand-in's 68060 now shows the standard build's FireBee alert (row 7)"),
                      ("10", "ClaudeST has no accessory edition"),
                      ("11", "STinG through the Gateway is in every speed.py row (FAKESTNG and the bridge); "
                             "ClaudeST has no Direct connection")):

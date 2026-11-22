@@ -33,7 +33,7 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   the GEM side changed.
 - **Versions and releases:** `VERSION` changes only in a release commit. A release: `tools/bump.py`,
   commit, push, then run the Release workflow on `main` with the notes (or push a tag `vX.Y` made with
-  `git tag -a`); it tests, builds, tags vX.Y and publishes the two zips (no loose files) as a
+  `git tag -a`); it tests, builds, tags vX.Y and publishes the two zips (no loose files; the FireBee zip first, the standard one last, the order checked through the API) as a
   GitHub Release. A normal build must leave every tracked file unchanged and shows the version as it
   is (there is no `-dev` label). Don't commit built programs, help files or certificates (`binary/`, `dist/`). Never reuse a number.
 - **Only formal releases leave the build machine.** Erez gets vX.Y releases made by the Release
