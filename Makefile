@@ -5,7 +5,7 @@
 # ClaudeST's and run here too.
 #
 #   make            binary/CLAUDEST.PRG (make -C st; apt install gcc-m68k-linux-gnu)
-#                   and binary/CLAUDEFB.PRG, the FireBee's (make firebee)
+#                   and binary/fb/CLAUDEST.PRG, the FireBee's (make firebee)
 #   make help       binary/CLAUDEST.HYP and .REF (needs hcp:
 #                   common/tools/build-hcp.sh builds it; HCP=/path/to/hcp)
 #   make test       the bridge's tests and the right-to-left layout's, and
@@ -27,14 +27,16 @@ all:
 	$(MAKE) -C st
 	$(MAKE) firebee
 
-# the FireBee edition, ColdFire code (the guidelines, 7.4): the same rules
-# from the root into build/, then common's mkfirebee.py, which builds every
-# object again for -mcpu=5475 into build/cf/ and fails on any EMAC
-# instruction (a 68000's Line-A is the EMAC's macw on a ColdFire)
+# the FireBee edition, ColdFire code, under the same name in a package of
+# its own (the guidelines, 7.4): the same rules from the root into build/,
+# then common's mkfirebee.py, which builds every object again for
+# -mcpu=5475 into build/cf/ and fails on any EMAC instruction (a 68000's
+# Line-A is the EMAC's macw on a ColdFire)
 FBMAKE := -f st/Makefile O=build/ S=st/ COMMON=common
 firebee:
 	$(MAKE) $(FBMAKE) build/claudest.elf
-	python3 common/tools/mkfirebee.py --elf build/claudest.elf --make "$(FBMAKE)" binary/CLAUDEFB.PRG
+	mkdir -p binary/fb
+	python3 common/tools/mkfirebee.py --elf build/claudest.elf --make "$(FBMAKE)" binary/fb/CLAUDEST.PRG
 
 help:
 	$(MAKE) -C help HCP=$(HCP)
@@ -57,8 +59,10 @@ icons:
 	    --icn icons/CLAUDEST.ICN --mask icons/CLAUDSMK.ICN --headers st --docs docs
 
 # a release's files: each one in dist/, and all of them in
-# dist/CLAUDEST-x.y.zip (the icons in icons/), for the release workflow.
-DIST    := binary/CLAUDEST.PRG binary/CLAUDEFB.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
+# dist/claudest-x.y.zip (the icons in icons/), for the release workflow;
+# and the FireBee's package, claudest-x.y-firebee.zip, the same files with
+# its own claudest.prg (the guidelines, 7.4)
+DIST    := binary/CLAUDEST.PRG binary/CLAUDEST.HYP binary/CLAUDEST.REF
 ICONS   := icons/CLAUDEST.RSC icons/CLSTNV.RSC icons/CLAUDEST.ICN icons/CLAUDSMK.ICN
 # the release: every file, the zip and its folder named in lowercase (the
 # guidelines' 6.6: on MiNT's ext2 CLAUDEST.PRG and claudest.prg are two
@@ -71,6 +75,8 @@ dist: all help
 	$(foreach f,$(DIST),cp $(f) dist/zip/$(call lc,$(f)) &&) true
 	$(foreach f,$(ICONS),cp $(f) dist/zip/icons/$(call lc,$(f)) &&) true
 	cd dist/zip && zip -q -9 -r ../claudest-$(VERSION_STR).zip .
+	cp binary/fb/CLAUDEST.PRG dist/zip/claudest.prg
+	cd dist/zip && zip -q -9 -r ../claudest-$(VERSION_STR)-firebee.zip .
 	rm -rf dist/zip
 
 clean:

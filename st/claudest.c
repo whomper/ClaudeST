@@ -5744,17 +5744,18 @@ static void dialog_redraw(const short *msg)
 }
 
 /* Which machine (common's cpucheck.c, cpucheck_cf.S; the guidelines, 7.4:
-   each file names the other). CLAUDEST.PRG runs on any 68000 or better;
-   on a FireBee (_CF_) it sends the user to its native edition. CLAUDEFB.PRG
-   (ColdFire code) runs only where _CF_ is, and sends any other machine to
-   CLAUDEST.PRG. An alert's lines are 30 characters at most (TOS cuts
+   two packages, the same file names, each build names the other package).
+   The standard CLAUDEST.PRG runs on any 68000 or better; on a FireBee
+   (_CF_) it sends the user to the FireBee package. The FireBee's
+   CLAUDEST.PRG (ColdFire code) runs only where _CF_ is, and sends any other
+   machine to the standard package. An alert's lines are 30 characters at most (TOS cuts
    them there). Then app_main, what main() was */
 const long cpu_need = 0;
 #ifdef __mcoldfire__
-const char cpu_alert[] = "[3][ClaudeST for the FireBee|needs a ColdFire: on this|machine, run CLAUDEST.PRG.][ Quit ]";
+const char cpu_alert[] = "[3][CLAUDEST.PRG is for the|FireBee. On an ST, a TT or a|Falcon, install ClaudeST's|standard package.][ Quit ]";
 #else
 const char cpu_alert[] = "[3][ClaudeST cannot run on|this machine.][ Quit ]";	/* never: cpu_need is 0 */
-const char cpu_cf_alert[] = "[3][CLAUDEST.PRG is for the ST,|TT and Falcon. On the FireBee,|run CLAUDEFB.PRG.][ Quit ]";
+const char cpu_cf_alert[] = "[3][CLAUDEST.PRG is for the ST,|TT and Falcon. On the FireBee,|install ClaudeST's FireBee|package.][ Quit ]";
 #endif
 
 int app_main(void)

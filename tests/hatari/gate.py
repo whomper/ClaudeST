@@ -259,7 +259,7 @@ def main():
                 ["bash", os.path.join(HERE, "disk_budget.sh")], {"IDLE": "30"})
         own_rig(work, "long_field.sh on ST:mono, TOS 1.04: a field holding more than it shows",
                 ["bash", os.path.join(HERE, "long_field.sh")])
-        own_rig(work, "firebee_test.py: CLAUDEST.PRG on the FireBee stand-in and CLAUDEFB.PRG on a Falcon and an ST name the other",
+        own_rig(work, "firebee_test.py: the standard build on the FireBee stand-in, the FireBee build on a Falcon and an ST: each names the other package",
                 [sys.executable, os.path.join(HERE, "firebee_test.py"), os.path.join(work, "own-fbt")])
         own_rig(work, "font_gdos.py on Falcon:16, TOS 4.04, NVDI: a GDOS font chosen, kept, drawn after a restart",
                 [sys.executable, os.path.join(HERE, "font_gdos.py"), os.path.join(work, "own-fg"), "--prg", ship],

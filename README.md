@@ -27,13 +27,12 @@ Download the latest `claudest-x.y.zip` from **[Releases](../../releases/latest)*
 | File | What it is |
 |---|---|
 | `CLAUDEST.PRG` | the program, for every ST, STE, TT and Falcon |
-| `CLAUDEFB.PRG` | the same program for the FireBee, in its own ColdFire code |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide |
 | `CLAUDEST.RSC`, `CLSTNV.RSC` | the desktop icon (`CLSTNV.RSC` for NVDI's own palette) |
 
 1. Set up the Gateway with [AERA-Gateway](https://github.com/whomper/AERA-Gateway#getting-started) and
    your claude.ai [session key](docs/GUIDE.md#1-get-your-claudeai-session-key).
-2. Copy `CLAUDEST.PRG` (on a FireBee `CLAUDEFB.PRG`), `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder on the Atari and run it.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one folder on the Atari and run it. On a FireBee take the release's `-firebee.zip` package: the same files, the program built for the ColdFire.
 3. Choose **Options ▸ Settings…** (`Ctrl+,`) and type the Gateway's address (port 2323). The status line shows *Online* with a green dot.
 
 **Needs:** TOS 1.04 or newer, EmuTOS or MiNT; 640×200 or larger; about 370 KB free RAM; STinG with a
@@ -53,7 +52,7 @@ bridge talks to claude.ai for it ([how](docs/GUIDE.md#how-it-reaches-claudeai)).
 
 ```sh
 sudo apt install gcc-m68k-linux-gnu python3 zip   # Debian/Ubuntu; no MiNTLib needed
-make                         # binary/CLAUDEST.PRG and binary/CLAUDEFB.PRG (the FireBee's)
+make                         # binary/CLAUDEST.PRG, and the FireBee's binary/fb/CLAUDEST.PRG
 make test                    # the bridge's tests and the right-to-left layout's
 make help HCP=/path/to/hcp   # binary/CLAUDEST.HYP and .REF (common/tools/build-hcp.sh DIR builds hcp)
 make dist                    # dist/claudest-x.y.zip and each file, as on the Releases page

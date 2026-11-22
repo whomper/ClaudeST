@@ -35,7 +35,7 @@ network (`--atari any`, below). The examples use **192.168.1.10** for
 the Gateway and **192.168.1.20** for the Atari; use your own.
 
 **Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or
-newer, EmuTOS or MiNT, or a FireBee (with `CLAUDEFB.PRG`); a 640×200 or larger screen, monochrome or
+newer, EmuTOS or MiNT, or a FireBee (with the FireBee package); a 640×200 or larger screen, monochrome or
 colour; about 370 KB of free RAM (ClaudeST makes do with 260 KB, keeping
 less of a long chat); STinG with a working network (Ethernet or WiFi);
 a Raspberry Pi, or any Linux computer, on the same
@@ -118,10 +118,14 @@ every file is named in lowercase (`claudest.prg`): TOS's drives take a
 name whatever its case, a MiNT ext2 drive doesn't, and there ClaudeST
 looks for its files in lowercase.
 
+Each release has two packages with the same files in them: **`claudest-x.y.zip`** for the ST, STE,
+TT and Falcon, and **`claudest-x.y-firebee.zip`** for the FireBee, whose `CLAUDEST.PRG` is built in the
+ColdFire's own code. Take the one for your machine; EUpdate takes the right one by itself. A
+`CLAUDEST.PRG` on the wrong machine says which package to install, and quits.
+
 | File | What it is |
 |---|---|
-| `CLAUDEST.PRG` | the program, for the ST, STE, TT and Falcon |
-| `CLAUDEFB.PRG` | the same program for the FireBee, in the ColdFire's own code. Each tells you to run the other where it is the wrong one, and quits |
+| `CLAUDEST.PRG` | the program |
 | `CLAUDEST.HYP`, `CLAUDEST.REF` | the help, for EHypView or ST-Guide: keep them next to `CLAUDEST.PRG`, and press Help in ClaudeST |
 | `CLAUDEST.RSC` | the desktop icon: black-and-white, and in 16 and 256 colours. Take it under TOS, EmuTOS, or NVDI with COLORVDI |
 | `CLSTNV.RSC` | the same for NVDI with its own palette, whose 256 colours differ from TOS's |
@@ -129,8 +133,8 @@ looks for its files in lowercase.
 
 1. Load **STinG** and check that the network works, for example by
    pinging the Gateway.
-2. Copy `CLAUDEST.PRG` (on a FireBee `CLAUDEFB.PRG`), `CLAUDEST.HYP`
-   and `CLAUDEST.REF` into one folder, any folder on any drive.
+2. Copy `CLAUDEST.PRG`, `CLAUDEST.HYP` and `CLAUDEST.REF` into one
+   folder, any folder on any drive.
 3. Run it, choose **Options ▸ Settings…** (`Ctrl+,`) and
    type the Gateway's address (port 2323). Or type
    `/connect 192.168.1.10` in the reply line. The status line at the
@@ -155,7 +159,7 @@ from 40 to 75 KB/s.
 
 ### Updating
 
-- **The Atari:** from a new release, copy `CLAUDEST.PRG` (or `CLAUDEFB.PRG`),
+- **The Atari:** from a new release, copy `CLAUDEST.PRG`,
   `CLAUDEST.HYP` and `CLAUDEST.REF` over the old ones. Your settings,
   in `CLAUDEST.INF`, stay as they are.
 - **The Gateway:** the bridge is AERA-Gateway's; to take its latest

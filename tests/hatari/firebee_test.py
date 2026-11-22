@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""Each file names the other (the guidelines, 7.4; common's cpucheck.c and
-cpucheck_cf.S):
+"""Each build names the other package (the guidelines, 7.4: two packages,
+the same file names; common's cpucheck.c and cpucheck_cf.S):
 
-  1. CLAUDEST.PRG on the FireBee stand-in (_CF_ in the jar): its
-     cpu_cf_alert, naming CLAUDEFB.PRG; OK, and the desktop again, ClaudeST
-     never started (no first event call, no CLAUDEST.INF written).
-  2. CLAUDEFB.PRG on a Falcon (no _CF_): its cpu_alert, naming
-     CLAUDEST.PRG, the same way. A ColdFire program can't run here; its
-     first code, cpucheck_cf.S, is the same bytes for the 68000 and the
+  1. The standard CLAUDEST.PRG on the FireBee stand-in (_CF_ in the jar):
+     its cpu_cf_alert, naming the FireBee package; OK, and the desktop
+     again, ClaudeST never started (no first event call, the INF untouched).
+  2. The FireBee's CLAUDEST.PRG on a Falcon (no _CF_): its cpu_alert, naming
+     the standard package, the same way. A ColdFire program can't run here;
+     its first code, cpucheck_cf.S, is the same bytes for the 68000 and the
      ColdFire, so the Falcon runs it up to the alert.
-  3. CLAUDEFB.PRG on an ST (TOS 1.04, a 68000): the same.
+  3. The FireBee's CLAUDEST.PRG on an ST (TOS 1.04, a 68000): the same.
 
 Each alert's picture is kept (WORK/*-alert.png), and is checked against the
 desktop's after OK: it changed, then went. No CRASH.LOG anywhere.
 
-    python3 tests/hatari/firebee_test.py WORK [--st PRG] [--fb PRG]
+    python3 tests/hatari/firebee_test.py WORK [--st PRG] [--fb PRG]   (--fb: binary/fb/CLAUDEST.PRG)
 """
 import argparse
 import os
@@ -73,10 +73,10 @@ def case(work, name, machine, prg, file_name):
         r.stop()
     crashes = [f for d, _, fs in os.walk(r.hd) for f in fs if f.upper() == "CRASH.LOG"]
     print("on", named)
-    check(differ(alert, after), "%s: an alert, gone after OK" % file_name)
-    check("AESSTART" not in con, "%s: ClaudeST itself never started (no first event call)" % file_name)
-    check(open(inf, "rb").read() == before, "%s: CLAUDEST.INF untouched" % file_name)
-    check(not crashes, "%s: no CRASH.LOG" % file_name)
+    check(differ(alert, after), "%s: an alert, gone after OK" % name)
+    check("AESSTART" not in con, "%s: ClaudeST itself never started (no first event call)" % name)
+    check(open(inf, "rb").read() == before, "%s: CLAUDEST.INF untouched" % name)
+    check(not crashes, "%s: no CRASH.LOG" % name)
 
 
 def main():
@@ -84,13 +84,13 @@ def main():
     ap.add_argument("work")
     ap.add_argument("--st", default=os.path.join(ROOT, "binary", "prof", "CLAUDEST.PRG"),
                     help="the 68000 program (default the timed build: its AESSTART shows a start)")
-    ap.add_argument("--fb", default=os.path.join(ROOT, "binary", "CLAUDEFB.PRG"))
+    ap.add_argument("--fb", default=os.path.join(ROOT, "binary", "fb", "CLAUDEST.PRG"))
     a = ap.parse_args()
     work = os.path.abspath(a.work)
     os.makedirs(work, exist_ok=True)
     case(work, "1-st-on-firebee", "FireBee:16", os.path.abspath(a.st), "CLAUDEST.PRG")
-    case(work, "2-fb-on-falcon", "Falcon-4:16", os.path.abspath(a.fb), "CLAUDEFB.PRG")
-    case(work, "3-fb-on-st", "ST:mono", os.path.abspath(a.fb), "CLAUDEFB.PRG")
+    case(work, "2-fb-on-falcon", "Falcon-4:16", os.path.abspath(a.fb), "CLAUDEST.PRG")
+    case(work, "3-fb-on-st", "ST:mono", os.path.abspath(a.fb), "CLAUDEST.PRG")
     print("firebee_test: %s" % ("all ok" if not fails else "%d failed" % fails))
     return 1 if fails else 0
 

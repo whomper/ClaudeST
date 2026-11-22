@@ -113,10 +113,11 @@
   @{U}On the Atari@{u}
 
     1. Load STinG and check that the network works.
-    2. Copy CLAUDEST.PRG (on a FireBee CLAUDEFB.PRG, its own
-       ColdFire edition), CLAUDEST.HYP and CLAUDEST.REF into one
-       folder, any folder on any drive. Each program tells you to run
-       the other where it is the wrong one.
+    2. Copy CLAUDEST.PRG, CLAUDEST.HYP and CLAUDEST.REF into one
+       folder, any folder on any drive. On a FireBee use the
+       release's FireBee package (-firebee.zip): the same files, the
+       program in the ColdFire's own code. A CLAUDEST.PRG on the
+       wrong machine says which package to install.
     3. Run it, choose Options > Settings... (Control+,) and
        type the Gateway's address, port 2323, or type
        @{B}/connect 192.168.1.10@{b} in the reply line. The status line
@@ -130,8 +131,9 @@
 
   @{U}Updating@{u}
 
-    On the Atari, copy the new CLAUDEST.PRG (or CLAUDEFB.PRG),
-    CLAUDEST.HYP and CLAUDEST.REF over the old ones. Your settings, in CLAUDEST.INF,
+    On the Atari, copy the new CLAUDEST.PRG, CLAUDEST.HYP and
+    CLAUDEST.REF over the old ones, from the package for your
+    machine. Your settings, in CLAUDEST.INF,
     stay as they are.
 
     On the Gateway, to take AERA-Gateway's latest release (it carries
