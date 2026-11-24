@@ -98,14 +98,16 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   - real addresses from the owner's network: use `192.168.1.x`, `PI_IP`, `ATARI_IP`
   - passwords, session keys, `.KEY` / `.INF` files from a test run
   - photos that still carry EXIF/GPS data
+  - anything the owner provides: his files, logs, screenshots, share links or file IDs, his words
+    (`standards/GITHUB-IDENTITY.md`, Commits; a reported fault becomes a case made from scratch)
 - **README:** keep the section order from the template (Highlights, Getting started, How it reaches the
   servers, Building, Source, Tests, Licence, family footer). Use British English.
 
 ## Maintenance mode (1 Nov 2026; 17 Nov 2026)
 
 ClaudeST is in maintenance mode while EWeb, EPDF and EPlay go to 1.0 (AERA-Atari, ATARI-APP-GUIDELINES.md,
-section 8, and AERA-Atari 8ddb463). Decided 17 Nov 2026: "Applications on maintenance does not mean they contain
-faults". Until the owner ends it:
+section 8, and AERA-Atari 8ddb463). Decided 17 Nov 2026: maintenance does not mean faults are left in place.
+Until the owner ends it:
 - No new features and no speed rounds of ClaudeST's own (13 Nov 2026).
 - **Every family rule holds for ClaudeST as for the focus apps.** The hub notifies ClaudeST of each new or changed
   rule and each shared fix; ClaudeST takes them (the rules in its code, the shared code by a `common/` sync).
