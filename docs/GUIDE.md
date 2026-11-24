@@ -31,8 +31,8 @@ up the Gateway first.
 Give the Gateway a fixed IP address, for example with a DHCP
 reservation in your router, so that ClaudeST always finds it. Give the
 Atari one too, unless you let the bridge accept any address on your
-network (`--atari any`, below). The examples use **192.168.1.10** for
-the Gateway and **192.168.1.20** for the Atari; use your own.
+network (`--atari any`, below). The examples use **192.168.1.50** for
+the Gateway and **192.168.1.60** for the Atari; use your own.
 
 **Needs:** an ST, STE, Mega ST/STE, TT or Falcon with TOS 1.04 or
 newer, EmuTOS or MiNT, or a FireBee (with the FireBee package); a 640×200 or larger screen, monochrome or
@@ -86,10 +86,10 @@ sudo apt install -y git      # Raspberry Pi OS Lite only: it comes without git
 git clone https://github.com/whomper/AERA-Gateway.git
 cd AERA-Gateway
 ./update-pi.sh
-sudo gateway/aera-gateway install claude --network --atari 192.168.1.20
+sudo gateway/aera-gateway install claude --network --atari 192.168.1.60
 ```
 
-Put the Atari's address in place of `192.168.1.20`. The installer asks
+Put the Atari's address in place of `192.168.1.60`. The installer asks
 for the session key. It then runs the bridge as a service called
 `claude-st`, which starts at every boot and accepts connections only
 from the Atari's address. Use `--atari IP1,IP2` for several Ataris, or
@@ -101,7 +101,7 @@ ClaudeST's bridge among them (over the network, for the Atari's
 address):
 
 ```sh
-sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && ~/AERA-Gateway/update-pi.sh --allow 192.168.1.20
+sudo apt install -y git && git clone https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && ~/AERA-Gateway/update-pi.sh --allow 192.168.1.60
 ```
 
 It also installs the gateways of ECal and EContact, EFTP and EWeb,
@@ -138,7 +138,7 @@ ColdFire's own code. Take the one for your machine; EUpdate takes the right one 
    folder, any folder on any drive.
 3. Run it, choose **Options ▸ Settings…** (`Ctrl+,`) and
    type the Gateway's address (port 2323). Or type
-   `/connect 192.168.1.10` in the reply line. The status line at the
+   `/connect 192.168.1.50` in the reply line. The status line at the
    bottom left shows *Connecting…*, then *Online*, with a green dot.
 
 ClaudeST keeps what you set in `CLAUDEST.INF`, which it writes next to
@@ -196,7 +196,7 @@ Run these in the `AERA-Gateway` folder:
 |---|---|
 | Update to the latest releases | `./update-pi.sh` |
 | Paste a new session key, when claude.ai logs you out | `sudo aera-gateway set-key` |
-| Change the Atari's address | `sudo gateway/aera-gateway install claude --atari 192.168.1.21` |
+| Change the Atari's address | `sudo gateway/aera-gateway install claude --atari 192.168.1.61` |
 | See what runs, and which release of the bridge | `gateway/aera-gateway status` |
 | Watch the bridge's log | `journalctl -u claude-st -f` |
 | Remove it | `sudo gateway/aera-gateway remove claude` |
@@ -579,7 +579,7 @@ opens on its own in any of them.
 | `Ctrl+Q`, `Ctrl+U` | File ▸ Quit; `Ctrl+U` closes ClaudeST's only window, which quits too |
 | `Ctrl+W` | The next window: ClaudeST has one, so nothing |
 
-In the reply line, `/connect 192.168.1.10` (or `/connect host:port`)
+In the reply line, `/connect 192.168.1.50` (or `/connect host:port`)
 sets the Gateway address.
 
 ## Settings (CLAUDEST.INF)
@@ -606,14 +606,14 @@ ClaudeST saves its settings to `CLAUDEST.INF`, next to `CLAUDEST.PRG`
 desktop sets to the program's own), as soon as you change them, in the format of the other AERA programs: a
 `[OPTIONS]` part, one `NAME=value` per line, and a `;` note above each.
 You can also edit it in any text editor; lines ClaudeST doesn't know are
-kept. A `CLAUDEST.INF` from before 1.38 (`tcp 192.168.1.10 2323` and so
+kept. A `CLAUDEST.INF` from before 1.38 (`tcp 192.168.1.50 2323` and so
 on) is still read, and written in the new form the next time. The
 serial cable's settings (`LINK=`, `BAUD=`, `SERIALPORT=`, before 2.3) are
 ignored and left out the next time ClaudeST saves.
 
 | Setting | Set by |
 |------|--------|
-| `HOST=192.168.1.10`, `PORT=2323` | Options ▸ Settings, `/connect` |
+| `HOST=192.168.1.50`, `PORT=2323` | Options ▸ Settings, `/connect` |
 | `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
 | `LOG=0` | Options ▸ Write a log, or Settings: 1 writes `CLAUDEST.LOG` as ClaudeST quits; 0, the default, writes nothing |
 | `PANES=240` | dragging the divider: the chat list's width in pixels (0, the default: ClaudeST's choice). Before 2.11 this was `SIDEBAR=`, read once and written as `PANES=` |
@@ -691,7 +691,7 @@ git clone https://github.com/whomper/AERA-Gateway.git
 cd AERA-Gateway/gateway/claude-st/bridge
 pip install -r requirements.txt
 export CLAUDE_SESSION_KEY='sk-ant-sid01-...'
-python3 claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20
+python3 claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.60
 ```
 
 `--backend api` (with `ANTHROPIC_API_KEY`) uses the Anthropic API;

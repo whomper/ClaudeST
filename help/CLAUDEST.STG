@@ -83,14 +83,14 @@
 
   @{U}On the Gateway@{u}, in your home folder (the first line on Raspberry
   Pi OS Lite only, which comes without git; put the Atari's address
-  in place of 192.168.1.20):
+  in place of 192.168.1.60):
 
       sudo apt install -y git
       git clone https://github.com/whomper/AERA-Gateway.git
       cd AERA-Gateway
       ./update-pi.sh
       sudo gateway/aera-gateway install claude --network \
-          --atari 192.168.1.20
+          --atari 192.168.1.60
 
   The installer asks for your claude.ai @{B}sessionKey@{b} (a cookie from
   the website, starting with sk-ant-sid) and runs the bridge as a
@@ -105,7 +105,7 @@
 
       sudo apt install -y git && git clone \
           https://github.com/whomper/AERA-Gateway ~/AERA-Gateway && \
-          ~/AERA-Gateway/update-pi.sh --allow 192.168.1.20
+          ~/AERA-Gateway/update-pi.sh --allow 192.168.1.60
 
   update-pi.sh makes aera-gateway a command, so from then on
   "sudo aera-gateway" works in any folder.
@@ -120,7 +120,7 @@
        wrong machine says which package to install.
     3. Run it, choose Options > Settings... (Control+,) and
        type the Gateway's address, port 2323, or type
-       @{B}/connect 192.168.1.10@{b} in the reply line. The status line
+       @{B}/connect 192.168.1.50@{b} in the reply line. The status line
        shows Connecting..., then Online, with a green dot.
 
   ClaudeST keeps what you set in CLAUDEST.INF, which it writes next to
@@ -479,7 +479,7 @@
     Control+Q         Quit
     Control+W         Quit (closes the window, the only one)
 
-  In the reply line, @{B}/connect 192.168.1.10@{b} (or /connect
+  In the reply line, @{B}/connect 192.168.1.50@{b} (or /connect
   host:port) sets the Gateway address.
 @endnode
 
@@ -507,7 +507,7 @@
   part, NAME=value lines and a ; note above each. You can edit it with
   any text editor; lines ClaudeST doesn't know are kept.
 
-    HOST=192.168.1.10       the Gateway's address (Settings, /connect)
+    HOST=192.168.1.50       the Gateway's address (Settings, /connect)
     PORT=2323               the Gateway's port
     FONT=System font,8      Options > Font: the font's name (System
                             font, or a GDOS font's) and size

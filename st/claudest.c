@@ -3427,7 +3427,7 @@ static void submit(void)
 			tcp_port = port;
 			use_address();
 		} else {
-			alert(1, "[1][Use: /connect 192.168.1.10|or /connect 192.168.1.10:2323|(the Gateway's address)][ OK ]");
+			alert(1, "[1][Use: /connect 192.168.1.50|or /connect 192.168.1.50:2323|(the Gateway's address)][ OK ]");
 			return;
 		}
 	} else if (search_mode) {
@@ -5361,7 +5361,7 @@ static int sd_check(SETTINGS *s, void *user)
 	const char *q = sd_port;
 	(void)user;
 	if (!parse_ip(sd_addr, &ip, 0) || !ip) {
-		alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.10.][ OK ]");
+		alert(1, "[1][Please type the Gateway's|IP address, for example|192.168.1.50.][ OK ]");
 		set_show(s, 0);
 		set_focus(s, sd_addr_obj);
 		return 0;
