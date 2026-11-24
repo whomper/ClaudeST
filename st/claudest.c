@@ -75,7 +75,7 @@ static void strlcpy_(char *d, const char *s, int n)
 }
 
 /* the last release (tools/bump.py raises it); every build shows it */
-#define VERSION "2.15"
+#define VERSION "2.16"
 #define APP_VERSION VERSION
 
 /* ------------------------------------------------------------------ */
