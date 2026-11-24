@@ -13,7 +13,7 @@
 #   HATARI=/path/to/hatari tools/hatari-test.sh   if Hatari isn't found by itself
 #
 # The machine, its TOS and its screen come from common/tools/machines.py:
-# Erez's own TOS when ~/.aera/tos has it (AERA_TOS=folder, or emutos),
+# real TOS images when ~/.aera/tos has them (AERA_TOS=folder, or emutos),
 # else EmuTOS 1.4, fetched the first time.
 #
 # ClaudeST reaches the bridge over STinG, as on a real Atari. Hatari has

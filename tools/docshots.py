@@ -8,7 +8,7 @@ binary/CLAUDEST.PRG (make first), and the help front page's picture.
 
 Five runs, one machine at a time (common/tools/machines.py, your own
 TOS images when ~/.aera/tos has them). The app is shown in 256 colours
-(Erez, 28 Oct 2026); only the pictures there to show another mode are
+(decided 28 Oct 2026); only the pictures there to show another mode are
 taken in it:
   Falcon:256, the demo        tooltip, context-menu, move-to-project, model-menu,
   backend                     code, account, hebrew
@@ -160,7 +160,7 @@ def st_mono(work, want):
     r = boot(work, "ST:mono", False)
     try:
         open_nth(r, F2, 1)                      # Atari Falcon DSP tricks
-        if want("st-high-mono"):                # BUILD_STORY's
+        if want("st-high-mono"):
             r.move(*REST)
             keep(r, "st-high-mono", 2)
         if want("about"):

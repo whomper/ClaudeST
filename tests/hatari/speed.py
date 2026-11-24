@@ -130,8 +130,8 @@ def main():
         fails = not same(drawn, r.shot("streamed-whole"), "the reply as it streamed is the reply drawn whole")
         fails += not same(shot(r, 3), shot(r, 5), "five lines up and down again: the pane as it arrived")
         # the list scrolled a row at a time: the rows that stay moved on the
-        # screen, those that come in drawn (Erez's film, 26 Oct 2026: each
-        # arrow blanked the list and its bar, then drew it all again)
+        # screen, those that come in drawn (26 Oct 2026: each arrow had
+        # blanked the list and its bar, then drawn it all again)
         bx, by, bw, bh = [int(v) for v in
                           [l for l in r.console().splitlines() if l.startswith("LISTBAR ")][-1].split()[1:]]
         # LISTBAR is in the screen's pixels, the clicks and pictures in the
@@ -146,7 +146,7 @@ def main():
               lambda: [r.click(bx + bw // 2, by + 6) for _ in range(5)])
         fails += not same_area(shot(r, 17), shot(r, 19), (0, by, bx, bh),
                                "five rows down and up again by the bar: the list as it was")
-        # a list row the 5.8 way (Erez, 1 Nov 2026): shown selected on the
+        # a list row the 5.8 way (decided 1 Nov 2026): shown selected on the
         # press, at once; let go elsewhere, nothing more; its chat opened
         # only on a release over it
         def at(x, y):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""A GDOS font chosen in ClaudeST, as Erez uses them under NVDI: the
+"""A GDOS font chosen in ClaudeST, under NVDI: the
 window should redraw in it with no dialog left, CLAUDEST.INF should keep
 it, and after a restart a screenful of text (a Hebrew chat) should draw
 whole in it.
@@ -27,11 +27,11 @@ family, in the style and size offered first, and presses Return:
 Screenshots go in WORK/shots. Without GDOS fonts the selector has only the
 system font and no CLAUDEST.FNT is written: "no GDOS fonts, skipped",
 and it passes after the checks in 1. For NVDI, run it
-with AERA_WITH_NVDI=1 (common/tools/machines.py installs Erez's NVDI on
-the Falcons); the boot then takes about 90 s, 120 s on Falcon-4.
+with AERA_WITH_NVDI=1 (common/tools/machines.py installs the owner's NVDI copy
+on the Falcons); the boot then takes about 90 s, 120 s on Falcon-4.
 --prg tests that ClaudeST file (a release's, downloaded by hand) in place
 of binary/CLAUDEST.PRG. The rig fetches nothing and loads nothing AERA
-but ClaudeST (guidelines 1.2, Erez 8 Nov 2026).
+but ClaudeST (guidelines 1.2, 8 Nov 2026).
 """
 import argparse
 import os
@@ -167,7 +167,7 @@ def main():
             Settings, Font: the line went in 2.5, the ticks before it with
             the serial cable in 2.3 and Hebrew keys in 2.1). The first
             time, every GDOS font is measured before the selector shows:
-            minutes at 16 MHz with Erez's 137 families"""
+            minutes at 16 MHz with a large font set"""
             r.move(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar // 2)
             time.sleep(1)
             r.click(16 + 8 * (10 + 6 + 6 + 6) + 8 * 4, bar + 2 * ch + ch // 2)
