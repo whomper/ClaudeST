@@ -180,7 +180,7 @@ class GateTest(unittest.TestCase):
             c.close()
 
     def test_only_the_allowed_atari(self):
-        emailgate.Config.allow = ["192.168.1.50"]
+        emailgate.Config.allow = ["192.168.1.60"]
         c, f = self.atari(self.gate("imap", "localhost", self.imap.port))
         self.assertEqual(f.readline(), b"* BYE emailgate: this address may not use the gateway\r\n")
         c.close()
@@ -190,7 +190,7 @@ class GateTest(unittest.TestCase):
         c.close()
 
     def test_private_addresses(self):
-        for a in ("192.168.1.50", "10.1.2.3", "172.16.0.1", "172.31.255.254", "127.0.0.1", "::ffff:192.168.1.2"):
+        for a in ("192.168.1.60", "10.1.2.3", "172.16.0.1", "172.31.255.254", "127.0.0.1", "::ffff:192.168.1.2"):
             self.assertTrue(emailgate.is_private(a), a)
         for a in ("8.8.8.8", "172.32.0.1", "100.64.0.1", "2001:db8::1", "not an address"):
             self.assertFalse(emailgate.is_private(a), a)

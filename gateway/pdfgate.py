@@ -21,13 +21,20 @@ back the converted PDF, the same file EConvert would have written
   and then by 200 with the converted PDF (Content-Length), or by an error
   with one line "pdfgate: why". The options are all optional (name: the
   PDF's own name, as the result records it; "in.pdf"); anything else is
-  refused (400). pages is none, mono, colour or colouronly (EPDF 2.8,
-  Erez, 10 Nov 2026: only the pages with colour get /Colour, the others
-  keep their /Mono; needs EPDF 2.8's aerapdf or later).
+  refused (400). thumbs=1 (the only value) gives each page a preview, a
+  /Thumb (EPDF 2.33; decided 15 Nov 2026: off unless asked). pages is none,
+  mono, colour or colouronly (EPDF 2.8,
+  decided 10 Nov 2026: only the pages with colour get /Colour, the others
+  keep their /Mono; needs EPDF 2.8's aerapdf or later). pens=HEX (6 lower-case
+  hex digits a pen, 2 to 256 pens, by the Atari's hardware register),
+  column=N (64-4096) and aspect=N (4-64): Faster display (EPDF 2.41), each
+  picture also as a copy in those pens at the size EPDF shows it in a column
+  of N pixels (aspect: a pixel's height to its width x 16); needs EPDF
+  2.41's aerapdf. EPDF asks a pdfgate without them again without.
 
     GET /version   ->  "aerapdf EPDF-COMMIT"   (which converter answers)
 
-translate=CODE (Erez, 8 Nov 2026; EPDF's docs/PI-GATEWAY.md): the
+translate=CODE (decided 8 Nov 2026; EPDF's docs/PI-GATEWAY.md): the
 converted PDF also carries each page's text translated into CODE, by
 translategate on this machine (aerapdf runs translateclient, its
 translator, once a page; the text never leaves the Gateway). The 102s
@@ -92,7 +99,16 @@ OPTIONS = {
     "double": (None, ("0", "1")),
     "name": (None, None),               # the PDF's own name, kept in the result's AERA entry
     "translate": ("--translate", None),     # a language, ISO 639-1
+    "thumbs": ("--thumbs", ("1",)),         # each page's preview (EPDF 2.33; decided 15 Nov 2026)
+    # Faster display (EPDF 2.41; decided 17 Nov 2026): the Atari's screen's
+    # pens by hardware register (2 to 256, 6 hex digits each), EPDF's text
+    # column in pixels and a pixel's height to its width x 16; each picture
+    # also comes in those pens at the size EPDF shows it
+    "pens": ("--pens-hex", None),
+    "column": ("--column", (64, 4096)),
+    "aspect": ("--aspect", (4, 64)),
 }
+PENS = re.compile(r"(?:[0-9a-f]{6}){2,256}")
 LAST_SECONDS = 60                       # of a conversion's time, kept for converting after translating
 NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,63}")
 
@@ -113,6 +129,11 @@ def flags(query):
                 return None, "name?"
             name = v
             continue
+        if k == "pens":
+            if not PENS.fullmatch(v):
+                return None, "pens?"
+            out += [flag, v]
+            continue
         if k == "translate":
             if not re.fullmatch(r"[a-z]{2}", v):
                 return None, "translate=%s" % v[:10]
@@ -126,6 +147,8 @@ def flags(query):
         if k == "double":
             if v == "0":
                 out.append("--normal-pages")
+        elif k == "thumbs":
+            out.append(flag)
         else:
             out += [flag, v]
     return (out, name), None

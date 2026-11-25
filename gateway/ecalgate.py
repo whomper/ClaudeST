@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""ecalgate - the Raspberry Pi gateway for ECal on the Atari.
+"""ecalgate - the Gateway's service for ECal on the Atari.
 
 Calendar servers (iCloud, Google, Fastmail...) and published calendars
 want HTTPS, which an 8 MHz ST can't do. So ECal sends its requests
@@ -27,7 +27,7 @@ Only standard Python 3 is needed (Raspberry Pi OS has it), and aeragate.py
 next to it. `aera-gateway install dav` sets it up as a service. Falcon mode
 doesn't use it: the Falcon does TLS itself.
 
-    ecalgate.py [--port 8180] [--allow 192.168.1.50] [--allow-local] [-v]
+    ecalgate.py [--port 8180] [--allow 192.168.1.60] [--allow-local] [-v]
 """
 
 import argparse
@@ -231,8 +231,15 @@ class Handler(BaseHTTPRequestHandler):
     where = "-"             # the server a request goes to, for the log
 
     def log_message(self, fmt, *args):
+        # only http.server's own errors come here (log_request is quiet), and
+        # their text can hold the request line, with a private feed's address in it: the
+        # status alone (7.3: never a path)
         if Config.verbose:
-            aeragate.say("%s %s" % (self.address_string(), fmt % args))
+            if fmt.startswith("Request timed out"):
+                aeragate.say("%s timed out" % self.address_string())
+            else:
+                code = int(args[0]) if args and isinstance(args[0], int) else "-"   # (3.9: an HTTPStatus)
+                aeragate.say("%s refused: %s" % (self.address_string(), code))
 
     def log_request(self, code="-", size="-"):
         # the request line has the whole address, and a private calendar

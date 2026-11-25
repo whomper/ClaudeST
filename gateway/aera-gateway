@@ -50,7 +50,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "1.46"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.54"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -1226,7 +1226,7 @@ class Translate(Gateway):
     local engine (no text leaves the home network). The engine, Argos
     Translate's models run by CTranslate2, is in a venv of its own under
     /opt/translategate with its models, downloaded once here and offline
-    after (Erez, 7 Nov 2026); "stand-in" needs nothing (CI)."""
+    after (decided 7 Nov 2026); "stand-in" needs nothing (CI)."""
     key, name, script = "translate", "translategate", "translategate.py"
     title = "Translation for the Atari apps (a local engine, nothing leaves the home network)"
     removed = "translategate removed."
@@ -1234,7 +1234,7 @@ class Translate(Gateway):
     VENV = DIR + "/venv"
     MODELS = DIR + "/models"
     INDEX = "https://raw.githubusercontent.com/argosopentech/argospm-index/main/index.json"
-    LANGUAGES = "en,de"                     # the default (Erez, 7 Nov 2026)
+    LANGUAGES = "en,de"                     # the default (decided 7 Nov 2026)
     PIP = ("ctranslate2>=4,<5", "sentencepiece>=0.2,<0.3")
     MAX_MEMORY = 1536                       # MB translategate may take (MemoryMax) on a 4 GB Pi
     MIN_MEMORY = 3500                       # MB: the models loaded beside the other gateways (a 4 GB Pi
@@ -1430,7 +1430,7 @@ class Translate(Gateway):
 MAIL = Mail()
 class Radio(Gateway):
     """radiogate: web radio for EPlay, as MP3 (EPlay's radio/radiogate.py,
-    tools/sync-radio.sh); ffmpeg converts what isn't MP3 (Erez, 8 Nov 2026)"""
+    tools/sync-radio.sh); ffmpeg converts what isn't MP3 (decided 8 Nov 2026)"""
     key, name, script = "radio", "radiogate", "radiogate.py"
     title = "Web radio for EPlay on the Atari (stations as MP3)"
     removed = "radiogate removed."
@@ -1480,7 +1480,7 @@ class Radio(Gateway):
 
 class Dash(Gateway):
     """dashgate: the Gateway's dashboard, for a browser on the home network
-    (Erez, 10 Nov 2026): what runs, the connections, the settings. The
+    (decided 10 Nov 2026): what runs, the connections, the settings. The
     gateways tell it through aeragate on its socket, in its RuntimeDirectory."""
     key, name, script = "dash", "dashgate", "dashgate.py"
     title = "The Gateway's dashboard, for a browser on the home network"
@@ -1638,7 +1638,7 @@ def remove_gateway(pi, gw):
 
 class Claude:
     """ClaudeST's bridge, from this copy's claude-st/ (moved here from
-    ClaudeST, Erez 9 Nov 2026; ClaudeST owns its protocol and reviews its
+    ClaudeST, decided 9 Nov 2026; ClaudeST owns its protocol and reviews its
     changes), or with --from from a ClaudeST copy with bridge/ and pi/:
     set up as ClaudeST's pi/install.sh did"""
     key, name = "claude", "claude-st"
@@ -1674,7 +1674,7 @@ CLAUDE_SESSION_KEY=
         ap.add_argument("--atari", metavar="ATARI_IP",
                         help="the Atari's address (several: IP1,IP2; any address on the home network: any)")
         ap.add_argument("--listen-port", dest="tcp_port", help="the port for the Atari (2323 is the default)")
-        # (the serial cable went with ClaudeST 2.3, Erez 9 Nov 2026: refused, saying so)
+        # (the serial cable went with ClaudeST 2.3, decided 9 Nov 2026: refused, saying so)
         ap.add_argument("--serial", "--port", dest="port", help=argparse.SUPPRESS)
         ap.add_argument("--baud", help=argparse.SUPPRESS)
         ap.add_argument("--set-key", action="store_true", help="paste a new claude.ai session key")
@@ -1726,7 +1726,7 @@ CLAUDE_SESSION_KEY=
         if not s.atari:
             s.atari = pi.ask("The Atari's IP address (several: IP1,IP2; or 'any'): ")
         if not s.atari:
-            raise Usage("ClaudeST needs the Atari's IP address, e.g. --atari 192.168.1.20 (or --atari any)")
+            raise Usage("ClaudeST needs the Atari's IP address, e.g. --atari 192.168.1.60 (or --atari any)")
         if s.atari != "any":
             for ip in s.atari.replace(",", " ").split():
                 if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", ip):

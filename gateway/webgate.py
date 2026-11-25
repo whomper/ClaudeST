@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""webgate - the Raspberry Pi gateway for EWeb on the Atari.
+"""webgate - the Gateway's service for EWeb on the Atari.
 
 EWeb on a Falcon makes its own secure connections (TLS 1.2, the curves on
 the DSP); the ST edition, EWEBST.PRG, can't, and some sites take TLS 1.3
@@ -49,7 +49,10 @@ or 1.3) and hands the answer back as it comes:
     systemd starts one a connection, as its own user, with little memory
     and time); X-Gateway-Pens names it ("aerapens COMMON BUILD"), and the
     log says which once. Without it, or when it fails or is too slow, the
-    picture comes as above.
+    picture comes as above. soft=N (1 to 15; EWeb, decided 22 Nov 2026) asks
+    for the softer dither, N sixteenths of each pixel's error passed on
+    (common's pic_pal_soft, the request's byte 7), and the answer says
+    "X-Gateway-Soft: N"; without it, the whole dither, Floyd-Steinberg.
   - a page's pictures made ahead: EWeb POSTs http://webgate/prefetch, a
     line a picture, "URL<TAB>X-Gateway-Picture<TAB>Cookie" (the cookie
     may be left out), the window's first, after "Referer: " and "Accept: "
@@ -77,7 +80,7 @@ or 1.3) and hands the answer back as it comes:
     when the script doesn't compile, the script comes as it came (EWeb
     compiles it itself). The server is asked for it unpacked.
 
-Translation (Erez, 8 Nov 2026; AERA-Atari standards/TRANSLATION-SERVICE.md):
+Translation (decided 8 Nov 2026; AERA-Atari standards/TRANSLATION-SERVICE.md):
 a GET with "X-Gateway-Translate: to=CODE" whose answer is a document
 (text/html, application/xhtml+xml or text/plain, 200) comes translated
 into CODE by translategate on this machine (its local socket: the text
@@ -136,7 +139,7 @@ first /live (w=W&h=H, in pixels): the picture is then the browser's
 view at 1:1, as wide as EWeb's page and three of its screens tall
 (webgate-ext sizes the browser's window to it), so EWeb scrolls through
 it itself and asks for a new picture only after a click or past its
-third screen (Erez, 30 Oct 2026). Without them, the view is 1024x768,
+third screen (decided 30 Oct 2026). Without them, the view is 1024x768,
 made 608 pixels wide. The picture button has its height too, and the
 picture honours X-Gateway-Picture: asked as pens, it comes as the
 Atari's pens, made by aerapens, as any other picture does. http://webgate/live?url=ADDRESS opens
@@ -152,7 +155,7 @@ EWeb shows on its "can't open" page.
 Only standard Python 3 is needed, and aeragate.py next to it.
 `aera-gateway install web` sets it up as a service.
 
-    webgate.py [--port 8280] [--allow 192.168.1.50] [--allow-local] [--cafile F] [--pens-socket P] [-v]
+    webgate.py [--port 8280] [--allow 192.168.1.60] [--allow-local] [--cafile F] [--pens-socket P] [-v]
 """
 
 import argparse
@@ -214,7 +217,7 @@ PREFETCH_BYTES = 48 << 20       # what they may take in all
 PREFETCH_ITEMS = 100            # the most of a list
 PREFETCH_PLAIN_MAX = 1 << 20    # the most of an answer that isn't a picture made that is kept
 TRANSLATE_PAGE_MAX = 4 << 20    # the most of a page webgate translates
-TRANSLATE_TEXT = 64 << 10       # the most of its text translated (EWeb's proposal, Erez 8 Nov 2026)
+TRANSLATE_TEXT = 64 << 10       # the most of its text translated (EWeb's proposal, decided 8 Nov 2026)
 TRANSLATE_SECONDS = 90          # and the time for it
 TRANSLATE_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
 RTL = {"he", "ar", "fa", "ur", "yi", "ps", "dv"}
@@ -607,11 +610,14 @@ def pens_ask(request):
     return sock_ask(Config.pens_socket, request, PENS_TIME, PENS_ANSWER_MAX)
 
 
-def pens_request(ed, n, w, h, rgb=b"", data=b""):
+def pens_request(ed, n, w, h, rgb=b"", data=b"", soft=0):
     """aerapens' request (AERA-Atari, common/tools/pens/aerapens.c): ed
-    "l" (EWEB.PRG's decoders), "t" (EWEBST.PRG's) or "v" (which it is)"""
-    return (b"AEPQ\1" + ed.encode() + bytes([n - 1 if n else 0, 0]) + w.to_bytes(2, "big") + h.to_bytes(2, "big") +
-            len(data).to_bytes(4, "big") + rgb + data)
+    "l" (EWEB.PRG's decoders), "t" (EWEBST.PRG's) or "v" (which it is);
+    soft, byte 7: the dither's share of each pixel's error in sixteenths
+    (pic_pal_soft, 1 to 15; 0 the whole of it, Floyd-Steinberg; AERA-Atari
+    e6d2e16)"""
+    return (b"AEPQ\1" + ed.encode() + bytes([n - 1 if n else 0, soft]) + w.to_bytes(2, "big") +
+            h.to_bytes(2, "big") + len(data).to_bytes(4, "big") + rgb + data)
 
 
 def pens_line(answer):
@@ -639,7 +645,7 @@ def make_pens(data, want):
     if data is None:
         return None
     w, h = want["size"] or (want["fit"], 0)
-    a = pens_ask(pens_request("l" if want["ed"] == "lj" else "t", want["pens"], w, h, rgb, data))
+    a = pens_ask(pens_request("l" if want["ed"] == "lj" else "t", want["pens"], w, h, rgb, data, want["soft"]))
     got = pens_line(a) if a else None
     if got is None:
         return None
@@ -796,7 +802,7 @@ class Bridge:
 
     def gone(self):
         """the extension isn't asking for addresses: Chromium not running,
-        or webgate-ext stopped in it (Erez's live view, 30 Oct 2026: it
+        or webgate-ext stopped in it (the live view, 30 Oct 2026: it
         waited the whole minute for a browser that wasn't listening)"""
         return not self.polling and time.monotonic() - self.polled > self.GONE
 
@@ -892,6 +898,8 @@ def picture_answer(resp, conn, u, port, want):
         headers += [("Content-Type", made[1]), ("X-Gateway-Picture", made[2])]
     if pens:
         headers.append(("X-Gateway-Pens", pens[2]))    # which aerapens made them, for tracing
+        if want["soft"]:
+            headers.append(("X-Gateway-Soft", str(want["soft"])))   # made with that share (byte 7)
     tls = tls_of(conn)
     if tls:
         headers.append(("X-Gateway-TLS", tls))
@@ -901,9 +909,11 @@ def picture_answer(resp, conn, u, port, want):
 def picture_want(value):
     """X-Gateway-Picture: fit=WIDTH (0: none), and for pens size=WxH
     (None: fit wide at most), pens=N, pal=CRC (8 hex digits), ed=lj or
-    tj, deep=1 (a true-colour screen: make_picture): a dict; pens 0 when
-    they weren't asked for, or not right"""
-    want = {"fit": 0, "size": None, "pens": 0, "pal": None, "ed": "lj", "deep": False}
+    tj, deep=1 (a true-colour screen: make_picture), soft=N (the pens'
+    dither softer: N sixteenths of each pixel's error passed on, 1 to 15;
+    EWeb, decided 22 Nov 2026): a dict; pens 0 when they weren't asked for, or
+    not right; soft 0 for the whole dither"""
+    want = {"fit": 0, "size": None, "pens": 0, "pal": None, "ed": "lj", "deep": False, "soft": 0}
     for part in (value or "").split(";"):
         k, _, v = part.strip().partition("=")
         if k == "fit" and v.isdigit() and 16 <= int(v) <= 4096:
@@ -920,6 +930,8 @@ def picture_want(value):
             want["ed"] = v
         elif k == "deep":
             want["deep"] = v == "1"
+        elif k == "soft" and v.isdigit() and 1 <= int(v) <= 15:
+            want["soft"] = int(v)
     if not want["fit"] or want["pal"] is None:
         want["pens"] = 0
     return want
@@ -1101,8 +1113,15 @@ class Handler(BaseHTTPRequestHandler):
     for_browser = False     # ExtHandler: the Pi's own browser, not an Atari
 
     def log_message(self, fmt, *args):
+        # only http.server's own errors come here (log_request is quiet), and
+        # their text can hold the request line, with what a form sent in it: the
+        # status alone (7.3: never a path)
         if Config.verbose:
-            aeragate.say("%s %s" % (self.address_string(), fmt % args))
+            if fmt.startswith("Request timed out"):
+                aeragate.say("%s timed out" % self.address_string())
+            else:
+                code = int(args[0]) if args and isinstance(args[0], int) else "-"   # (3.9: an HTTPStatus)
+                aeragate.say("%s refused: %s" % (self.address_string(), code))
 
     def log_request(self, code="-", size="-"):
         # the request line has the whole address, with what a form sent
@@ -1435,7 +1454,7 @@ class Handler(BaseHTTPRequestHandler):
     def again(self):
         """after a click or keys: the live page again, with a new picture"""
         time.sleep(Config.live_settle)
-        self.send_body(303, b"", "text/plain", [("Location", "http://webgate/live?n=%d" % int(time.time() * 10))])
+        self.send_body(303, b"", "text/plain", [("Location", "http://webgate/live?n=%d&pic=1" % int(time.time() * 10))])
 
     def xdo(self, *args):
         """real input on the browser's screen"""
@@ -1454,24 +1473,24 @@ class Handler(BaseHTTPRequestHandler):
         part = u.path[len("/live"):]
         if part == "/shot.jpg":
             # live view's picture as pens: with pens asked for, it comes as the Atari's screen
-            # shows it, nothing left for it to decode (Erez, 30 Oct 2026)
+            # shows it, nothing left for it to decode (decided 30 Oct 2026)
             want = self.picture_ask()
             if want["pens"] and PALETTES.get(want["pal"]) is None:
                 self.send_body(409, b"webgate: send the colours first\n", "text/plain", [("X-Gateway-Palette", "need")])
                 self.note(409, 0, " (no colours %08x)" % want["pal"])
                 return
-            vw, vh, pw = live_size()
-            r = BRIDGE.ask("", 20, shot=pw, w=vw, h=vh, quality=Config.live_quality)
+            r = LIVE.get("shot") if a.get("n", [""])[0] == str(LIVE.get("shot_n")) else None
+            if r is None:
+                r = live_shot()     # (an older page's picture asked for: the screen as it is now)
             if not r or not r.get("pic"):
                 why = (r or {}).get("why") or BRIDGE.why()
                 self.reply(504, "webgate: the browser's screen didn't come: %s\n" % why[:200])
                 return
-            # where the picture is on the X screen, and how much smaller
-            LIVE.update(full=r.get("w") or pw, pic=min(pw, r.get("w") or pw), ox=r.get("ox", 0), oy=r.get("oy", 0))
             pens = make_pens(r["pic"], want) if want["pens"] else None
             if pens:
                 self.send_body(200, pens[0], "application/x-aera-pens",
-                               [("X-Gateway-Picture", pens[1]), ("X-Gateway-Pens", pens[2])])
+                               [("X-Gateway-Picture", pens[1]), ("X-Gateway-Pens", pens[2])] +
+                               ([("X-Gateway-Soft", str(want["soft"]))] if want["soft"] else []))
             else:
                 self.send_body(200, r["pic"], "image/jpeg")
             return
@@ -1517,6 +1536,7 @@ class Handler(BaseHTTPRequestHandler):
         if url and "://" not in url:
             url = "https://" + url          # (Go to's "www.example.com")
         title = "the Gateway's browser"
+        typing = False
         if url and not self.browser_may_open(url):
             return
         if url:
@@ -1531,16 +1551,27 @@ class Handler(BaseHTTPRequestHandler):
             # nothing open in the browser yet (live view from a page that
             # isn't on the web, or a webgate just started): no screen to
             # show (the extension can't take a blank tab's), so Go to first
-            # (Erez, 28 Oct 2026: an address typed into the page's field
+            # (decided 28 Oct 2026: an address typed into the page's field
             # went nowhere, and its picture never came)
             screen = LIVE_NONE
         else:
             vw, vh, pw = live_size()
+            # the picture first, kept for shot.jpg: the page then has its
+            # links (an image map: EWeb shows the pointing hand over them)
+            # and says when a field there has the keyboard (EWeb sends what
+            # is typed there); and it comes once the browser's screen is
+            # there to show (decided 21 Nov 2026)
+            # (pic=1: EWeb's live view and the 303 after a click or keys)
+            shot = live_shot() if a.get("pic") else None
+            if shot and shot.get("pic"):
+                LIVE.update(shot=shot, shot_n=n)
+            typing = bool(shot and shot.get("typing"))
             # its height too, so that EWeb knows the size it shows it at
             # and asks for its pens at that size once
-            screen = LIVE_SCREEN % {"n": n, "w": pw, "h": vh * pw // vw}
+            screen = LIVE_SCREEN % {"n": n, "w": pw, "h": vh * pw // vw, "map": live_map(shot)}
         page = LIVE_PAGE % {"title": html.escape(title), "screen": screen,
-                            "url": html.escape(BRIDGE.shown or "", quote=True), "n": n}
+                            "url": html.escape(BRIDGE.shown or "", quote=True), "n": n,
+                            "meta": LIVE_TYPING if typing else ""}
         self.send_body(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def browser_may_open(self, url, quiet=False):
@@ -1669,6 +1700,43 @@ LIVE_VIEW = (1024, 768)     # the browser's view when EWeb gives no size (as the
 LIVE_ROW = 30               # the Go to row above the picture, in EWeb's first screen
 
 
+def live_shot():
+    """the browser's screen now ({"pic", "w", "ox", "oy", "areas", "typing"}),
+    its place and scale kept for the clicks on it, or None"""
+    vw, vh, pw = live_size()
+    r = BRIDGE.ask("", 20, shot=pw, w=vw, h=vh, quality=Config.live_quality)
+    if r and r.get("pic"):
+        # where the picture is on the X screen, and how much smaller
+        LIVE.update(full=r.get("w") or pw, pic=min(pw, r.get("w") or pw), ox=r.get("ox", 0), oy=r.get("oy", 0))
+    return r
+
+
+def live_map(shot):
+    """the picture's links as <area>s (the extension's boxes, in the page's
+    CSS px from the view's corner, made the picture's px): a click on one is
+    a click at its middle, as a click on the picture is a click where it is"""
+    if not shot or not shot.get("areas"):
+        return ""
+    full = shot.get("w") or 0
+    pic = LIVE.get("pic") or full
+    dpr = shot.get("dpr") or 1
+    if not full or not pic:
+        return ""
+    k = dpr * pic / float(full)         # CSS px to the picture's px
+    out = []
+    for b in shot["areas"][:400]:
+        try:
+            x0, y0 = int(b[0] * k), int(b[1] * k)
+            x1, y1 = int((b[0] + b[2]) * k), int((b[1] + b[3]) * k)
+        except (TypeError, ValueError, IndexError):
+            continue
+        if x1 - x0 < 2 or y1 - y0 < 2:
+            continue
+        out.append('<area shape=rect coords="%d,%d,%d,%d" href="http://webgate/live/click?at.x=%d&amp;at.y=%d" alt="">'
+                   % (x0, y0, x1, y1, (x0 + x1) // 2, (y0 + y1) // 2))
+    return "\n".join(out)
+
+
 def live_size():
     """(the browser's view width and height, the picture's width): EWeb's
     page (LIVE["page"]: W, H) as the view at 1:1, PW = W less the body's
@@ -1687,14 +1755,19 @@ LIVE_KEYS = {"enter": "Return", "tab": "Tab", "backspace": "BackSpace", "esc": "
              "up": "Page_Up", "down": "Page_Down", "back": "alt+Left", "reload": "F5"}
 
 LIVE_SCREEN = """<form action="http://webgate/live/click"><input type=image name=at width=%(w)d
- height=%(h)d src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Gateway's browser"></form>"""
+ height=%(h)d src="http://webgate/live/shot.jpg?n=%(n)d" alt="the Gateway's browser" usemap="#live"></form>
+<map name=live>%(map)s</map>"""
+
+# a field of the browser's page has the keyboard: EWeb sends what is typed
+# there (/live/type)
+LIVE_TYPING = '<meta name="aera-live" content="typing">'
 
 LIVE_NONE = """<p><b>The Gateway's browser has no page open yet.</b> Put an address in the field above and
  choose Go to; then its screen shows here, and a click on it is a click there.</p>"""
 
 LIVE_GONE = """<p><b>%(why)s.</b></p>"""
 
-LIVE_PAGE = """<!DOCTYPE html><html><head><meta charset=utf-8><title>Live: %(title)s</title>
+LIVE_PAGE = """<!DOCTYPE html><html><head><meta charset=utf-8>%(meta)s<title>Live: %(title)s</title>
 <style>body{margin:4px;font-family:sans-serif;background:#fff}form{display:inline;margin:0}
 p{margin:4px 0}input[type=image]{border:1px solid #888}</style></head><body>
 <p><form action="http://webgate/live"><input name=url size=40 value="%(url)s">
@@ -1779,8 +1852,18 @@ class ExtHandler(Handler):
             def num(k):
                 v = a.get(k, ["0"])[0]
                 return int(v) if v.lstrip("-").isdigit() else 0
-            BRIDGE.give(a.get("id", [""])[0], {"pic": data, "w": num("w"), "ox": max(0, num("ox")),
-                                               "oy": max(0, num("oy")), "why": a.get("why", [""])[0]})
+            shot = {"pic": data, "w": num("w"), "ox": max(0, num("ox")), "oy": max(0, num("oy")),
+                    "why": a.get("why", [""])[0]}
+            try:
+                # the page's links and fields in the view (CSS px), and
+                # whether a field has the keyboard (X-Live-Areas, JSON)
+                more = json.loads(self.headers.get("X-Live-Areas") or "{}")
+                if isinstance(more, dict):
+                    shot.update(areas=[b for b in more.get("areas") or [] if isinstance(b, list) and len(b) == 4],
+                                typing=bool(more.get("typing")), dpr=min(16.0, max(0.25, float(more.get("dpr") or 1))))
+            except (ValueError, TypeError):
+                pass
+            BRIDGE.give(a.get("id", [""])[0], shot)
             self.answer(200, b"{}")
             return
         if q.path != "/snapshot" or not q.query.startswith("id="):

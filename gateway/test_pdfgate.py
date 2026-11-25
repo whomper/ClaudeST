@@ -166,6 +166,32 @@ class Gate(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b" --pages colouronly", body)
 
+    def test_thumbs(self):
+        """thumbs=1 (EPDF 2.33) is aerapdf's --thumbs; without it, none"""
+        status, _, body = final(post(self.port, "?pages=mono&thumbs=1", PDF))
+        self.assertEqual(status, 200)
+        self.assertTrue(body.endswith(b" --thumbs"), body)
+        status, _, body = final(post(self.port, "?pages=mono", PDF))
+        self.assertNotIn(b"--thumbs", body)
+        for q in ("?thumbs=0", "?thumbs=2", "?thumbs="):
+            status, _, body = final(post(self.port, q, PDF))
+            self.assertEqual(status, 400, q)
+
+    def test_pens(self):
+        """pens=, column= and aspect= (EPDF 2.41) go to aerapdf as
+        --pens-hex, --column and --aspect; anything else in them is refused"""
+        hexes = "000000ffffff" + "ff0000" * 14
+        status, _, body = final(post(self.port, "?pens=%s&column=600&aspect=32" % hexes, PDF))
+        self.assertEqual(status, 200)
+        self.assertIn((" --pens-hex %s --column 600 --aspect 32" % hexes).encode(), body)
+        status, _, body = final(post(self.port, "?pens=" + "0a0b0c" * 256, PDF))
+        self.assertEqual(status, 200)
+        for q in ("?pens=000000", "?pens=" + "000000" * 257, "?pens=00000gffffff",
+                  "?pens=000000FFFFFF", "?pens=000000fffff", "?pens=", "?column=63",
+                  "?column=4097", "?aspect=3", "?aspect=65", "?aspect=x"):
+            status, _, body = final(post(self.port, q, PDF))
+            self.assertEqual(status, 400, q)
+
     def test_options_checked(self):
         for q in ("?pages=all", "?page_width=99999", "?page_width=12a", "?color=1",
                   "?pages=mono&pages=none", "?double=2", "?picture_width=8",

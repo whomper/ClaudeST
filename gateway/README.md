@@ -214,7 +214,7 @@ It installs `python3-paramiko` too (for SSH) if it isn't there. The Atari
 names the server in its login, the way FTP proxies have always done it,
 
 ```
-USER sftp:erez@my.server.net:22         also ftps:  and  ftps-implicit:
+USER sftp:demo@my.server.net:22         also ftps:  and  ftps-implicit:
 PASS (the server's own password)
 ```
 
@@ -485,13 +485,13 @@ its changes). `aera-gateway` sets it up from there, or from a ClaudeST
 copy you name with `--from`:
 
 ```
-sudo aera-gateway install claude --network --atari 192.168.1.20
+sudo aera-gateway install claude --network --atari 192.168.1.60
 sudo aera-gateway install claude --backend api
 sudo aera-gateway set-key        paste a new claude.ai session key
 ```
 
 ClaudeST reaches it through STinG. The serial cable went with
-ClaudeST 2.3 (Erez, 9 Nov 2026): a Gateway set up for it keeps its old
+ClaudeST 2.3 (decided 9 Nov 2026): a Gateway set up for it keeps its old
 bridge, on its cable, for the ClaudeST it has, and `update` says how to
 move to the network (the command above; ClaudeST 2.3 or later on the Atari).
 

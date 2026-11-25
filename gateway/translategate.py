@@ -42,7 +42,7 @@ asked for which pair, the sizes and the time, never a word of the text,
 and neither does any error reply. A closed connection stops the job.
 
 Standard Python 3 only, but for the argos engine's ctranslate2 and
-sentencepiece in its own venv (Erez, 7 Nov 2026).
+sentencepiece in its own venv (decided 7 Nov 2026).
 """
 
 import argparse

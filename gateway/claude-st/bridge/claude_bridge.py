@@ -7,10 +7,10 @@ Runs on any modern computer and connects an Atari ST/STE/TT/Falcon running
 CLAUDEST.PRG to Claude. The Atari can't do modern TLS, so the bridge does
 the HTTPS work and talks a small line protocol (see ClaudeST's PROTOCOL.md)
 to the Atari over TCP: ClaudeST through STinG, or an emulator through
-FAKESTNG. (The serial cable went with ClaudeST 2.3, Erez 9 Nov 2026.)
+FAKESTNG. (The serial cable went with ClaudeST 2.3, decided 9 Nov 2026.)
 
 Examples:
-  CLAUDE_SESSION_KEY=sk-ant-sid01-... ./claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.20
+  CLAUDE_SESSION_KEY=sk-ant-sid01-... ./claude_bridge.py --tcp 0.0.0.0:2323 --allow 192.168.1.60
   ANTHROPIC_API_KEY=... ./claude_bridge.py --backend api --tcp 0.0.0.0:2323
   ./claude_bridge.py --backend demo --tcp 127.0.0.1:2323
 """
