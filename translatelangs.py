@@ -7,7 +7,7 @@ models, each language to and from English, put in and taken out.
 `aera-gateway install translate` uses it as root; on the Gateway it is
 also translategate-langs.service, a job of its own: an app's Languages
 page asks translategate for a set of languages (POST /languages, only
-when the page closes with OK; Erez, 7 Nov 2026), translategate writes the
+when the page closes with OK; decided 7 Nov 2026), translategate writes the
 request to /var/lib/translategate/request, systemd starts this job, which
 downloads what is missing and removes what is no longer wanted, writing
 its progress to /var/lib/translategate/job; translategate reads that for

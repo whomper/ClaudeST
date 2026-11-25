@@ -236,5 +236,25 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(asked, ["calendar.example", "other.example"])
 
 
+
+class LogTest(ProxyTest):
+    """what -v writes"""
+
+    def test_verbose_log_never_the_request_line(self):
+        """-v: a malformed request's line (a private feed's address) never in the log (7.3)"""
+        ecalgate.Config.verbose = True
+        self.addCleanup(setattr, ecalgate.Config, "verbose", False)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            s = socket.create_connection(self.gw.server_address, timeout=10)
+            s.sendall(b"GET https://cal.example/private.ics?token= Wilhelmina\r\n\r\n")
+            s.recv(1000)
+            s.close()
+            import time
+            time.sleep(0.2)
+        self.assertNotIn("Wilhelmina", err.getvalue())
+        self.assertIn("refused: 400", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

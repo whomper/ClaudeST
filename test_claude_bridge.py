@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """ClaudeST's bridge's own tests (claude-st/bridge/test_bridge.py, moved
-here from ClaudeST with the bridge, Erez 9 Nov 2026), run with the
+here from ClaudeST with the bridge, decided 9 Nov 2026), run with the
 others: python3 -m unittest discover -s gateway -p 'test_*.py'"""
 
 import os

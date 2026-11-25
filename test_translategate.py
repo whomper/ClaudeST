@@ -183,9 +183,9 @@ class ShapeTest(Base):
         self.assertEqual(rest, "en: BYE.")
 
     def test_short_lines_kept(self):
-        text = "Erez Yaary\n12 Long Street\nSmalltown\n\nRoses are red,\nviolets are blue"
+        text = "Demo User\n12 Long Street\nSmalltown\n\nRoses are red,\nviolets are blue"
         st, _, body = self.tr(text, src="de")
-        self.assertEqual(body, "en: EREZ YAARY\nen: 12 LONG STREET\nen: SMALLTOWN\n\n"
+        self.assertEqual(body, "en: DEMO USER\nen: 12 LONG STREET\nen: SMALLTOWN\n\n"
                                "en: ROSES ARE RED,\nen: VIOLETS ARE BLUE")
 
     def test_quotes(self):

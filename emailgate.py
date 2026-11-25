@@ -26,7 +26,7 @@ Only standard Python 3 is needed (Raspberry Pi OS has it), and
 aeragate.py next to it. `aera-gateway install mail` sets it up as a
 service.
 
-    emailgate.py [--ports 143,587,110] [--allow 192.168.1.50] [-v]
+    emailgate.py [--ports 143,587,110] [--allow 192.168.1.60] [-v]
                  IMAP_SERVER SMTP_SERVER[:587] [POP3_SERVER]
 """
 

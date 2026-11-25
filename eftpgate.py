@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""eftpgate - the Raspberry Pi gateway for EFTP on the Atari.
+"""eftpgate - the Gateway's service for EFTP on the Atari.
 
 Servers on the internet want FTPS (FTP over TLS) or SFTP (SSH), which an
 8 MHz ST can't do. So EFTP speaks plain FTP to the Pi on your home
@@ -13,7 +13,7 @@ network, and eftpgate speaks FTPS or SFTP to the server:
 The Atari names the server in its login, the way FTP proxies have always
 done it:
 
-    USER sftp:erez@my.server.net:22        (sftp, ftps, ftps-implicit)
+    USER sftp:demo@my.server.net:22        (sftp, ftps, ftps-implicit)
     PASS the server's own password
 
 and eftpgate logs in there with them. To the Atari it is an ordinary,
@@ -29,7 +29,7 @@ python3-paramiko), and aeragate.py next to it. `aera-gateway install ftp`
 sets it up as a service. Falcon mode doesn't need it for FTPS: the Falcon
 does TLS itself.
 
-    eftpgate.py [--port 2121] [--allow 192.168.1.50] [--allow-local]
+    eftpgate.py [--port 2121] [--allow 192.168.1.60] [--allow-local]
                 [--state /var/lib/eftpgate] [-v]
 """
 
@@ -541,7 +541,7 @@ class _FTPDataFile:
 # ---------------------------------------------------------------- the Atari's side
 
 def parse_login(spec):
-    """'sftp:erez@my.server.net:22' -> (proto, user, host, port)"""
+    """'sftp:demo@my.server.net:22' -> (proto, user, host, port)"""
     m = re.match(r"(sftp|ftps|ftps-implicit|ftpes):(.*)@([^@:]+|\[[^]]+\])(?::(\d+))?$", spec, re.I)
     if not m:
         return None
@@ -576,7 +576,7 @@ class Session(socketserver.StreamRequestHandler):
     def reply(self, code, text):
         lines = str(text).split("\n")
         out = "".join("%d-%s\r\n" % (code, l) for l in lines[:-1]) + "%d %s\r\n" % (code, lines[-1])
-        vlog(self.peer, "<", out.strip())
+        vlog(self.peer, "<", code)          # (the text can name a path: 7.3)
         self.wfile.write(out.encode("utf-8", "replace"))
 
     def handle(self):
@@ -594,7 +594,7 @@ class Session(socketserver.StreamRequestHandler):
                 line = raw.decode("utf-8", "replace").rstrip("\r\n")
                 cmd, _, arg = line.partition(" ")
                 cmd = cmd.upper()
-                vlog(self.peer, ">", "PASS ****" if cmd == "PASS" else line)
+                vlog(self.peer, ">", cmd[:8])       # the command alone: its argument can be a path (7.3)
                 fn = getattr(self, "do_" + cmd, None)
                 if fn is None:
                     self.reply(502, "%s isn't something eftpgate does" % cmd)
@@ -980,7 +980,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 def parser():
     """the command line (aera-gateway reads a service's settings with it)"""
-    ap = argparse.ArgumentParser(description="the Raspberry Pi gateway for EFTP: plain FTP in, FTPS or SFTP out")
+    ap = argparse.ArgumentParser(description="the Gateway's service for EFTP: plain FTP in, FTPS or SFTP out")
     ap.add_argument("--port", type=int, default=2121)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--allow", action="append", help="only this Atari's address (may be given more than once)")

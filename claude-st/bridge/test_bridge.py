@@ -66,7 +66,7 @@ class Markdown(unittest.TestCase):
 
 class Links(unittest.TestCase):
     def test_tcp_only(self):
-        """ClaudeST 2.3 reaches the bridge through STinG only (Erez, 9 Nov
+        """ClaudeST 2.3 reaches the bridge through STinG only (decided 9 Nov
         2026): the serial cable's --serial, --baud and --pipe are gone,
         and the bridge says it needs --tcp"""
         import contextlib
@@ -449,7 +449,7 @@ class ScriptMadeFiles(unittest.TestCase):
                 return listing[o:o + params["limit"]]
             return by_id[path.rsplit("/", 1)[1]]
         be._get = get
-        letter = self.docx("Dear hiring manager,", "Erez &amp; co")
+        letter = self.docx("Dear hiring manager,", "Demo &amp; co")
 
         class Resp:
             status_code, content = 200, letter
@@ -477,7 +477,7 @@ class ScriptMadeFiles(unittest.TestCase):
         self.assertEqual([a[1] for a in arts],
                          ["Cover Letter Globex.docx", "Cover_Letter_Acme.docx", "Snake"])
         title, body = be.get_artifact(arts[0][0])
-        self.assertIn("Dear hiring manager,\nErez & co", body)
+        self.assertIn("Dear hiring manager,\nDemo & co", body)
         name, data = be.artifact_file(arts[1][0])
         self.assertEqual(name, "COVER_LE.DOC")
         self.assertTrue(data.startswith(b"PK"))     # saved as the real .docx
@@ -926,7 +926,7 @@ class MovedChats(unittest.TestCase):
 
 class DateHeadings(unittest.TestCase):
     """Chat lists grouped: Pinned, Today, Yesterday, the rest of the week
-    by the day's name, then by date (Erez, 29 Oct 2026)."""
+    by the day's name, then by date (decided 29 Oct 2026)."""
 
     def test_headings(self):
         from datetime import datetime, timedelta, timezone
@@ -1044,7 +1044,7 @@ class LongRunningBridge(unittest.TestCase):
         s.handle(b"FETCH\tARTIFACT\t" + s.short_id(aid).encode())
         self.assertEqual(len(downloads), 2)
         self.assertNotIn("data", be._artifacts[aid])
-        self.assertIn([b"G", str(len(t.docx("Dear hiring manager,", "Erez &amp; co"))).encode()],
+        self.assertIn([b"G", str(len(t.docx("Dear hiring manager,", "Demo &amp; co"))).encode()],
                       link.lines())
 
     def test_effort_per_chat_survives_a_restart(self):
@@ -1301,7 +1301,7 @@ class CodeSessions(unittest.TestCase):
                 self.assertEqual(len(gets), 2)
 
     def test_a_long_session_still_running_shows_its_latest_messages(self):
-        """Erez, 9 Nov 2026: a long session that was still running opened
+        """decided 9 Nov 2026: a long session that was still running opened
         somewhere in its middle, with "too long to read to its end", and
         each open read on. Its new events made the newest page look like
         the oldest; whether events come before the page tells the ends
@@ -1352,7 +1352,7 @@ class CodeSessions(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def test_a_session_too_long_to_read_goes_on_where_it_stopped(self):
-        """Erez's long Code sessions (31 Oct 2026): served oldest first, they
+        """Long Code sessions (31 Oct 2026): served oldest first, they
         ran out of time before their newest messages, each time. Where a
         read got to is remembered, so the next one goes on from there, and
         once at the end, opening the session starts near it"""
@@ -1440,10 +1440,10 @@ class AccountPage(unittest.TestCase):
 
         def get(path, **params):
             if path == "/account":
-                return {"full_name": "Erez Yaary", "email_address": "erez@example.com",
+                return {"full_name": "Demo User", "email_address": "demo@example.com",
                         "created_at": "2023-03-14T10:00:00Z", "memberships": [
                             {"organization": {"uuid": "o0", "name": "Other"}},
-                            {"organization": {"uuid": "o1", "name": "Erez's org",
+                            {"organization": {"uuid": "o1", "name": "Demo's org",
                                               "capabilities": ["chat", "claude_max"],
                                               "rate_limit_tier": "default_claude_max_20x"}}]}
             if path == "/organizations/o1/usage":
@@ -1463,9 +1463,9 @@ class AccountPage(unittest.TestCase):
         self.assertNotIn("Opus", page)
         self.assertNotIn("guana", page)          # shown under its real name
         self.assertIn("Cloud session credits\n  [#-------------------] 3% used\n  expires in ", page)
-        self.assertIn("Name: Erez Yaary", page)
-        self.assertIn("Email: erez@example.com", page)
-        self.assertIn("Organization: Erez's org", page)
+        self.assertIn("Name: Demo User", page)
+        self.assertIn("Email: demo@example.com", page)
+        self.assertIn("Organization: Demo's org", page)
         self.assertIn("Member since: 2023-03-14", page)
 
     def test_used_up_credit_is_hidden(self):
@@ -1669,7 +1669,7 @@ class TcpGateway(unittest.TestCase):
 
     def test_allow_list(self):
         from claude_bridge import TcpLink
-        link = TcpLink("127.0.0.1:0", allow=["192.168.1.20"])
+        link = TcpLink("127.0.0.1:0", allow=["192.168.1.60"])
         import socket
         import threading
         t = threading.Thread(target=link._accept, daemon=True)
@@ -1700,7 +1700,7 @@ class TcpGateway(unittest.TestCase):
         link = TcpLink("127.0.0.1:0")
         link.srv.close()
         link.srv = FakeServer()
-        for addr, accepted in (("8.8.8.8", False), ("192.168.1.20", True),
+        for addr, accepted in (("8.8.8.8", False), ("192.168.1.60", True),
                                ("10.0.0.5", True), ("127.0.0.1", True)):
             conn = FakeConn()
             link.srv.next = (conn, (addr, 1234))

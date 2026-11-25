@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """translateclient - translategate for the Gateway's own gateways.
 
-webgate and pdfgate translate on the Gateway (Erez, 8 Nov 2026) through
+webgate and pdfgate translate on the Gateway (decided 8 Nov 2026) through
 translategate's local socket: the same machine, one engine with its
 models loaded once, translategate the only process that has them. The
 words are POST /translate's (AERA-Atari standards/TRANSLATION-SERVICE.md):
@@ -122,7 +122,7 @@ def translate_parts(parts, to, src=None, seconds=30, sock=SOCKET, piece=2048, st
     far as seconds allow: (translations of the first done parts, the
     language, done). Parts go a few at a time, about piece bytes, so the
     first ones come back whatever the rest would take; the caller leaves
-    parts[done:] as they were and says how much was translated (Erez,
+    parts[done:] as they were and says how much was translated (decided
     8 Nov 2026: time is the limit). A piece still at work when the time
     is up is dropped (TimedOut for the first: nothing was done). stop():
     True when the answer is no longer wanted (asked between pieces)"""

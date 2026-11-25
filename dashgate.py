@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """dashgate - the Gateway's dashboard, for a browser on the home network
-(Erez, 10 Nov 2026).
+(decided 10 Nov 2026).
 
 One page, read-only, at http://GATEWAY:8888/, sent filled in (it reads the
-same with a browser's scripts off: Erez, 10 Nov 2026): each service running or not
+same with a browser's scripts off: decided 10 Nov 2026): each service running or not
 and since when, its ports, the connections today and this run, the Ataris
 that came and where they went, the settings (never a password or a key)
 and the computer's memory, disk, load and temperature. It refreshes
@@ -24,7 +24,7 @@ Where the numbers come from:
     kernel lists them (/proc/net/tcp);
   - systemd (on a Raspberry Pi) or aera-gateway-run (in a container): each
     service's state and its settings, from its command line.
-The counts start again when dashgate starts (Erez, 10 Nov 2026).
+The counts start again when dashgate starts (decided 10 Nov 2026).
 
 Who may see it: the home network, or with --allow only those addresses
 (the rule the gateways share, aeragate.client_ok). Standard Python 3 only.
@@ -47,6 +47,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import aeragate  # noqa: E402
@@ -503,7 +504,7 @@ def status(stats, host_header="", found=None, started=None, peers=None):
 
 # ---------------------------------------------------------------- the web page
 #
-# The page comes filled in (Erez, 10 Nov 2026: EWeb shows it with its
+# The page comes filled in (decided 10 Nov 2026: EWeb shows it with its
 # scripts off): dash.js only fetches it again every few seconds and puts
 # the new parts in place, and picks out one service's activity. Without
 # scripts it refreshes itself every 30 s (<noscript>).
@@ -952,8 +953,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     stats = None
 
     def log_message(self, fmt, *args):
+        """-v: who asked for which of its own pages; never another path or a
+        query, nor a malformed request's line (7.3: never a path)"""
         if Config.verbose:
-            say("%s %s" % (self.client_address[0], fmt % args))
+            path = urlsplit(getattr(self, "path", "") or "").path
+            say("%s %s %s" % (self.client_address[0], getattr(self, "command", None) or "-",
+                              path if path in FILES or path in ("/", "/status.json") else "(another page)"))
 
     def send(self, status, ctype, body):
         body = body.encode("utf-8") if isinstance(body, str) else body

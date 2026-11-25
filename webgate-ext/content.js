@@ -84,10 +84,39 @@
                                 html: snapshot()});
   }
 
+  // live view's picture: the links and fields in the view (CSS px from its
+  // corner), so that EWeb shows the pointing hand over them, and whether a
+  // field has the keyboard, so that what is typed on the Atari goes there
+  // (decided 21 Nov 2026)
+  const CLICKS = "a[href], button, input:not([type=hidden]), select, textarea, summary, label, " +
+                 "[onclick], [role=button], [role=link], [role=tab], [role=menuitem], [contenteditable]";
+  function areas() {
+    const out = [], vw = window.innerWidth, vh = window.innerHeight;
+    for (const e of document.querySelectorAll(CLICKS)) {
+      const r = e.getBoundingClientRect();
+      const x0 = Math.max(0, r.left), y0 = Math.max(0, r.top);
+      const x1 = Math.min(vw, r.right), y1 = Math.min(vh, r.bottom);
+      if (x1 - x0 < 2 || y1 - y0 < 2)
+        continue;
+      const st = getComputedStyle(e);
+      if (st.visibility === "hidden" || st.display === "none")
+        continue;
+      out.push([Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)]);
+      if (out.length >= 400)
+        break;
+    }
+    const a = document.activeElement;
+    const typing = !!a && (a.isContentEditable || a.tagName === "TEXTAREA" ||
+      (a.tagName === "INPUT" && !/^(button|submit|reset|checkbox|radio|file|image|range|color|hidden)$/i.test(a.type)));
+    return {areas: out, typing: typing, dpr: window.devicePixelRatio || 1};
+  }
+
   // live view's "as a page": the snapshot of the page as it is now
-  chrome.runtime.onMessage.addListener(msg => {
+  chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg.snapshot_now)
       chrome.runtime.sendMessage({snapshot: true, url: location.href, title: document.title, html: snapshot()});
+    if (msg.areas)
+      reply(areas());
   });
 
   if (document.readyState === "complete")

@@ -124,7 +124,7 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 def date_heading(when, now=None):
     """The heading a chat goes under in a list: "Today", "Yesterday", the
     day of the week ("Monday") for the rest of the last seven days, and
-    before that the date ("Oct 22", "Oct 22, 2025" in another year; Erez,
+    before that the date ("Oct 22", "Oct 22, 2025" in another year; decided
     29 Oct 2026). `when` is an ISO time or a Unix time."""
     from datetime import datetime, timezone
     if when in (None, ""):
@@ -1016,7 +1016,7 @@ class ClaudeAiBackend(Backend):
         # newest page (claude.ai's, with no cursor). Asking for newer ones
         # instead misjudged a session still running: its new events made
         # the newest page look like the oldest, and the bridge read on from
-        # where an earlier read had stopped, out of time (Erez, 9 Nov 2026)
+        # where an earlier read had stopped, out of time (decided 9 Nov 2026)
         seen = set(map(event_id, events))
         first = page.get("first_id") or event_id(events[0])
         older = []

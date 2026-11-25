@@ -38,7 +38,7 @@ of its own:
     GET /search?q=<words>&tag=<genre>&country=<code>&language=<name>&sort=votes|clicks|name&n=<1-100>
                                                    (radiogate 1.3)
 
-  answered by radio-browser.info's stations that match (Erez, 9 Nov 2026:
+  answered by radio-browser.info's stations that match (decided 9 Nov 2026:
   Find station, through the Gateway): text/plain, UTF-8, one station a
   line, "name<TAB>country code<TAB>codec<TAB>kbit/s<TAB>its URL", the
   broken ones left out, most votes first by default; any codec (what
@@ -52,7 +52,7 @@ What the station sends:
     titles with it;
   - AAC, Ogg, or anything else that isn't MP3: converted with ffmpeg to
     MP3 (128 kbit/s at most, 44.1 kHz, stereo), the station's ICY titles
-    taken out of what goes to ffmpeg and put back into the MP3 (Erez,
+    taken out of what goes to ffmpeg and put back into the MP3 (decided
     8 Nov 2026: ffmpeg on the Gateway, AAC on the Falcon's DSP later);
   - HLS (an .m3u8 of pieces): its playlists and pieces fetched here, each
     through aeragate's checked connection, the pieces (MPEG-TS or ADTS
@@ -565,7 +565,7 @@ class Handler(BaseHTTPRequestHandler):
     def logo(self, station, name):
         """GET /logo?station=<the station's URL>&name=<its icy-name> (EPlay,
         when a Gateway is set, for a station that names no picture of its
-        own: Erez, 8 Nov 2026): its logo from radio-browser.info, found by
+        own: decided 8 Nov 2026): its logo from radio-browser.info, found by
         the station's address, else by its exact name (the most voted), as
         a 64 x 64 JPEG; 404 when there is none"""
         try:

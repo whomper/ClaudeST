@@ -36,7 +36,7 @@ def fake_getaddrinfo(answers):
 
 class AddressTest(unittest.TestCase):
     def test_home_network(self):
-        for a in ("192.168.1.50", "10.1.2.3", "172.16.0.1", "172.31.255.254", "127.0.0.1", "169.254.1.1",
+        for a in ("192.168.1.60", "10.1.2.3", "172.16.0.1", "172.31.255.254", "127.0.0.1", "169.254.1.1",
                   "::1", "fd00::5", "fe80::1", "fe80::1%eth0", "::ffff:192.168.1.2"):
             self.assertTrue(aeragate.is_private(a), a)
         for a in ("8.8.8.8", "172.32.0.1", "100.64.0.1", "2001:db8::1", "::ffff:8.8.8.8", "not an address", ""):
@@ -51,9 +51,9 @@ class AddressTest(unittest.TestCase):
     def test_who_may_use_it(self):
         self.assertTrue(aeragate.client_ok("192.168.1.9", []))
         self.assertFalse(aeragate.client_ok("203.0.113.7", []))
-        self.assertTrue(aeragate.client_ok("192.168.1.50", ["192.168.1.50"]))
-        self.assertTrue(aeragate.client_ok("::ffff:192.168.1.50", ["192.168.1.50"]))
-        self.assertFalse(aeragate.client_ok("192.168.1.51", ["192.168.1.50"]))
+        self.assertTrue(aeragate.client_ok("192.168.1.60", ["192.168.1.60"]))
+        self.assertTrue(aeragate.client_ok("::ffff:192.168.1.60", ["192.168.1.60"]))
+        self.assertFalse(aeragate.client_ok("192.168.1.51", ["192.168.1.60"]))
 
 
 class LookupTest(unittest.TestCase):
