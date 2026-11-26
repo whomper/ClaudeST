@@ -39,8 +39,8 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 - **Only formal releases leave the build machine.** The owner gets vX.Y releases made by the Release
   workflow from `main`, nothing else: no test builds, no CI artifacts, no builds
   from a branch. Work lands on `main`; to try a fix on real hardware, release it. A fault found after a
-  release (by a user, the hub or the owner) is fixed forward by the next number, before other work; the old
-  release stays, and the new one's notes say in one line what it fixes (no revert, no "withdrawn" notice).
+  release (by a user, the hub or the owner) is fixed forward in the next release; the old release stays, and
+  the new one's notes say in one line what it fixes (no revert, no "withdrawn" notice).
 - **The regression gate** (17 Nov 2026; the guidelines 1.2, AERA-Atari a22574e;
   `standards/TEST-MATRIX.md`'s gate table): "we need to be extra careful with regression issues as there
   are users of our software. This means testing across all configurations" and "make sure we don't loose
@@ -60,8 +60,16 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
 
   Only then is it released. **A fault a user reports becomes a case in the rigs** in the same release
   that fixes it.
-- **Releases go out without asking the owner** (decided 23 Oct 2026; guidelines 1.2) once the gate
-  above has passed and the hub said go. Then give the owner the link in one line, with anything the owner has to
+- **Fewer releases, each carrying more** (decided 26 Nov 2026; guidelines 1.2, AERA-Atari 9da7632): no
+  release for every single fix or feature. Changes gather on `main` and go out together when a body of work
+  is complete (the fixes known by then and the phase's features), as one candidate through the gate and the
+  hub's family check. Only a fault that loses or damages data, a security fault, or a crash or breakage that
+  stops users working goes out on its own at once, with only that fix, and its notes say why. A fault a user
+  reports is fixed with its rig case and rides the next release unless it is one of those. Docs and rig
+  changes need no release; the hub's shared fixes ride the next release unless the hub names one as the
+  exception.
+- **Releases go out without asking the owner** (decided 23 Oct 2026; guidelines 1.2) once a body of work
+  on `main` is ready, the gate above has passed and the hub said go. Then give the owner the link in one line, with anything the owner has to
   do, and send the hub the link.
 - **Who decides what** (31 Oct 2026; the guidelines' "Who decides what"). The owner's part, put
   to the owner before the work as a decision with a short context:
@@ -113,7 +121,8 @@ Until the owner ends it:
   rule and each shared fix; ClaudeST takes them (the rules in its code, the shared code by a `common/` sync).
   Section 8's table ("Where each app stands") is ClaudeST's work list: each row it does not meet is fixed, or
   the commit that meets it goes to the hub to tick.
-- Whether a change needs a release is reviewed with the owner through the hub; a fault fix always gets one.
+- Whether a change needs a release of its own is reviewed with the owner through the hub; a fault fix rides
+  the next release unless it is one of the faults that go out at once (Fewer releases, above).
 - Before any release, send the hub the candidate commit with the checks and wait for its go from the family
   check (TOS 1.04 and 4.04, NVDI); releasing first and checking after is not for ClaudeST.
 - Nothing runs in the background; the session waits for the owner or the hub between tasks.
@@ -137,8 +146,9 @@ Until the owner ends it:
   on to it). Change the installer there, with that repository's owner
   session, and bring it here with `tools/sync-gateway.sh`. ClaudeST says
   what the `claude` recipe needs (packages, settings, the unit, port 2323).
-- Commit and push to `main`. When the Atari side or the bridge changes, release it (the Pi takes the
-  bridge from ClaudeST's latest release, never from `main`), give the user the release's link and say
+- Commit and push to `main`. A change to the Atari side rides the next release (Fewer releases, above);
+  when it goes out (the Pi takes the bridge from AERA-Gateway's release, never from `main`), give the
+  user the release's link and say
   whether the Pi needs `./update-pi.sh` in its AERA-Gateway folder.
 - Run `make test` (the bridge's tests and the layout's) and build (`make`)
   before pushing.
