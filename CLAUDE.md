@@ -144,10 +144,10 @@ Until the owner ends it:
   raises it (1.34 -> 1.35), and `tools/check_version.sh` fails when vX.Y is out already (the
   release workflow runs it). A release carries `CLAUDEST.PRG`, `CLAUDEST.HYP` and `.REF` and the
   icon (`icons/`); no example `CLAUDEST.INF` (20 Oct 2026): ClaudeST writes its own.
-- `bridge/` is ClaudeST's; `gateway/` is a read-only copy of
+- The bridge lives in `gateway/claude-st/bridge/`; `gateway/` is a read-only copy of
   [AERA-Gateway](https://github.com/whomper/AERA-Gateway)'s, whose
   `aera-gateway install claude` sets the bridge up (`pi/install.sh` hands
-  on to it). Change the installer there, with that repository's owner
+  on to it). Change the bridge and the installer there, with that repository's owner
   session, and bring it here with `tools/sync-gateway.sh`. ClaudeST says
   what the `claude` recipe needs (packages, settings, the unit, port 2323).
 - Commit and push to `main`. A change to the Atari side rides the next release (Fewer releases, above);
