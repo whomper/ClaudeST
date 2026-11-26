@@ -1316,6 +1316,65 @@ class CodeSessions(unittest.TestCase):
         self.assertGreaterEqual(len(msgs), 40)
         self.assertLess(len(gets), 5)           # the newest page and a few back: no walk
 
+    def test_a_slow_long_session_read_to_its_end_in_one_open(self):
+        """decided 26 Nov 2026: a long session served oldest first, on slow
+        reads, said "too long to read" at every open. An open now reads on
+        to the latest messages, telling the Atari how far it has got, and
+        the place is remembered: the next open reads only what came since."""
+        be, gets = self.long_session(False, n=20000)
+        self.clocked(be, secs_a_read=30.0)      # an hour's reads: 120
+        told = []
+        be.code_progress = told.append
+        title, msgs = be.get_code_session("session_l")
+        self.assertFalse(be.code_partial)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertGreater(len(told), 10)       # the Atari kept waiting
+        del gets[:]
+        title, msgs = be.get_code_session("session_l")
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertLess(len(gets), 10)          # from the mark, not the start
+
+    def test_a_walk_cut_short_goes_on_at_the_next_open(self):
+        """a read out of time (CODE_LONG, or no progress shown: CODE_SECONDS)
+        left the mark where it began when it had got fewer events than it
+        keeps, and every open read the same stretch again"""
+        be, gets = self.long_session(False, n=20000)
+        self.clocked(be, secs_a_read=3.0)       # 8 reads in CODE_SECONDS
+        be._code_last = {}
+        last, opens = -1, 0
+        while True:
+            opens += 1
+            title, msgs = be.get_code_session("session_l")
+            got = int(msgs[-1][1][1:])
+            self.assertGreater(got, last)       # every open goes further
+            last = got
+            if not be.code_partial:
+                break
+            self.assertLess(opens, 40)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+
+    def test_a_long_read_stopped_by_the_atari_keeps_its_place(self):
+        """anything the Atari does during an open (another chat, Reconnect)
+        ends the read at once (code_stop); the place is kept, and the next
+        open goes on from it to the end"""
+        be, gets = self.long_session(False, n=20000)
+        self.clocked(be, secs_a_read=30.0)
+        be.code_progress = lambda n: None
+        asked = []
+        be.code_stop = lambda: asked.append(1) or len(asked) > 20
+        title, msgs = be.get_code_session("session_l")
+        self.assertTrue(be.code_stopped)
+        self.assertTrue(be.code_partial)
+        stopped_at = int(msgs[-1][1][1:])
+        self.assertLess(stopped_at, 19999)
+        be.code_stop = None
+        del gets[:]
+        title, msgs = be.get_code_session("session_l")
+        self.assertFalse(be.code_stopped)
+        self.assertFalse(be.code_partial)
+        self.assertEqual(msgs[-1], ("A", "a19999"))
+        self.assertLess(len(gets), (20000 - stopped_at) // 200 + 10)    # from the place kept
+
     def test_a_long_session_whose_events_carry_uuids(self):
         """claude.ai's events have no "id", only the message's "uuid": 1.54
         then read the session over and over, and the bridge went deaf"""
@@ -1623,6 +1682,78 @@ class Gateway(unittest.TestCase):
         s = Session(Dead(), DemoBackend())
         with self.assertRaises(EOFError):
             s.handle(b"HELLO\t1\t1.0")
+
+
+class LongOpenOverTcp(unittest.TestCase):
+    """A Code session read for a long time (up to CODE_LONG): the Atari's
+    PINGs are answered meanwhile, and anything else it sends, or a new
+    connection, ends the read at once and is served"""
+
+    def setUp(self):
+        import threading
+        from claude_bridge import TcpLink
+        self.walking = threading.Event()
+        self.stopped = threading.Event()
+        test = self
+
+        class Long(DemoBackend):
+            code_progress = code_stop = None
+            code_stopped = False
+
+            def get_code_session(self, sid):
+                self.code_stopped = False
+                test.walking.set()
+                end = time.time() + 20
+                while time.time() < end:
+                    if self.code_stop and self.code_stop():
+                        self.code_stopped = True
+                        test.stopped.set()
+                        break
+                    time.sleep(0.05)
+                return "Long session", [("U", "q"), ("A", "a")]
+
+        import time
+        self.link = TcpLink("127.0.0.1:0", allow=["127.0.0.1"])
+        self.port = self.link.srv.getsockname()[1]
+        self.session = Session(self.link, Long())
+        threading.Thread(target=self.session.run, daemon=True).start()
+
+    def connect(self):
+        import socket
+        c = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        c.settimeout(5)
+        c.sendall(b"HELLO\t1\t2.16\n")
+        TcpGateway.read_until(self, c, b"S\tOnline")
+        return c
+
+    def test_a_ping_is_answered_and_the_read_goes_on(self):
+        c = self.connect()
+        c.sendall(b"OPEN\tCODE\tsession_x\n")
+        self.assertTrue(self.walking.wait(5))
+        c.sendall(b"PING\n")
+        self.assertIn(b"p\n", TcpGateway.read_until(self, c, b"p\n"))
+        self.assertFalse(self.stopped.is_set())
+        c.close()
+
+    def test_another_command_ends_the_read_and_is_served(self):
+        c = self.connect()
+        c.sendall(b"OPEN\tCODE\tsession_x\n")
+        self.assertTrue(self.walking.wait(5))
+        c.sendall(b"LIST\tCHATS\n")
+        got = TcpGateway.read_until(self, c, b"L\tCHATS")
+        self.assertTrue(self.stopped.is_set())
+        self.assertIn(b"L\tCHATS", got)
+        self.assertNotIn(b"T\tLong session", got)      # the stopped session is not shown
+        c.close()
+
+    def test_a_reconnect_is_served_at_once(self):
+        c = self.connect()
+        c.sendall(b"OPEN\tCODE\tsession_x\n")
+        self.assertTrue(self.walking.wait(5))
+        d = self.connect()          # served well before the read's 20 s
+        self.assertTrue(self.stopped.is_set())
+        d.close()
+        c.close()
 
 
 class TcpGateway(unittest.TestCase):
