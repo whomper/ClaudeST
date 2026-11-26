@@ -38,7 +38,8 @@ MAX_ID = 39              # ClaudeST keeps item ids up to this many characters
 MOVED_CHAT = ("claude.ai has moved this chat to its new chat system, and ClaudeST "
               "could not open its new part. It shows what it can, but can't add to it: "
               "to keep going, start a new chat, or continue this one on claude.ai.")
-HISTORY_MESSAGES = 40    # how much of a long chat to send to the Atari
+HISTORY_MESSAGES = 14    # how much of a long chat to send to the Atari (a third
+                         # of 40, decided 26 Nov 2026: no one scrolls back further)
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,11 @@ class Link:
 
     def write(self, data: bytes):
         raise NotImplementedError
+
+    def pending(self) -> bool:
+        """Whether the Atari has sent something not read yet (or, over TCP,
+        connected again), without waiting or reading it"""
+        return b"\n" in self.buf
 
     def readline(self) -> bytes:
         while b"\n" not in self.buf:
@@ -129,6 +135,27 @@ class TcpLink(Link):
                 self.conn.close()
                 self.conn = None
                 self.buf = b""
+
+    def pending(self):
+        """Takes in what the Atari has sent, without waiting; a new
+        connection, or the Atari gone, counts as something"""
+        import select
+        socks = [self.srv] + ([self.conn] if self.conn else [])
+        try:
+            ready, _, _ = select.select(socks, [], [], 0)
+        except (OSError, ValueError):
+            return True
+        if self.srv in ready:
+            return True
+        if self.conn and self.conn in ready:
+            try:
+                data = self.conn.recv(4096)
+            except OSError:
+                data = b""
+            if not data:
+                return True         # gone: readline() finds it so too
+            self.buf += data
+        return super().pending()
 
     def write(self, data):
         if self.conn is None:
@@ -451,11 +478,17 @@ class Session:
             self.notice("Loading session...")
             if hasattr(self.be, "code_progress"):     # a long one: say how far, which keeps the Atari waiting
                 self.be.code_progress = lambda n: self.notice("Loading session... %s steps read" % format(n, ","))
+                # anything the Atari does meanwhile (another chat, New chat,
+                # Reconnect, Quit) ends the read at once, its place kept
+                self.be.code_stop = self.atari_wants
             try:
                 title, msgs = self.be.get_code_session(oid)
             finally:
                 if hasattr(self.be, "code_progress"):
-                    self.be.code_progress = None
+                    self.be.code_progress = self.be.code_stop = None
+            if getattr(self.be, "code_stopped", False):
+                self.online()           # the Atari's next line is served now
+                return
             self.chat_id, self.chat_kind = oid, "CODE"
             choice = getattr(self.be, "chat_choice", None)    # the session's model
             if choice and choice[0]:
@@ -753,6 +786,19 @@ class Session:
         self.out("G", len(data))
         self.be.forget_artifact_data(item_id)
         self.online()
+
+    def atari_wants(self):
+        """While a long read runs: whether the Atari has asked for something
+        else (or connected again). Its PINGs, sent after 30 quiet seconds,
+        are answered here and don't count."""
+        while self.link.pending():
+            line, sep, rest = self.link.buf.partition(b"\n")
+            if not sep or line.rstrip(b"\r").split(b"\t")[0].upper() != b"PING":
+                return True
+            self.link.buf = rest
+            self._heard_at = time.time()
+            self.cmd_ping()
+        return False
 
     def cmd_ping(self, *_):
         """The Atari heard nothing for a while: say we're here."""
