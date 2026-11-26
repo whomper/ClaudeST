@@ -5882,11 +5882,22 @@ static void handle_msg(short *msg)
 /* main                                                                */
 /* ------------------------------------------------------------------ */
 
+static long phystop_get(void)
+{
+	volatile long *p;	/* phystop ($42E), the top of ST RAM; through a */
+	__asm__("" : "=a"(p) : "0"(0x42EL));	/* register: GCC won't take a constant address */
+	return *p;
+}
+
+/* the text buffer: 96 KB, else 48, else 24. On a 1 MB machine 24 KB
+   from the start (decided 26 Nov 2026): the 1 MB ST beside an accessory
+   had too little left for GEM, and the bridge sends a chat's last 14
+   messages; a full buffer drops its oldest half (trim_buffer) */
 static short alloc_buffers(void)
 {
 	long sizes[3] = { 98304L, 49152L, 24576L };
-	short i;
-	for (i = 0; i < 3; i++) {
+	short i = Supexec(phystop_get) <= 0x100000L ? 2 : 0;
+	for (; i < 3; i++) {
 		tcap = sizes[i];
 		maxlines = (short)(tcap / 16);
 		tb = Malloc(tcap + (long)maxlines * sizeof(LINE));
@@ -5945,6 +5956,7 @@ const char cpu_cf_alert[] = "[3][CLAUDEST.PRG is for the ST,|TT and Falcon. On t
 
 int app_main(void)
 {
+	static char about_ready;
 	short work_out[57], dx, dy, dw, dh, wbox, hbox;
 	short msg[8];
 	AEVENT ev;
@@ -6087,6 +6099,16 @@ int app_main(void)
 		if (win_icon)	/* an icon takes no keys or clicks */
 			ev.which &= ~(MU_KEYBD | MU_BUTTON);
 		ticks++;
+		if ((ev.which & MU_TIMER) && !about_ready) {
+			/* the About box's 256-colour icon map, made while idle
+			   (common a769b86): its first opening finds it made */
+			ABOUT a;
+			memset(&a, 0, sizeof(a));
+			a.icon256 = icon256_px;
+			a.icon256_rgb = icon256_rgb;
+			about_prepare(&a);
+			about_ready = 1;
+		}
 		heap_trim();	/* what a dialog or a copy let go, back to GEMDOS */
 		tip_poll(ev.which);
 		if (ev.which & MU_MESAG)
