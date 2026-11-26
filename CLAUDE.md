@@ -67,7 +67,11 @@ These come from AERA-Atari's repo template and are the same in every app's CLAUD
   stops users working goes out on its own at once, with only that fix, and its notes say why. A fault a user
   reports is fixed with its rig case and rides the next release unless it is one of those. Docs and rig
   changes need no release; the hub's shared fixes ride the next release unless the hub names one as the
-  exception.
+  exception. Nothing known is left in a queue behind a release (decided 26 Nov 2026; AERA-Atari bf0b8d5,
+  c8429a7): a candidate takes every known fault and pending item this session can finish within a few
+  days, and its message to the hub lists what was left out and why (the hub checks that list before its
+  go). A reported fault that is waiting goes into the release being prepared, not the one after. In
+  maintenance this decides what a release carries, not whether there is one.
 - **Releases go out without asking the owner** (decided 23 Oct 2026; guidelines 1.2) once a body of work
   on `main` is ready, the gate above has passed and the hub said go. Then give the owner the link in one line, with anything the owner has to
   do, and send the hub the link.
