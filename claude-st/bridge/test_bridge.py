@@ -1762,7 +1762,7 @@ class RecordedCodeSession(unittest.TestCase):
         return out
 
     def backend(self, latest=True):
-        from backends import ClaudeAiBackend, event_id
+        from backends import ClaudeAiBackend, event_id, _event_payload
         ev = self.events()
         ids = [event_id(e) for e in ev]
         calls = {"latest": 0, "older": 0}
@@ -1786,8 +1786,18 @@ class RecordedCodeSession(unittest.TestCase):
                 assert p["sort_order"] == "desc"
                 hi = int(p.get("cursor", len(rows)))
                 lo = max(hi - int(p["limit"]), 0)
-                return Response(200, {"data": rows[lo:hi][::-1], "next_cursor": str(lo) if lo else None,
-                                      "resume_cursor": str(lo)})
+                return Response(200, {"data": [served(e, lo + n) for n, e in enumerate(rows[lo:hi])][::-1],
+                                      "next_cursor": str(lo) if lo else None, "resume_cursor": str(lo)})
+
+        def served(e, seq):
+            """an event as claude.ai's Code page's address serves it: the
+            kind in event_type, the message in payload (its shape there,
+            seen 27 Nov 2026)"""
+            kind, inner = _event_payload(e)
+            msg = inner.get("message") if isinstance(inner, dict) else None
+            return {"created_at": "t", "device_attestation_status": "x", "event_id": "e%d" % seq,
+                    "event_type": kind, "sequence_num": str(seq), "source": "x", "sent_by_account_id": None,
+                    "payload": {"type": kind, "uuid": event_id(e), "message": msg, "session_id": "s"}}
 
         be = ClaudeAiBackend.__new__(ClaudeAiBackend)
         be.http, be.org = Http(), "org"

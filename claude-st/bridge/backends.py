@@ -307,6 +307,11 @@ def _event_payload(ev):
     showed only its older messages, stopping in its middle (27 Nov 2026)"""
     p = ev.get("data") if isinstance(ev.get("data"), dict) else ev
     t = p.get("type")
+    if isinstance(p.get("payload"), dict) and ("event_type" in p or "sequence_num" in p):
+        # claude.ai's Code page's address: {"event_type": "user", "event_id",
+        # "sequence_num", "payload": {"type": "user", "message", "uuid"}}.
+        # Missed, a session read from there showed nothing (27 Nov 2026)
+        t, p = p.get("event_type") or p["payload"].get("type"), p["payload"]
     if t not in ("user", "assistant", "result", "system"):
         for k in ("user", "assistant", "result", "system"):
             if isinstance(p.get(k), dict):
