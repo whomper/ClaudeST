@@ -5957,6 +5957,7 @@ const char cpu_cf_alert[] = "[3][CLAUDEST.PRG is for the ST,|TT and Falcon. On t
 int app_main(void)
 {
 	static char about_ready;
+	static long last_user;
 	short work_out[57], dx, dy, dw, dh, wbox, hbox;
 	short msg[8];
 	AEVENT ev;
@@ -6099,9 +6100,15 @@ int app_main(void)
 		if (win_icon)	/* an icon takes no keys or clicks */
 			ev.which &= ~(MU_KEYBD | MU_BUTTON);
 		ticks++;
-		if ((ev.which & MU_TIMER) && !about_ready) {
+		if (ev.which & (MU_KEYBD | MU_BUTTON | MU_MESAG))
+			last_user = ticks;
+		if ((ev.which & MU_TIMER) && !about_ready && online && !dirty && ticks - last_user > 75) {
 			/* the About box's 256-colour icon map, made while idle
-			   (common a769b86): its first opening finds it made */
+			   (common a769b86): its first opening finds it made. Not
+			   on the first timer event, which is still the start's (20
+			   ms slower on Falcon-4:256 with NVDI), nor soon after a key
+			   or click (the next one waited 30 ms): online, nothing to
+			   draw, and 3 s with nothing from the user */
 			ABOUT a;
 			memset(&a, 0, sizeof(a));
 			a.icon256 = icon256_px;
