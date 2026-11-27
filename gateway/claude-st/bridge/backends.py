@@ -1015,10 +1015,55 @@ class ClaudeAiBackend(Backend):
             self.marks = ChoiceMemory()
         return self.marks
 
+    # claude.ai's own Code page reads a session from its newest end: this
+    # address, sort_order=desc, and a numeric cursor that counts back
+    # (decided 27 Nov 2026: a session's last messages, no place to keep)
+    CODE_LATEST = "https://claude.ai/v1/code/sessions/%s/events"
+    CODE_SKIP = ("stream_event", "tool_progress", "keep_alive")
+
+    def _code_latest(self, session_id, cap, want, deadline):
+        """The session's latest events, oldest first, read newest first as
+        claude.ai's Code page does; None where that address isn't served
+        (the older read follows), or with no HTTP session (a test's backend)"""
+        http = getattr(self, "http", None)
+        if http is None:
+            return None
+        headers = {"anthropic-version": "2023-06-01", "anthropic-beta": "ccr-byoc-2025-07-29",
+                   "anthropic-client-feature": "ccr", "anthropic-client-platform": "web_claude_ai",
+                   "x-organization-uuid": getattr(self, "org", "")}
+        base = [("limit", 200), ("sort_order", "desc")] + [("exclude_types", t) for t in self.CODE_SKIP]
+        got, cursor = [], None
+        while True:
+            params = base + ([("cursor", cursor)] if cursor is not None else [])
+            try:
+                r = http.get(self.CODE_LATEST % session_id, headers=headers, params=params, timeout=60)
+            except Exception as e:      # noqa: BLE001 - the network: the older read says so
+                log.debug("Code session: newest-first read failed: %s", type(e).__name__)   # (its text names the session)
+                return None if not got else got[::-1]
+            if r.status_code != 200:
+                log.debug("Code session: newest-first read: HTTP %s", r.status_code)
+                if got:
+                    break
+                return None
+            page = r.json() if r.content else {}
+            data = self._data(page)
+            got += data
+            cursor = page.get("next_cursor") if isinstance(page, dict) else None
+            if (not data or cursor in (None, "", 0, "0") or len(got) >= cap or time.time() >= deadline
+                    or len(code_messages(got[::-1])) >= want or self._stopped()):
+                break
+        events = got[::-1]
+        self._code_tail = event_id(events[-1]) if events else None
+        log.debug("Code session: newest first, %d events", len(events))
+        return events
+
     def _code_recent(self, session_id, cap, want):
         path = "/sessions/%s/events" % session_id
         deadline = time.time() + (self.CODE_LONG if self.code_progress else self.CODE_SECONDS)
         self.code_partial = self.code_stopped = False
+        latest = self._code_latest(session_id, cap, want, deadline)
+        if latest is not None:
+            return latest
         page = self._code("get", path, limit=200)
         events = self._data(page)
         tail = (isinstance(page, dict) and page.get("last_id")) or (events and event_id(events[-1])) or None

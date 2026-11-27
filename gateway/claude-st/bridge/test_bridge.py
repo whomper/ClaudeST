@@ -1728,6 +1728,124 @@ class Gateway(unittest.TestCase):
             s.handle(b"HELLO\t1\t1.0")
 
 
+class RecordedCodeSession(unittest.TestCase):
+    """A claude.ai Code session made from scratch, served as claude.ai serves
+    one, through the bridge's own path (Session, LazyBackend,
+    ClaudeAiBackend): claude.ai's Code page's address (/v1/code/sessions,
+    newest first, a numeric cursor counting back, exclude_types) and the
+    older one (/v1/sessions, oldest first, after_id, has_more, before_id
+    giving nothing); events in the older form and the newer one
+    (internal_anthropic_catchall), and the stream's chatter (decided 27 Nov
+    2026, after three Code fixes in two days)"""
+
+    N = 6000
+
+    def events(self):
+        out = []
+        for i in range(self.N):
+            uid = "u%05d" % i
+            if i % 50 == 7:         # the stream's chatter, left out on request
+                out.append({"created_at": "t", "stream_event": {"uuid": uid}})
+                continue
+            kind = "user" if i % 10 == 0 else "assistant"
+            if i % 10 == 0:
+                content = "question %d" % i
+            elif i % 10 == 5:
+                content = [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]
+            else:
+                content = [{"type": "text", "text": "answer %d" % i}]
+            if i < self.N // 2:     # the older form
+                out.append({"id": uid, "data": {"type": kind, "message": {"role": kind, "content": content}}})
+            else:                   # the newer form
+                out.append({"created_at": "t", kind: {"uuid": uid, "internal_anthropic_catchall": {
+                    "message": {"role": kind, "content": content}}}})
+        return out
+
+    def backend(self, latest=True):
+        from backends import ClaudeAiBackend, event_id
+        ev = self.events()
+        ids = [event_id(e) for e in ev]
+        calls = {"latest": 0, "older": 0}
+
+        class Response:
+            def __init__(self, code, body):
+                self.status_code, self._body = code, body
+                self.content = b"{}"
+
+            def json(self):
+                return self._body
+
+        class Http:
+            def get(self, url, headers=None, params=(), timeout=None):
+                calls["latest"] += 1
+                if not latest:
+                    return Response(404, {"type": "error"})
+                p = dict(params)
+                skip = {v for k, v in params if k == "exclude_types"}
+                rows = [e for e in ev if not any(k in skip for k in e)]
+                assert p["sort_order"] == "desc"
+                hi = int(p.get("cursor", len(rows)))
+                lo = max(hi - int(p["limit"]), 0)
+                return Response(200, {"data": rows[lo:hi][::-1], "next_cursor": str(lo) if lo else None,
+                                      "resume_cursor": str(lo)})
+
+        be = ClaudeAiBackend.__new__(ClaudeAiBackend)
+        be.http, be.org = Http(), "org"
+
+        def code(method, path, body=None, **params):
+            if not path.endswith("/events"):
+                return {"title": "Recorded"}
+            calls["older"] += 1
+            if params.get("before_id"):
+                return {"data": [], "has_more": False}
+            lo = ids.index(params["after_id"]) + 1 if params.get("after_id") else 0
+            if params.get("order"):
+                lo = 0                      # ignored, as claude.ai does
+            page = ev[lo:lo + params["limit"]]
+            return {"data": page, "has_more": lo + len(page) < len(ev),
+                    "first_id": event_id(page[0]) if page else None, "last_id": event_id(page[-1]) if page else None}
+        be._code = code
+        be._memory = lambda: {}
+        return be, calls
+
+    def open(self, be):
+        from backends import LazyBackend
+        link = FakeLink()
+        Session(link, LazyBackend(lambda: be, "claude.ai")).cmd_open("CODE", "session_r")
+        return link.sent.decode("latin-1")
+
+    def test_opens_at_the_newest_messages_from_the_newest_end(self):
+        be, calls = self.backend()
+        sent = self.open(be)
+        self.assertIn("answer %d" % (self.N - 1), sent)
+        self.assertNotIn("too long to read", sent)
+        self.assertNotIn("stream_event", sent)
+        self.assertLessEqual(calls["latest"], 3)        # a page or few, not the whole session
+        self.assertEqual(calls["older"], 0)
+        self.assertFalse(hasattr(be, "marks") and be.marks.get("session_r"))   # no place kept
+
+    def test_without_that_address_the_older_read_still_gets_there(self):
+        be, calls = self.backend(latest=False)
+        be.code_progress = None
+        sent = self.open(be)
+        self.assertIn("answer %d" % (self.N - 1), sent)
+        self.assertNotIn("too long to read", sent)
+        self.assertGreater(calls["older"], 1)
+
+    def test_every_attribute_the_bridge_sets_reaches_the_real_backend(self):
+        import re
+        from backends import LazyBackend
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_bridge.py")).read()
+        names = set(re.findall(r"self\.be\.([a-z_]+) *=[^=]", src))
+        self.assertTrue(names)
+        real = type("Real", (), {})()
+        lazy = LazyBackend(lambda: real, "claude.ai")
+        for n in sorted(names):
+            setattr(lazy, n, n)
+            self.assertEqual(getattr(real, n, None), n, n)
+            self.assertNotIn(n, vars(lazy))
+
+
 class LongOpenOverTcp(unittest.TestCase):
     """A Code session read for a long time (up to CODE_LONG): the Atari's
     PINGs are answered meanwhile, and anything else it sends, or a new
