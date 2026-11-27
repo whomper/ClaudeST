@@ -300,13 +300,21 @@ def plan_name(capabilities, tier="", billing=""):
 
 def _event_payload(ev):
     """A Claude Code session event -> (type, payload). Events carry the
-    stream-json message either directly or under "data"."""
+    stream-json message either directly or under "data", or (claude.ai's
+    newer events) under their kind, with the message one level further in,
+    in "internal_anthropic_catchall": {"assistant": {"uuid": ...,
+    "internal_anthropic_catchall": {"message": ...}}}. Missed, a session
+    showed only its older messages, stopping in its middle (27 Nov 2026)"""
     p = ev.get("data") if isinstance(ev.get("data"), dict) else ev
     t = p.get("type")
     if t not in ("user", "assistant", "result", "system"):
         for k in ("user", "assistant", "result", "system"):
             if isinstance(p.get(k), dict):
-                return k, p[k]
+                t, p = k, p[k]
+                break
+    inner = p.get("internal_anthropic_catchall")
+    if isinstance(inner, dict) and "message" not in p:
+        p = dict(inner, **{k: v for k, v in p.items() if k != "internal_anthropic_catchall"})
     return t, p
 
 
