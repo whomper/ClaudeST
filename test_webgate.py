@@ -1728,5 +1728,96 @@ class LogTest(ProxyTest):
         self.assertIn("refused: 400", err.getvalue())
 
 
+
+class OwnHeadersTest(unittest.TestCase):
+    """webgate's own request headers (X-Gateway-...), in any case, are for
+    webgate alone: none goes on to the server (7.3)"""
+    setUpClass = classmethod(ProxyTest.setUpClass.__func__)
+    tearDownClass = classmethod(ProxyTest.tearDownClass.__func__)
+    ask = ProxyTest.ask
+
+    def test_none_go_upstream(self):
+        r, data, _ = self.ask("GET", "/page", {"X-Gateway-Picture": "fit=608",
+                                               "x-gateway-translate": "to=de", "X-GATEWAY-SNAPSHOT": "0",
+                                               "X-Other": "kept"})
+        self.assertEqual(r.status, 200)
+        sent = {k.lower() for k in Upstream.seen[-1][2]}
+        self.assertEqual([k for k in sent if k.startswith("x-gateway-")], [])
+        self.assertIn("x-other", sent)
+
+
+class ThroughAProxyTest(unittest.TestCase):
+    """HTTPS_PROXY: the proxy dials the server, so webgate checks the home
+    network itself first (7.3), before a connection is kept for it"""
+
+    def setUp(self):
+        self.srv = socket.socket()
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(4)
+        self.addCleanup(self.srv.close)
+        self.got = []
+
+        def proxy():
+            while True:
+                try:
+                    a, _ = self.srv.accept()
+                except OSError:
+                    return
+                a.settimeout(5)
+                try:
+                    self.got.append(a.recv(4096))
+                    a.sendall(b"HTTP/1.1 502 no\r\nContent-Length: 0\r\n\r\n")
+                except OSError:
+                    pass
+                a.close()
+        threading.Thread(target=proxy, daemon=True).start()
+        old = os.environ.get("HTTPS_PROXY")
+        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:%d" % self.srv.getsockname()[1]
+        self.addCleanup(lambda: os.environ.pop("HTTPS_PROXY") if old is None
+                        else os.environ.__setitem__("HTTPS_PROXY", old))
+        allow = webgate.Config.allow_local
+        self.addCleanup(lambda: setattr(webgate.Config, "allow_local", allow))
+        webgate.UP.conns.clear()
+        self.addCleanup(webgate.UP.conns.clear)
+        self.gw = ThreadingHTTPServer(("127.0.0.1", 0), webgate.Handler)
+        self.gw.daemon_threads = True
+        threading.Thread(target=self.gw.serve_forever, daemon=True).start()
+        self.addCleanup(self.gw.server_close)
+        self.addCleanup(self.gw.shutdown)
+
+    def ask(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("GET", "https://127.0.0.1:8443/page")
+        r = c.getresponse()
+        return r.status, r.read()
+
+    def test_home_network_refused_before_the_proxy(self):
+        webgate.Config.allow_local = False
+        self.assertEqual(self.ask(), (403, b"webgate: won't connect to the local network (127.0.0.1)\n"))
+        self.assertEqual(self.got, [])
+        self.assertEqual(webgate.UP.conns, {})          # nothing kept for it
+
+    def test_allow_local_goes_through_the_proxy(self):
+        webgate.Config.allow_local = True
+        status, _ = self.ask()
+        self.assertEqual(status, 502)
+        self.assertTrue(self.got and self.got[0].startswith(b"CONNECT 127.0.0.1:8443 "))
+
+
+class RestartAdviceTest(unittest.TestCase):
+    def test_the_snaps_own_unit(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = webgate.SNAP_UNIT
+            try:
+                webgate.SNAP_UNIT = os.path.join(d, "webgate-browser.service")
+                self.assertEqual(webgate.restart_browser(), "sudo systemctl restart webgate-browser")
+                open(webgate.SNAP_UNIT, "w").close()
+                self.assertEqual(webgate.restart_browser(),
+                                 "sudo systemctl --user -M webgate@ restart webgate-browser")
+            finally:
+                webgate.SNAP_UNIT = old
+
+
 if __name__ == "__main__":
     unittest.main()

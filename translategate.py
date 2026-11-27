@@ -233,6 +233,7 @@ class Argos:
         self.pair = {}
         self.names = {}
         self.loaded = False
+        self.failed = None      # why it didn't load, once that is known: not "loading" for ever
         threading.Thread(target=self.load, args=(models, threads, workers), daemon=True).start()
 
     def load(self, models, threads, workers):
@@ -259,8 +260,11 @@ class Argos:
                 " ".join("%s>%s" % p for p in sorted(self.pair))))
             if self.pair:
                 self.loaded = True
+            else:
+                self.failed = "no languages are installed"
         except Exception as e:
-            aeragate.say("translategate: the engine didn't load (%s)" % type(e).__name__)
+            self.failed = "the engine didn't load (%s)" % type(e).__name__
+            aeragate.say("translategate: " + self.failed)
 
     def ready(self):
         return self.loaded
@@ -473,6 +477,14 @@ def closed(sock):
         return True
 
 
+
+def not_loaded(eng):
+    """why the engine can't take a text yet: still loading, or (once it is
+    known) why it didn't load, with where to look, instead of "loading"
+    for ever"""
+    why = getattr(eng, "failed", None)
+    return "%s: see journalctl -u translategate" % why if why else "the engine is loading"
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
     server_version = "translategate/" + VERSION
@@ -531,7 +543,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/status":
             text = "translategate %s\nengine %s %s\n%s\n" % (
-                PROTOCOL, eng.name, eng.version, "ready" if eng.ready() else "loading")
+                PROTOCOL, eng.name, eng.version, "ready" if eng.ready() else
+                "failed: %s" % eng.failed if getattr(eng, "failed", None) else "loading")
         elif path == "/languages" and urlsplit(self.path).query == "all=1":
             # the Languages page: every language that can be had, its MB,
             # whether it is here; the room for them (translatelangs.CAP_MB)
@@ -552,7 +565,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/languages":
             text = "".join("%s\t%s\n" % kv for kv in eng.languages()) if eng.ready() else ""
             if not eng.ready():
-                self.refuse(503, "the engine is loading")
+                self.refuse(503, not_loaded(eng))
                 return
         else:
             self.refuse(404, "no such page")
@@ -601,7 +614,7 @@ class Handler(BaseHTTPRequestHandler):
         del data
         eng = Config.engine
         if not eng.ready():
-            self.refuse(503, "the engine is loading", size)
+            self.refuse(503, not_loaded(eng), size)
             return
         t0 = time.monotonic()
         used = src or eng.detect(text)

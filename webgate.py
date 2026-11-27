@@ -763,6 +763,13 @@ class Upstream(threading.local):
                     ctx.verify_mode = ssl.CERT_NONE
                 proxy = _proxy("https")
                 if proxy:
+                    # the proxy dials the server, so the home network is
+                    # checked here first, as _dial does without one (7.3),
+                    # before a connection is kept for it. (The proxy looks
+                    # the name up again itself: one whose answer changes in
+                    # between can't be caught without breaking the
+                    # certificate's name check.)
+                    aeragate.lookup(host, port, Config.allow_local)
                     c = http.client.HTTPSConnection(proxy[0], proxy[1], timeout=Config.timeout, context=ctx)
                     c.set_tunnel(host, port)
                 else:
@@ -782,6 +789,18 @@ class Upstream(threading.local):
 
 UP = Upstream()
 
+
+
+# Ubuntu's Chromium snap runs as webgate's own systemd unit (aera-gateway
+# puts it here), the others as a system one
+SNAP_UNIT = "/var/lib/webgate/.config/systemd/user/webgate-browser.service"
+
+
+def restart_browser():
+    """the command that restarts the Gateway's browser, as it was set up"""
+    if os.path.exists(SNAP_UNIT):
+        return "sudo systemctl --user -M webgate@ restart webgate-browser"
+    return "sudo systemctl restart webgate-browser"
 
 class Bridge:
     """webgate-ext's side: the address the browser is to open next, and
@@ -810,7 +829,7 @@ class Bridge:
         """what to say when the browser didn't answer"""
         if self.gone():
             return ("the Gateway's browser isn't listening (webgate-ext last asked %d s ago); "
-                    "on the Raspberry Pi: sudo systemctl restart webgate-browser" % (time.monotonic() - self.polled))
+                    "on the Raspberry Pi: %s" % (time.monotonic() - self.polled, restart_browser()))
         return "it didn't answer"
 
     def ask(self, url, wait, **more):
@@ -1057,8 +1076,8 @@ def make_ahead(url, pic, cookie, headers):
     if cookie:
         h["Cookie"] = cookie
     for attempt in (1, 2):
-        conn = UP.get(u.scheme, u.hostname, port)
         try:
+            conn = UP.get(u.scheme, u.hostname, port)
             conn.request("GET", path, headers=h)
             resp = conn.getresponse()
             break
@@ -1224,25 +1243,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_snap(snap, self.path, " (on the browser for the visit)")
                 return
             visiting(u.hostname, False)     # (asked as usual: the check again, if it is that)
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+        # webgate's own headers (X-Gateway-...) are for webgate alone, in any
+        # case: never passed on to the server (7.3; X-Gateway-Picture's
+        # colours would tell an Atari apart)
+        headers = {k: v for k, v in self.headers.items()
+                   if k.lower() not in HOP_BY_HOP and not k.lower().startswith("x-gateway-")}
         headers["Host"] = u.netloc.rsplit("@", 1)[-1]
         # what the Atari unpacks itself, and nothing it can't
         asked = (self.headers.get("Accept-Encoding") or "").lower()
         headers["Accept-Encoding"] = ", ".join(e for e in ("gzip", "deflate") if e in asked) or "identity"
         script = self.headers.get("X-Gateway-Script") if self.command == "GET" and not self.for_browser else None
         tr = self.headers.get("X-Gateway-Translate") if self.command == "GET" and not self.for_browser else None
-        headers.pop("X-Gateway-Translate", None)
         if tr is not None:
             # (translated here: the page whole and unpacked)
             for k in ("If-None-Match", "If-Modified-Since"):
                 headers.pop(k, None)
             headers["Accept-Encoding"] = "identity"
         if script:
-            headers.pop("X-Gateway-Script", None)
             headers["Accept-Encoding"] = "identity"     # (compiled here: it comes unpacked)
         for attempt in (1, 2):
-            conn = UP.get(u.scheme, u.hostname, port)
             try:
+                conn = UP.get(u.scheme, u.hostname, port)
                 conn.request(self.command, path, body=body, headers=headers)
                 resp = conn.getresponse()
                 break

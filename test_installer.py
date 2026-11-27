@@ -13,6 +13,7 @@ import importlib.machinery
 import importlib.util
 import io
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -73,7 +74,14 @@ class FakePi(ag.Pi):
         unit = self.read(ag.unit_path(name)) or ""
         self.active.discard(name)
         if name == "claude-st":
+            # it answers on its --tcp port, unless the bridge is broken
+            env = self.read("/etc/claude-st/claude-st.env") or ""
+            m = re.search(r"--tcp \S*:(\d+)", env)
+            bridge = self.read("/opt/claude-st/bridge/claude_bridge.py") or ""
+            if "BROKEN" in bridge or not m:
+                return
             self.active.add(name)
+            self.ports.add(m.group(1))
             return
         script, args = ag.exec_args(unit, name + ".py")
         if script is None:                  # not a gateway (stunnel4)
@@ -1007,6 +1015,36 @@ class ClaudeTest(Base):
         self.assertIsNotNone(self.unit("webgate"))          # the others went on
         self.assertIsNotNone(self.unit("claude-st"))
         self.assertEqual(self.run_ag("install", "all", "--mail", "imap.example"), 2)
+
+    def test_a_bridge_that_doesnt_answer_puts_the_one_before_back(self):
+        """an update whose bridge doesn't answer: the bridge before comes
+        back and runs again, as a gateway's does, and the update says so"""
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src, "--atari", "192.168.1.60",
+                                     "--backend", "demo"), 0, self.err)
+        before = self.pi.read("/opt/claude-st/bridge/claude_bridge.py")
+        with open(os.path.join(self.src, "bridge", "claude_bridge.py"), "w") as fh:
+            fh.write("# BROKEN\n")
+        rc = self.run_ag("install", "claude", "--from", self.src)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("claude-st didn't start", self.err)
+        self.assertIn("The bridge before is running again.", self.err)
+        self.assertEqual(self.pi.read("/opt/claude-st/bridge/claude_bridge.py"), before)
+        self.assertFalse(self.pi.exists("/opt/claude-st/bridge.old"))
+        self.assertIn("claude-st", self.pi.active)
+        # and one that answers replaces it, leaving nothing aside
+        with open(os.path.join(self.src, "bridge", "claude_bridge.py"), "w") as fh:
+            fh.write("# claude_bridge.py, newer\n")
+        self.assertEqual(self.run_ag("install", "claude", "--from", self.src), 0, self.err)
+        self.assertEqual(self.pi.read("/opt/claude-st/bridge/claude_bridge.py"), "# claude_bridge.py, newer\n")
+        self.assertFalse(self.pi.exists("/opt/claude-st/bridge.old"))
+
+    def test_a_first_bridge_that_doesnt_answer_says_so(self):
+        with open(os.path.join(self.src, "bridge", "claude_bridge.py"), "w") as fh:
+            fh.write("# BROKEN\n")
+        rc = self.run_ag("install", "claude", "--from", self.src, "--atari", "192.168.1.60", "--backend", "demo")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("claude-st didn't start (it isn't listening on port 2323)", self.err)
+        self.assertNotIn("before", self.err)
 
     def test_network(self):
         rc = self.run_ag("install", "claude", "--from", self.src, "--network", "--atari", "192.168.1.60",

@@ -170,7 +170,8 @@ def sftp_server(root, key):
             except OSError:
                 return
             t = paramiko.Transport(sock)
-            t.add_server_key(key)
+            for k in key if isinstance(key, (list, tuple)) else [key]:
+                t.add_server_key(k)
             t.set_subsystem_handler("sftp", paramiko.SFTPServer, StubSFTP)
             try:
                 t.start_server(server=StubServer())
@@ -394,6 +395,77 @@ class SFTPTests(Base):
         with self.assertRaises(ftplib.error_perm):
             f.cwd("/nowhere")
         f.quit()
+
+    def known_as(self, sport, *keys, text=None):
+        """known_hosts as it is now, with sport's server known by keys (or
+        replaced by text); put back as it was afterwards"""
+        path = os.path.join(self.state, "known_hosts")
+        if not os.path.exists(path):
+            self.atari(self.port, self.user).quit()
+        with open(path, "rb") as f:
+            was = f.read()
+
+        def back():
+            with open(path, "wb") as f:
+                f.write(was)
+        self.addCleanup(back)
+        if text is not None:
+            with open(path, "w") as f:
+                f.write(text)
+            return path
+        kh = paramiko.HostKeys(path)
+        for k in keys:
+            kh.add("[127.0.0.1]:%d" % sport, k.get_name(), k)
+        kh.save(path)
+        return path
+
+    def refused(self, sport, words):
+        with self.assertRaises(ftplib.error_perm) as e:
+            self.atari(self.port, "sftp:atari@127.0.0.1:%d" % sport)
+        self.assertIn("530", str(e.exception))
+        self.assertIn(words, str(e.exception))
+
+    def test_a_known_host_offering_another_kind_of_key(self):
+        """known by one kind of key (ECDSA), offering only another (RSA): refused
+        as a changed key, known_hosts left as it is (7.3)"""
+        ls, sport = sftp_server(self.home, paramiko.RSAKey.generate(2048))
+        self.addCleanup(ls.close)
+        path = self.known_as(sport, paramiko.ECDSAKey.generate())
+        with open(path, "rb") as f:
+            before = f.read()
+        self.refused(sport, "SSH key has changed: if that is right, remove it from known_hosts on the Gateway")
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), before)
+
+    def test_a_known_host_with_more_kinds_of_key(self):
+        """known by its RSA key, offering ECDSA and RSA: held to RSA, it connects"""
+        rsa = paramiko.RSAKey.generate(2048)
+        ls, sport = sftp_server(self.home, [paramiko.ECDSAKey.generate(), rsa])
+        self.addCleanup(ls.close)
+        path = self.known_as(sport, rsa)
+        with open(path, "rb") as f:
+            before = f.read()
+        self.atari(self.port, "sftp:atari@127.0.0.1:%d" % sport).quit()
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), before)
+
+    def test_a_known_hosts_that_cant_be_read(self):
+        """there but not readable whole: refused, not taken as empty"""
+        bad = "garbage line here\n[127.0.0.1]:1 ssh-ed25519 notbase64!!\n"
+        path = self.known_as(self.sport, text=bad)
+        self.refused(self.sport, "The Gateway can't read its known_hosts: remove it there and connect again")
+        with open(path) as f:
+            self.assertEqual(f.read(), bad)
+        with open(path, "w") as f:
+            f.write("garbage line here\n")
+        self.refused(self.sport, "can't read its known_hosts")
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads any file")
+    def test_an_unreadable_known_hosts(self):
+        path = self.known_as(self.sport)
+        os.chmod(path, 0)
+        self.addCleanup(os.chmod, path, 0o600)
+        self.refused(self.sport, "can't read its known_hosts")
 
     def test_host_key_remembered(self):
         self.atari(self.port, self.user).quit()

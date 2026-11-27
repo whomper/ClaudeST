@@ -204,6 +204,12 @@ class Upstream(threading.local):
                     ctx.verify_mode = ssl.CERT_NONE
                 proxy = _proxy("https")
                 if proxy:
+                    # the proxy dials the server, so the home network is
+                    # checked here first, as _dial does without one (7.3).
+                    # (The proxy looks the name up again itself: one whose
+                    # answer changes in between can't be caught without
+                    # breaking the certificate's name check.)
+                    aeragate.lookup(host, port, Config.allow_local)
                     c = http.client.HTTPSConnection(proxy[0], proxy[1], timeout=Config.timeout, context=ctx)
                     c.set_tunnel(host, port)
                 else:
@@ -302,8 +308,8 @@ class Handler(BaseHTTPRequestHandler):
         headers["Accept-Encoding"] = "gzip, deflate"
         window = self.headers.get("X-Calendar-Window")
         for attempt in (1, 2):
-            conn = UP.get(u.scheme, u.hostname, port)
             try:
+                conn = UP.get(u.scheme, u.hostname, port)
                 conn.request(self.command, path, body=body, headers=headers)
                 resp = conn.getresponse()
                 data = resp.read()
@@ -331,15 +337,23 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(504 if isinstance(e, socket.timeout) else 502,
                            "ecalgate: can't reach %s (%s)\n" % (u.hostname, e))
                 return
-        enc = (resp.getheader("Content-Encoding") or "").lower()
+        enc = (resp.getheader("Content-Encoding") or "").strip().lower()
         try:
-            if enc == "gzip":
+            if not data or enc in ("", "identity"):
+                pass                    # (HEAD, 204 and 304 come empty, whatever they say)
+            elif enc in ("gzip", "x-gzip"):
                 data = gzip.decompress(data)
             elif enc == "deflate":
                 try:
                     data = zlib.decompress(data)
                 except zlib.error:
                     data = zlib.decompress(data, -zlib.MAX_WBITS)
+            else:
+                # passed on as it came, the Atari would get bytes it can't
+                # read with nothing to say they are packed
+                self.reply(502, "ecalgate: %s sent an answer compressed as %s, which it can't unpack\n"
+                           % (u.hostname, enc[:20]))
+                return
         except (OSError, zlib.error):
             self.reply(502, "ecalgate: %s sent a broken compressed answer\n" % u.hostname)
             return

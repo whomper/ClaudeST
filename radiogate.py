@@ -467,12 +467,13 @@ class Handler(BaseHTTPRequestHandler):
         t0, sent = time.time(), [0]
         host = urlsplit(url).hostname or "?"
         self.fault = None               # (the feed thread's, when it failed)
+        self.begun = False              # the 200 sent: from then on, no other answer
         try:
             self.stream(url, self.headers.get("Icy-MetaData", "") == "1", sent)
             why = self.fault or "ended"
         except Refused as e:
-            if sent[0]:
-                why = e.words
+            if self.begun:
+                why = e.words           # (said in the log: the Atari has its 200 already)
             else:
                 self.reply(e.status, e.words)
                 return
@@ -484,6 +485,7 @@ class Handler(BaseHTTPRequestHandler):
                      (self.client_address[0], host, time.time() - t0, sent[0] // 1024, why))
 
     def begin(self, name, kbps, meta):
+        self.begun = True
         self.send_response(200)
         self.send_header("Content-Type", "audio/mpeg")
         if name:

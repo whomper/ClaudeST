@@ -573,6 +573,44 @@ class LoadingTest(Base):
         self.assertEqual((st, body), (503, "translategate: the engine is loading\n"))
 
 
+class FailedTest(Base):
+    """an engine that couldn't load (no languages, or its packages broken)
+    says so, with where to look, instead of "loading" for ever"""
+    engine = staticmethod(lambda: FailedStandIn())
+
+    def test_failed(self):
+        st, _, body = self.gate.ask("/status")
+        self.assertEqual(body, b"translategate 1\nengine stand-in 1\nfailed: no languages are installed\n")
+        st, _, body = self.tr("Hello %s" % SECRET, src="de")
+        self.assertEqual((st, body), (503, "translategate: no languages are installed: "
+                                           "see journalctl -u translategate\n"))
+        st, _, body = self.gate.ask("/languages")
+        self.assertEqual(st, 503)
+
+    def test_argos_without_its_packages(self):
+        # the real engine, on a computer without ctranslate2: failed, not loading
+        eng = tg.Argos(models=self.gate_dir())
+        for _ in range(100):
+            if eng.failed:
+                break
+            time.sleep(0.05)
+        self.assertFalse(eng.ready())
+        self.assertTrue(eng.failed)
+
+    def gate_dir(self):
+        import tempfile
+        d = tempfile.mkdtemp(prefix="tg-models-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        return d
+
+
+class FailedStandIn(tg.StandIn):
+    failed = "no languages are installed"
+
+    def ready(self):
+        return False
+
+
 class Broken(tg.StandIn):
     def translate(self, texts, src, dst, check=lambda: None):
         raise ValueError("cannot translate %r" % texts)
