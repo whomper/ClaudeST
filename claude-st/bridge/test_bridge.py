@@ -1377,6 +1377,26 @@ class CodeSessions(unittest.TestCase):
             self.assertLess(opens, 40)
         self.assertEqual(msgs[-1], ("A", "a19999"))
 
+    def test_an_open_through_lazybackend_reads_to_the_end(self):
+        """claude.ai's backend is always behind a LazyBackend, which passed
+        reads on but kept what was set: code_progress and code_stop never
+        reached the backend, so an open had 25 s, not CODE_LONG, and said
+        "too long to read" (27 Nov 2026)"""
+        from backends import LazyBackend
+        be, gets = self.long_session(False, n=20000)
+        self.clocked(be, secs_a_read=30.0)
+        be.chat_choice = None
+        lazy = LazyBackend(lambda: be, "claude.ai")
+        link = FakeLink()
+        s = Session(link, lazy)
+        s.cmd_open("CODE", "session_l")
+        sent = link.sent.decode("latin-1")
+        self.assertNotIn("too long to read", sent)
+        self.assertIn("steps read", sent)               # the Atari kept waiting
+        self.assertIn("a19999", sent)                   # the newest message
+        self.assertIsNone(be.code_progress)             # and taken off again
+        self.assertIsNone(be.code_stop)
+
     def test_a_long_read_stopped_by_the_atari_keeps_its_place(self):
         """anything the Atari does during an open (another chat, Reconnect)
         ends the read at once (code_stop); the place is kept, and the next

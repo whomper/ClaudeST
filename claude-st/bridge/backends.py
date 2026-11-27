@@ -1928,6 +1928,15 @@ class LazyBackend:
     def __getattr__(self, attr):
         return getattr(self._get(), attr)
 
+    def __setattr__(self, attr, value):
+        """what the bridge sets (code_progress, code_stop) goes to the real
+        backend: kept here, an open had 25 s, not CODE_LONG, and said "too
+        long to read" (27 Nov 2026)"""
+        if attr in ("factory", "name", "real"):
+            object.__setattr__(self, attr, value)
+        else:
+            setattr(self._get(), attr, value)
+
 
 # ---------------------------------------------------------------------------
 # Official Anthropic API, local history
