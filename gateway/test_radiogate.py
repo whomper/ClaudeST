@@ -9,6 +9,8 @@ A test that needs ffmpeg says SKIPPED where there is none.
 
     python3 radio/test_radiogate.py
 """
+import contextlib
+import io
 import os
 import re
 import socket
@@ -69,6 +71,11 @@ class Station(threading.Thread):
             path = req.split()[1].decode()
             head, body, metaint, title = self.routes[path]
             c.sendall(head.encode())
+            if title == "then silent":
+                # (a station that answers, sends body, then nothing, and holds on)
+                c.sendall(body)
+                time.sleep(10)
+                return
             if not metaint:
                 c.sendall(body)
                 return
@@ -153,6 +160,30 @@ def mp3_frames(audio):
 
 
 class Tests(unittest.TestCase):
+
+    def silent(self, body):
+        """a station that answers and then falls silent, holding on: one
+        answer only, the 200, whatever came of it after"""
+        st = Station({"/live": ("ICY 200 OK\r\nicy-name: Quiet FM\r\nicy-metaint: 8000\r\n"
+                                "Content-Type: audio/mpeg\r\n\r\n", body, 0, "then silent")})
+        g = Gate()
+        radiogate.Config.timeout = 1
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            status, heads, got = g.ask("http://127.0.0.1:%d/live" % st.port, want=10 ** 6)
+        g.stop()
+        self.assertIn("200", status)
+        self.assertNotIn(b"HTTP/1.", got)               # no second status line in the stream
+        self.assertIn("(the station fell silent)", log.getvalue())
+        self.assertIn("listened to 127.0.0.1", log.getvalue())
+        return got
+
+    def test_a_station_silent_before_its_first_byte(self):
+        self.assertEqual(self.silent(b""), b"")
+
+    def test_a_station_silent_after_some_audio(self):
+        self.assertTrue(self.silent(b"\xff\xfb\x90\x00" + b"\0" * 400))
+
     @classmethod
     def setUpClass(cls):
         cls.mp3 = open(make("tone.mp3", "-c:a", "libmp3lame", "-b:a", "128k"), "rb").read() \

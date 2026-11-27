@@ -86,6 +86,16 @@ class Upstream(BaseHTTPRequestHandler):
             for part in (b"<multistatus>", b"\xd7\x90", b"</multistatus>"):
                 self.wfile.write(b"%x\r\n%s\r\n" % (len(part), part))
             self.wfile.write(b"0\r\n\r\n")
+        elif self.path in ("/br", "/xgzip"):
+            # a packing ecalgate can undo (x-gzip), and one it can't (br)
+            data = gzip.compress(FEED.encode()) if self.path == "/xgzip" else b"\x8b\x02\x80not-plain"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/calendar")
+            self.send_header("Content-Encoding", "x-gzip" if self.path == "/xgzip" else "br")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(data)
         elif self.path == "/moved":
             self.send_response(301)
             self.send_header("Location", "https://elsewhere.example/new")
@@ -97,7 +107,7 @@ class Upstream(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-    do_GET = do_PUT = do_PROPFIND = do_REPORT = answer
+    do_GET = do_PUT = do_PROPFIND = do_REPORT = do_HEAD = answer
 
 
 class ProxyTest(unittest.TestCase):
@@ -149,6 +159,23 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual((cmd, path, body), ("PROPFIND", "/chunked", b"<propfind/>"))
         self.assertEqual(hdrs.get("Depth"), "1")
         self.assertEqual(hdrs.get("Authorization"), "Basic eDp5")
+
+    def test_packings(self):
+        # x-gzip is gzip; a packing ecalgate can't undo is refused, not
+        # passed on unlabelled; an answer with no body is passed as it is
+        c = self.conn()
+        c.request("GET", self.base + "/xgzip")
+        r = c.getresponse()
+        self.assertEqual((r.status, r.read().decode()), (200, FEED))
+        self.assertIsNone(r.getheader("Content-Encoding"))
+        c.request("GET", self.base + "/br")
+        r = c.getresponse()
+        self.assertEqual((r.status, r.read()), (502, b"ecalgate: 127.0.0.1 sent an answer compressed as br, "
+                                                     b"which it can't unpack\n"))
+        c = self.conn()
+        c.request("HEAD", self.base + "/br")
+        r = c.getresponse()
+        self.assertEqual((r.status, r.read()), (200, b""))
 
     def test_redirect_passed_back(self):
         c = self.conn()
@@ -254,6 +281,67 @@ class LogTest(ProxyTest):
             time.sleep(0.2)
         self.assertNotIn("Wilhelmina", err.getvalue())
         self.assertIn("refused: 400", err.getvalue())
+
+
+
+class ThroughAProxy(unittest.TestCase):
+    """HTTPS_PROXY: the proxy dials the server, so ecalgate checks the home
+    network itself first (7.3): a feed on it is refused without
+    --allow-local, and nothing reaches the proxy"""
+
+    def setUp(self):
+        import socket
+        self.srv = socket.socket()
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(4)
+        self.addCleanup(self.srv.close)
+        self.got = []
+
+        def proxy():
+            while True:
+                try:
+                    a, _ = self.srv.accept()
+                except OSError:
+                    return
+                a.settimeout(5)
+                try:
+                    self.got.append(a.recv(4096))
+                    a.sendall(b"HTTP/1.1 502 no\r\nContent-Length: 0\r\n\r\n")
+                except OSError:
+                    pass
+                a.close()
+        threading.Thread(target=proxy, daemon=True).start()
+        old = os.environ.get("HTTPS_PROXY")
+        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:%d" % self.srv.getsockname()[1]
+        self.addCleanup(lambda: os.environ.pop("HTTPS_PROXY") if old is None
+                        else os.environ.__setitem__("HTTPS_PROXY", old))
+        self.allow = ecalgate.Config.allow_local
+        self.addCleanup(lambda: setattr(ecalgate.Config, "allow_local", self.allow))
+        ecalgate.UP.conns.clear()
+        self.addCleanup(ecalgate.UP.conns.clear)
+        self.gw = ThreadingHTTPServer(("127.0.0.1", 0), ecalgate.Handler)
+        threading.Thread(target=self.gw.serve_forever, daemon=True).start()
+        self.addCleanup(self.gw.server_close)
+        self.addCleanup(self.gw.shutdown)
+
+    def ask(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.gw.server_address[1], timeout=10)
+        self.addCleanup(c.close)
+        c.request("GET", "https://127.0.0.1:8443/cal.ics")
+        r = c.getresponse()
+        return r.status, r.read()
+
+    def test_home_network_refused_before_the_proxy(self):
+        ecalgate.Config.allow_local = False
+        self.assertEqual(self.ask(), (403, b"ecalgate: won't connect to the local network (127.0.0.1)\n"))
+        self.assertEqual(self.got, [])
+
+    def test_allow_local_goes_through_the_proxy(self):
+        ecalgate.Config.allow_local = True
+        status, _ = self.ask()
+        self.assertEqual(status, 502)
+        self.assertTrue(self.got and self.got[0].startswith(b"CONNECT 127.0.0.1:8443 "))
+
 
 
 if __name__ == "__main__":

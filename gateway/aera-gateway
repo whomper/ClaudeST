@@ -50,7 +50,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "1.55"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
+VERSION = "1.56"                         # AERA-Gateway's release: the Release workflow tags it vX.Y
 HERE = os.path.dirname(os.path.realpath(__file__))
 PROG = sys.argv[0] if sys.argv[0].endswith("aera-gateway") else "aera-gateway"   # as typed, for advice
 OPT = "/opt/aera-gateway"                   # the gateways' code on the Pi
@@ -1782,7 +1782,15 @@ CLAUDE_SESSION_KEY=
                    "claude-st")
 
         heading("Copying the bridge to %s" % self.PREFIX)
-        pi.makedirs(self.PREFIX + "/bridge")
+        # the bridge there before is kept aside until the new one answers;
+        # otherwise it comes back (as a gateway's does)
+        bridge, old = self.PREFIX + "/bridge", self.PREFIX + "/bridge.old"
+        had = pi.exists(bridge + "/claude_bridge.py")
+        old_unit, old_source = pi.read(self.unit_file()), pi.read(self.PREFIX + "/SOURCE")
+        pi.rmtree(old)
+        if had:
+            pi.rename(bridge, old)
+        pi.makedirs(bridge)
         for f in sorted(glob.glob(os.path.join(src, "bridge", "*.py"))) + [os.path.join(src, "bridge",
                                                                                          "requirements.txt")]:
             if os.path.basename(f) != "test_bridge.py":
@@ -1824,7 +1832,23 @@ CLAUDE_SESSION_KEY=
         pi.copy(unit, self.unit_file(), 0o644)
         pi.run("systemctl", "daemon-reload")
         pi.run("systemctl", "enable", "claude-st", out="hide")
-        pi.run("systemctl", "restart", "claude-st")
+        pi.run("systemctl", "restart", "claude-st", check=False)
+        if not up(pi, "claude-st", [s.tcp_port]):
+            back = ""
+            if had:
+                pi.rmtree(bridge)
+                pi.rename(old, bridge)
+                if old_source is not None:
+                    pi.write(self.PREFIX + "/SOURCE", old_source)
+                if old_unit is not None:
+                    pi.write(self.unit_file(), old_unit, 0o644)
+                pi.run("systemctl", "daemon-reload")
+                pi.run("systemctl", "restart", "claude-st", check=False)
+                back = (" The bridge before is running again." if up(pi, "claude-st", [s.tcp_port]) else
+                        " The bridge before didn't start again either.")
+            raise Failed("claude-st didn't start (it isn't listening on port %s).%s "
+                         "See: sudo journalctl -u claude-st -n 30" % (s.tcp_port, back))
+        pi.rmtree(old)
 
         heading("Done")
         say("Backend: %s   network: listening on port %s for the Atari at %s" % (s.backend, s.tcp_port, s.atari),
