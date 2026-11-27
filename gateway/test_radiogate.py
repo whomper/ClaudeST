@@ -455,6 +455,37 @@ class Tests(unittest.TestCase):
         self.assertIn("502", status)
         g.stop()
 
+    def test_search_without_a_name(self):
+        """a search with no name: each filter alone, two together, and none
+        at all are each answered 200, the filters passed on and no name"""
+        import json
+        st = Station({})
+        asked = []
+
+        class Routes(dict):
+            def __getitem__(self, p):
+                asked.append(p)
+                body = json.dumps([{"name": "Jazz FM", "countrycode": "DE", "codec": "MP3", "bitrate": 128,
+                                    "url_resolved": "http://jazz.example/live"}])
+                return ("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n", body.encode(), 0, "")
+        st.routes = Routes()
+        radiogate.Config.rb_api = ["http://127.0.0.1:%d" % st.port]
+        g = Gate()
+        for query, want in (("tag=jazz", ["tag=jazz"]),
+                            ("tag=hip%20hop&country=DE", ["tag=hip%20hop", "countrycode=DE"]),
+                            ("country=DE", ["countrycode=DE"]),
+                            ("language=german", ["language=german"]),
+                            ("q=&tag=jazz", ["tag=jazz"]),
+                            ("", [])):
+            status, _, body = g.ask("", path="/search?" + query, meta=False)
+            self.assertIn("200", status, query)
+            self.assertEqual(body.decode("utf-8").splitlines(), ["Jazz FM\tDE\tMP3\t128\thttp://jazz.example/live"],
+                             query)
+            self.assertNotIn("name=", asked[-1], query)
+            for w in want:
+                self.assertIn(w, asked[-1], query)
+        g.stop()
+
     def test_icy_in_out(self):
         """the metadata taken out at every cut, and put back"""
         audio = bytes(range(256)) * 40

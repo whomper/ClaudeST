@@ -1108,6 +1108,30 @@ class ToolSteps(unittest.TestCase):
         ]
         self.assertEqual(code_messages(ev), [("A", "Checking.\n\n\x01Ran 1 command, used 1 tool\n\nDone.")])
 
+    def test_events_with_the_message_in_internal_anthropic_catchall(self):
+        """claude.ai's newer events: the kind at the top, the message inside
+        internal_anthropic_catchall. A session mixing them with the older
+        form showed only the older messages, stopping in its middle"""
+        from backends import code_messages, event_id
+
+        def new(kind, uid, content):
+            return {"created_at": "2026-11-26T10:00:00Z", kind: {"uuid": uid, "internal_anthropic_catchall": {
+                "message": {"role": kind, "content": content}, "session_id": "s"}}}
+        ev = [
+            {"id": "1", "type": "user", "message": {"content": "an older question"}},
+            {"id": "2", "type": "assistant", "message": {"content": [{"type": "text", "text": "An older answer."}]}},
+            new("user", "u3", [{"type": "text", "text": "a newer question"}]),
+            new("assistant", "u4", [{"type": "thinking", "thinking": ""}]),
+            new("assistant", "u5", [{"type": "text", "text": "Checking."}]),
+            new("assistant", "u6", [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]),
+            new("user", "u7", [{"type": "tool_result", "content": "a b"}]),
+            new("assistant", "u8", [{"type": "text", "text": "The newest answer."}]),
+        ]
+        self.assertEqual(code_messages(ev), [
+            ("U", "an older question"), ("A", "An older answer."), ("U", "a newer question"),
+            ("A", "Checking.\n\n\x01Ran ls\n\nThe newest answer.")])
+        self.assertEqual(event_id(ev[-1]), "u8")
+
     def test_a_grey_line_goes_out_as_g(self):
         link = FakeLink()
         Session(link, DemoBackend()).message("A", "Looking.\n\n\x01Ran 2 commands\n\nDone.")
