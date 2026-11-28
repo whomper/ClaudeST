@@ -12,7 +12,7 @@ Falcon, through the AERA Gateway (a Raspberry Pi or any Linux computer on your n
 - **Artifacts:** view them and save them to disk.
 - **Attach files** of any kind, or drop them on the window.
 - **Model and effort** for each chat, from a chip in the title bar.
-- **Usage at a glance:** a ring that fills as you use your plan.
+- **Usage at a glance:** a bar that fills as you use your plan.
 - **Right-click menus** to pin, rename, move to a project, archive and delete.
 - **Hebrew:** right-to-left text and a Hebrew keyboard (F10).
 - **Fonts:** the system font, or any fixed-width GDOS font with NVDI.

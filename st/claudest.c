@@ -265,6 +265,7 @@ static char save_path[160];
 #define D_STATUS  16
 #define D_LIST    32		/* the list only, not the menu above it */
 #define D_WORDS   64		/* the status line's words only (a phase) */
+#define D_DOT     256		/* a working row's dot only, as it pulses (dot_row) */
 /* the whole window, its frame, header and status too: uncovered, resized
    or new. D_ALL alone is its four parts, each in its own area: a new chat
    or another area of the sidebar (F2: an ST's 320 ms whole, the status
@@ -1150,6 +1151,102 @@ static void spark(short x, short y, short r)
 	line(x - r, y + 1, x + r, y + 1, c);
 }
 
+/* ClaudeST's own colour roles (common/ui/theme.h): AERA's copper for the
+ * badge at the top left and the usage bar's frame, the bar's empty part,
+ * and its green-to-red ramp (256 colours; 16 take the nearest of the
+ * screen's own, 4 and 2 black and white) */
+enum { P_COPPER = P_BASE, P_CDARK, P_EMPTY, P_RAMP, NPEN = P_RAMP + 6 };
+static const THEME_ROLE cst_roles[NPEN - P_BASE] = {
+	{ { 886, 655, 435 }, { 1000, 0, 0 }, 1, 0 },	/* copper, #e2a76f */
+	{ { 722, 451, 200 }, { 1000, 0, 0 }, 1, 0 },	/* dark copper, #b87333 */
+	{ { 980, 920, 860 }, { 1000, 1000, 1000 }, 0, 0 },	/* the bar's empty part */
+	{ { 200, 760, 300 }, { 0, 1000, 0 }, 0, 0 },	/* the ramp: green */
+	{ { 520, 820, 200 }, { 0, 1000, 0 }, 0, 0 },	/* lime */
+	{ { 930, 850, 160 }, { 1000, 1000, 0 }, 0, 0 },	/* yellow */
+	{ { 960, 660, 130 }, { 1000, 1000, 0 }, 0, 0 },	/* amber */
+	{ { 930, 420, 110 }, { 1000, 0, 0 }, 0, 0 },	/* orange */
+	{ { 860, 160, 130 }, { 1000, 0, 0 }, 0, 0 },	/* red */
+};
+#define RICH (ncolors >= 256)
+
+static short copper(void)	/* the copper where the screen has colour, else the accent */
+{
+	return ncolors >= 16 ? pen[P_COPPER] : accent();
+}
+
+/* the badge's spark: eight rays, the long ones two pixels wide; rows twice
+   as tall where the system font is 8x8 */
+static void spark2(short x, short y, short r, short c)
+{
+	short q = sys_ch >= 16 ? 1 : 2, rv = r / q, d = r * 6 / 10, dv = d / q, k;
+	for (k = -1; k <= 0; k++) {
+		line(x - r, y + k, x + r, y + k, c);
+		line(x + k, y - rv, x + k, y + rv, c);
+	}
+	line(x - d, y - dv, x + d, y + dv, c);
+	line(x - d, y + dv, x + d, y - dv, c);
+}
+
+/* the brand at the top left: the copper spark, "Claude", and "ST" on a
+   badge (copper framed in dark copper on 256 colours, the nearest red on
+   16, TOS's red on 4, black on 2) */
+static void draw_brand(short x)
+{
+	short cy = wy + title_h / 2, ty = wy + (title_h - ch) / 2;
+	short bx1 = x + 8 * cw + 1, bx2 = x + 10 * cw + 2;
+	spark2(x + cw / 2, cy, ch / 2 - 1, copper());
+	text(x + 2 * cw, ty, "Claude", 6, 1, 1);
+	fill(bx1, ty - 1, bx2, ty + ch - 1, RICH ? pen[P_CDARK] : ncolors >= 4 ? copper() : 1);
+	if (RICH)
+		fill(bx1 + 1, ty, bx2 - 1, ty + ch - 2, pen[P_COPPER]);
+	text(bx1 + 1, ty, "ST", 2, 1, RICH ? 1 : 0);
+}
+
+/* a frame one pixel wide, its four sides (nothing inside painted) */
+static void frame_box(short x1, short y1, short x2, short y2, short c)
+{
+	fill(x1, y1, x2, y1, c);
+	fill(x1, y2, x2, y2, c);
+	if (y2 - y1 > 1) {
+		fill(x1, y1 + 1, x1, y2 - 1, c);
+		fill(x2, y1 + 1, x2, y2 - 1, c);
+	}
+}
+
+/* the usage bar from x1 to x2, y1 to y2: a frame, a pixel's gap and the
+   part used, each pixel painted once (it is drawn again in place) */
+static void usage_bar(short x1, short y1, short x2, short y2, short pct)
+{
+	short e = RICH ? pen[P_EMPTY] : 0, f1 = x1 + 2, f2 = x2 - 2, end, k;
+	frame_box(x1, y1, x2, y2, RICH ? pen[P_CDARK] : 1);
+	if (x2 - x1 < 4 || y2 - y1 < 4) {
+		if (x2 - x1 > 1 && y2 - y1 > 1)
+			fill(x1 + 1, y1 + 1, x2 - 1, y2 - 1, e);
+		return;
+	}
+	frame_box(x1 + 1, y1 + 1, x2 - 1, y2 - 1, e);
+	if (pct < 0)
+		pct = 0;
+	if (pct > 100)
+		pct = 100;
+	end = f1 - 1 + (short)((long)(f2 - f1 + 1) * pct / 100);
+	if (RICH) {		/* green to red along the bar, as far as it goes */
+		for (k = 0; k < 6; k++) {
+			short a = f1 + (f2 - f1 + 1) * k / 6, b = f1 + (f2 - f1 + 1) * (k + 1) / 6 - 1;
+			if (a <= end)
+				fill(a, y1 + 2, b < end ? b : end, y2 - 2, pen[P_RAMP + k]);
+			if (b > end)
+				fill(a > end ? a : end + 1, y1 + 2, b, y2 - 2, e);
+		}
+	} else {
+		short c = pct >= 90 ? (ncolors >= 4 ? tos_pen[2] : 1) : ncolors >= 16 ? copper() : 1;
+		if (end >= f1)
+			fill(f1, y1 + 2, end, y2 - 2, c);
+		if (end < f2)
+			fill(end + 1, y1 + 2, f2, y2 - 2, e);
+	}
+}
+
 /* the list's own scroll bar (guideline 5.1): AES objects from
    common/ui/panebar.c at the sidebar's right, from the list's heading down
    to the status lines; the rows end left of it */
@@ -1255,15 +1352,41 @@ static short nav_active(short i)
 	return 0;
 }
 
-/* The status area at the bottom of the sidebar: the session usage ring,
- * then a dot for the connection (green or red; filled or hollow in
- * monochrome) with its text, and the usage below it. With `full` the
- * area has just been cleared; otherwise it is updated in place, without
- * erasing it first: the ring and dot are copied over their old pictures
- * and the text is written in replace mode, padded to its full width. */
-static short st_dtx = -1;		/* where the status line's words start */
+/* The status area at the bottom of the sidebar, two lines: a dot for the
+ * connection (green or red; filled or hollow in monochrome), its words,
+ * and at the right the usage ("Week 94%"); below, the usage bar and the
+ * time until it resets ("8h 32m"). With `full` the area has just been
+ * cleared; otherwise it is updated in place, without erasing it first:
+ * the dot is copied over its old picture, the bar painted once a pixel,
+ * the text written in replace mode, padded to its full width, and only
+ * the strips between them filled. */
+static short st_dtx = -1, st_wend = -1;	/* where the status line's words start and end */
 
-/* the status line's words alone, in replace mode, padded to the edge */
+/* the usage as the first line's right shows it: "Week 94%", or "94%"
+   where the words would have less than 12 cells */
+static short usage_words(char *t, short dtx, short right)
+{
+	char *p = t;
+	short room;
+	if (usage_pct < 0)
+		return 0;
+	strcpy(p, usage_lbl);
+	p += strlen(p);
+	*p++ = ' ';
+	if (usage_pct >= 100)
+		*p++ = '1';
+	if (usage_pct >= 10)
+		*p++ = '0' + usage_pct / 10 % 10;
+	*p++ = '0' + usage_pct % 10;
+	*p++ = '%';
+	*p = 0;
+	room = (right - dtx) / cw - (short)strlen(t) - 1;
+	if (room < 12)
+		memmove(t, t + strlen(usage_lbl) + 1, strlen(t + strlen(usage_lbl) + 1) + 1);
+	return (short)strlen(t);
+}
+
+/* the status line's words alone, in replace mode, padded to their end */
 static void draw_status_words(void)
 {
 	char t[80], pt[48];
@@ -1271,7 +1394,7 @@ static void draw_status_words(void)
 	short n, k;
 	if (sb_hidden || st_dtx < 0)
 		return;
-	n = (wx + sb_w - 4 - st_dtx) / cw;
+	n = (st_wend - st_dtx) / cw;
 	if (n > (short)sizeof(t) - 1)
 		n = sizeof(t) - 1;
 	if (n <= 0)
@@ -1291,89 +1414,93 @@ static void draw_status(short full)
 {
 	if (sb_hidden)		/* it is in the sidebar (W12) */
 		return;
-	static short last_tx = -1, last_sb = -1;
-	short x = sx, tx = x, n, room, dtx;
+	static short last_ux = -1, last_rx = -1, last_sb = -1;
+	short x = sx, right = wx + sb_w - 4, n, k, dtx, ux, rx, bx2, y2 = status_y + row_h;
+	short bottom = wy + wh - 1, edge = wx + sb_w - 1;
 	/* pixels are twice as tall as wide where the system font is 8x8 */
 	short sq = sys_ch >= 16 ? 1 : 2;
 	short dry = ch / 3 / sq, drx = ch / 3;
-	short colour = ncolors >= 16;
-	/* the usage ring: two thirds of a line high, between the two lines */
-	short rry = row_h * 2 / 3 > 4 ? row_h * 2 / 3 : 4, rrx = rry * sq;
-	char t[80];
+	short bh = ch / 2 < 6 ? 6 : ch / 2, by;
+	char t[80], u[24];
+	short un, rn;
 
 	if (dry < 1)
 		dry = 1;
-	if (usage_pct >= 0)
-		tx = on_byte(x + 2 * rrx + cw, x + 2 * rrx);
-	dtx = on_byte(tx + 2 * drx + cw / 2, tx + 2 * drx);	/* the connection's words */
+	if (bh > row_h - 2)
+		bh = row_h - 2;
+	by = y2 + (row_h - bh) / 2;
+	dtx = on_byte(x + 2 * drx + cw / 2, x + 2 * drx);	/* the connection's words */
+	un = usage_words(u, dtx, right);
+	ux = un ? right - un * cw : right;
 	st_dtx = dtx;
-	if (!full && (tx != last_tx || sb_w != last_sb))	/* the layout moved */
-		fill(wx, status_y - 1, wx + sb_w - 1, wy + wh - 1, 0);
-	last_tx = tx;
+	st_wend = un ? ux - cw : right;
+	if (st_wend < dtx)
+		st_wend = dtx;
+	/* the second line: the time at the right, unless the bar would be
+	   shorter than four cells */
+	rn = usage_pct >= 0 ? (short)strlen(usage_rst) : 0;
+	rx = rn ? right - rn * cw : right + 1;
+	if (rn && rx - cw - x < 4 * cw) {
+		rn = 0;
+		rx = right + 1;
+	}
+	bx2 = rn ? rx - cw : right;
+	if (!full && (ux != last_ux || rx != last_rx || sb_w != last_sb))	/* the layout moved */
+		fill(wx, status_y - 1, edge, bottom, 0);
+	else if (!full) {
+		/* the strips the drawing below doesn't paint */
+		short wend = dtx + (st_wend - dtx) / cw * cw;
+		if (x > wx + 1)
+			fill(wx + 1, status_y - 1, x - 1, bottom, 0);
+		fill(x, status_y - 1, edge, status_y - 1, 0);
+		fill(x, status_y, dtx - 1, y2 - 1, 0);		/* round the dot */
+		if (wend < ux)
+			fill(wend, status_y, ux - 1, y2 - 1, 0);
+		if (ux + un * cw <= edge)
+			fill(ux + un * cw, status_y, edge, y2 - 1, 0);
+		if (usage_pct < 0)
+			fill(x, y2, edge, bottom, 0);
+		else {
+			/* above and below the bar, not into the time's cells */
+			fill(x, y2, bx2, by - 1, 0);
+			fill(x, by + bh, bx2, bottom, 0);
+			if (bx2 + 1 <= (rn ? rx - 1 : edge))
+				fill(bx2 + 1, by, rn ? rx - 1 : edge, by + bh - 1, 0);
+			if (rn && rx + rn * cw <= edge)
+				fill(rx + rn * cw, by, edge, by + bh - 1, 0);
+		}
+	}
+	last_ux = ux;
+	last_rx = rx;
 	last_sb = sb_w;
-	if (!full) {
-		/* the strips the drawing below doesn't paint: between the ring
-		   and the dot, and around the dot. A redraw of the list alone
-		   doesn't reach them, so they could keep old text */
-		short bottom = wy + wh - 1, gx = usage_pct >= 0 ? x + 2 * rrx + 1 : wx + 1;
-		if (gx < tx)
-			fill(gx, status_y - 1, tx - 1, bottom, 0);
-		fill(tx, status_y - 1, dtx - 1, status_y + row_h - 1, 0);
-	}
-	if (usage_pct >= 0) {
-		short ry = rry, rx = rrx;
-		short fc = usage_pct >= 90 ? accent() : colour ? tos_pen[4] : 1;
-		ring(x + rx, status_y + row_h - 1, rx, ry, rx / 6 + 1, usage_pct,
-		     fc, colour ? tos_pen[8] : 1, !colour, 1);
-	}
-	room = (wx + sb_w - 4 - tx) / cw;
-	if (room > (short)sizeof(t) - 1)
-		room = sizeof(t) - 1;
 	if (ncolors >= 4)
-		ring(tx + drx, status_y + row_h / 2, drx, dry, drx, 100,
+		ring(x + drx, status_y + row_h / 2, drx, dry, drx, 100,
 		     online ? tos_pen[3] : tos_pen[2], 0, 0, 1);
 	else
-		ring(tx + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
+		ring(x + drx, status_y + row_h / 2, drx, dry, online ? drx : 2, 100,
 		     1, 0, 0, 1);
 
 	vswr_mode(vh, 1);		/* replace: each character paints its cell */
-	n = (wx + sb_w - 4 - dtx) / cw;
+	n = (st_wend - dtx) / cw;
 	if (n > (short)sizeof(t) - 1)
 		n = sizeof(t) - 1;
 	if (n > 0) {
 		char pt[48];
 		const char *st = status_text(pt, n);
-		short k = strlen(st);
+		k = strlen(st);
 		if (k > n)
 			k = n;
 		memcpy(t, st, k);
 		memset(t + k, ' ', n - k);
 		text_white(dtx, status_y + (row_h - ch) / 2, t, n, 0, 1);
 	}
-	if (usage_pct >= 0 && room > 0) {
-		char *p = t;
-		short k;
-		strcpy(p, usage_lbl);
-		p += strlen(p);
-		*p++ = ' ';
-		if (usage_pct >= 100)
-			*p++ = '1';
-		if (usage_pct >= 10)
-			*p++ = '0' + usage_pct / 10 % 10;
-		*p++ = '0' + usage_pct % 10;
-		*p++ = '%';
-		*p = 0;
-		if (usage_rst[0] && strlen(t) + 3 + strlen(usage_rst) <= room) {
-			strcat(t, ", ");
-			strcat(t, usage_rst);
-		}
-		k = strlen(t);
-		if (k > room)
-			k = room;
-		memset(t + k, ' ', room - k);
-		text_white(tx, status_y + row_h + (row_h - ch) / 2, t, room, 0, 1);
-	}
+	if (un)
+		text_white(ux, status_y + (row_h - ch) / 2, u, un, 0, 1);
+	if (rn)
+		text_white(rx, y2 + (row_h - ch) / 2, usage_rst, rn, 0, 1);
 	vswr_mode(vh, 2);
+	if (usage_pct >= 0)
+		usage_bar(x, by, bx2, by + bh - 1, usage_pct);
 }
 
 /* the navigation's highlight as it was last drawn whole (a bit a row; -1
@@ -1394,6 +1521,7 @@ static void draw_sidebar(void)
 {
 	if (sb_hidden)
 		return;
+
 	short i, y;
 	short x = sx, lr = lbar.r.x - 3, lmaxc = (lr + 1 - x) / cw;	/* the rows' right */
 
@@ -1406,8 +1534,7 @@ static void draw_sidebar(void)
 
 	/* brand */
 	if (row_visible(wy, wy + title_h)) {
-		spark(x + cw / 2, wy + title_h / 2, ch / 2 - 1);
-		text(x + 2 * cw, wy + (title_h - ch) / 2, "ClaudeST", 8, 1, 1);
+		draw_brand(x);
 		line(wx, wy + title_h, wx + sb_w - 1, wy + title_h, 1);
 	}
 
@@ -2054,6 +2181,8 @@ static void hide_tip(void);
    once): two list rows of a press cost an 8 MHz ST some 23 ms less than
    one redraw each */
 static void redraw_areas(short mask, short (*areas)[4], short na);
+static short dot_row;		/* D_DOT's row */
+static void draw_dot(short j);
 
 static void redraw(short mask, short ax, short ay, short aw, short ah)
 {
@@ -2117,6 +2246,14 @@ static void redraw_areas(short mask, short (*areas)[4], short na)
 				draw_sidebar();
 			else if (mask & D_WORDS)
 				draw_status_words();
+			else if (mask & D_DOT) {	/* a few pixels: off the screen, shown at once */
+				short off = off_begin(vh, clip[0], clip[1], clip[2] - clip[0] + 1, clip[3] - clip[1] + 1);
+				draw_dot(dot_row);
+				if (off) {
+					off_end();
+					text_clip(vh, clip);
+				}
+			}
 			else if (mask & D_STATUS) {
 				/* the status drawn again in place (its ring, the
 				   connection's words): off the screen and shown at
@@ -2210,7 +2347,7 @@ static void flush_dirty(void)
 		if (dirty & D_STATUS)
 			redraw(D_STATUS, wx, status_y - 1, sb_w, wy + wh - status_y + 1);
 		else if ((dirty & D_WORDS) && st_dtx >= 0)
-			redraw(D_WORDS, st_dtx, status_y, wx + sb_w - 4 - st_dtx, row_h);
+			redraw(D_WORDS, st_dtx, status_y, st_wend - st_dtx, row_h);
 		if (dirty & D_TITLE)
 			redraw(D_TITLE, px, wy, pw, title_h + 1);
 		if (dirty & D_TEXT) {
@@ -2234,7 +2371,7 @@ static void words_now(void)
 {
 	if ((dirty & D_WORDS) && !win_icon) {
 		if (!sb_hidden && st_dtx >= 0)
-			redraw(D_WORDS, st_dtx, status_y, wx + sb_w - 4 - st_dtx, row_h);
+			redraw(D_WORDS, st_dtx, status_y, st_wend - st_dtx, row_h);
 		dirty &= ~D_WORDS;
 	}
 }
@@ -2270,6 +2407,7 @@ static void item_flags(ITEM *it, const char *q)
 }
 
 static void redraw_dot(short i);
+static void redraw_item_row(short i);
 
 /* Claude's answer has come while the window is behind another or an
    icon: a notification where BGEM.NG runs (the guidelines, 4.5; a tester,
@@ -2403,7 +2541,7 @@ static void handle_line(char *s)
 				if (!items[i].heading && !strcmp(items[i].id, f[1])) {
 					items[i].pinned = items[i].unread = items[i].state = 0;
 					item_flags(&items[i], n > 2 ? f[2] : "");
-					redraw_dot(i);
+					redraw_item_row(i);	/* the dot, and the label's look */
 					break;
 				}
 		}
@@ -4457,11 +4595,41 @@ static short item_row_y(short i)
 	return list_y + (i - list_top + 1) * row_h - 2;
 }
 
-/* only the margin of row i, where its dot is: no flicker */
+/* row j's left margin, its dot alone, as draw_sidebar draws it there: the
+   white, the selection's or the open chat's frame where they reach into
+   it, and the dot. Nothing else of the sidebar is drawn: the dot pulses
+   twice a second, and the whole sidebar drawn for it, clipped to the
+   margin, was reported to flicker the list on a Falcon (28 Nov 2026) */
+static void draw_dot(short j)
+{
+	ITEM *it = &items[j];
+	short y = list_y + (j - list_top + 1) * row_h, x1 = wx + 1, x2 = sx - 1;
+	short cur = cur_id[0] && !strcmp(it->id, cur_id);
+	short sel = menu_target >= 0 ? j == menu_target : cur;
+	short b0 = wx + 4, b1 = y - 1, b3 = y + row_h - 3;
+	fill(x1, y - 2, x2, y + row_h - 3, 0);
+	if (b0 <= x2) {
+		if (sel)
+			fill(b0, b1, x2, b3, sel_pen());
+		else if (cur) {
+			line(b0, b1, x2, b1, 1);
+			line(b0, b3, x2, b3, 1);
+			line(b0, b1, b0, b3, 1);
+		}
+	}
+	if (it->state == 'W' && dot_pulse) {
+		short ry = sys_ch >= 16 ? 2 : 1, dx = wx + (cw + 2) / 2, dy = y + row_h / 2 - 1;
+		ring(dx, dy, 2, ry, 2, 100, sel ? 0 : ncolors >= 16 ? tos_pen[9] : 1, 0, 0, 0);
+	}
+}
+
+/* a working row's dot as it pulses: its margin alone, left of the label */
 static void redraw_dot(short i)
 {
-	if (i >= list_top && i < list_top + list_rows && i < nitems)
-		redraw(D_SIDEBAR, wx + 1, item_row_y(i), cw + 3, row_h);
+	if (i >= list_top && i < list_top + list_rows && i < nitems && !items[i].heading && sx > wx + 1) {
+		dot_row = i;
+		redraw(D_DOT, wx + 1, item_row_y(i), sx - 1 - wx, row_h);
+	}
 }
 
 static void redraw_item_row(short i)
@@ -6072,7 +6240,8 @@ int app_main(void)
 	vq_extnd(vh, 1, work_out);
 	pb_vdi(vh);		/* the list's bar: its slider's move by the VDI (common's fast way) */
 	planes = work_out[4];
-	theme_init(ncolors >= 16, 0, 0);	/* the family's selection colour (D42): after planes */
+	theme_init(ncolors >= 16, cst_roles, NPEN - P_BASE);	/* the family's selection colour (D42) and
+								   ClaudeST's own: after planes */
 	win = wind_create(icon_kind(WKIND), dx, dy, dw, dh);
 	/* the place kept in WINDOW=, if it is on this screen and not under
 	   the smallest size; else the whole desk (D39, D43) */

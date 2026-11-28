@@ -243,12 +243,13 @@ Replies still come in while it is iconified.
   (a message or a file going out), *Claude is thinking…*, then
   *Receiving from the Gateway… 3 KB* as the reply arrives, and the
   connection's words again when it's done. In a narrow sidebar the words
-  are shorter: *Sending 12 KB*, *Thinking…*, *Receiving 3 KB*. With claude.ai, a
-  ring next to it fills clockwise as you use up your plan's nearest limit:
-  the current session (claude.ai's 5-hour limit) where your plan has one,
-  otherwise the week's. Blue, turning red from 90%, on a grey track
-  in 16 colours; black on a dotted grey track with fewer colours. Below, *Session
-  30%* or *Week 30%* and, when the sidebar is wide enough, the time until it resets.
+  are shorter: *Sending 12 KB*, *Thinking…*, *Receiving 3 KB*. With claude.ai,
+  your plan's nearest limit is at the right, *Session 30%* or *Week 30%*
+  (just *30%* in a narrow sidebar): the current session (claude.ai's 5-hour
+  limit) where your plan has one, otherwise the week's. Below, a bar fills
+  as you use it, with the time until it resets beside it: green to red along
+  the bar in 256 colours; copper, red from 90%, in 16; black, red from 90%,
+  in 4; black in black and white.
   The bridge checks after each reply, at most every two minutes while
   you use ClaudeST, and every five minutes while the window is left
   alone. Click the area for the full Account page.
