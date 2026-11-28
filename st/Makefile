@@ -36,7 +36,7 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(COMMON)/
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments -Wl,--gc-sections
 
 OBJS := $(addprefix $(O),crt0.o cpucheck.o claudest.o gem.o tos.o libc.o sting.o sting_s.o nf.o bidi.o crash.o crash_s.o help.o av.o alert.o dialog.o \
-        mbar.o popup.o aboutbox.o iconify.o clip.o dd.o bigbuf.o fontsel.o futil.o panebar.o plat_tos.o text.o notify.o aboutline.o offdraw.o click.o hebkey.o arrowed.o theme.o tooltip.o dlgbuild.o field.o eye.o settings.o)
+        mbar.o popup.o aboutbox.o iconify.o clip.o dd.o bigbuf.o fontsel.o futil.o panebar.o plat_tos.o text.o notify.o aboutline.o offdraw.o click.o hebkey.o arrowed.o theme.o tooltip.o dlgbuild.o field.o eye.o settings.o filepick.o dirlist.o fsel.o)
 HDRS := $(addprefix $(S),icon.h icon16.h ui.h grect.h plat.h textwrap.h) $(wildcard $(COMMON)/atari/*.h $(COMMON)/atari/include/*.h \
         $(COMMON)/ui/*.h $(COMMON)/src/bidi.h)
 

@@ -40,6 +40,7 @@
 #include "hebkey.h"
 #include "arrowed.h"
 #include "theme.h"
+#include "filepick.h"
 #include "tooltip.h"
 #include "dlgbuild.h"
 #include "settings.h"
@@ -107,6 +108,7 @@ static short gdos_fonts = -1;		/* GDOS fonts loaded; -1 not yet */
    at the quit, only when on; off until the user ticks it (the guidelines,
    6.5: no log without its switch; 14 Nov 2026) */
 static short log_on;
+static short sysfsel;	/* Settings > Secure: "Use the system file selector" (5.12) */
 /* how the current font gets Hebrew: */
 #define HM_MAP     0			/* the Atari character set's (system and bitmap fonts) */
 #define HM_UNICODE 1			/* a vector font's own, found by Unicode (NVDI 5) */
@@ -2883,6 +2885,8 @@ static short inf_setting(const char *l)
 		inf_old = 1;	/* the setting went in 2.11: read once, not written */
 	} else if (inf_key(l, "LOG", &v)) {
 		log_on = inf_num(&v) != 0;
+	} else if (inf_key(l, "SYSFSEL", &v)) {
+		sysfsel = inf_num(&v) != 0;
 	} else if (inf_key(l, "NATFEATS", &v)) {
 		/* the emulator's console, for the test rigs only (common's
 		   nf.S; 15 Nov 2026): written back only when read */
@@ -3078,6 +3082,8 @@ static short config_text(void)
 	p = inf_put(p, "text font: its name (System font, or a GDOS font's), size in points (system font: 0, 8 small, 16 large)",
 		    "FONT", v);
 	p = inf_put_num(p, "write CLAUDEST.LOG at the quit: 1 on, 0 off (Options > Write a log)", "LOG", log_on);
+	p = inf_put_num(p, "Save artifact as: 1 the system file selector, 0 ClaudeST's own (Settings > Secure)", "SYSFSEL",
+			sysfsel);
 	p = inf_put_num(p, "the chat list's width in pixels, 0 = ClaudeST's choice (drag its edge)", "PANES", sb_user);
 	if (place_w) {
 		char *q = v;
@@ -3111,7 +3117,7 @@ static short config_text(void)
 typedef struct {
 	u32 ip;
 	long nf;
-	u16 port, pt, sys, log, panes, nf_read;
+	u16 port, pt, sys, log, sysfsel, panes, nf_read;
 	short px, py, pw, ph;
 	char font[sizeof(font_name)], model[sizeof(pref_model)], effort[sizeof(pref_effort)];
 } INF_VALUES;
@@ -3128,6 +3134,7 @@ static void config_values(INF_VALUES *c)
 		strcpy(c->font, font_name);
 	c->pt = font_pt;
 	c->log = log_on;
+	c->sysfsel = sysfsel;
 	c->panes = sb_user;
 	c->nf_read = nf_read;
 	c->nf = nf_read ? nf_on : 0;
@@ -4643,37 +4650,56 @@ static void context_menu(short i, short x, short y)
 	set_menu_target(-1);
 }
 
-/* the GEM file selector, starting in the current folder with the name the
- * bridge suggested; then ask the bridge for the data */
+/* Save artifact as (the family's 5.12): common's dialog (ui/filepick.c),
+ * in the folder last saved to (the current one at the first save) with the
+ * name the bridge suggested, the Type pop-up its extension's files or all;
+ * the dialog makes the name whole and asks before replacing a file. With
+ * "Use the system file selector" ticked (Settings > Secure), the AES's own
+ * with the same name and question. Then ask the bridge for the data */
+static char save_dir[FP_PATH], save_recent[FP_RECENT][FP_PATH];
+
 static void choose_save_file(const char *name)
 {
-	static char path[160], file[16];
-	short drv = (short)Dgetdrv(), button = 0, i;
-	char *p;
+	static char file[FP_NAMEW], ext[4];
+	static DL_TYPE types[2] = { { 0, ext }, { "All files", "" } };
+	static char tname[14];
+	static FP_SPEC spec = { "Save artifact as", "Save", "Nothing saved yet", 0, types, 2 };
+	const char *dot = strrchr(name, '.');
+	short ok, i;
 	long fd;
 
-	path[0] = 'A' + drv;
-	path[1] = ':';
-	Dgetpath(path + 2, 0);
-	p = path + strlen(path);
-	if (p[-1] != '\\')
-		*p++ = '\\';
-	strcpy(p, "*.*");
+	if (!save_dir[0]) {
+		save_dir[0] = 'A' + (char)Dgetdrv();
+		save_dir[1] = ':';
+		Dgetpath(save_dir + 2, 0);
+		if (save_dir[strlen(save_dir) - 1] != '\\')
+			strcat(save_dir, "\\");
+	}
 	strlcpy_(file, name, sizeof(file));
+	ext[0] = 0;
+	if (dot && dot[1])
+		strlcpy_(ext, dot + 1, sizeof(ext));
+	for (i = 0; ext[i]; i++)
+		if (ext[i] >= 'a' && ext[i] <= 'z')
+			ext[i] -= 'a' - 'A';
+	if (ext[0]) {
+		snprintf(tname, sizeof(tname), "%s files", ext);
+		types[0].name = tname;
+		spec.types = types;
+		spec.ntypes = 2;
+	} else {
+		spec.types = types + 1;
+		spec.ntypes = 1;
+	}
 	flush_dirty();
-	fsel_exinput(path, file, &button, "Save artifact as");
-	dirty |= D_ALL | D_WHOLE;	/* the selector covered the window */
-	if (!button || !file[0]) {
+	filepick_system = sysfsel;
+	ok = (short)filepick_save(&spec, save_dir, save_recent, file, sizeof(file), save_path, sizeof(save_path),
+				  poll_link);
+	dirty |= D_ALL | D_WHOLE;	/* the dialog covered the window */
+	if (!ok) {
 		save_id[0] = 0;
 		return;
 	}
-	/* folder from the selector's path (up to the last \) + the name */
-	strcpy(save_path, path);
-	p = save_path;
-	for (i = 0; save_path[i]; i++)
-		if (save_path[i] == '\\')
-			p = save_path + i + 1;
-	strcpy(p, file);
 	fd = Fcreate(save_path, 0);
 	if (fd < 0) {
 		alert(1, "[3][Couldn't create that file.|Is the disk write-protected|or full?][ OK ]");
@@ -5326,10 +5352,12 @@ static void move_cursor(short d)
  * the guidelines, 6.1): the list of pages at the left, Cancel and OK at
  * the bottom right, the keyboard's reach (D25). Pages in the family's
  * order: Secure (the Gateway's address and port, 7.3's words), Advanced
- * (the log); it opens on Secure, the page the guide's set-up step names.
+ * (the log); it opens on Secure, the page the guide's set-up step names,
+ * which also has "Use the system file selector" (5.12: the first page, as
+ * ClaudeST has no General).
  * (Look, with "Hebrew in fonts", went in 2.11: 17 Nov 2026) */
 static char sd_addr[16], sd_port[6];
-static short sd_log;
+static short sd_log, sd_sysfsel;
 static short sd_addr_obj, sd_port_obj;
 
 static void sd_secure(SETTINGS *s, short x, short y, void *user)
@@ -5342,6 +5370,9 @@ static void sd_secure(SETTINGS *s, short x, short y, void *user)
 	sd_port_obj = set_field(s, x + 12, set_y(s, 2), sd_port, 5, '9');
 	set_text(s, x + 3, set_y(s, 4), "The Gateway's IP address, and its");
 	set_text(s, x + 3, set_y(s, 5), "port (2323 unless changed there).");
+	set_tick(s, x, set_y(s, 7), "Use the system file selector", &sd_sysfsel);
+	set_text(s, x + 3, set_y(s, 8), "Save artifact as through the");
+	set_text(s, x + 3, set_y(s, 9), "AES's own, not ClaudeST's.");
 }
 
 static void sd_advanced(SETTINGS *s, short x, short y, void *user)
@@ -5395,6 +5426,7 @@ static void settings_open(void)
 		ip_to_str(tcp_ip, sd_addr);
 	*put_num(sd_port, tcp_port) = 0;
 	sd_log = log_on;
+	sd_sysfsel = sysfsel;
 	memset(&d, 0, sizeof(d));
 	d.title = "Settings";
 	d.pages = pages;
@@ -5417,6 +5449,7 @@ static void settings_open(void)
 		changed = ip != tcp_ip || port != tcp_port;
 		tcp_ip = ip;
 		tcp_port = port;
+		sysfsel = sd_sysfsel;
 		if (sd_log != log_on) {	/* Options' tick in step */
 			log_on = sd_log;
 			log_menu();

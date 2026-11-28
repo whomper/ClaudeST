@@ -323,8 +323,11 @@
   scanned.
 
   - @{B}Open@{b} shows the source. A Word document shows its text.
-  - @{B}Save to disk...@{b} opens the file selector with an 8.3 name
-    such as SNAKE_GA.PY or COVER_LE.DOC. Text is saved in the Atari
+  - @{B}Save to disk...@{b} opens the Save artifact as dialog in the
+    folder last saved to, with an 8.3 name such as SNAKE_GA.PY or
+    COVER_LE.DOC and that type's files listed; a file of the same
+    name is replaced only after "Replace it?". Ticked in Settings,
+    "Use the system file selector" opens the AES's own instead. Text is saved in the Atari
     character set with CR/LF line ends; Word, PDF and other binary files
     are saved unchanged.
 @endnode
@@ -492,7 +495,9 @@
 
     Secure    Through the Gateway: its address and port (ClaudeST
               reaches it through STinG); an address that isn't one,
-              or a port outside 1 to 65535, is refused with an alert
+              or a port outside 1 to 65535, is refused with an alert;
+              Use the system file selector: artifacts saved
+              through the AES's own, off until you tick it
     Advanced  Write a log (CLAUDEST.LOG): the steps of each quit,
               off until you tick it (also the last item in Options)
 
@@ -511,6 +516,8 @@
     PORT=2323               the Gateway's port
     FONT=System font,8      Options > Font: the font's name (System
                             font, or a GDOS font's) and size
+    SYSFSEL=0               Settings > Secure: 1 saves artifacts
+                            through the AES's own file selector
     LOG=0                   Options > Write a log: 1 writes CLAUDEST.LOG
                             as ClaudeST quits (0, the default: nothing)
     PANES=240               the chat list's width, by dragging the divider

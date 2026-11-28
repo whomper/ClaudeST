@@ -11,6 +11,10 @@
 #   Attach           a 40 KB file: 1 Fopen, read in 16 KB pieces (4 Freads
 #                    with the end-of-file one)
 #   Settings, OK     nothing changed: no file calls (the guidelines, 6.1)
+#   Settings, a tick Use the system file selector ticked, OK: the INF
+#                    written once (1 Fcreate, 1 Frename), saying SYSFSEL=1
+#   Save again       through the AES's selector: "Replace it?", Cancel:
+#                    nothing written
 #   Settings, a tick Write a log ticked, OK: the INF written once (1 Fcreate,
 #                    1 Frename), and CLAUDEST.INF then says LOG=1
 #
@@ -88,10 +92,24 @@ e=$(mark); count "$d" "$e" "Attach 40 KB" Fopen=1 Fread\<=4 Fcreate=0
 ctrl 0x33 3; key 0x1c 3
 f=$(mark); count "$e" "$f" "Settings OK, unchanged" any=0
 
-# Settings again (it opens on Secure, in the address): Tab, Tab to the list
-# of pages, Down to Advanced, Tab to its Write a log tick, Space, OK: written once
-ctrl 0x33 3; key 0x0f 0.5; key 0x0f 0.5; key 0x50 1.5; key 0x0f 0.5; key 0x39 0.6; key 0x1c 3
-g=$(mark); count "$f" "$g" "Settings OK, log ticked" Fcreate=1 Frename=1
+# Settings again (it opens on Secure, in the address): Tab, Tab to its
+# "Use the system file selector" tick (5.12), Space, OK: written once
+ctrl 0x33 3; key 0x0f 0.5; key 0x0f 0.5; key 0x39 0.6; key 0x1c 3
+g=$(mark); count "$f" "$g" "Settings OK, system selector ticked" Fcreate=1 Frename=1
+grep -q "^SYSFSEL=1" "$W/drive/CLAUDEST.INF" 2>/dev/null || grep -q "^SYSFSEL=1" "$W/drive/claudest.inf" ||
+  { echo "FAIL CLAUDEST.INF doesn't say SYSFSEL=1"; fail=1; }
+
+# Save to disk again, now through the AES's selector (Return takes its
+# name, BIG.BIN): the file is there, so "Replace it?", whose Return is
+# Cancel: nothing written
+key 0x3e 8; key 0x0f; key 0x52 1.5; key 0x50; key 0x50; key 0x1c 4; key 0x1c 3; key 0x1c 2
+h=$(mark); count "$g" "$h" "Save to disk again, not replaced" Fcreate=0 Fwrite=0
+saved || { echo "FAIL BIG.BIN changed"; fail=1; }
+
+# Settings: Tab past the address, the port and the tick to the list of
+# pages, Down to Advanced, Tab to its Write a log tick, Space, OK: written once
+ctrl 0x33 3; key 0x0f 0.5; key 0x0f 0.5; key 0x0f 0.5; key 0x50 1.5; key 0x0f 0.5; key 0x39 0.6; key 0x1c 3
+i=$(mark); count "$h" "$i" "Settings OK, log ticked" Fcreate=1 Frename=1
 grep -q "^LOG=1" "$W/drive/CLAUDEST.INF" 2>/dev/null || grep -q "^LOG=1" "$W/drive/claudest.inf" ||
   { echo "FAIL CLAUDEST.INF doesn't say LOG=1"; fail=1; }
 

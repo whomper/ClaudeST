@@ -408,8 +408,12 @@ It finds artifacts in every form claude.ai has used, including files
 Claude made with a script, such as a Word cover letter.
 
 - **Open** shows the source. A Word document shows its text.
-- **Save to disk…** opens the GEM file selector with an 8.3 name such as
-  `SNAKE_GA.PY` or `COVER_LE.DOC`. A file Claude made with a script, such
+- **Save to disk…** opens the family's *Save artifact as* dialog in the folder
+  you last saved to, with an 8.3 name such as `SNAKE_GA.PY` or
+  `COVER_LE.DOC` and that type's files listed (or all files, from the Type
+  pop-up). A file of the same name is replaced only after *Replace it?*.
+  With *Use the system file selector* ticked in Settings, the AES's own file
+  selector opens instead, with the same name and question. A file Claude made with a script, such
   as a Word document, is downloaded from claude.ai when you open or save
   it, and not kept on the Gateway afterwards. Text is saved in the Atari character
   set with CR/LF line ends. Word, PDF and other binary files are saved
@@ -589,7 +593,9 @@ are listed at the left (Secure and Advanced), and it opens on **Secure**.
 
 - **Secure:** *Through the Gateway*, its address and port (ClaudeST reaches it
   through STinG). An address that isn't one, or a port outside 1 to 65535, is
-  refused with an alert that says what to type.
+  refused with an alert that says what to type. *Use the system file
+  selector*, off until you tick it, saves artifacts through the AES's own
+  file selector in place of ClaudeST's dialog.
 - **Advanced:** *Write a log (CLAUDEST.LOG)*, the steps of each quit, off until
   you tick it (also the last item in Options).
 
@@ -615,6 +621,7 @@ ignored and left out the next time ClaudeST saves.
 |------|--------|
 | `HOST=192.168.1.50`, `PORT=2323` | Options ▸ Settings, `/connect` |
 | `FONT=System font,8` | Options ▸ Font: the font's name (`System font`, or a GDOS font's, as `Courier 10 Pitch`) and size (8 or 16 for the system font's two sizes). Before 2.5 it was the font's GDOS id (`FONT=1,8`): read once, then written by name |
+| `SYSFSEL=0` | Settings ▸ Secure: 1 saves artifacts through the AES's own file selector; 0, the default, through ClaudeST's dialog |
 | `LOG=0` | Options ▸ Write a log, or Settings: 1 writes `CLAUDEST.LOG` as ClaudeST quits; 0, the default, writes nothing |
 | `PANES=240` | dragging the divider: the chat list's width in pixels (0, the default: ClaudeST's choice). Before 2.11 this was `SIDEBAR=`, read once and written as `PANES=` |
 | `WINDOW=40,40,560,380` | moving or sizing the window: its place and size, kept when ClaudeST quits (only when it moved). A place that isn't on the screen at the start, or none, opens the window on the whole desk |
