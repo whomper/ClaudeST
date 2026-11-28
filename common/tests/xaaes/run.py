@@ -71,8 +71,15 @@ and its output (NatFeats, MiNT's boot messages) in WORK/hatari.log.
             ~/.aera/myaes/config/68020/myaes), is put in C:\\GEMSYS\\MYAES without the names FAT's 8.3
             can't hold (skin pictures, a keyboard folder); MiNT's GEM= starts its kernel, its shell is
             what XAAES.CNF's run line would start, --setenv lines become its exports; MyAES opens the
-            screen itself in its own mode (640 x 480, 256 colours), so OPNWK.PRG is left out Its 68020 kernel needs an FPU: --machine ct60. It is a test
+            screen itself in its own mode (640 x 480, 256 colours), so OPNWK.PRG is left out. Its 68020 kernel needs an FPU: --machine ct60.
+            form_alert runs in MyAES's own process (desk/alert.prg, "app_system ALERT"): a fault there kills ALERT,
+            not the program, whose call returns. The 68020 build (11,900 bytes) draws a [3] alert with no stop icon:
+            not a fault. The FireBee's ColdFire alert.prg (159,168 bytes) is another program, not run here. It is a test
             stand-in, never committed and never in a release. --cnf is XaAES's and is refused with it
+
+build/AESPROBE.PRG (aesprobe.c, make) as PRG says what the AES shows of itself before any alert
+            (cookies, version, appl_getinfo, appl_find, appl_search): "AESPROBE ..." lines in
+            WORK/hatari.log; --steps "until AESPROBE done 240"
 
 Prints the screenshots' names at the end; exits 1 when a step failed.
 """
@@ -150,7 +157,7 @@ def main():
                          "Falcon with a 68040 at 32 MHz, its FPU, 14 MB + 64 MB TT RAM, VGA, the 68040's kernel, "
                          "_CPU 60 (see CT60 above)")
     ap.add_argument("--nvdi", action="store_true",
-                    help="Erez's NVDI (~/.aera/nvdi/x, or AERA_NVDI) in AUTO before MiNT, NVDI.INF, ASSIGN.SYS, GEMSYS "
+                    help="the NVDI copy (~/.aera/nvdi/x, or AERA_NVDI) in AUTO before MiNT, NVDI.INF, ASSIGN.SYS, GEMSYS "
                          "and BTFONTS in the root; never kept: WORK's hd, out and disk image are deleted at the end")
     ap.add_argument("--mem-prot", action="store_true",
                     help="MEM_PROT=YES in mint.ini and Hatari's --mmu on: FreeMiNT's memory protection, which a program "
@@ -166,6 +173,14 @@ def main():
         ap.error("a PRG, or --start")
     if not os.path.isdir(BASE):
         sys.exit("no %s: make base" % BASE)
+    # a base that lost FreeMiNT's own files comes up in MiNT's shell every
+    # time, which the retries below would take for the rare open failure
+    md = os.path.join(BASE, "mint")
+    vers = [d for d in os.listdir(md) if d[0].isdigit()] if os.path.isdir(md) else []
+    if not vers or not os.path.isfile(os.path.join(md, vers[0], "mint.cnf")) or \
+            not os.path.isfile(os.path.join(md, vers[0], "xaaes", "xaaes.km")) or \
+            not os.path.isfile(os.path.join(BASE, "auto", "mint030.prg")):
+        sys.exit("%s has lost FreeMiNT's files (mint.cnf, xaaes.km, AUTO's kernel): make base" % BASE)
     a.tos = os.path.abspath(a.tos)
     # Now and then, mostly with several Hatari at once, FreeMiNT can't open
     # MINT.CNF on the IDE disk and starts its own shell: then once more
@@ -487,7 +502,7 @@ def run(a):
             except Exception as e:
                 print("could not read the ext2 disk back: %s" % e)
         if a.nvdi:
-            # (Erez's NVDI never kept: the work drive and its image deleted,
+            # (the NVDI copy never kept: the work drive and its image deleted,
             # NVDI's files taken out of what was read back)
             shutil.rmtree(hd, ignore_errors=True)
             if os.path.exists(img):

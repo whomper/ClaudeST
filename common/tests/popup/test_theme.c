@@ -113,17 +113,32 @@ int main(void)
 	theme_init(0, mine, 3);
 	check(colour == 0 && pen[P_SEL] == 1 && pen[P_PANEL] == 0 && nset == 0, "COLOUR=0: black and white, nothing set");
 
-	/* sixteen colours: nearest pens, the one selection colour, the state colours never the dim pen */
-	planes = 4;
-	nset = nget = 0;
-	theme_init(1, mine, 3);
-	check(colour == 1 && nset == 0, "16 colours: colour is on and no palette is set");
-	check(pen[P_TEXT] == 1 && pen[P_PANEL] == 8 && pen[P_SEL] == 12, "16 colours: text black, panel light grey, selection (0,0,667)");
-	check(pen[P_BASE] == 14 && pen[P_BASE + 1] == 5 && pen[P_BASE + 2] == 2, "16 colours: the app's roles take their own pens");
-	dim_pen = 14;	/* a screen where the nearest to the dim grey is also the amber's: the amber must not read as dim */
-	theme_init(1, mine, 3);
-	check(pen[P_BASE] == pen[P_TEXT] && pen[P_BASE + 1] != pen[P_DIM], "16 colours: a not_dim role that fell on P_DIM's pen takes P_TEXT");
-	dim_pen = 9;
+	/* sixteen colours: nearest pens among TOS's own sixteen, read once (not once a role), the one selection
+	   colour, the state colours never the dim pen */
+	{
+		static const short tos16[16][3] = {
+			{ 1000, 1000, 1000 }, { 0, 0, 0 }, { 1000, 0, 0 }, { 0, 1000, 0 }, { 0, 0, 1000 }, { 0, 1000, 1000 },
+			{ 1000, 1000, 0 }, { 1000, 0, 1000 }, { 733, 733, 733 }, { 533, 533, 533 }, { 667, 0, 0 },
+			{ 0, 667, 0 }, { 0, 0, 667 }, { 0, 667, 667 }, { 667, 667, 0 }, { 667, 0, 667 } };
+		short keep14[3];
+		memcpy(palette, tos16, sizeof(tos16));
+		planes = 4;
+		nset = nget = 0;
+		theme_init(1, mine, 3);
+		check(colour == 1 && nset == 0, "16 colours: colour is on and no palette is set");
+		check(nget == 16, "16 colours: the sixteen pens read once");
+		check(pen[P_TEXT] == 1 && pen[P_PANEL] == 8 && pen[P_SEL] == 12, "16 colours: text black, panel light grey, selection (0,0,667)");
+		check(pen[P_DIM] == 9 && pen[P_BASE] == 14 && pen[P_BASE + 1] == 13 && pen[P_BASE + 2] == 10,
+		      "16 colours: the app's roles take their own pens");
+		/* a screen where the nearest to the dim grey is also the amber's: the amber must not read as dim */
+		memcpy(keep14, palette[14], sizeof(keep14));
+		palette[9][0] = 600, palette[9][1] = 600, palette[9][2] = 300;
+		palette[14][0] = palette[14][1] = palette[14][2] = 0;
+		theme_init(1, mine, 3);
+		check(pen[P_BASE] == pen[P_TEXT] && pen[P_BASE + 1] != pen[P_DIM], "16 colours: a not_dim role that fell on P_DIM's pen takes P_TEXT");
+		memcpy(palette[14], keep14, sizeof(keep14));
+		palette[9][0] = palette[9][1] = palette[9][2] = 533;
+	}
 
 	/* 256 colours: pens 16 up, set to the RGB, the desktop's sixteen untouched, put back at exit */
 	planes = 8;
@@ -192,8 +207,20 @@ int main(void)
 	planes = 4;
 	nset = 0;
 	theme_init(1, mine, 3);
-	check(pen[P_SEL] == 12 && nset == 0, "theme_keep: 16 colours as without it");
+	check(nset == 0 && pen[P_SEL] >= 0 && pen[P_SEL] < 16, "theme_keep: 16 colours as without it");
 	theme_exit();
+	planes = 8;
+	nget = 0;
+	theme_palette = (const short (*)[3])palette;
+	theme_init(1, mine, 3);
+	check(nget == 0 && pen[P_SEL] == 200, "theme_palette: the app's own table, no vq_color, the same pens");
+	theme_exit();
+	theme_roles = 1UL << P_SEL;
+	theme_init(1, mine, 3);
+	check(pen[P_SEL] == 200 && pen[P_TEXT] == 1 && pen[P_PANEL] == 0, "theme_roles: P_SEL alone found, the others black and white");
+	theme_exit();
+	theme_roles = 0;
+	theme_palette = 0;
 	theme_keep = 0;
 
 	printf("%d checks, %d failed\n", total, failed);

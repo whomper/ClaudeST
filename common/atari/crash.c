@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "tos.h"
 #include "crash.h"
 
@@ -380,7 +381,7 @@ static void sup_install(void)
 	   which has no FPU instruction (no AERA program has one in its
 	   TEXT; EWeb's are in EWEBJS.OVL); any other goes on to the handler
 	   before ours at once. The one it was is named for the app's log
-	   (crash_vectors): 0.57's 11 bombs on Erez's Falcon left no
+	   (crash_vectors): 0.57's 11 bombs on a real Falcon left no
 	   CRASH.LOG, vector 11 not being TOS's there */
 	int i, tos1 = tos1x(), own11 = tos_default(11, 7) || tos_default(11, 3);
 	if (tos1)
@@ -627,7 +628,7 @@ void crash_install(const char *workdir, const char *name, const char *version)
 	if (get_cookie(0x4D616758L))		/* MagX */
 		return;
 	if (!rep) {
-		mem = (char *)Malloc(CRASH_STACK + REP_SIZE);
+		mem = (char *)acc_core(CRASH_STACK + REP_SIZE, -1);
 		if ((long)mem <= 0)
 			return;
 		crash_stack_top = ((long)mem + CRASH_STACK) & ~3L;
@@ -730,7 +731,7 @@ int crash_test(short scan)
 	} else if (scan == 0x3f) {	/* F5: the same outside the program: the bombs */
 		/* tst.l $FFFFFA40; rts, in memory of its own */
 		static const unsigned short sup_out[] = { 0x4AB9, 0xFFFF, 0xFA40, 0x4E75 };
-		unsigned short *m = Malloc(sizeof sup_out);
+		unsigned short *m = acc_core(sizeof sup_out, -1);
 		if ((long)m <= 0)
 			return 1;
 		memcpy(m, sup_out, sizeof sup_out);

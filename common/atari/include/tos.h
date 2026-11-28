@@ -297,7 +297,7 @@ const char *cmd_line(void);
 void nf_debug(const char *s);	/* emulator console (NatFeats); no-op on hardware */
 /* NatFeats are looked for only when this is set, by the app, before its
    first nf_debug: from NATFEATS=1 in its INF, which only the test rigs
-   write (Erez, 15 Nov 2026). 0, the default: no probe, nf_debug does
+   write (decided 15 Nov 2026). 0, the default: no probe, nf_debug does
    nothing, and a real machine never runs the probe's illegal instruction */
 extern long nf_on;
 

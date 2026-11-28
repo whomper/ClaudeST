@@ -119,7 +119,7 @@ static void redraw(OBJECT *tree, short obj)
 
 /* ---------------- a dialog in a window (a multitasking AES) ----------------
  * Where the AES runs several programs at once (MiNT with XaAES, N.AES or
- * MyAES; MagiC), a dialog is a window of the AES's (Erez, 25 Oct 2026):
+ * MyAES; MagiC), a dialog is a window of the AES's (decided 25 Oct 2026):
  * the AES draws its frame, other programs go on running and drawing,
  * and it can be moved. On TOS and EmuTOS it is drawn over the screen as
  * before. */
@@ -2118,7 +2118,7 @@ int dlg_3d_ok(void)
 }
 
 /* one line for the log: what dlg_3d_ok asked the AES and what it answered
-   (a dialog drawn flat where it should be 3D: Erez's Falcon, 8 Nov) */
+   (a dialog drawn flat where it should be 3D: a real Falcon, 8 Nov) */
 int dlg_3d_why(char *buf, int size)
 {
 	int ok = dlg_3d_ok();

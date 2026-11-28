@@ -751,7 +751,7 @@ static void test_long_fields(void)
 	check(ed_char_esc == 0 && cursor == 0, "... Undo never reached objc_edit");
 
 	/* the arrows inside the view: the cursor moves one place in the AES, it is not put at the end and
-	   walked back (the jump to the end and back on every arrow, Erez 8 Nov) */
+	   walked back (the jump to the end and back on every arrow, a report of 8 Nov) */
 	setup();
 	ted[0].te_ptmplt = tmpl;
 	strcpy(big, TOKEN);
@@ -1145,7 +1145,7 @@ int main(void)
 	{
 		static const STEP s[] = { KEY(K('x')), KEY(KEY_ESC), KEY(K('y')), KEY(KEY_RETURN), END };
 		r = run(0, CANCEL, s);
-		check(r == OK, "Esc in a text field: the dialog stays open (GEM's form_do; Erez, 27 Oct 2026)");
+		check(r == OK, "Esc in a text field: the dialog stays open (GEM's form_do; decided 27 Oct 2026)");
 		check(!strcmp(text[0], "y"), "... the field emptied by objc_edit, as form_do's");
 		check(ed_char_esc == 1, "... Esc given to objc_edit once");
 		check(!(tree[CANCEL].ob_state & SELECTED), "... Cancel not selected");

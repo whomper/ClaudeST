@@ -2,7 +2,7 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * aboutline.h - the About box's status lines in the family's words (the
- * guidelines, 1.3; Erez, 27 Oct 2026). At most three, in this order, a
+ * guidelines, 1.3; decided 27 Oct 2026). At most three, in this order, a
  * line left out where it has nothing to say:
  *
  *   STinG  •  Direct  •  online              1. the connection (about_net_line)

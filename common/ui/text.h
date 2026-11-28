@@ -170,7 +170,7 @@ void text_fx(short h, short x, short y, const char *s, long n, short fx, short c
    pixel to the right, transparent. Never vst_effects' bold for text laid
    out in fixed cells: NVDI widens each letter by a pixel or more, and the
    next run drawn in MD_REPLACE covers the last letters (EHypView 1.30,
-   Erez's accessory under NVDI: "On the Falcon itsel"). It leaves the
+   the accessory under NVDI on a real Falcon). It leaves the
    writing mode MD_REPLACE */
 void text_bold_strike(short h, short x, short y, const char *s, long n);
 

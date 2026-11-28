@@ -58,7 +58,7 @@ int main(void)
 	short i;
 	char m[120];
 
-	/* the names Erez's fonts have, and the usual kinds */
+	/* the names real fonts have, and the usual kinds */
 	split("Courier 10 Pitch", "Courier 10 Pitch", "Regular");
 	split("Courier 10 Pitch Bold Italic", "Courier 10 Pitch", "Bold Italic");
 	split("Courier 10 Pitch Italic", "Courier 10 Pitch", "Italic");

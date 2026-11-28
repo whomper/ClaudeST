@@ -6,8 +6,8 @@
  *
  * A piece drawn again in place (a transfer's progress row every second, a
  * pane's header with its count) showed its ground for a frame or two on a
- * stock Falcon before its words came back (Erez, 1 Nov 2026: "the
- * progress displays flicker every second"). Between off_begin and
+ * stock Falcon before its words came back (a report of 1 Nov 2026: the
+ * progress displays flickered every second). Between off_begin and
  * off_end the logical screen is a buffer holding the piece's rows, the
  * screen's own bytes first; whatever is drawn goes there (the VDI, the
  * AES's objc_draw, text.c's drawing into Logbase), and off_end copies the

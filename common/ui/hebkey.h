@@ -38,7 +38,7 @@ unsigned char key_char(short kstate, short key);
 void hebrew_badge_size(short vdi, short *w, short *h);
 void hebrew_badge(short vdi, short x, short y, short colour);
 
-/* where every app puts it (Erez, 6 Nov 2026): at the RIGHT END of a dialog's
+/* where every app puts it (decided 6 Nov 2026): at the RIGHT END of a dialog's
    title band and of a main window's info line, in place of the words
    "Hebrew keyboard (F10)". x, y, w, h is that band or line (its inside);
    the badge sits 3 pixels in from the right edge, centred up and down (at

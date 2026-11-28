@@ -9,6 +9,10 @@ void *calloc(size_t n, size_t m);
 void *realloc(void *p, size_t n);
 void free(void *p);
 void heap_add(void *p, size_t bytes);	/* a fixed heap (accessories) */
+/* GEMDOS memory for an accessory, owned by itself on plain TOS (mode -1: Malloc, else Mxalloc's);
+   for anything else Malloc or Mxalloc as they are (libc.c) */
+void *acc_core(long n, int mode);
+long acc_free(void *p);	/* Mfree of a block acc_core gave */
 /* a program's GEMDOS blocks that are all free again (but the first) back
    to TOS; the bytes given back */
 long heap_trim(void);

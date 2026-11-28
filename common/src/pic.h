@@ -145,7 +145,7 @@ typedef struct {
    and may be made again; pic_pal_free gives its table back */
 void pic_pal_init(PIC_PAL *pal, int n, const unsigned char rgb[][3]);
 void pic_pal_free(PIC_PAL *pal);
-/* Soft (Erez, 21 Nov 2026, EContact's photos): the share of each pixel's
+/* Soft (decided 21 Nov 2026, EContact's photos): the share of each pixel's
    error the dithers pass on, in sixteenths, 1 to 16 (0 or 16: all of it,
    Floyd-Steinberg as it always was, byte for byte, at no cost). Less is
    less grain where the palette has no near colour (a pastel among 256's
@@ -181,7 +181,7 @@ typedef struct pic_dither_rows PIC_DITHER;
 PIC_DITHER *pic_dither_open(long w, PIC_PAL *pal);
 void pic_dither_row(PIC_DITHER *dt, const unsigned short *px, const unsigned char *alpha, unsigned char *out);
 void pic_dither_close(PIC_DITHER *dt);
-/* Sharp (Erez, 5 Nov 2026, EPDF's first): from here each pixel its
+/* Sharp (decided 5 Nov 2026, EPDF's first): from here each pixel its
    nearest pen, no dither, as without room for the errors. For a picture
    of few colours (a screenshot, a diagram) on 16 colours or fewer, whose
    letters a dither makes dots; photos keep the dither (the caller

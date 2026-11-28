@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * settings.h - the family's Settings dialog (the guidelines, 6.1; Erez, 9 Nov 2026): the one EMail 2.14
+ * settings.h - the family's Settings dialog (the guidelines, 6.1; decided 9 Nov 2026): the one EMail 2.14
  * has, built once for every app. A black title band, the list of pages at the left (the chosen one a
  * black bar), the page's name and a line over its settings, Cancel and OK at the bottom right. The app
  * gives its pages' names and a function for each that adds that page's objects; this does the rest:

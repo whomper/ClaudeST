@@ -417,7 +417,7 @@ static void sup_install(void)
 /* tests only: with a file C:\FASTCLK, MFP timer C interrupts at 312 Hz
    instead of 200 (2457600 / 64 / 123), TOS's handler still counting
    each one in _hz_200: a 200 Hz clock that runs 1.56 times too fast, as
-   on Erez's Falcon, for EFTP's tests/hatari/clock_test.py */
+   on a real Falcon, for EFTP's tests/hatari/clock_test.py */
 static void sup_fastclk(void)
 {
 	*(volatile unsigned char *)0xfffffa23L = 123;	/* timer C's data register */

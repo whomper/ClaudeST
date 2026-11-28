@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 # EConvert: EPDF's red book with a circular gold arrow at its lower right
-# (Erez, 3 Nov 2026: R1 of the sketches; the book as in EPDF.txt, the arrow
+# (decided 3 Nov 2026: R1 of the sketches; the book as in EPDF.txt, the arrow
 # for "converted").
 # 32x32 in three depths, as common/tools/appicon.py reads them; edit by hand;
 # run appicon.py.

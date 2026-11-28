@@ -4,9 +4,10 @@
  * offpage.c - a page drawn off the screen (offpage.h). The EdDI bindings
  * and the start-up test are ECal's (ui/win.c, its EdDI way); the logical
  * screen moved to a buffer, ECal's other way on plain TOS, isn't here:
- * EMail draws off the screen under NVDI only (Erez, 13 Nov 2026).
+ * EMail draws off the screen under NVDI only (decided 13 Nov 2026).
  */
 #include <string.h>
+#include <stdlib.h>
 #include "tos.h"
 #include "gem.h"
 #include "offpage.h"
@@ -102,9 +103,9 @@ int offpage_init(short screen, short w, short hgt, short nplanes, long spare)
 		state = "none: too little memory";
 		return 0;
 	}
-	mem = Mxalloc(size + 256, 3);
+	mem = acc_core(size + 256, 3);
 	if ((long)mem == -32 || !mem)
-		mem = Malloc(size + 256);
+		mem = acc_core(size + 256, -1);
 	if ((long)mem <= 0) {
 		mem = 0;
 		state = "none: no memory";
@@ -129,7 +130,7 @@ int offpage_init(short screen, short w, short hgt, short nplanes, long spare)
 	}
 	if (h > 0)
 		v_clsbm(h);
-	Mfree(mem);
+	acc_free(mem);
 	mem = 0;
 	state = "none: the bitmap's test failed";
 	return 0;
@@ -172,7 +173,7 @@ void offpage_exit(void)
 		v_clsbm(bm);
 	bm = 0;
 	if (mem)
-		Mfree(mem);
+		acc_free(mem);
 	mem = 0;
 }
 

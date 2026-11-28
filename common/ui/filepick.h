@@ -3,7 +3,7 @@
 /*
  * filepick.h - the family's file dialog: several files (and folders)
  * chosen at once, which TOS's file selector can't give. From EPlay's File >
- * Open... (Add files; Erez, 4 Nov 2026). A dialog of the AES's own objects
+ * Open... (Add files; decided 4 Nov 2026). A dialog of the AES's own objects
  * (3D where the AES has it, in a window on MiNT and MagiC), Selectric's
  * width and ways: the drive in one pop-up at the folder line's start, the
  * last folders, the type, the sort, a name mask, each file's size and
@@ -29,6 +29,7 @@
 
 #define FP_RECENT 10		/* the Folders pop-up's: the last folders taken from */
 #define FP_PATH 128
+#define FP_NAMEW 32		/* save mode: the Save as field's cells (a name of 31 at most) */
 
 typedef struct {
 	const char *title;	/* the band's and the dialog window's: "Add files" */
@@ -41,7 +42,7 @@ typedef struct {
 	int ntypes;		/* DL_TYPES at most */
 } FP_SPEC;
 
-/* The app's setting "Use the system file selector" (Erez, 9 Nov 2026; off by default: this dialog is the default):
+/* The app's setting "Use the system file selector" (decided 9 Nov 2026; off by default: this dialog is the default):
    when set (a global, not a field of FP_SPEC, which the apps keep const), filepick_run() doesn't open this dialog but
    the AES's own file selector through fsel_exinput, titled with spec->title where the AES is 1.4 or newer. It gives
    ONE file at a time on plain TOS (and on MiNT's and MagiC's, which are the same call): take() is called once, with
@@ -59,5 +60,20 @@ extern short filepick_system;
    The number taken, 0 when cancelled */
 int filepick_run(const FP_SPEC *spec, char *dir, char recent[FP_RECENT][FP_PATH], void (*take)(const char *path),
 		 void (*idle)(void));
+
+/* The same dialog to save one file (decided 25 Nov 2026): "Save as" and its
+   name (filled with name, the proposal) in place of the filter, one row
+   chosen at a time (a file's name goes to the field), All and None hidden;
+   the list shows the folders and the files of the type chosen. Return or
+   the default button saves; Return on a chosen folder opens it. The name
+   is made whole there: the type's first extension added when it has none,
+   * ? \ : refused, 8+3 checked off MiNT; a file of that name is replaced
+   only after "NAME is there already. Replace it?". 1 with the whole path
+   in path (and the name in name, the folder in dir and first in recent[]),
+   0 when cancelled. idle() as filepick_run's. With filepick_system set, the
+   AES's selector with the name, then the same question. The app writes the
+   file itself */
+int filepick_save(const FP_SPEC *spec, char *dir, char recent[FP_RECENT][FP_PATH], char *name, int namelen,
+		  char *path, int pathlen, void (*idle)(void));
 
 #endif

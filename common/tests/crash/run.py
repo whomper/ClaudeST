@@ -10,7 +10,7 @@ the next start.
     make && python3 run.py --st tos104us.img --falcon tos404.img [work-dir]
 
 One image for both machines, or one for each (--st, --falcon; either
-alone runs that machine only): Erez's TOS 1.04 is an ST's, his TOS 4.04 a
+alone runs that machine only): real TOS 1.04 is an ST's, TOS 4.04 a
 Falcon's, and neither starts on the other. EmuTOS 1.4 or later: 1.3
 overwrites TOS's record of the bombs at every boot, so the reset checks
 fail there.
@@ -141,7 +141,7 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
     # a software FPU emulator on vector 11 (XBRA 'FPEM'): another
     # program's line F is still its; the program's own, in its code
     # (which has no FPU instruction), is a crash, caught, and the vector's
-    # holder named for the app's log (Erez's 11 bombs of 1 Nov 2026 left
+    # holder named for the app's log (the 11 bombs reported on 1 Nov 2026 left
     # no CRASH.LOG: vector 11 wasn't TOS's there)
     d, con, rep = run(machine, "e")
     tag = "%s an FPU emulator on vector 11:" % machine
@@ -155,7 +155,7 @@ for machine in [m for m in ("st", "falcon") if m in tos_for]:
               ("(CrashTest+$" in rep.split("\r\n")[2] if rep.count("\r\n") > 2 else False),
               tag + " the program's own line F caught, in its code")
     # another program hooks vector 2 and etv_term over the catcher and
-    # stays: the catcher comes out of both chains (Erez, 10 Nov 2026: two
+    # stays: the catcher comes out of both chains (a report of 10 Nov 2026: two
     # bombs just after EFTP quit, now and then)
     d, con, rep = run(machine, "o")
     tag = "%s hooked over by another program:" % machine

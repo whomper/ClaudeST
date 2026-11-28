@@ -6,6 +6,7 @@
  * and in ST RAM for GEM and the desk accessories (a 1 MB ST with STinG has
  * only tens of KB spare, which still beats 4 KB at a time).
  */
+#include <stdlib.h>
 #include "tos.h"
 #include "bigbuf.h"
 
@@ -35,7 +36,7 @@ void *big_alloc(long want, long *got, int *tt)
 		return 0;
 	}
 	take = (take + 1) & ~1L;
-	p = old ? Malloc(take) : Mxalloc(take, *tt ? 1 : 0);
+	p = acc_core(take, old ? -1 : *tt ? 1 : 0);
 	if ((long)p <= 0) {
 		*tt = 0;
 		return 0;
@@ -47,7 +48,7 @@ void *big_alloc(long want, long *got, int *tt)
 void big_free(void *p)
 {
 	if (p)
-		Mfree(p);
+		acc_free(p);
 }
 
 int big_direct(void)

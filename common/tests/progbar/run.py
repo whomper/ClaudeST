@@ -4,7 +4,7 @@
 """PRBTEST.PRG (make prg) in Hatari, for a look at the family's progress
 bar as the machine draws it: run.py WORK [MACHINE] [--nvdi]. MACHINE is one
 of common/tools/machines.py's (Falcon:256 by default); --nvdi installs
-Erez's NVDI (a Falcon). It waits for "PRB ready", prints the pens found
+the NVDI copy (a Falcon). It waits for "PRB ready", prints the pens found
 and leaves WORK/shots/progbar.png.
 """
 import os, shutil, subprocess, sys, time

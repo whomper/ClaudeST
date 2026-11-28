@@ -108,7 +108,7 @@ int off_begin(short vh, short x, short y, short w, short h)
 			if (_is_acc)
 				free(buf - GUARD);
 			else
-				Mfree(buf - GUARD);
+				acc_free(buf - GUARD);
 			buf = 0;
 		}
 		if (_is_acc) {
@@ -120,9 +120,9 @@ int off_begin(short vh, short x, short y, short w, short h)
 				buf = 0;
 			}
 		} else {
-			buf = Mxalloc(size + 2 * GUARD, 0);	/* ST RAM, where the VDI draws */
+			buf = acc_core(size + 2 * GUARD, 0);	/* ST RAM, where the VDI draws */
 			if ((long)buf == -32 || !buf)	/* no Mxalloc: Malloc's is ST RAM */
-				buf = Malloc(size + 2 * GUARD);
+				buf = acc_core(size + 2 * GUARD, -1);
 			if ((long)buf <= 0)
 				buf = 0;
 		}

@@ -120,30 +120,42 @@ long ovl_need(const char *path)
 }
 
 /* the one loader: into the block given (mem, size), else into one from
-   malloc */
+   malloc; align: that block 256 + 4 bytes longer, the image at its first
+   256-byte boundary after a long that holds what malloc gave (ovl_free) */
 static void *load(const char *path, void *mem, long size, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud,
-		  int *later);
+		  int *later, int align);
 
 void *ovl_load(const char *path, long *taken, char *err, int errlen)
 {
-	return load(path, 0, 0, taken, err, errlen, 0, 0, 0);
+	return load(path, 0, 0, taken, err, errlen, 0, 0, 0, 0);
+}
+
+void *ovl_load_aligned(const char *path, long *taken, char *err, int errlen)
+{
+	return load(path, 0, 0, taken, err, errlen, 0, 0, 0, 1);
+}
+
+void ovl_free(void *image)
+{
+	if (image)
+		free(((void **)image)[-1]);
 }
 
 void *ovl_load_tail(const char *path, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud, int *later)
 {
-	return load(path, 0, 0, taken, err, errlen, tail, ud, later);
+	return load(path, 0, 0, taken, err, errlen, tail, ud, later, 0);
 }
 
 void *ovl_load_into(const char *path, void *mem, long size, long *taken, char *err, int errlen)
 {
-	return load(path, mem, size, taken, err, errlen, 0, 0, 0);
+	return load(path, mem, size, taken, err, errlen, 0, 0, 0, 0);
 }
 
 static void *load(const char *path, void *mem, long size, long *taken, char *err, int errlen, OVL_TAIL tail, void *ud,
-		  int *later)
+		  int *later, int align)
 {
 	unsigned char fx[512];
-	unsigned char *m = 0;
+	unsigned char *m = 0, *raw = 0;
 	long tsize, dsize, bsize, ssize, done, n;
 	OVL_FIX f;
 	int h, r = 1;
@@ -158,7 +170,14 @@ static void *load(const char *path, void *mem, long size, long *taken, char *err
 	}
 	if (!header(h, &tsize, &dsize, &bsize, &ssize))
 		goto bad;
-	if (!(m = mem ? (tsize + dsize + bsize <= size ? mem : 0) : malloc(tsize + dsize + bsize))) {
+	if (align) {
+		if ((raw = malloc(tsize + dsize + bsize + 256 + sizeof(void *))) != 0) {
+			m = (unsigned char *)(((unsigned long)raw + sizeof(void *) + 255) & ~255UL);
+			((void **)m)[-1] = raw;
+		}
+	} else
+		m = mem ? (tsize + dsize + bsize <= size ? mem : 0) : malloc(tsize + dsize + bsize);
+	if (!m) {
 		pf_close(h);
 		snprintf(err, errlen, "no memory for %s (%ld KB)", name, (tsize + dsize + bsize + 1023) / 1024);
 		if (later)
@@ -197,7 +216,9 @@ static void *load(const char *path, void *mem, long size, long *taken, char *err
 	return m;
 bad:
 	pf_close(h);
-	if (!mem)
+	if (align)
+		free(raw);
+	else if (!mem)
 		free(m);
 	snprintf(err, errlen, "%s is damaged: copy it again from the release", name);
 	return 0;
@@ -234,7 +255,7 @@ static long flush_super(void)
 			/* FireTOS says _CPU 60, but a ColdFire has neither cpusha
 			   nor a CACR to read: its own push of each line, as the
 			   ColdFire build above (cpushl %bc,(%a0) as words). TLSFB.OVL
-			   is loaded so (Erez, 15 Nov 2026) */
+			   is loaded so (decided 15 Nov 2026) */
 			unsigned long set, way;
 			__asm__ volatile(".short 0x4e71" ::: "memory");	/* nop: the store buffer drained */
 			for (set = 0; set < 512; set++)

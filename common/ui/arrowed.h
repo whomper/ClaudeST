@@ -6,7 +6,7 @@
  * else the pane that owns the window's sliders. Some AESes send a mouse wheel as WM_ARROWED (the pointer
  * is then over a pane); a click on the window's own arrow or track has the pointer on the widget, outside
  * every pane, and goes to the slider's pane as it always did. No other wheel message is handled (no wheel
- * unless Erez asks).
+ * unless it is decided so).
  *
  * The app lists its scrolling panes, each with the rectangle it owns on the screen and an id of its own
  * (a pane number, a pointer; 0 or more), and asks when the message comes:

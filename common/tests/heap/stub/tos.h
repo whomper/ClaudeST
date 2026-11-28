@@ -17,6 +17,12 @@ typedef uint32_t u32;
 void *Mxalloc(long n, int mode);
 void *Malloc(long n);
 long Mfree(void *p);
+/* acc_core's (libc.c): the test runs as under MiNT, the blocks as they are */
+extern void *_BasePage;
+long Supexec(long (*f)(void));
+long get_cookie(long id);
+void *acc_core(long n, int mode);
+long acc_free(void *p);
 
 #define malloc  heap_malloc
 #define free    heap_free

@@ -214,7 +214,7 @@ short set_radio(SETTINGS *s, short x, short y, short w, const char *const *label
 		w = 8;
 	/* up to 9 characters, 10 apart (four fit the page's 42); wider where
 	   fewer fit, each a character apart: three of 13 (EWeb's Scripts,
-	   Erez, 17 Nov 2026: "Chosen sites") */
+	   decided 17 Nov 2026: Chosen sites) */
 	while (w > 9 && n * (w + 1) - 1 > 42)
 		w--;
 	if (w > 13)

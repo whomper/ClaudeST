@@ -3,7 +3,7 @@
 /*
  * offpage.h - a screen-sized EdDI off-screen bitmap (NVDI 3 and later,
  * fVDI), so that a page of a pane is drawn there and copied to the screen
- * in one go instead of appearing row by row (Erez, 13 Nov 2026). As
+ * in one go instead of appearing row by row (decided 13 Nov 2026). As
  * ECal's and EContact's ui/win.c (their EdDI way): used only when a test
  * at the start finds a line drawn on it really in its memory. Without
  * EdDI (TOS's and EmuTOS's own VDI) nothing changes. From EMail 2e9ae4bb;

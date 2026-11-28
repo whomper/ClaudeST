@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * panebar.h - a pane's own scroll bar (the guidelines, 5.1; Erez,
- * 24 Oct 2026: "AES look for pane bars"). A window has one set of sliders
+ * panebar.h - a pane's own scroll bar (the guidelines, 5.1; decided
+ * 24 Oct 2026: the AES's look for pane bars). A window has one set of sliders
  * from the AES, and the family's windows have several panes, so each pane
  * that scrolls has a bar of its own at its right (or, set across, at its
  * foot: a box on a web page that scrolls sideways). It is made of AES

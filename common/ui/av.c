@@ -5,6 +5,7 @@
  * EContact's VA_START to EMail.
  */
 #include <string.h>
+#include <stdlib.h>
 #include "tos.h"
 #include "gem.h"
 #include "av.h"
@@ -47,7 +48,7 @@ char *av_shared(char *local, long size)
 	long m;
 	if (!get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L))	/* MiNT, MagX */
 		return local;
-	m = (long)Mxalloc(size, 0x2B);	/* global, TT RAM preferred */
+	m = (long)acc_core(size, 0x2B);	/* global, TT RAM preferred */
 	return m > 0 ? (char *)m : local;
 }
 

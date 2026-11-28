@@ -4,7 +4,7 @@
 """The Help key under a multitasking AES (FreeMiNT 1.17 and XaAES,
 ../xaaes): with no viewer running, help.c starts EHYPVIEW.PRG beside the
 app, found by FOLDER= in the boot drive's EHYPVIEW.INF, with the request
-on its command line (Erez, 25 Oct 2026).
+on its command line (decided 25 Oct 2026).
 
   1. EHYPVIEW.INF says FOLDER=C:\\EHV, and C:\\EHV\\EHYPVIEW.PRG is the
      stand-in FAKEPRG.PRG: it is started and gets "C:\\TEST.HYP Keys"

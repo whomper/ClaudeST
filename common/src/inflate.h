@@ -38,8 +38,8 @@ void inflate_close(INFLATE *z);
    (*p's piece is then what came before the damage). inflate_read()
    isn't for such a one; inflate_close() frees it. (EUpdate's unzip: a
    stock Falcon unpacked programs at some 80 KB/s through
-   inflate_read, an instruction-cache miss most of every symbol: Erez,
-   1 Nov 2026, "saving takes forever") */
+   inflate_read, an instruction-cache miss most of every symbol: a report of
+   1 Nov 2026, saving took very long) */
 INFLATE *inflate_open_piece(int (*get)(void *u, unsigned char *buf, long n), void *u);
 long inflate_piece(INFLATE *z, const unsigned char **p, long max, void (*turn)(void));
 

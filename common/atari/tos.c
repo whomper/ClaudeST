@@ -132,7 +132,7 @@ u32 tos_hz200(void)
 /* ---------------- milliseconds ----------------
  * _hz_200 goes up once per interrupt of the MFP's timer C. A driver that
  * sets timer C faster and still calls TOS's handler each time makes it
- * run fast: on Erez's Falcon at 312 Hz, so a transfer of 16 real seconds
+ * run fast: on a real Falcon at 312 Hz, so a transfer of 16 real seconds
  * showed as 25 (EFTP, whomper/EFTP a1e3b44). So the first time tos_ms()
  * is asked, the counter is measured against timer C's own count-down,
  * which runs off the MFP's 2.4576 MHz crystal however the timer is set,

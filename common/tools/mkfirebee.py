@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """A program's FireBee edition (ColdFire, -mcpu=5475), made from the very rules its 68000/68030 build is
-made with (Erez, 22 Nov 2026: "Make the other apps native on the FireBee too"; EUpdate's and EWeb's
+made with (decided 22 Nov 2026: every app native on the FireBee; EUpdate's and EWeb's
 tools/mkfirebee.py before it, EUPDFB.PRG and EWEBFB.PRG). `make -n -B ELF MAKEARGS` gives each command,
 and each cross-compiler command is run again for the ColdFire:
 
@@ -19,7 +19,7 @@ and each cross-compiler command is run again for the ColdFire:
   with --emac-ok FILE.o (the 68000 build's object path);
 - no pads: the 68030's caches aren't the ColdFire's.
 
-TLS on the FireBee is common/tlsovl's tlsfb.ovl, shipped in the FireBee zip as tls.ovl (Erez, 22 Nov
+TLS on the FireBee is common/tlsovl's tlsfb.ovl, shipped in the FireBee zip as tls.ovl (decided 22 Nov
 2026: every file of the FireBee package under its standard name; a __mcoldfire__ build's tls_ovl.c loads
 tls.ovl as named). An accessory is made the same way from its own ELF; it is installed in place of the
 68000 one, never beside it (a FireBee loads every .ACC in the root: the guidelines, 7.4). OUT is the

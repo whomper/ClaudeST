@@ -5,7 +5,7 @@
 | input has the bits, as the C loop does, in fewer instructions and
 | small enough for the 68030's 256-byte instruction cache (the C loop's
 | literal and match paths took ~330 bytes on lines that evict each
-| other: EUpdate, 1 Nov 2026, "saving takes forever"). 68000 code, and
+| other: EUpdate, 1 Nov 2026, saving took very long). 68000 code, and
 | for the ColdFire (__mcoldfire__) ColdFire code.
 |
 | int inflate_fast(IFAST *f)

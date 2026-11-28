@@ -22,6 +22,17 @@
  *                              KB, for MEMKB= at the next start (which
  *                              then measures it down; at most half free)
  *   acc_mem_line(buf, size, next_kb)   the log's "memory: ..." line
+ *   acc_small_machine()        1 on a machine with under 2 MB of ST RAM
+ *                              (phystop): no family accessory runs there
+ *                              (decided 26 Nov 2026, guidelines 2.1); the
+ *                              accessory takes no heap and its Desk entry
+ *                              shows acc_small_alert's words
+ *   acc_no_ttram(), acc_tt_alert(name, file)   the same for an accessory that needs TT RAM
+ *                              (EWEB.ACC): 1 with none; "[1][NAME needs|an Atari with TT RAM.|Remove FILE|
+ *                              from the boot drive.][ OK ]"
+ *   acc_small_alert(name, file)   that alert, the AES's own (form_alert:
+ *                              no memory taken): "[1][NAME needs|an Atari with
+ *                              2 MB or more.|Remove FILE|from the boot drive.][ OK ]"
  *
  * The share when nothing is known (the first start, or a new machine):
  * at most half of what is free, and a quarter when 1 MB or more is free,
@@ -40,6 +51,7 @@
 #define AERA_ACCMEM_H
 
 extern long acc_heap_bytes;	/* taken (0: none, or the program) */
+extern void *acc_heap_at;	/* where (the rigs check it lies outside the next program's TPA) */
 extern long acc_heap_avail;	/* free when it was taken, where it was taken */
 extern short acc_heap_tt;	/* 1: in TT/Fast RAM */
 extern long acc_heap_leave;	/* the least left on a 1 MB machine (32 KB) */
@@ -49,5 +61,9 @@ long acc_mem_kb(long need, long margin);
 int acc_mem_moved(long kb, long memkb);
 long acc_mem_full_kb(void);
 int acc_mem_line(char *buf, int size, long next_kb);
+int acc_small_machine(void);
+void acc_small_alert(const char *name, const char *file);
+int acc_no_ttram(void);
+void acc_tt_alert(const char *name, const char *file);
 
 #endif

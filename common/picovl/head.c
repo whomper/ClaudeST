@@ -12,6 +12,8 @@
 #include "pic.h"
 #include "picovl.h"
 #include "dspjpeg.h"
+#include "quant.h"
+#include "picpens.h"
 
 #ifndef PICOVL_VERSION
 #define PICOVL_VERSION "0.0"
@@ -196,11 +198,57 @@ static void soft(int sixteenths)
 	pic_ovl_soft = sixteenths <= 0 || sixteenths > 16 ? 16 : sixteenths;
 }
 
+/* ---- 1.4: a picture's own colours in pens 192-255 (ui/picpens.c, src/quant.c) ---- */
+
+/* the program's VDI calls, when its PIC_HOST has them */
+#define HOST_HAS(m) (H->size >= (long)(offsetof(PIC_HOST, m) + sizeof(H->m)))
+
+void vs_color(short h, short index, const short *rgb)
+{
+	H->vs_color(h, index, rgb);
+}
+
+void vq_color(short h, short index, short *rgb)
+{
+	H->vq_color(h, index, rgb);
+}
+
+static int pens_take(short vdi, int n, const short rgb[][3])
+{
+	if (!HOST_HAS(vq_color))
+		return 0;
+	return picpens_take(vdi, n, rgb);
+}
+
+static void pens_give(short vdi)
+{
+	if (HOST_HAS(vq_color))
+		picpens_give(vdi);
+}
+
+/* ---- 1.5: quant as a job (src/quant.h) ---- */
+
+static void *q_begin(const unsigned short *px, long n, long skip, int want)
+{
+	return quant_begin(px, n, skip, want);
+}
+
+static int q_step(void *job, long budget, short rgb[][3])
+{
+	return quant_step(job, budget, rgb);
+}
+
+static void q_end(void *job)
+{
+	quant_end(job);
+}
+
 __attribute__((section(".picovl"), used))
 const PIC_OVL picovl = {
 	PICOVL_MAGIC, PICOVL_MAJOR, sizeof(PIC_OVL), PICOVL_VERSION,
 	init, pic_dither_dsp_prepare, dither, pic_dither_state, near_load, near_save, dither_cells, chunky8,
-	prepare_step, chunky8_prepare, soft
+	prepare_step, chunky8_prepare, soft, quant_565, pens_take, pens_give,
+	q_begin, q_step, q_end
 };
 
 /* ---- the program's, through PIC_HOST ---- */

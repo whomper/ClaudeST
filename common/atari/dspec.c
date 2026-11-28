@@ -62,7 +62,7 @@ extern unsigned long tls_turn_ms;	/* tls.c: when the last turn came back (0: not
 /* Asked at every word sent, so the clock is _hz_200 itself, read here in
    supervisor mode: pf_ms() is tos_ms(), a Supexec, an XBIOS trap through
    every driver hooked on it (NVDI's, the network's) for each of the 4,800
-   words of an X25519, which on Erez's stock Falcon took 2.1 s where the
+   words of an X25519, which on a real stock Falcon took 2.1 s where the
    DSP's own work is 227 ms (tests/ec's sim). 8 steps are 40 ms (26 where
    a driver runs the counter at 312 Hz: a few turns more). pf_ms() only at
    a turn, to time it for the log */

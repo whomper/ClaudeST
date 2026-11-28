@@ -73,7 +73,7 @@ void progbar_pens(short h, short ground)
 			/* not a violet: red under green, but in a navy (both dark):
 			   a cube's equal red and green (#333388, #6666cc, #9999ff)
 			   were violets among the blues, the bar's steps blue and
-			   purple in turn (EWeb's 256 colours, Erez, 16 Nov 2026) */
+			   purple in turn (EWeb's 256 colours, decided 16 Nov 2026) */
 			if (rgb[0] >= rgb[1] && rgb[0] > mx / 8)
 				continue;
 			cand[nc++] = p;

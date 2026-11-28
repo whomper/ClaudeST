@@ -14,6 +14,18 @@ static long st_free, tt_free, given, given_mode, added;
 static int failed, checks;
 static char area[1];
 long heap_use, heap_peak, heap_early;
+static long phystop = 4L * 1024 * 1024;
+static char alerted[200];
+long Supexec(long (*f)(void))
+{
+	(void)f;
+	return phystop;
+}
+short form_alert(short def, const char *str)
+{
+	snprintf(alerted, sizeof alerted, "%s", str);
+	return def;
+}
 
 void *Malloc(long n)
 {
@@ -38,6 +50,13 @@ void *Mxalloc(long n, int mode)
 	given = n;
 	given_mode = mode;
 	return area;
+}
+
+static long owned;		/* blocks taken through acc_core (the accessory's own) */
+void *acc_core(long n, int mode)
+{
+	owned++;
+	return mode < 0 ? Malloc(n) : Mxalloc(n, mode);
 }
 
 static int n_accs = 1, found;		/* the *.ACC in the boot root */
@@ -187,6 +206,28 @@ int main(void)
 	      "the log line");
 	printf("     %s\n", line);
 
+	check(acc_heap_at == area, "acc_heap_at says where the heap is");
+	check(owned > 0, "the heap's blocks are taken through acc_core: owned by the accessory on plain TOS");
+	phystop = 1024 * KB;
+	check(acc_small_machine(), "a 1 MB ST is a small machine: no accessory there");
+	phystop = 2048 * KB;
+	check(!acc_small_machine(), "2 MB is not");
+	phystop = 4096 * KB;
+	check(!acc_small_machine(), "a 4 MB Falcon is not");
+	{
+		long before = st_free;
+		acc_small_alert("ECal", "ECAL.ACC");
+		check(st_free == before, "the alert takes no memory (the AES's own)");
+	}
+	check(!strcmp(alerted, "[1][ECal needs|an Atari with 2 MB or more.|Remove ECAL.ACC|from the boot drive.][ OK ]"),
+	      "the alert names the program and its file");
+	tt_free = 0;
+	check(acc_no_ttram(), "no TT RAM: EWEB.ACC stands down");
+	tt_free = 8192 * KB;
+	check(!acc_no_ttram(), "TT RAM: it runs");
+	acc_tt_alert("EWeb", "EWEB.ACC");
+	check(!strcmp(alerted, "[1][EWeb needs|an Atari with TT RAM.|Remove EWEB.ACC|from the boot drive.][ OK ]"),
+	      "the TT RAM alert's words");
 	printf("%d checks, %d failed\n", checks, failed);
 	return failed != 0;
 }

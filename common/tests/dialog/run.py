@@ -36,7 +36,7 @@ CASES = [
     ("d_close", ["key x", "close"], "4 hellox 0"),
     ("d_band", ["key 0x1c"], "3 hello 0"),
 ]
-# under XaAES the alerts are the AES's own (Erez, 25 Oct 2026): Return
+# under XaAES the alerts are the AES's own (decided 25 Oct 2026): Return
 # answers them (its Esc does nothing), and the dialogs are in a window
 XA_CASES = [(n, ["key 0x1c"], "1") for n, _, _ in CASES if n.startswith("a_")] + \
     [c for c in CASES if c[0].startswith("d_")]

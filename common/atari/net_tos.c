@@ -188,7 +188,7 @@ static int dns_query(const char *name, u32 *ip)
 
 /* ---- DNS over STinG's UDP, the program going on meanwhile ----
    STinG's own resolve() is one call that returns when it has an answer
-   or gives up: EWeb's window stood still for 11 s on Erez's Falcon while
+   or gives up: EWeb's window stood still for 11 s on a real Falcon while
    it looked up cdnjs.cloudflare.com (7 Nov 2026). Asked here instead,
    over a UDP connection to STinG's NAMESERVER, polled with pf_idle (GEM
    goes on) and conn_stop (Esc); STinG's resolve() wherever this can't

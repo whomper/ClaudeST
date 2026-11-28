@@ -2,7 +2,7 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * notify.h - notifications through BGEM.NG (the AERA guidelines, 4.5; a
- * tester, Erez 27 Oct 2026). BGEM.NG (Jo Even Skarstein,
+ * tester's report, 27 Oct 2026). BGEM.NG (Jo Even Skarstein,
  * https://atari.joska.no/bgem.ng/) is BubbleGEM made again for MiNT with
  * XaAES or N.AES: besides help bubbles it shows notifications, small
  * windows stacked at the desktop's edge that close by themselves, and

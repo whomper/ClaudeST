@@ -41,6 +41,10 @@ with tempfile.TemporaryDirectory() as d:
     check("ST-1: 1 MB, mono by default, real TOS 1.04",
           a[a.index("--memsize") + 1] == "1" and "mono" in a and m.describe() == "ST-1:mono, TOS 1.04")
     check("ST-1: its own HOME", m.env()["HOME"] == os.path.join(d, "st1.home"))
+    m2 = machines.Machine("ST-2", os.path.join(d, "st2"))
+    a2 = m2.args()
+    check("ST-2: 2 MB, TOS 1.04, the accessories' ST (decided 26 Nov 2026)",
+          a2[a2.index("--memsize") + 1] == "2" and m2.describe().startswith("ST-2:mono"))
 
     check("ST-1 with real TOS 1.04: C:\\AUTO\\BOOTC.PRG makes C: the boot drive",
           os.path.exists(os.path.join(d, "st1", "AUTO", "BOOTC.PRG")))

@@ -571,6 +571,78 @@ extern short _is_acc;		/* crt0.S (tests/heap: its own) */
 static short blocks;		/* GEMDOS blocks taken, a pool entry each */
 static size_t taken;		/* bytes taken from GEMDOS and held */
 
+/* An accessory's memory on plain TOS (no MiNT, no MagiC): GEMDOS gives a
+   block to the process current when it is asked for, and frees it when
+   that process ends; the accessory isn't one, so its heap (acc_heap_take)
+   and anything else it took was handed to the next program started, and
+   one without the fast-load bit cleared it (EContact's marker in the
+   program's TPA on ST-1, ST-2 and Falcon-4, TOS 1.04 and 4.04, 26 Nov
+   2026). So its blocks are taken with GEMDOS's current process set to
+   the accessory's own basepage, which never ends. The current process is
+   OSHEADER's p_run (TOS 1.02 and on), TOS 1.00's at 0x602C (0x873C in
+   the Spanish one). MiNT and MagiC own an accessory's memory themselves. */
+/* weak: a freestanding link of libc.o with no crt0.S or tos.c (the apps'
+   ColdFire core tests) takes no accessory path and needs none of them */
+#pragma weak _BasePage
+#pragma weak get_cookie
+#pragma weak tos_supexec
+static long acc_own_want, acc_own_mode;	/* mode -2: Mfree acc_own_got */
+static void *acc_own_got;
+static long acc_own_call(void)
+{
+	char *volatile *sys;
+	char *h;
+	void **run;
+	void *was;
+	/* the address hidden from GCC (as crash.c's low()) */
+	__asm__("" : "=a"(sys) : "0"(0x4F2L));
+	h = *sys;				/* _sysbase */
+	if (*(unsigned short *)(h + 2) < 0x0102)
+		run = (void **)((*(unsigned short *)(h + 28) >> 1) == 4 ? 0x873CL : 0x602CL);
+	else
+		run = *(void ***)(h + 0x28);	/* p_run */
+	was = *run;
+	*run = _BasePage;
+	if (acc_own_mode == -2)
+		acc_own_want = Mfree(acc_own_got);
+	else
+		acc_own_got = acc_own_mode < 0 ? Malloc(acc_own_want) : Mxalloc(acc_own_want, (int)acc_own_mode);
+	*run = was;
+	return 0;
+}
+
+/* Malloc (mode -1) or Mxalloc for an accessory: owned by itself on plain TOS */
+void *acc_core(long n, int mode)
+{
+	static short plain = -1;
+	if (!_is_acc || n < 0)
+		return mode < 0 ? Malloc(n) : Mxalloc(n, mode);
+	if (plain < 0)
+		plain = !get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L);	/* MiNT, MagX */
+	if (!plain)
+		return mode < 0 ? Malloc(n) : Mxalloc(n, mode);
+	acc_own_want = n;
+	acc_own_mode = mode;
+	Supexec(acc_own_call);
+	return acc_own_got;
+}
+
+/* Mfree of a block acc_core gave: as its owner on plain TOS */
+long acc_free(void *p)
+{
+	static short plain = -1;
+	if (!_is_acc)
+		return Mfree(p);
+	if (plain < 0)
+		plain = !get_cookie(0x4D694E54L) && !get_cookie(0x4D616758L);
+	if (!plain)
+		return Mfree(p);
+	acc_own_got = p;
+	acc_own_mode = -2;
+	Supexec(acc_own_call);
+	return acc_own_want;
+}
+
 static __attribute__((noinline)) int more_core(size_t need)
 {
 	size_t least = need + WORD + 2 * ALIGN, want;	/* the block, the fence, alignment */
@@ -584,9 +656,9 @@ static __attribute__((noinline)) int more_core(size_t need)
 		   PEOPLE cache before acc_heap held 512 KB, 20 Oct 2026). Its
 		   log can name it: heap_early */
 		want = (least + 16383) & ~(size_t)16383;
-		h = Mxalloc(want, 3);
+		h = acc_core(want, 3);
 		if ((long)h == -32 || (long)h <= 0)
-			h = Malloc(want);
+			h = acc_core(want, -1);
 		if ((long)h <= 0)
 			return 0;
 		blocks++;
@@ -686,7 +758,7 @@ long heap_trim(void)
 			heap_tt -= (long)bytes;
 		else
 			heap_st -= (long)bytes;
-		Mfree(area_mem[a]);
+		acc_free(area_mem[a]);
 		taken -= bytes;
 		blocks--;
 		back += (long)bytes;

@@ -2,7 +2,7 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * dirlist.h - a folder's entries for the family's file dialog (ui/filepick.c;
- * from EPlay's Add files, Erez, 4 Nov 2026: Selectric's ways, a selection,
+ * from EPlay's Add files, decided 4 Nov 2026: Selectric's ways, a selection,
  * no check boxes): its folders and files with their sizes and dates, as
  * many as memory holds, sorted (folders first) by name, date, size or
  * type, and the view of them a type and a mask (* and ?) let through, each

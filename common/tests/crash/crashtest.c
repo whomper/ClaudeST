@@ -406,7 +406,7 @@ int main(void)
 	case 'e': {
 		/* another program's line F is the emulator's (42 in d0); this
 		   one's, in its own code, which has no FPU instruction, a crash
-		   (the vector named for the log: Erez's 11 bombs of 1 Nov 2026
+		   (the vector named for the log: the 11 bombs reported on 1 Nov 2026
 		   left no CRASH.LOG, vector 11 not being TOS's there) */
 		long (*f)(void) = (long (*)(void))outside(their_line_f, sizeof their_line_f);
 		long r = 0;

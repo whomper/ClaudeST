@@ -4,7 +4,7 @@
  * fontsel.c - the family's Font dialog (fontsel.h; the guidelines, 5.3),
  * from ECal's font selector, laid out as NVDI's WDIALOG one: the Family
  * list, and beside it the Style list and the Size list; below them the
- * Type line, a small sample in the font chosen (Erez, 20 Oct 2026: no
+ * Type line, a small sample in the font chosen (decided 20 Oct 2026: no
  * Hebrew samples, no Pt: field, a quarter smaller), Cancel and OK (10 wide, OK
  * at the right) under a black title band " Font" (a window's own title where
  * the AES has windows). 48 by 17 cells of the system font: ST medium's 640 x 200 too.
@@ -473,7 +473,7 @@ static void show_progress(GRECT *r, const char *what, short done, short todo)
 }
 
 /* NAME.FNT's line for a font it lists as usable (FNT2): its family, style
-   and format kept, so a font known isn't asked about again (Erez, 26 Oct
+   and format kept, so a font known isn't asked about again (decided 26 Oct
    2026: the dialog showed nothing for seconds under NVDI) */
 static int known_line(const char *known, const char *name, fs_line *l)
 {
@@ -1340,7 +1340,7 @@ int fontsel_run(fontsel *s)
 	/* the program loads the GDOS fonts when they're first wanted; the
 	   accessory never here (2.2): it had them at boot, or not */
 	/* 48 x 17 cells: ST medium's and ST high's rows under the menu bar,
-	   a quarter smaller than the first (Erez) */
+	   a quarter smaller than the first (20 Oct 2026) */
 	tr_begin(48, 17);
 	o_band = tr_band(48);
 	tr_text(2, 1, "Family");
@@ -1386,7 +1386,7 @@ int fontsel_run(fontsel *s)
 		fl_place(&lists[i]);
 	tr_box(o_prev, &prev, 1);
 	tr_box(lf.obj, &fam, 1);
-	/* the dialog at once, saying what it waits for (Erez, 26 Oct 2026:
+	/* the dialog at once, saying what it waits for (decided 26 Oct 2026:
 	   seconds with nothing to see were confusing) */
 	said = 0;
 	if (s->gdos < 0 && !s->acc && vq_gdos()) {
