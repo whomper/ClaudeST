@@ -875,6 +875,11 @@ static void about_draw(int framed)
 		short n = (short)strlen(s);
 		v_gtext_n(vdi_h, on_byte(dx + (dw - n * fcw) / 2), y, s, n);
 	}
+	/* the normal size again, as said above: the program's own text, drawn
+	   while the box is up or under it as it closes, takes the VDI's height
+	   as it is (the program's rows came out in the fine print's size: a
+	   report of 28 Nov 2026) */
+	vst_height(vdi_h, ch >= 16 ? 13 : 6, &fcw, &fch);
 	(void)ab_fcw;
 }
 

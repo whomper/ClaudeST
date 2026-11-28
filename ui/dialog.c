@@ -128,6 +128,24 @@ const char *dlg_title = "";
 static const char *next_name;		/* dlg_name's, for the next dlg_open */
 static short next_band;			/* dlg_band's, for the next dlg_open */
 void (*dlg_redraw_hook)(const short *msg);
+
+/* the app's own windows drawn behind a dialog (in a window: MiNT, MagiC)
+   in the app's own font and size, not the system font a family dialog
+   pushed (font_sys_push): a GDOS font chosen in the app came out at the
+   system font's height after the About box (a report of 28 Nov 2026).
+   Weak: a program without the pair draws as before */
+#pragma weak font_sys_push
+#pragma weak font_sys_pop
+void font_sys_push(void);
+void font_sys_pop(void);
+static void app_redraw(const short *msg)
+{
+	if (font_sys_pop)
+		font_sys_pop();
+	dlg_redraw_hook(msg);
+	if (font_sys_push)
+		font_sys_push();
+}
 OBJECT *dlg_menu;
 int dlg_window_on = -1;
 
@@ -1427,7 +1445,7 @@ static void held_msg(short *msg)
 		wind_update(BEG_UPDATE);
 	} else if (msg[0] == WM_REDRAW && dlg_redraw_hook && dlg_in_window()) {
 		wind_update(END_UPDATE);
-		dlg_redraw_hook(msg);
+		app_redraw(msg);
 		wind_update(BEG_UPDATE);
 	} else if (msg[0] == WM_REDRAW) {
 		keep_redraw(msg);
@@ -1568,7 +1586,7 @@ static short dlg_evnt_(short flags, short clicks, short mask, short state,
 				e->kstate = 0;
 			} else if (msg[0] == WM_REDRAW && dlg_redraw_hook) {
 				wind_update(END_UPDATE);
-				dlg_redraw_hook(msg);
+				app_redraw(msg);
 				wind_update(BEG_UPDATE);
 			} else if (msg[0] == WM_REDRAW && !(flags & MU_MESAG)) {
 				keep_redraw(msg);	/* for when the dialog is gone */
