@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * enlarge.h - the family's enlarge mark (Erez, 5 Nov 2026: "Click to
- * enlarge should be an icon not a text. Place it as a visible watermark at
- * the top right of the picture"; EPDF's first).
+ * enlarge.h - the family's enlarge mark (decided 5 Nov 2026: an icon, not
+ * words, as a visible watermark at the picture's top right; EPDF's first).
  *
  * ENLARGE_SIZE pixels square: a white square, a black edge and a
  * two-headed arrow from its lower left to its upper right, drawn in pens

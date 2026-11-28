@@ -3,12 +3,12 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """The family's Settings dialog (ui/settings.c) in Hatari, against the real programs': SETDEMO.PRG builds EMail 2.14's
 six Settings pages and EHypView 1.39's two with the shared dialog, with their real words; this opens each in the demo
-and in the real program's own release (fetched with getrelease.py: what Erez runs), takes a screenshot of every page
+and in the real program's own release (fetched with getrelease.py: what users run), takes a screenshot of every page
 the same way, and compares the dialog's pixels.
 
     make prof                                  (here: SETDEMO.PRG with the AES's stretches on the console)
     python3 run.py WORK MACHINE [--shots DIR]  MACHINE as common/tools/machines.py: ST:mono (TOS 1.04, flat),
-                                               Falcon:16 (TOS 4.04, 3D), Falcon-4:16 ... (Erez's TOS from ~/.aera/tos
+                                               Falcon:16 (TOS 4.04, 3D), Falcon-4:16 ... (real TOS from ~/.aera/tos
                                                where it is there, else EmuTOS; the report names it)
     python3 run.py WORK MACHINE --speed        the demo's opening times only (the speed rig's AESGAP)
     python3 run.py WORK MACHINE --speed --prg cpu   the same with the programs' own flags (make cpu: DLG_CPU, DLG_CLICK)

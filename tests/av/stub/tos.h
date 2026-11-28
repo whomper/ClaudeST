@@ -4,3 +4,5 @@ long get_cookie(long id);
 unsigned long tos_ms(void);
 void *Mxalloc(long size, short mode);
 const char *cmd_line(void);
+void *acc_core(long n, int mode);
+long acc_free(void *p);

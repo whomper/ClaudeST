@@ -38,7 +38,7 @@ refuse:
 	tst.l	%d0
 	beq.w	4f
 | an accessory never ends (crt0's loop would stop the machine) and says nothing at the boot: its Desk
-| entry (cpu_acc_name, weak), and the alert when the user opens it (Erez, 22 Nov 2026; ECal found the hang)
+| entry (cpu_acc_name, weak), and the alert when the user opens it (decided 22 Nov 2026; ECal found the hang)
 	move.l	#cpu_acc_name,%d0
 	beq.s	5f
 	move.l	%d0,addrin

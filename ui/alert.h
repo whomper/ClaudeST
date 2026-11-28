@@ -15,7 +15,7 @@
  * (ui/dialog.c runs it, in the system font), since their form_alert
  * ignores Esc; where the AES runs several programs at once (MiNT with
  * XaAES, N.AES or MyAES; MagiC) it is the AES's own form_alert, with the
- * same wrapped text (Erez, 25 Oct 2026: as the other programs there). A string
+ * same wrapped text (decided 25 Oct 2026: as the other programs there). A string
  * it can't show that way (more than 3 buttons, one over 20 characters,
  * an icon that isn't a digit, a screen too small) goes to form_alert.
  * Links with ui/dialog.c.

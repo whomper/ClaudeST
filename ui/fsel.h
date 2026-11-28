@@ -7,8 +7,8 @@
  * A double click in a file selector can close it on its first click; its
  * second, and the release, then come to the program's own window as
  * clicks of their own. A window that takes a button on a press acted on
- * one: EConvert's Clear emptied the list of files chosen ("it forgets the
- * file and says there are 0 files to convert", Erez). fsel_settle() waits
+ * one: EConvert's Clear emptied the list of files chosen (it forgot the
+ * file and said there were 0 files to convert). fsel_settle() waits
  * for the button to be let go and takes off the button events the
  * selector left queued; call it as fsel_exinput (or fsel_input) returns.
  */

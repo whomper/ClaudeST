@@ -35,7 +35,7 @@ static short aes_raw(short op, short nin, short nout, short nain, short naout)
    (evnt_*): the time the program in front, or for an accessory every
    other program, can't run (guideline 2.2), and what the user waits for
    (the guidelines' Speed).
-   In every build (Erez, 26 Oct 2026) the four longest stretches are kept,
+   In every build (decided 26 Oct 2026) the four longest stretches are kept,
    each with what started it: the app's aes_profile_tag since the event, or
    else the event (a key, a click, WM_REDRAW...). aes_slowest() gives them
    as one line for the app's log, so the machine the user has says where it
@@ -589,7 +589,7 @@ short shel_read(char *cmd, char *tail)
    started it with (shel_read), where its own files are. Not the current
    folder: a program started by another one with shel_write gets the
    desktop's on TOS 1.04 and 4.04, whatever folder the caller set (EMail
-   starting EWeb, which then missed its fonts: Erez, 28 Oct 2026; EmuTOS
+   starting EWeb, which then missed its fonts: a report of 28 Oct 2026; EmuTOS
    and the multitasking AESes do set it). A command without a folder (a
    name alone, the desktop starting it from its own window, which makes
    that folder current) gives the current folder. For a program only: an
@@ -837,7 +837,7 @@ short wind_calc(short type, short kind, short x, short y, short w, short h,
 
 /* The AES sends a click on a window's arrow or on its slider's track
    twice: a second WM_ARROWED, the same, comes as the next event, the
-   button let go, so the window moved two pages a click. TOS 4.04 (Erez's
+   button let go, so the window moved two pages a click. TOS 4.04 (a real
    Falcon) does it every click; TOS 1.04 now and then, when the program
    draws between the messages (ClaudeST: 1 click in 6 to 12 on an ST).
    It is dropped here: the very next event of a call that can return
@@ -901,7 +901,7 @@ static int arrow_echoes(void)
    and go. appl_exit puts the bit back if it was off. Not under MagiC or
    MiNT, whose AES takes the keys as they are typed, and not under EmuTOS:
    ECal's speed rig lost its mouse there with the bit set (10 Nov 2026; the
-   same build on Erez's TOS 4.04 with NVDI is the same with it and without),
+   same build on real TOS 4.04 with NVDI is the same with it and without),
    so EmuTOS keeps the keys as it gives them. */
 static unsigned char kq_old;
 static short kq_state = -1;		/* -1 not looked at, 0 off, 1 on */
@@ -1619,4 +1619,15 @@ short v_opnprn(short base, void *set, short *work_out)
 	for (i = 0; i < 12; i++)
 		work_out[45 + i] = ptsout[i];
 	return contrl[6];
+}
+
+/* shel_find (AES 124): looks for the file named in path (a buffer of 128
+   bytes at least) in the AES's search (the current folder, the program's,
+   PATH, the boot drive's root: each AES's own order) and writes the full
+   name found back into it; 0 where it isn't found. Last in the file, so
+   nothing before it moves */
+short shel_find(char *path)
+{
+	addrin[0] = path;
+	return aes(124, 0, 1, 1, 0);
 }

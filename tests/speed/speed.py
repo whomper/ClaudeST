@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """The family's speed rig (the guidelines' Speed: the stock machines set it;
-Erez, 26 Oct 2026). An app's own speed rig (tests/hatari/speed.py) imports
+decided 26 Oct 2026). An app's own speed rig (tests/hatari/speed.py) imports
 this, starts its program (built with -DAES_PROFILE=20) on one of the
 family's machines and does the user's actions one at a time. For each
 action it reads the longest stretch between event calls, from gem.c's
@@ -27,7 +27,7 @@ Run as a script for its own check, with SPT.PRG (make prg):
     speed.py --selftest WORK [MACHINE]
 
 Hatari's CPU is cycle-exact (its default); the Falcon's sharing of ST RAM
-with the screen is approximated, so Erez's own Falcon with the DFB1 off
+with the screen is approximated, so a real Falcon with its accelerator off
 is the referee.
 
 Where a stretch's time goes (EFTP's recipe): stop Hatari's profiler at the
@@ -52,7 +52,7 @@ KEY = 50        # a key, click, tick or row
 LINE = 50       # a line scrolled
 PAGE = 150      # a page scrolled
 DIALOG = 150    # a dialog, pop-up or alert opened
-ABOUT_ST = 200  # the About box on an 8 MHz ST in low or medium (Erez, 2 Nov 2026); else DIALOG
+ABOUT_ST = 200  # the About box on an 8 MHz ST in low or medium (decided 2 Nov 2026); else DIALOG
 WINDOW = 300    # the main window drawn whole; what a move or resize uncovers
 ACC = 500       # the accessory opened
 START = 2000    # the program started

@@ -459,6 +459,9 @@ static void case_trim(void)
 }
 
 short _is_acc;
+void *_BasePage;
+long Supexec(long (*f)(void)) { return f(); }
+long get_cookie(long id) { (void)id; return 1; }	/* as MiNT: acc_core's blocks Malloc's and Mxalloc's */
 
 /* heap_grain (ClaudeST): every block what is needed, in 16 KB steps, not
    512 KB or a quarter of what is free; a dialog's screen taken and let go

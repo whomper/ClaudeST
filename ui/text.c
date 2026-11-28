@@ -731,7 +731,7 @@ static inline void move_group(unsigned short *d, const unsigned short *s, unsign
    Line-A, on single TOS only (under MiNT or MagiC another program may draw
    meanwhile: the VDI's copy there), interleaved planes only (2, 4 or 8;
    one plane can't show a plane half moved). 0 not looked at yet, 1 usable,
-   -1 not. Apart from text_plain's check: under NVDI too (Erez's Falcon
+   -1 not. Apart from text_plain's check: under NVDI too (a real Falcon
    with NVDI showed the planes half moved; Hatari's NVDI doesn't) */
 static int pg;
 static short pg_planes, pg_w, pg_h;
@@ -762,7 +762,7 @@ static int planar_geom(void)
    with some of its planes moved and others not. TOS's copy (and the
    BLiTTER) goes a plane at a time over the whole box, and a copy that
    lasts a few frames showed the old picture in other colours: lines in
-   blue and yellow (Erez's Falcon, 256 colours, 14 Nov 2026; Hatari on
+   blue and yellow (a real Falcon, 256 colours, 14 Nov 2026; Hatari on
    TOS 4.04 Falcon-4:256: 69 frames of 139 that changed while the week
    view scrolled) */
 static void planar_rows(unsigned char *d, long dline, const unsigned char *s, long sline, short x1, short x2,

@@ -43,6 +43,10 @@ long Mfree(void *p)
 	return 0;
 }
 
+/* acc_core and acc_free (libc.c): a program's, GEMDOS's as they are */
+void *acc_core(long n, int mode) { return mode < 0 ? Malloc(n) : Mxalloc(n, mode); }
+long acc_free(void *p) { return Mfree(p); }
+
 static long frb;
 
 long get_cookie(long id)

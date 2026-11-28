@@ -220,6 +220,11 @@ static short run(short x, short y, short alt_y, const char *const *lab, short n)
 	for (;;) {
 		short hit = -1, nsel, ex, ey;
 		evnt_multi_(MU_KEYBD | MU_BUTTON | MU_TIMER, held ? 1 : 0x101, 3, 0, 20, m, &e);
+		/* the app's work goes on while the menu is open, as in a dialog's
+		   wait (dlg_idle: EPlay's music fed; a FireBee tester, 23 Nov 2026:
+		   an MP3 went round a short loop while a row's menu was open) */
+		if ((e.which & MU_TIMER) && dlg_idle)
+			dlg_idle();
 		mouse(&mx, &my);
 		ex = (e.which & MU_BUTTON) ? e.mx : mx;
 		ey = (e.which & MU_BUTTON) ? e.my : my;

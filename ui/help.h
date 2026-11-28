@@ -9,7 +9,7 @@
  * several programs at once (MiNT, MagiC), the program STGUIDE= names is
  * started beside the app with the same text on its command line, else
  * EHYPVIEW.PRG, whose folder is FOLDER= in the boot drive's EHYPVIEW.INF
- * (Erez, 25 Oct 2026). On TOS only a running viewer (an accessory) can
+ * (decided 25 Oct 2026). On TOS only a running viewer (an accessory) can
  * show it.
  *
  * The strings go in memory the other program may read: global memory

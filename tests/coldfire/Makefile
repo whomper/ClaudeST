@@ -152,7 +152,7 @@ $(B)/test_cpucheck_030: test_cpucheck.c $(B)/cpucheck_cf.o gemdos.c libc.c rt.S
 		$(B)/gemdos030.o $(B)/libc030.o $(B)/rt030.o -lgcc
 
 # an accessory on the wrong machine (cpucheck_cf.S as a 68030 runs it): it waits on evnt_mesag, its
-# entry registered and its alert at AC_OPEN (cpu_acc_name), or silent without one (Erez, 22 Nov 2026)
+# entry registered and its alert at AC_OPEN (cpu_acc_name), or silent without one (decided 22 Nov 2026)
 $(B)/test_cpucheck_acc%_030: test_cpucheck.c $(B)/cpucheck_cf.o $(B)/test_cpucheck_030
 	$(CC) $(subst -mcpu=5475,-m68030,$(CF)) -DACC $(if $(filter 0,$*),,-DACC_NAME) $(if $(filter 2,$*),-DACC_ALERT) -c -o $@.o test_cpucheck.c
 	$(CC) -m68030 -nostdlib -static -no-pie -Wl,-z,noexecstack -o $@ $@.o $(B)/cpucheck_cf.o \

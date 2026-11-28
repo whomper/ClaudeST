@@ -3,7 +3,7 @@
 /*
  * dlgbuild.c - the dialog builder of EMail's dialogs.c (d_begin, d_add,
  * d_text, d_edit, d_long, d_framed, d_tick, d_button, d_band, d_end), lifted
- * into common (dlgbuild.h; Erez, 9 Nov 2026). The objects it makes are the
+ * into common (dlgbuild.h; decided 9 Nov 2026). The objects it makes are the
  * ones EMail 2.14 made, so a dialog built here is pixel for pixel EMail's.
  */
 #include <stdlib.h>

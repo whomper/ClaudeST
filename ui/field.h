@@ -2,7 +2,7 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * field.h - a dialog's text field that holds more than it shows (the AERA
- * guidelines, 5.4: Erez, 22 Oct 2026). The field shows a window of its
+ * guidelines, 5.4: decided 22 Oct 2026). The field shows a window of its
  * text and scrolls it with the cursor, so a GitHub token of 93
  * characters, a long folder or an address goes into a field 30 wide.
  * GEM's own fields (TOS 1 to 4, EmuTOS) hold only what they show.

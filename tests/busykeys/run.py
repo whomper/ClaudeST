@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """KEYT.PRG (make) in Hatari: a key typed while a program is busy, as the AES gives it (gem.h key_ctrl,
-key_shift; evnt_multi_'s kstate; Erez's task #139, 9 Nov 2026).
+key_shift; evnt_multi_'s kstate; task #139, 9 Nov 2026).
 
     run.py WORK [MACHINE] [--mode MODE] [--busy SECONDS]
 

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
- * The family's progress bar (the guidelines 5.9; Erez, 3 Nov 2026): one
+ * The family's progress bar (the guidelines 5.9; decided 3 Nov 2026): one
  * bar for a whole job, filling from left to right, its colours fixed
  * along its width.
  *   - 256 colours: blue, dark navy at the left edge to light sky blue at

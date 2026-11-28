@@ -3,7 +3,7 @@
 /*
  * ARTEST.PRG: a window with the AES's own vertical slider, to see what
  * the AES sends for one click on the track above or below the slider
- * (Erez, 28 Oct 2026: the window's slider moves two pages a click). Each
+ * (a report of 28 Oct 2026: the window's slider moved two pages a click). Each
  * WM_ARROWED says "ART arrowed WHAT ms T button B" on the console
  * (NatFeats), T after the program's start, B the button as the message is
  * read; then the program works for as long as BUSY.TXT beside it says

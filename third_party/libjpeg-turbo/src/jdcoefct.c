@@ -29,7 +29,7 @@
    whole row of a big photo is 75-250 ms of a stock Falcon's 68030 (EPDF's
    rovl.py, 14 Nov 2026), and the monitors the family gives (pic.c's
    lj_progress, EPDF's cv_progress) only poll. Every 16 left a progressive
-   photo 70 ms between them; every 8, 45-50 (Erez, 15 Nov 2026: yes, for
+   photo 70 ms between them; every 8, 45-50 (decided 15 Nov 2026, for
    +80-90 ms on a 9 s page) */
 #define AERA_TICK(cinfo, n) \
   do { \

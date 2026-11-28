@@ -16,7 +16,7 @@ HD is the folder Hatari shows as C:. From a rig:
     print(m.describe())         # "Falcon:256, TOS 4.04" - put it in the report
 
 The TOS: real TOS images (TOS 1.04 from an ST, TOS 4.04 from a Falcon; the
-STE's tos162.img, where the owner has one) when
+STE's tos162.img, where there is one) when
 the folder $AERA_TOS (~/.aera/tos) has them, else EmuTOS 1.4, fetched once
 into ~/.cache/aera. AERA_TOS=emutos takes EmuTOS always. The TOS images
 are never put in git (Atari's copyright), nor sent anywhere.
@@ -51,7 +51,7 @@ the Atari's TCP connections become this computer's. m.stop() ends the
 bridge. It works on real TOS too: FAKESTNG makes the cookie jar TOS
 1.04 lacks and turns off its XON/XOFF.
 
-NVDI: m.nvdi() installs the owner's NVDI copy 5.03 (C:\\AUTO\\NVDI.PRG, NVDI.INF,
+NVDI: m.nvdi() installs the NVDI copy 5.03 (C:\\AUTO\\NVDI.PRG, NVDI.INF,
 ASSIGN.SYS, the GEMSYS drivers and the Bitstream fonts in C:\\BTFONTS) from
 the folder $AERA_NVDI (~/.aera/nvdi/x), as the TOS images: commercial,
 never in git nor sent anywhere. False when it isn't there (a rig that
@@ -67,7 +67,7 @@ editions on an ST) in C:\\, each with C:\\NAME.INF naming its folder
 C:\\NAME so that no first-time question waits; a file the rig put there
 itself is kept. AERA_WITH_ACCS=ECal,EContact does it on every machine a
 rig starts, so the hub runs an app's own rigs with the others loaded, as
-on the owner's machines. Name only the other programs, not the one under test.
+on the reference configuration. Name only the other programs, not the one under test.
 """
 import hashlib
 import atexit
@@ -90,7 +90,7 @@ ERZ_MACHINE = "Falcon-4:256"
 
 
 def nvdi_here(env=None):
-    """True when the owner's NVDI copy is on this computer (the folder Machine.nvdi() reads)"""
+    """True when the NVDI copy is on this computer (the folder Machine.nvdi() reads)"""
     e = os.environ if env is None else env
     src = e.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
     return os.path.exists(os.path.join(src, "auto", "nvdi.prg"))
@@ -110,8 +110,12 @@ def erz_env(env=None):
 MACHINES = {
     "ST": ("a 1040 ST: 68000 at 8 MHz, 4 MB",
            ["--machine", "st", "--memsize", "4"], ["mono", "med", "low"], "tos104us.img"),
-    "ST-1": ("an ST with 1 MB, the smallest the family runs on (the ST editions)",
+    "ST-1": ("an ST with 1 MB, the smallest the family's programs run on; no accessory runs here "
+             "(decided 26 Nov 2026: each says so from its Desk entry and takes no memory)",
              ["--machine", "st", "--memsize", "1"], ["mono", "med", "low"], "tos104us.img"),
+    "ST-2": ("an ST with 2 MB (a Mega ST 2), TOS 1.04: the smallest ST the family's accessories run on "
+             "(decided 26 Nov 2026: none on a 1 MB ST); the accessories' ST rigs run here",
+             ["--machine", "st", "--memsize", "2"], ["mono", "med", "low"], "tos104us.img"),
     "STE": ("an STE: 68000 at 8 MHz, 4 MB, its 8-bit DMA sound (EPlay's STE edition, 7 Nov 2026); "
             "TOS 1.62 (STE's own; 1.04 has no DMA sound), else EmuTOS",
             ["--machine", "ste", "--memsize", "4"], ["mono", "med", "low"], "tos162.img"),
@@ -497,7 +501,7 @@ class Machine:
         return not self.name.startswith("FireBee") and any(self.name.startswith(f) for f in fams)
 
     def nvdi(self):
-        """the owner's NVDI copy on C: (see above): True, or False when it isn't here"""
+        """the NVDI copy on C: (see above): True, or False when it isn't here"""
         src = os.environ.get("AERA_NVDI", os.path.join(os.path.expanduser("~"), ".aera", "nvdi", "x"))
         need = [os.path.join("auto", "nvdi.prg"), "nvdi.inf", "ASSIGN.SYS", "gemsys", "btfonts"]
         missing = [n for n in need if not os.path.exists(os.path.join(src, n))]
@@ -519,11 +523,11 @@ class Machine:
             shutil.copytree(os.path.join(src, "btfonts"), fonts)
         if not getattr(self, "_nvdi_atexit", False):
             self._nvdi_atexit = True
-            atexit.register(self.nvdi_remove)      # the owner's NVDI copy is never left in a hd a rig keeps
+            atexit.register(self.nvdi_remove)      # the NVDI copy is never left in a hd a rig keeps
         return True
 
     def nvdi_remove(self):
-        """the owner's NVDI copy taken out of the hd again (the rule: never in a kept hd, nor in git or a release):
+        """the NVDI copy taken out of the hd again (the rule: never in a kept hd, nor in git or a release):
         called when the rig's process ends, so a run's kept work directory has none of it"""
         for n in (os.path.join("AUTO", "NVDI.PRG"), "NVDI.INF", "ASSIGN.SYS"):
             try:

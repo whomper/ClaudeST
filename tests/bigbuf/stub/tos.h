@@ -8,3 +8,5 @@ void *Malloc(long n);
 long Mfree(void *p);
 long get_cookie(long id);
 #endif
+void *acc_core(long n, int mode);
+long acc_free(void *p);

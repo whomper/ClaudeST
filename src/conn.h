@@ -111,7 +111,7 @@ extern void (*conn_tick)(void);
 extern int conn_stop;
 
 /* The three phases of handing work to the Gateway (a PDF to convert, a
-   letter to translate, a page to render; Erez, 7 Nov 2026), so the status
+   letter to translate, a page to render; decided 7 Nov 2026), so the status
    line can say where the time goes. A gateway client calls conn_phase at
    each change when it is set (never when NULL):
      GATE_SEND     the request goes out (bytes: its size);

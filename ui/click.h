@@ -3,7 +3,7 @@
 /*
  * click.h - a press on a list's row, or on a button the program draws
  * itself, selected on press and done on release (the guidelines, 5.8;
- * Erez, 1 Nov 2026), while the program's own work goes on.
+ * decided 1 Nov 2026), while the program's own work goes on.
  *
  * The event loop asks evnt_multi for one click, so the AES hands a press
  * over at once (asking for two held every single press back for the

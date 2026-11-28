@@ -120,7 +120,7 @@ int main(void)
 			else if (say == cpu_cf_alert && cpu_cf_acc_alert)
 				say = cpu_cf_acc_alert;
 			/* an accessory never ends (crt0's loop would stop the machine) and says nothing at the
-			   boot (the guidelines, 2.2): its entry, and the alert when the user opens it (Erez, 22 Nov
+			   boot (the guidelines, 2.2): its entry, and the alert when the user opens it (decided 22 Nov
 			   2026: every app native on the FireBee; ECal found the hang) */
 			static short msg[8];
 			short id = aes(10, 0, 1, 0);	/* appl_init */

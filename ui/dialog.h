@@ -74,7 +74,7 @@ extern void (*dlg_badge)(OBJECT *tree, short band);
    byte), the screen under it saved (dlg_under), drawn, dlg_do, the screen
    put back, the exit object deselected; returns it without the
    double-click bit (or a cancel below 0 as it is). On TOS the windows
-   under it get no WM_REDRAW (the guidelines' Speed; Erez, 26 Oct 2026),
+   under it get no WM_REDRAW (the guidelines' Speed; decided 26 Oct 2026),
    except when there was no memory to save it: an app whose window's
    content changed while the box showed draws it again itself. */
 short dlg_modal(OBJECT *tree, short start, short cancel);
@@ -92,7 +92,7 @@ void *dlg_under(short x, short y, short w, short h);
 void dlg_under_back(void *saved);
 
 /* ---- a dialog in a window, where the AES runs several programs at once
-   (MiNT with XaAES, N.AES or MyAES; MagiC: the guidelines, 3.5; Erez,
+   (MiNT with XaAES, N.AES or MyAES; MagiC: the guidelines, 3.5; decided
    25 Oct 2026). There the AES draws the frame, the dialog can be moved and
    closed with its closer (as Esc), and other programs go on running. On
    TOS and EmuTOS it is drawn over the screen as before.
@@ -197,12 +197,12 @@ extern OBJECT *dlg_menu;
 int dlg_esc(short key);
 /* 1 for Undo alone */
 int dlg_undo(short key);
-/* 1 when key cancels a dialog (the guidelines, 3.5; Erez, 27 Oct 2026):
+/* 1 when key cancels a dialog (the guidelines, 3.5; decided 27 Oct 2026):
    Undo always, Esc only where no text field has the cursor (in_field 0).
    In a text field Esc empties the field, as GEM's form_do does */
 int dlg_cancel_key(short key, int in_field);
 
-/* the AES's own 3D look (the guidelines, 5.x; Erez, 24 Oct 2026), where it
+/* the AES's own 3D look (the guidelines, 5.x; decided 24 Oct 2026), where it
    has one (AES 3.4 and newer: TOS 4, MagiC, N.AES, XaAES; asked through
    appl_getinfo(13) where it can be): the box and its text on the 3D
    background, exit buttons as activators, radio buttons and toggles as
@@ -214,7 +214,7 @@ void dlg_3d(OBJECT *tree);
 int dlg_3d_ok(void);
 int dlg_3d_why(char *buf, int size);	/* a log line: why 3D is on or off */
 /* 1, the default: 3D wherever the AES has it. No app sets it: there is no
-   setting for it (a tester, Erez 27 Oct 2026: an AES without 3D ignores
+   setting for it (a tester's report, 27 Oct 2026: an AES without 3D ignores
    the flags anyway). The tests set 0 to see the flat look on a 3D AES */
 extern int dlg_3d_on;
 

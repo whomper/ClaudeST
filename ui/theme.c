@@ -10,6 +10,8 @@
 short pen[THEME_MAX];
 int colour;
 int theme_keep;
+const short (*theme_palette)[3];
+unsigned long theme_roles;
 
 #define FIRST_PEN 16		/* past the desktop's sixteen */
 
@@ -56,34 +58,59 @@ void theme_accent4(short role, const short rgb[3])
 	pen[role] = 2;
 }
 
-/* 256 colours without setting a pen: each role the nearest of the screen's own (text roles not lighter than
-   pen_nearest allows, while one is left); the palette read once into a table on the stack */
-static void keep256(short all, const THEME_ROLE *extra)
+/* each role the nearest of n pens in pal, by pen_nearest's weights (3, 4, 2), a text role (text16) not one of the
+   light pens while a dark one is left: the light pens marked once, the differences in shorts (16 x 16 bits, the
+   68000's own multiply, not libgcc's 32-bit one), an exact match ending the search. 16 colours: want16, 256: rgb.
+   EHypView's start (22 Nov 2026): 25 ms on a 16-colour Falcon, 70 under NVDI in 256, before this */
+static void nearest_roles(const short (*pal)[3], short n, short all, const THEME_ROLE *extra, int by_rgb,
+			  unsigned long want_roles)
 {
-	short pal[256][3], i, p, n = 256;
+	unsigned char light[256];
+	short i, p;
 	for (p = 0; p < n; p++)
-		vq_color(vdi_h, p, pal[p]);
+		light[p] = 299L * pal[p][0] + 587L * pal[p][1] + 114L * pal[p][2] > 600000L;
 	for (i = 0; i < all; i++) {
 		const THEME_ROLE *r = role(i, extra);
+		const short *want = by_rgb ? r->rgb : r->want16;
+		if (want_roles && !(want_roles & (1UL << i)))
+			continue;	/* left at black and white's pen */
 		short best = -1;
 		long bd = 0x7fffffffL;
 		int pass;
 		for (pass = 0; pass < 2 && best < 0; pass++)
 			for (p = 0; p < n; p++) {
-				long dr = pal[p][0] - r->rgb[0], dg = pal[p][1] - r->rgb[1], db = pal[p][2] - r->rgb[2], d;
-				if (r->text16 && !pass && 299L * pal[p][0] + 587L * pal[p][1] + 114L * pal[p][2] > 600000L)
+				short dr, dg, db;
+				long d;
+				if (r->text16 && !pass && light[p])
 					continue;
-				d = 3 * dr * dr + 4 * dg * dg + 2 * db * db;
+				dr = (short)(pal[p][0] - want[0]);
+				dg = (short)(pal[p][1] - want[1]);
+				db = (short)(pal[p][2] - want[2]);
+				d = 3 * ((long)dr * dr) + 4 * ((long)dg * dg) + 2 * ((long)db * db);
 				if (d < bd) {
 					bd = d;
 					best = p;
+					if (!d)
+						break;
 				}
 			}
 		pen[i] = best < 0 ? 1 : best;
 	}
-	for (i = P_BASE; i < all; i++)
-		if (role(i, extra)->not_dim && pen[i] == pen[P_DIM])
-			pen[i] = pen[P_TEXT];
+	if (!want_roles || (want_roles & (1UL << P_DIM)))
+		for (i = P_BASE; i < all; i++)
+			if (role(i, extra)->not_dim && pen[i] == pen[P_DIM])
+				pen[i] = pen[P_TEXT];
+}
+
+/* the screen's first n pens: theme_palette when the app holds it, else read once (n vq_color calls) */
+static const short (*palette_of(short n, short (*own)[3]))[3]
+{
+	short p;
+	if (theme_palette)
+		return theme_palette;
+	for (p = 0; p < n; p++)
+		vq_color(vdi_h, p, own[p]);
+	return (const short (*)[3])own;
 }
 
 void theme_init(int colour_on, const THEME_ROLE *extra, short n)
@@ -101,9 +128,10 @@ void theme_init(int colour_on, const THEME_ROLE *extra, short n)
 	on4 = colour_on && planes == 2;
 	if (!colour)
 		return;
-	if (planes >= 8 && theme_keep)
-		keep256(all, extra);
-	else if (planes >= 8) {
+	if (planes >= 8 && theme_keep) {
+		short own[256][3];
+		nearest_roles(palette_of(256, own), 256, all, extra, 1, theme_roles);
+	} else if (planes >= 8) {
 		for (i = 0; i < all; i++) {
 			short rgb[3];
 			const THEME_ROLE *r = role(i, extra);
@@ -116,12 +144,7 @@ void theme_init(int colour_on, const THEME_ROLE *extra, short n)
 		}
 		nset = all;
 	} else {
-		for (i = 0; i < all; i++) {
-			const THEME_ROLE *r = role(i, extra);
-			pen[i] = pen_nearest(vdi_h, 16, r->want16[0], r->want16[1], r->want16[2], r->text16);
-		}
-		for (i = P_BASE; i < all; i++)
-			if (role(i, extra)->not_dim && pen[i] == pen[P_DIM])
-				pen[i] = pen[P_TEXT];
+		short own[16][3];
+		nearest_roles(palette_of(16, own), 16, all, extra, 0, theme_keep ? theme_roles : 0);	/* the 16 read once, not once a role */
 	}
 }

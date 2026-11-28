@@ -130,7 +130,7 @@ static int head(void)
    words are written in supervisor mode, where a NULL or stale pointer
    (a picture let go while a turn was given in the middle of its decoding)
    writes over the vectors at $0 or over ROM and nothing bombs at once
-   (EWeb 0.73, Erez's crash.log 7 Nov 2026). ST RAM is _membot to phystop,
+   (EWeb 0.73, a crash.log of 7 Nov 2026). ST RAM is _membot to phystop,
    TT RAM $01000000 to ramtop (when ramvalid says it); anything else is
    refused: the DSP is given up for the picture (pic_dsp_failed), the CPU
    does it, and pic_dsp_bad says which address it was. */

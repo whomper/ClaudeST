@@ -21,6 +21,8 @@
 #define FP_PATH AF_PATH
 #else
 #include "filepick.h"
+#include "dialog.h"
+#include "fsel.h"
 
 long nf_on = 1;		/* a test program: NatFeats always (nf.S's is 0) */
 #endif
@@ -39,6 +41,19 @@ static void take(const char *path)
 static void idle(void)
 {
 	idles++;
+}
+
+static void box_draw(short x, short y, short w, short h)
+{
+	short p[4];
+	p[0] = x;
+	p[1] = y;
+	p[2] = x + w - 1;
+	p[3] = y + h - 1;
+	vsf_color(vdi_h, 1);
+	vsf_interior(vdi_h, 2);
+	vsf_style(vdi_h, 4);
+	vr_recfl(vdi_h, p);
 }
 
 int main(void)
@@ -90,6 +105,119 @@ int main(void)
 	if (Fopen("C:\\FPSYS.TXT", 0) >= 0)		/* the setting "Use the system file selector", for run.py */
 		filepick_system = 1;
 	nf_debug("FPT open\n");
+#ifndef FP_OLD
+	if (Fopen("C:\\FPSAVE.TXT", 0) >= 0) {	/* save mode (filepick_save), for save.py */
+		static const DL_TYPE pl[] = { { "Playlists", "M3U" }, { "All files", "" } };
+		static const FP_SPEC sspec = { "Save the list as a playlist", "Save", "No folder saved in yet", "FPT", pl, 2 };
+		static char name[64] = "PLAYLIST.M3U", path[FP_PATH + 64];
+		int round, rounds = Fopen("C:\\FPROUNDS.TXT", 0) >= 0 ? 6 : 1;
+		if (Fopen("C:\\FPWIN.TXT", 0) >= 0) {
+			/* rounds.py --win: a window of the program's under the dialogs, as an app's (EWeb's) */
+			short wh = wind_create(0x0B, desk_x, desk_y, desk_w, desk_h);
+			if (wh > 0)
+				wind_open(wh, desk_x, desk_y, desk_w, desk_h);
+			nf_debug(wh > 0 ? "FPT window open\n" : "FPT no window\n");
+		}
+		for (round = 0; round < rounds; round++) {
+		if (Fopen("C:\\FPPRE.TXT", 0) >= 0) {
+			/* rounds.py --pre: a press taken as EWeb's main loop takes a link's (any button, 0x101, 3,
+			   0) and no wait for its release before the dialog opens (EWeb asks where to save once the
+			   file's answer has begun) */
+			short m[8];
+			AEVENT e;
+			nf_debug("FPT pre ready\n");
+			while (!(evnt_multi_(MU_BUTTON | MU_TIMER, 0x101, 3, 0, 20000, m, &e) & MU_BUTTON))
+				;
+			nf_debug("FPT pre pressed\n");
+		}
+		n = filepick_save(&sspec, dir, recent, name, sizeof(name), path, sizeof(path), idle);
+		snprintf(b, sizeof(b), "FPT saved %d %s\n", n, n ? path : "-");
+		nf_debug(b);
+		if (rounds > 1) {
+			/* after.py --rounds: a box over the screen after each save, one press in it, as EWeb's
+			   download box after each file saved */
+			short m[8], bx = 160, by = 120, bw = 320, bh = 160, j = 0;
+			AEVENT e;
+			unsigned long t1 = tos_ms();
+			fsel_settle();
+			dlg_open_area(box_draw, &bx, &by, &bw, &bh);
+			snprintf(b, sizeof(b), "FPT round %d box\n", round);
+			nf_debug(b);
+			while (tos_ms() - t1 < 20000 && !j) {
+				short w = dlg_evnt(MU_MESAG | MU_KEYBD | MU_BUTTON | MU_TIMER, 1, 1, 1, 5, m, &e);
+				if (w & MU_BUTTON) {
+					short mb, ks, mx, my;
+					unsigned long t2 = tos_ms();
+					j = 1;
+					do
+						graf_mkstate(&mx, &my, &mb, &ks);
+					while ((mb & 1) && tos_ms() - t2 < 10000);
+					snprintf(b, sizeof(b), "FPT round %d press %s\n", round, mb & 1 ? "STUCK" : "let go");
+					nf_debug(b);
+				}
+			}
+			dlg_close();
+			if (!j) {
+				snprintf(b, sizeof(b), "FPT round %d no press\n", round);
+				nf_debug(b);
+			}
+			continue;
+		}
+		if (Fopen("C:\\FPAFTER.TXT", 0) >= 0) {	/* after.py: the presses that come after the dialog */
+			short m[8];
+			AEVENT e;
+			unsigned long t0 = tos_ms();
+			int k = 0, ewloop = Fopen("C:\\FPEWLOOP.TXT", 0) >= 0;
+			fsel_settle();			/* as EWeb does after it */
+			if (Fopen("C:\\FPBOX.TXT", 0) >= 0) {	/* a box over the screen first (EWeb's download box) */
+				short bx = 160, by = 120, bw = 320, bh = 160, j = 0;
+				unsigned long t1 = tos_ms();
+				dlg_open_area(box_draw, &bx, &by, &bw, &bh);
+				snprintf(b, sizeof(b), "FPT box %d %d %d %d\n", bx, by, bw, bh);
+				nf_debug(b);
+				while (tos_ms() - t1 < 20000 && j < 3) {
+					short w = dlg_evnt(MU_MESAG | MU_KEYBD | MU_BUTTON | MU_TIMER, 1, 1, 1, 5, m, &e);
+					if (w & MU_BUTTON) {
+						snprintf(b, sizeof(b), "FPT boxpress %d %d %d\n", ++j, e.mx, e.my);
+						nf_debug(b);
+						do
+							graf_mkstate(&e.mx, &e.my, &e.mbutton, &e.kstate);
+						while (e.mbutton & 1);
+					}
+				}
+				dlg_close();
+				snprintf(b, sizeof(b), "FPT box done %d\n", j);
+				nf_debug(b);
+			}
+			nf_debug("FPT after ready\n");
+			while (tos_ms() - t0 < 30000 && k < 6) {
+				short w;
+				if (ewloop) {
+					/* EWeb's main loop: any button pressed (0x101, 3, 0), the pointer's leaving
+					   of a 1x1 box, then the keys alone with no wait */
+					short mx, my, mb, ks;
+					graf_mkstate(&mx, &my, &mb, &ks);
+					evnt_set_m1(1, mx, my, 1, 1);
+					w = evnt_multi_(MU_KEYBD | MU_BUTTON | MU_M1 | MU_MESAG | MU_TIMER, 0x101, 3, 0, 200, m, &e);
+					if (!(w & MU_BUTTON))
+						evnt_multi_(MU_KEYBD | MU_TIMER, 0x101, 3, 0, 0, m, &e);
+				} else
+					w = evnt_multi_(MU_BUTTON | MU_TIMER, 1, 1, 1, 50, m, &e);
+				if (w & MU_BUTTON) {
+					snprintf(b, sizeof(b), "FPT press %d %d %d\n", ++k, e.mx, e.my);
+					nf_debug(b);
+					/* let go first, as a window loop does (5.8: done on the release) */
+					evnt_multi_(MU_BUTTON, 1, 1, 0, 0, m, &e);
+				}
+			}
+			snprintf(b, sizeof(b), "FPT after %d\n", k);
+			nf_debug(b);
+		}
+		}
+		appl_exit();
+		return 0;
+	}
+#endif
 #ifdef FP_OLD
 	n = addfiles_run(dir, recent, take, idle);
 #else

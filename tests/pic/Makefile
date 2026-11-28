@@ -8,7 +8,8 @@
 # make testdsp, EWeb's with the transform and colours on the Falcon's DSP
 # (dsp/jpeg.a56 on Hatari's core), and the dither on it (dsp/dither.a56)
 # against the 68030's; make pens, aerapens (tools/pens) against the
-# Atari's own code
+# Atari's own code; make slim, png.c's -DPNG_SLIM against the full one;
+# make quant, quant.c's colours (pens 192-255, the guidelines 5.2)
 S      := ../../src
 T      := ../../third_party
 SRC    := test_pic.c $(S)/pic.c $(S)/png.c $(S)/jpegdc.c $(S)/inflate.c $(S)/util.c \
@@ -110,6 +111,30 @@ test: $(B)/test_pic $(B)/test_pic_lj
 test68k: $(B)/test_pic $(B)/test_pic68k $(B)/test_pic_lj $(B)/test_pic_lj68k
 	python3 run.py --same $(B)/test_pic "qemu-m68k -cpu m68030 $(B)/test_pic68k"
 	python3 run.py --same $(B)/test_pic_lj "qemu-m68k -cpu m68030 $(B)/test_pic_lj68k"
+# -DPNG_SLIM with -DPNG_STEPS (png.c) gives the very rows of the full build,
+# in one go and 3 rows a step, ASan clean
+PNGSRC := png_slim.c $(S)/png.c $(S)/inflate.c $(S)/util.c
+slim: $(PNGSRC)
+	@mkdir -p $(B)
+	cc -O2 -w -Istub -I$(S) -o $(B)/png_full $(PNGSRC)
+	cc -O2 -w -Istub -I$(S) -DPNG_SLIM -DPNG_STEPS -fsanitize=address,undefined -o $(B)/png_slim $(PNGSRC)
+	find $(B)/images -name '*.png' | sort > $(B)/png.list
+	$(B)/png_full $$(cat $(B)/png.list) > $(B)/png_full.txt
+	$(B)/png_slim $$(cat $(B)/png.list) > $(B)/png_slim.txt
+	cmp $(B)/png_full.txt $(B)/png_slim.txt && echo "slim: $$(wc -l < $(B)/png.list) pictures the same"
+# quant.c's colours against NVDI's palette as it is (test_quant.c): the
+# error after a blur lower on every picture (PPMs in build/quant); and the
+# same colours as 68030 code as here (qdump.c)
+QSRC := test_quant.c $(S)/quant.c $(S)/pic.c $(S)/png.c $(S)/jpegdc.c $(S)/inflate.c $(S)/util.c \
+        $(T)/nsgif/src/gif.c $(T)/nsgif/src/lzw.c $(TJPGD)
+quant: $(QSRC) qdump.c
+	@mkdir -p $(B)/quant
+	cc -O2 -w -fwrapv $(INC) -o $(B)/test_quant $(QSRC)
+	$(B)/test_quant $(B)/quant $(B)/images/basn2c08.png $(B)/images/basn6a08.png $(B)/gen/big.jpg
+	cc -O2 -I$(S) -o $(B)/qdump qdump.c $(S)/quant.c
+	m68k-linux-gnu-gcc -m68030 -Os -static -I$(S) -o $(B)/qdump68 qdump.c $(S)/quant.c
+	$(B)/qdump > $(B)/qdump.txt
+	qemu-m68k -cpu m68030 $(B)/qdump68 | cmp - $(B)/qdump.txt && echo "quant: the same colours as 68030 code"
 clean:
 	rm -rf $(B)
-.PHONY: test test68k testdsp pens fuzzpens pensseeds clean
+.PHONY: quant slim test test68k testdsp pens fuzzpens pensseeds clean

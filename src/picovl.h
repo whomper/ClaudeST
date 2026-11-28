@@ -43,6 +43,10 @@ typedef struct {
 	void (*pf_close)(int h);
 	void (*vr_trnfm)(short h, PIC_MFDB *src, PIC_MFDB *dst);	/* for chunky8 */
 	void (*vro_cpyfm)(short h, short mode, const short *pxy, PIC_MFDB *src, PIC_MFDB *dst);
+	/* 1.4 on, for pens_take and pens_give (size says whether a program
+	   gives them) */
+	void (*vs_color)(short h, short index, const short *rgb);
+	void (*vq_color)(short h, short index, short *rgb);
 } PIC_HOST;
 
 /* what PIC.OVL offers */
@@ -111,6 +115,24 @@ typedef struct {
 	   start). The overlay keeps it itself: a program's PIC_PAL may be an
 	   older one without the field */
 	void (*soft)(int sixteenths);
+	/* 1.4 on: a picture's own colours in pens 192-255 (the guidelines 5.2,
+	   decided 22 Nov 2026). quant: a median cut of n 5-6-5 pixels (skip a
+	   value left out, -1 none) to at most want colours, VDI's 0-1000: their
+	   count, 0 none (src/quant.h). pens_take: those n colours into pens 192
+	   on, what they held saved (1 done; 0 not: n out of 1..64, or the
+	   program gave no vs_color); the caller checks the screen has 8 planes
+	   and that its window is on top. pens_give: the saved colours back
+	   (nothing when none held); the program's pic_ovl_unload calls it */
+	int (*quant)(const unsigned short *px, long n, long skip, int want, short rgb[][3]);
+	int (*pens_take)(short vdi, int n, const short rgb[][3]);
+	void (*pens_give)(short vdi);
+	/* 1.5 on: quant as a job, for a program whose turn must stay short
+	   (src/quant.h's quant_begin, quant_step, quant_end): begin keeps px
+	   until the end; each step about budget pixel visits (some 20 68030
+	   instructions a visit), -1 while there is more, else the count */
+	void *(*quant_begin)(const unsigned short *px, long n, long skip, int want);
+	int (*quant_step)(void *job, long budget, short rgb[][3]);
+	void (*quant_end)(void *job);
 } PIC_OVL;
 
 #endif

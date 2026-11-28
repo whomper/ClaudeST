@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
-"""PRT.PRG (make prg) on one of the family's machines with Erez's NVDI and WDIALOG: common/ui/print.c's
+"""PRT.PRG (make prg) on one of the family's machines with the NVDI copy and WDIALOG: common/ui/print.c's
 whole path (WDIALOG's settings, v_opnprn, the pages drawn, v_updwk/v_clrwk, v_clswk), by default three
 pages to NVDI's picture driver (91), each checked for its size and ink. Hatari's printer port is captured
 to WORK-printer.out. NVDI's printer drivers (PCL, ESC/P2...) don't open in Hatari: WDIALOG finds the
@@ -44,7 +44,7 @@ try:
     nowd = "--no-wdialog" in sys.argv          # TOS's AES alone: print_setup must not ask it for the dialog
     if os.path.exists(wd) and not nowd:
         r.put(wd, "AUTO")                       # WDIALOG after NVDI: the print dialog
-        import atexit                           # Erez's copy: never left in a kept hd
+        import atexit                           # the NVDI copy: never left in a kept hd
         atexit.register(lambda: os.path.exists(os.path.join(r.hd, "AUTO", "WDIALOG.PRG")) and
                         os.remove(os.path.join(r.hd, "AUTO", "WDIALOG.PRG")))
     r.start("C:\\PRT.PRG", ready="PRT done", boot=600)
@@ -85,7 +85,7 @@ bad = 0
 log = r.console()
 if nowd:                                        # the default printer, no dialog and no AES alert
     # the open itself only where 21 is a driver Hatari opens (PRT_ASSIGN21=META.SYS: the metafile);
-    # NVDI's printer drivers (PCL.SYS, Erez's 21) don't open here
+    # NVDI's printer drivers (PCL.SYS, device 21) don't open here
     ok = "PRT setup 2" in log and "PRT done" in log and (not a21 or "PRT open 1" in log)
     print("ok: no WDIALOG, the default printer (setup 2)" if ok else "FAIL: no WDIALOG: %s" %
           [l for l in log.splitlines() if l.startswith("PRT setup")])

@@ -4,7 +4,7 @@
  * CLOCKT.PRG - tos_ms() (atari/tos.c) on an Atari, in an emulator. With
  * a file C:\FASTCLK it first sets MFP timer C to 312 Hz (2457600 / 64 /
  * 123), TOS's handler still counting each interrupt in _hz_200, as on
- * Erez's Falcon. It says on the emulator's console (NatFeats) what
+ * a real Falcon. It says on the emulator's console (NatFeats) what
  * tos_clock() found, then "CLOCKT start", and "CLOCKT end" once tos_ms()
  * has counted 8 seconds; run.py times the two lines with this computer's
  * clock (Hatari runs in real time).

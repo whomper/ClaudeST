@@ -4,7 +4,7 @@
  * dlgbuild.h - the object-tree builder the AERA programs' dialogs are made
  * with (the guidelines, 5.6, 5.7, 6.1): EMail's d_begin, d_add, d_text,
  * d_field, d_long, d_framed, d_tick, d_button, d_band and d_end, lifted out
- * of the five dialogs.c files that each had a copy (Erez, 9 Nov 2026). No
+ * of the five dialogs.c files that each had a copy (decided 9 Nov 2026). No
  * .RSC file: a dialog is built in code, then shown by dlg_modal or
  * dlg_open and dlg_do (dialog.h), which take Esc, Undo, Return and the long
  * fields' keys.

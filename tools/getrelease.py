@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 AERA | Erez Yaary
 """Fetch another AERA program's files from its GitHub release, for a test
-that needs that program (guidelines 1.2: a test uses what Erez has, the
+that needs that program (guidelines 1.2: a test uses what users have, the
 other program's latest release, not a build of its main).
 
     getrelease.py APP DIR FILE...            the latest release

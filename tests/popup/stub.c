@@ -84,6 +84,7 @@ short evnt_timer_(unsigned long ms) { (void)ms; return 1; }
 void vs_clip(short h, short on, const short *pxy) { (void)h, (void)on, (void)pxy; }
 void *dlg_under(short x, short y, short w, short h) { (void)x, (void)y, (void)w, (void)h; return 0; }
 void dlg_under_back(void *p) { (void)p; }
+void (*dlg_idle)(void);	/* popup.c calls it while its menu is open */
 
 unsigned long tos_ms(void) { return now_ms; }
 short appl_find(const char *name) { return !strcmp(name, "BUBBLE  ") ? bubble_id : -1; }

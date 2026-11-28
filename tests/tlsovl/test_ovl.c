@@ -375,6 +375,33 @@ static void into(const char *path)
 	free(file);
 }
 
+/* ovl_load_aligned: the image on a 256-byte boundary, the same bytes as
+   ovl_load's but for the fixups' base, given back by ovl_free (ASan says
+   if the block's own start wasn't what was freed) */
+static void aligned(const char *path)
+{
+	long t1, t2, i, same = 0;
+	char err[120];
+	int k;
+	for (k = 0; k < 8; k++) {
+		void *pad = malloc((size_t)(k * 37 + 1));	/* the heap moved */
+		unsigned char *a = ovl_load_aligned(path, &t1, err, sizeof(err));
+		unsigned char *b = ovl_load(path, &t2, err, sizeof(err));
+		check(a && b && t1 == t2, "loaded aligned and not");
+		if (!a || !b)
+			return;
+		check(((unsigned long)a & 255) == 0, "on a 256-byte boundary");
+		for (i = 0, same = 0; i < t1; i++)
+			same += a[i] == b[i];
+		check(same > t1 * 9 / 10, "the same bytes but the fixups'");
+		ovl_free(a);
+		free(b);
+		free(pad);
+	}
+	ovl_free(0);
+	check(1, "ovl_free(NULL) does nothing");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -386,6 +413,7 @@ int main(int argc, char **argv)
 	damaged(argv[1]);
 	into(argv[1]);
 	tails();
+	aligned(argv[1]);
 	printf("%s\n", fails ? "FAILED" : "all passed");
 	return fails != 0;
 }

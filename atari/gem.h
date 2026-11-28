@@ -162,7 +162,7 @@ static inline int key_ctrl(short kstate, short key)
 #endif
 #define K_CAPS   0x10
 
-/* A Shift key typed while the program was busy (Erez's task #139, 9 Nov
+/* A Shift key typed while the program was busy (task #139, 9 Nov
  * 2026). On TOS the AES gives kstate as it is when the program reads the
  * key, so Shift typed during a long draw is gone: 0x4838 arrives with
  * kstate 0. evnt_multi_ (gem.c) now puts the state of the moment the key
@@ -257,6 +257,8 @@ short scrp_write(const char *path);
 short shel_write(short mode, short wisgr, short wiscr, const void *cmd, const void *tail);
 short shel_envrn(char **value, const char *name);
 short shel_read(char *cmd, char *tail);
+/* shel_find: the full name of a file in the AES's search (path: 128 bytes at least, written over); 0 when not found */
+short shel_find(char *path);
 /* the program's own folder (X:\PATH\ with its backslash), from its shel_read command: not the
    current folder, which TOS leaves at the desktop's when another program starts
    it (guidelines 6.2). A program only */

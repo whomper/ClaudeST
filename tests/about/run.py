@@ -14,7 +14,7 @@ The machines, unless given: ST:low ST:med ST:mono TT:ttlow Falcon-4:16 and
 Falcon-4:256 with NVDI ("+nvdi" after a machine asks for it; --nvdi for
 all). Each build's box's stretches between AES calls (gem.c's AESGAP, 20
 ms and more) are printed beside it: the box's longest stretch. The
-machine's TOS is Erez's where ~/.aera/tos has it, else EmuTOS (each line
+machine's TOS is the real one where ~/.aera/tos has it, else EmuTOS (each line
 says which).
 """
 import os

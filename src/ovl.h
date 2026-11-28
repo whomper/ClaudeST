@@ -18,6 +18,14 @@
    2.2). The caller flushes the CPU's caches before running any of it */
 void *ovl_load(const char *path, long *taken, char *err, int errlen);
 
+/* ovl_load with the image's start on a 256-byte boundary, so its code
+   meets the 68030's instruction cache the same way whatever the heap
+   held before (EContact's books read: 70 ms at 0 mod 256, 95 at 128 on
+   a stock Falcon). 260 bytes more of the heap while loaded; let it go
+   with ovl_free, never free. PIC.OVL and TLS.OVL are loaded so */
+void *ovl_load_aligned(const char *path, long *taken, char *err, int errlen);
+void ovl_free(void *image);
+
 /* ovl_load into a block the caller holds (mem, size bytes): set aside
    before memory was split, for an overlay too big for what is left later
    (EPDF's RENDER.OVL, 643 KB, on a 4 MB Falcon). Refused, as ovl_load is

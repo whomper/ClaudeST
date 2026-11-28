@@ -23,6 +23,8 @@ long get_cookie(long id) { (void)id; return 0; }		/* plain TOS */
 static unsigned long now_ms = 1000;
 unsigned long tos_ms(void) { return now_ms; }
 void *Mxalloc(long size, short mode) { (void)size; (void)mode; return 0; }
+
+void *acc_core(long n, int mode) { return Mxalloc(n, (short)mode); }
 short appl_id(void) { return 1; }
 
 short appl_find(const char *name)
@@ -375,7 +377,7 @@ int main(void)
 		memcpy(environment, keep, sizeof(keep));
 	}
 
-	/* AV_STARTPROG (EWeb's page source in the user's editor, Erez 21 Nov 2026) */
+	/* AV_STARTPROG (EWeb's page source in the user's editor, decided 21 Nov 2026) */
 	{
 		const char *s;
 		short ans[8] = { 0x4723, 2, 0, 1, 0, 0, 0, 0x4145 };

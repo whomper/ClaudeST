@@ -17,14 +17,14 @@ VERSION := $(shell cat VERSION)
 CFLAGS  := -m68030 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic -fno-pie \
            -fno-tree-loop-distribute-patterns -fno-asynchronous-unwind-tables -Wall -Wno-pointer-sign \
            -ffunction-sections -fdata-sections \
-           -nostdinc -isystem $(GCCINC) -Iinclude -I$(C)/atari/include -I$(C)/src -I$(C)/atari \
+           -nostdinc -isystem $(GCCINC) -Iinclude -I$(C)/atari/include -I$(C)/src -I$(C)/atari -I$(C)/ui \
            -I$(C)/third_party/tjpgd -I$(C)/third_party/nsgif/include \
            -DPIC_TJPGD_DSP -DPIC_OVL_BUILD -DPIC_NO_PNG -DPIC_NO_GIF -DLIBC_NO_HEAP \
            -DPICOVL_VERSION=\"$(VERSION)\"
 LDFLAGS := -m68030 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,ovl.ld -Wl,--gc-sections \
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 
-SRC     := head.c $(C)/src/pic.c $(C)/atari/dspjpeg.c $(C)/atari/libc.c
+SRC     := head.c $(C)/src/pic.c $(C)/src/quant.c $(C)/ui/picpens.c $(C)/atari/dspjpeg.c $(C)/atari/libc.c
 OBJS    := $(addprefix $(B)/,$(notdir $(SRC:.c=.o)))
 HDRS    := $(wildcard $(C)/src/*.h $(C)/atari/*.h $(C)/atari/include/*.h $(C)/dsp/*.h)
 
@@ -41,6 +41,8 @@ $(B)/head.o: head.c $(HDRS) | $(B)
 $(B)/%.o: $(C)/src/%.c $(HDRS) | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(B)/%.o: $(C)/atari/%.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS) -c -o $@ $<
+$(B)/%.o: $(C)/ui/%.c $(HDRS) | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(B):

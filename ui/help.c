@@ -53,7 +53,7 @@ static int multitasking(void)
 }
 
 /* EHYPVIEW.PRG started beside us with args, where no viewer runs and the
-   AES can (Erez, 25 Oct 2026): its folder is FOLDER= in the boot drive's
+   AES can (decided 25 Oct 2026): its folder is FOLDER= in the boot drive's
    EHYPVIEW.INF, which the program writes there itself. 1 when the AES
    took it */
 static int start_prg(const char *prg, const char *args);

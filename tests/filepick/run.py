@@ -308,7 +308,7 @@ def double_clicks(work, machine, nvdi, prg, display):
     return fails
 
 
-# "Use the system file selector" (Erez, 9 Nov 2026): the Cancel button's place in the AES's own selector, by TOS
+# "Use the system file selector" (decided 9 Nov 2026): the Cancel button's place in the AES's own selector, by TOS
 # (a screenshot of each; the selector is the AES's, not ours, and has no geometry on the console)
 SELECTOR_CANCEL = {"TOS 4.04": (373, 393), "EmuTOS": (325, 400)}
 

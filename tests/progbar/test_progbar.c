@@ -7,7 +7,7 @@
  *   - 256 colours, a 6x6x6 cube and greys over pens 16 and up: 5 to 16
  *     steps of blue, dark to light, none the ground's;
  *   - 256 colours, EWeb's own (6x6x5): blues only, no violet among them
- *     (Erez, 16 Nov 2026);
+ *     (decided 16 Nov 2026);
  *   - 256 colours, a palette of other colours: still 16 pens, none the
  *     ground's;
  *   - 16 colours, TOS's and a TT's: pens 1 to 15 in order, less the
@@ -182,7 +182,7 @@ int main(void)
 	/* 256 colours, EWeb's own (src/gfx/pagecol.c): 6 reds and greens, 5
 	   blues, then greys. Its equal reds and greens (#333380, #6666bf,
 	   #9999ff) were violets between the blues, the bar's steps blue and
-	   purple in turn (Erez, 16 Nov 2026) */
+	   purple in turn (decided 16 Nov 2026) */
 	{
 		static const short grey[23] = { 13, 26, 38, 64, 77, 89, 115, 128, 140, 166, 179, 191,
 						212, 220, 226, 231, 235, 238, 241, 244, 247, 250, 253 };

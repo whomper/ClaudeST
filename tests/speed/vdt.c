@@ -96,7 +96,7 @@ int main(void)
 		}
 		say("open-close-workstation", tos_ms() - t, 10);
 	}
-	/* a GDOS font (NVDI's FreeMono, Erez's: 26 Oct 2026), a line at a time
+	/* a GDOS font (NVDI's FreeMono, 26 Oct 2026), a line at a time
 	   and a letter at a time, against the system font's line */
 	if (vq_gdos()) {
 		short n = vst_load_fonts(vh, 0), id = 0, k, fw, fh;

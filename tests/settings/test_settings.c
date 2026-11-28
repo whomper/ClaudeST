@@ -532,7 +532,7 @@ static const char *const rlab[] = { "Auto", "FDI", "DSP", "Both" };
 static const char *const rlab2[] = { "On", "Off" };
 static const char *const rpop[] = { "One", "Two", "Three" };
 static const char *const rbig[] = { "a", "b", "c", "d", "e", "f" };
-/* EWeb's Scripts (Erez, 17 Nov 2026): three of 13, and four asked for 13 */
+/* EWeb's Scripts (decided 17 Nov 2026): three of 13, and four asked for 13 */
 static const char *const rwide[] = { "Off", "Chosen sites", "Every site" };
 static short r_wide_sel, o_wide, o_wide4, wide_x[4], wide_w[2];
 static short r_big_sel;

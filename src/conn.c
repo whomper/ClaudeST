@@ -186,7 +186,7 @@ static int handshake(CONN *c, const char *host, char *err, int errlen)
 	/* RSA certificates first, as the DSP checks them fast, even where it
 	   does the elliptic curves too: a stock Falcon's DSP took 5.5 s for
 	   GitHub's ECDSA P-256 signature and the handshake 10.8 s, past the
-	   10 to 11 s GitHub waits, so every connection failed (Erez's
+	   10 to 11 s GitHub waits, so every connection failed (an
 	   EUPDATE.LOG, 1 Nov 2026; the RSA-2048 signature is some 0.1 to 0.5 s
 	   there). ECDSA only for a host that refused RSA (ecdsa_hosts) */
 	t = tls_start(c->h, host, (listed(ecdsa_hosts, host) ? 0 : TLS_RSA_ONLY) |
@@ -341,9 +341,9 @@ static void log_old_name(char *old)
 	strcpy(old + dot, dot + 1 < n && conn_logfile[dot + 1] >= 'a' && conn_logfile[dot + 1] <= 'z' ? ".old" : ".OLD");
 }
 
-/* The log is kept open between lines (Erez, 17 Nov 2026: "build the log
-   middle way"): each line a write to the open file, about 1.4 ms on his
-   DFB1's IDE, where the close after it (GEMDOS writing the FAT and the
+/* The log is kept open between lines (decided 17 Nov 2026: the middle
+   way): each line a write to the open file, about 1.4 ms on an
+   accelerated Falcon's IDE, where the close after it (GEMDOS writing the FAT and the
    directory) was 140 ms of every line's 143 (common/tests/slowdisk), and
    30 lines of a TLS connect ate laut.fm's 5 s wait for the request. The
    file is closed, so the disk has what was written, at most a second
@@ -546,10 +546,10 @@ void conn_log(const char *who, const char *dir, const char *text, long n)
 		log_add(text, n);
 	}
 	log_add("\r\n", 2);
-	/* every line written at once (Erez, 15 Nov 2026: "apps should write
-	   log at once as otherwise it may be ineffective to trace errors"),
+	/* every line written at once (decided 15 Nov 2026: a log written
+	   later is of little use for tracing faults),
 	   onto the open file; closed at an error now, else within a second
-	   (log_write's note: Erez, 17 Nov 2026) */
+	   (log_write's note: decided 17 Nov 2026) */
 	log_out();
 	if (dir[0] == ' ' && dir[1] == '!')
 		log_close();

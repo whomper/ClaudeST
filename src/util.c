@@ -83,17 +83,35 @@ int sb_reserve(SBUF *b, long n)
 int sb_adds(SBUF *b, const char *s) { return sb_add(b, s, strlen(s)); }
 int sb_addc(SBUF *b, char c) { return sb_add(b, &c, 1); }
 
+/* formatted onto the end; never cut: a line longer than the stack's 512
+   bytes is formatted again straight into the buffer (a request line with
+   a 520-byte address had lost its " HTTP/1.1": EWeb, 25 Nov 2026).
+   1, or 0 when memory is refused (nothing added) */
 int sb_printf(SBUF *b, const char *fmt, ...)
 {
-	va_list ap;
+	va_list ap, again;
 	char tmp[512];
 	int n;
 	va_start(ap, fmt);
+	va_copy(again, ap);
 	n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
 	va_end(ap);
-	if (n >= (int)sizeof(tmp))
-		n = sizeof(tmp) - 1;
-	return sb_add(b, tmp, n);
+	if (n < 0) {
+		va_end(again);
+		return 0;
+	}
+	if (n < (int)sizeof(tmp)) {
+		va_end(again);
+		return sb_add(b, tmp, n);
+	}
+	if (!grow(b, n)) {
+		va_end(again);
+		return 0;
+	}
+	vsnprintf(b->s + b->len, (size_t)n + 1, fmt, again);
+	va_end(again);
+	b->len += n;
+	return 1;
 }
 
 char *sb_steal(SBUF *b)

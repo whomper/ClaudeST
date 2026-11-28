@@ -3,7 +3,7 @@
 /*
  * textcells.h - a GDOS font's text: each run in its cells, and its Hebrew
  * letters as the font has them (EMail's draw.c, shared: the hub, 17 Nov
- * 2026; Erez's FreeMono in EPDF drew TOS's Hebrew codes 0xC2-0xDC, which
+ * 2026; FreeMono in EPDF drew TOS's Hebrew codes 0xC2-0xDC, which
  * a vector font through NVDI has other glyphs at, on cells its advance
  * doesn't keep).
  *

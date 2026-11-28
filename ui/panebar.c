@@ -172,7 +172,7 @@ static void ground(OBJECT *o, const GRECT *r, int d3)
    N.AES and MyAES (the AESes that run several programs). TOS 4 and
    EmuTOS draw dialogs in 3D but a window's sliders flat (a dotted track,
    a white slider), and a pane bar beside the window's own looks as that
-   one does (Erez's EContact on TOS 4.04, 27 Oct 2026: two kinds of bar
+   one does (EContact on TOS 4.04, 27 Oct 2026: two kinds of bar
    side by side). Whatever else sits in a window (a toolbar's buttons)
    takes the same look: EFTP's toolbar, 27 Oct 2026 */
 int win_look_3d(void)

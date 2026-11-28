@@ -20,7 +20,7 @@ LDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.
            -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 B       := build
 
-all: $(B)/ICONTEST.PRG $(B)/OPNWK.PRG $(B)/LATER.PRG $(B)/EXT2TEST.PRG $(B)/LFNTEST.PRG $(B)/TERMTEST.PRG $(B)/INTTEST.PRG $(B)/INTTESTG.PRG
+all: $(B)/ICONTEST.PRG $(B)/OPNWK.PRG $(B)/LATER.PRG $(B)/EXT2TEST.PRG $(B)/LFNTEST.PRG $(B)/TERMTEST.PRG $(B)/INTTEST.PRG $(B)/INTTESTG.PRG $(B)/AESPROBE.PRG
 base: $(B)/OPNWK.PRG $(B)/0MMU040.PRG $(B)/ZCPU060.PRG
 	python3 fetch.py
 $(B)/%.PRG: $(B)/%.elf ../../tools/elf2tos.py
@@ -28,6 +28,8 @@ $(B)/%.PRG: $(B)/%.elf ../../tools/elf2tos.py
 $(B)/ICONTEST.elf: $(B)/crt0.o $(B)/icontest.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/LATER.elf: $(B)/crt0.o $(B)/later.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
+	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
+$(B)/AESPROBE.elf: $(B)/crt0.o $(B)/aesprobe.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
 $(B)/EXT2TEST.elf: $(B)/crt0.o $(B)/ext2test.o $(B)/gem.o $(B)/tos.o $(B)/libc.o $(B)/nf.o
 	$(CC) $(LDFLAGS) -o $@ $^ -lgcc
@@ -63,6 +65,8 @@ $(B)/lfntest.o: lfntest.c | $(B)
 $(B)/termtest.o: termtest.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<
 $(B)/later.o: later.c | $(B)
+	$(CC) $(ACFLAGS) -c -o $@ $<
+$(B)/aesprobe.o: aesprobe.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<
 $(B)/icontest.o: icontest.c | $(B)
 	$(CC) $(ACFLAGS) -c -o $@ $<

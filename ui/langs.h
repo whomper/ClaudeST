@@ -2,7 +2,7 @@
  * Copyright (C) 2026 AERA | Erez Yaary */
 /*
  * langs.h - the family's Languages dialog (standards/TRANSLATION-SERVICE.md,
- * "Managing the installed languages from the Atari"; Erez, 7 and 8 Nov 2026):
+ * "Managing the installed languages from the Atari"; decided 7 and 8 Nov 2026):
  * which languages the Gateway's translation service has installed, and how
  * much memory they take. For the apps that translate (EMail, EWeb, EPDF),
  * opened from Settings by a "Languages..." button beside "Translate into".
@@ -127,7 +127,7 @@ long langs_mb(long bytes);
 
 /* ---------------- the job the Gateway runs after OK ---------------- */
 
-/* the words (Erez decides them later) */
+/* the words (to be decided later) */
 #define LANGS_W_WAIT      "The Gateway is getting ready to install languages..."
 #define LANGS_W_RUN       "Installing languages: %ld of %ld MB"
 #define LANGS_W_REMOVING  "The Gateway is removing languages..."

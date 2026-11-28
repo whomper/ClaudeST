@@ -169,9 +169,8 @@ nf_find:
 nf_vec:
 	.long	0x10
 | NatFeats are looked for only when the app sets nf_on, from its INF's
-| NATFEATS=1, which only the test rigs write (Erez, 15 Nov 2026: "make it a
-| .INF setting so that it can be added in our testing but have no bearing
-| outside"): a real machine never runs the probe's illegal instruction
+| NATFEATS=1, which only the test rigs write (decided 15 Nov 2026: an INF
+| setting the tests can add, with no bearing outside): a real machine never runs the probe's illegal instruction
 nf_on:
 	.long	0
 	.text

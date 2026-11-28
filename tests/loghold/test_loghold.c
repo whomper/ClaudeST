@@ -282,11 +282,11 @@ int main(void)
 	strcpy(conn_logfile, "build/t/LOG.TXT");
 
 	n = job();
-	snprintf(msg, sizeof(msg), "a job's lines written at once (Erez, 15 Nov 2026): 120 writes (%d) to one open (%d), "
+	snprintf(msg, sizeof(msg), "a job's lines written at once (decided 15 Nov 2026): 120 writes (%d) to one open (%d), "
 		 "no 16 KB taken (%d)", writes, n, big_mallocs);
 	check(writes == 120 && n == 1 && big_mallocs <= 1 && logged > 12000, msg);
 	{
-		/* the middle way (Erez, 17 Nov 2026): the file kept open, closed
+		/* the middle way (decided 17 Nov 2026): the file kept open, closed
 		   in the event wait a second after a line at most */
 		long sz = fsize("build/t/LOG.TXT");
 		check(sz == logged, "every line in the file as it is written (the kept handle's writes)");

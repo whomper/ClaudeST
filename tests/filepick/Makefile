@@ -16,7 +16,7 @@ TCFLAGS := -m68000 -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-pic
 TLDFLAGS := -m68000 -nostdlib -static -no-pie -Wl,--emit-relocs -Wl,-T,$(A)/link.ld \
             -Wl,--build-id=none -Wl,-z,noexecstack -Wl,--no-warn-rwx-segments
 T       := build/atari
-LIB     := dialog popup click fsel text bidi gem libc tos
+LIB     := dialog popup click fsel alert text bidi gem libc tos
 OBJS    := $(T)/crt0.o $(T)/nf.o $(T)/fptest.o $(T)/filepick.o $(T)/dirlist.o $(T)/draw.o $(addprefix $(T)/,$(addsuffix .o,$(LIB)))
 
 all: $(T)/FPTEST.PRG

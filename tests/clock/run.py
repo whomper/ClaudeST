@@ -3,7 +3,7 @@
 # Copyright (C) 2026 AERA | Erez Yaary
 """tos_ms() (atari/tos.c) in Hatari (EmuTOS), on a 68000 ST and a Falcon:
 once with the 200 Hz clock at 312 Hz (a file C:\\FASTCLK makes CLOCKT.PRG
-set MFP timer C so, as on Erez's Falcon), once at 200 Hz. The 8 seconds
+set MFP timer C so, as on a real Falcon), once at 200 Hz. The 8 seconds
 CLOCKT.PRG counts by tos_ms() are timed with this computer's clock;
 Hatari runs in real time here (no fast-forward).
 

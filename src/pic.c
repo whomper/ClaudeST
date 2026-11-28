@@ -3314,7 +3314,7 @@ static void row_two(PIC_DITHER *dt, const unsigned short *px, const unsigned cha
 /* A 5-6-5 pixel's components as 8 bits, the top bits repeated: white is
    255 (a bare shift gave 248/252/248, and the error diffusion carried -7
    on every white pixel until a grey pen won: white dotted over near-white
-   fills; EPDF and Erez's photo, 7 Nov 2026). The DSP's tables below are
+   fills; EPDF and a photo of the screen, 7 Nov 2026). The DSP's tables below are
    the same numbers (dither.a56 keeps bit parity with dither_many) */
 #define C5(x) ((((x) & 31) << 3) | (((x) & 31) >> 2))
 #define C6(x) ((((x) & 63) << 2) | (((x) & 63) >> 4))
